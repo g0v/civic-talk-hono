@@ -1,0 +1,133 @@
+:root {
+  --fg: #1f2933;
+  --muted: #52606d;
+  --bg: #fafbfc;
+  --accent: #2563eb;
+  --border: #e4e7eb;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans TC", sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+  line-height: 1.6;
+}
+
+.navbar {
+  display: flex;
+  gap: 1rem;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+  background: #fff;
+}
+
+.navbar a {
+  color: var(--muted);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.navbar a.active,
+.navbar a:hover {
+  color: var(--accent);
+}
+
+.container {
+  max-width: 720px;
+  margin: 2rem auto;
+  padding: 0 1.5rem;
+}
+
+h1 { margin-top: 0; }
+
+a { color: var(--accent); }
+
+code {
+  background: #eef2f6;
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+
+figure {
+  margin: 1.5rem 0;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  text-align: center;
+}
+
+figure img {
+  max-width: 100%;
+  height: auto;
+}
+
+figcaption {
+  margin-top: 0.5rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+/* /hundred — 百數表 hydration 頁（版面樣式；互動著色由 Vue :style 處理） */
+.hundred-root {
+  min-height: 100%;
+}
+
+.hundred-main {
+  max-width: 640px;
+}
+
+.hundred-main .lead {
+  color: var(--muted);
+  margin-bottom: 1.5rem;
+}
+
+.hundred-controls {
+  margin-bottom: 1.25rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.hundred-controls .control-label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  font-size: 0.95rem;
+}
+
+.factor-input {
+  width: 100%;
+  max-width: 12rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+.hundred-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.hundred-cell {
+  width: 10%;
+  padding: 0.55rem 0.35rem;
+  text-align: center;
+  border: 1px solid var(--border);
+  transition: background-color 0.15s ease;
+}
