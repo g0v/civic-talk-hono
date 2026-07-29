@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "hono-vue-ssr-template",
+  "name": "civic-talk",
   "main": "src/index.ts",
   "compatibility_date": "2026-04-17",
   "assets": { "directory": "./public/", "binding": "ASSETS" },
