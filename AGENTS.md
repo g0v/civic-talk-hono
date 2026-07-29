@@ -2,7 +2,7 @@
 
 給 AI coding agent 的工作指引。本檔聚焦「**agent 該怎麼在這個 repo 工作**」；一般的技術說明與部署步驟請看 [`README.md`](./README.md)。
 
-> ⚠️ 本專案處於**移植初期**：目前 repo 內容仍是 `hono-vue-ssr-template` 範本，Civic Talk 的功能尚未搬移。閱讀時請嚴格區分「**現況**」與「**目標架構**」兩節——不要把目標當成既成事實去 grep 找檔案。
+> ✅ Vue SSR 複刻計畫的六項 todo 已完成。下列「現況」反映移植後的真實結構；「目標架構」中尚未做的項目（例如切換到 `vue-router` 全站 hydration）仍須先與使用者確認再動工。
 
 ## 專案目的
 
@@ -38,23 +38,22 @@
 
 ## 現況（今天 repo 裡真的有什麼）
 
-這是 `hono-vue-ssr-template` 的原始狀態，Civic Talk 的東西**一樣都還沒進來**：
+Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑起來（尚未切到 `vue-router`）：
 
-- `src/index.ts` — Hono 進入點，每條路由各自呼叫 `renderPage()`；現有 `/`、`/about`、`/word/:w`、`/hundred`、`/api/hello`、`*`（fallback 到 `ASSETS`）。
-- `src/ssr/render.ts` — `createSSRApp` + `renderToString`，組出完整 HTML 殼；`options.hydrate` 可為單一頁面注入 client bundle。
-- `src/ssr/heads.ts` — `HeadConfig`／`buildOg`／各頁 `headForXxx()`。
-- `src/views/`（`Home` / `About` / `Word` / `HundredChart`）、`src/components/NavBar.vue`、`src/client/hundred-chart-entry.ts`。
-- `public/styles.css` — **手寫**的 CSS，目前不是生成物。
-- `wrangler.jsonc` — 只有 `ASSETS` 綁定，**沒有 D1**。
+- `src/index.ts` — 乾淨路由 `/`、`/issues/:id`、`/contribute/:id`、`/about`、`/admin`；舊 `.html` 導向；掛上 `registerApiRoutes`；fallback `ASSETS`。
+- `src/api/routes.ts` + `src/db/queries.ts` — 舊 Pages Functions API 的型別化移植，SQL 只碰 `ct_*`。
+- `migrations/0001_init.sql` — `ct_issues`／`ct_materials`／`ct_briefings`／`ct_opinions`（含 FK、索引、約束、示範資料）。
+- `src/ssr/render.ts` — SSR + 注入 `window.__PAGE__`／`__SSR_STATE__` + `/js/civic.js`（dev 走 `/src/client/civic-entry.ts`）。
+- `src/views/` — `Home`／`Issue`／`Contribute`／`About`／`Admin`；共用 `AppHeader`／`AppFooter`／`StatusBadge`／`IssueCard`／`Toast`。
+- `src/l10n/` — 自製 i18n composable（`zh-TW`／`en` 雙檔 key 同步）；SSR 固定 `zh-TW`，`localStorage.civic_lang` 只在 hydration 後讀寫。
+- `src/styles/app.css` — Tailwind v4 `@theme`（民主紅／青玉綠／麥穗黃）；`npm run css` 產出 `public/styles.css`（**生成物，勿手改**）。
+- `wrangler.jsonc` — `ASSETS` + D1 `DB` → `vtaiwan-civic-talks`。
 
-**尚不存在**（別去找）：`vue-router`、`vue-i18n`、`src/l10n/`、Tailwind、`src/db/`、`src/api/`、`migrations/`、任何測試與測試框架。
+**尚不存在**：`vue-router`、`vue-i18n` 套件、自動化測試／CI。
 
 **待處理的身分問題**：
 
-- `package.json` 與 `wrangler.jsonc` 的 `name` 已改為 `civic-talk`。⚠️ **首次 `wrangler deploy` 前要先確認**：Cloudflare 帳號內 Workers 與 Pages 共用同一份名稱清單，舊站若已有名為 `civic-talk` 的 Pages 專案就會撞名。撞到時**不要**逕自覆蓋舊站——先問使用者要改名還是要取代。
-- `README.md` 仍是範本文件，把 `/word`、`/hundred`、`/api/hello` 當成產品功能在介紹——移植時需重寫，在那之前**不要**把它當成 Civic Talk 的說明來引用。
-
-**範本殘留**：`/word/:w`、`/hundred`、`/api/hello` 與對應的 view／client entry 依移植計畫會被移除。**不要**把 `/hundred` 當成要長期沿用的範例去擴充，但在真正移除前它仍是目前唯一可讀的 hydration 參考寫法。
+- `package.json` 與 `wrangler.jsonc` 的 `name` 為 `civic-talk`。⚠️ **首次 `wrangler deploy` 前要先確認**：Cloudflare 帳號內 Workers 與 Pages 共用同一份名稱清單，舊站若已有名為 `civic-talk` 的 Pages 專案就會撞名。撞到時**不要**逕自覆蓋舊站——先問使用者要改名還是要取代。
 
 ## 目標架構（移植完成後長這樣）
 
@@ -146,7 +145,9 @@ npm run cf-typegen          # 由 wrangler 產生 Cloudflare 綁定型別
 npm run deploy              # build + wrangler deploy（除非使用者要求，否則不要執行）
 ```
 
-**尚未存在**的指令：測試（無 `npm test`、無測試框架）、CSS 建置（Tailwind 尚未導入）。要新增測試框架或建置步驟，**先說明並取得使用者同意**再動工——不要自行決定用什麼框架。
+**CSS**：`npm run css`（Tailwind CLI：`src/styles/app.css` → `public/styles.css`）。`npm run build` 會先跑 css。
+
+**尚未存在**的指令：測試（無 `npm test`、無測試框架）。要新增測試框架，**先說明並取得使用者同意**再動工。
 
 D1 相關（導入後）：
 
@@ -261,15 +262,15 @@ npx wrangler d1 migrations apply vtaiwan-civic-talks --remote   # 🚫 需先取
 
 ## 移植進度
 
-依 [`.cursor/plans/vue_ssr_複刻_8a18e2ed.plan.md`](./.cursor/plans/vue_ssr_複刻_8a18e2ed.plan.md) 的六個 todo，全部**尚未開始**：
+依 [`.cursor/plans/vue_ssr_複刻_8a18e2ed.plan.md`](./.cursor/plans/vue_ssr_複刻_8a18e2ed.plan.md) 的六個 todo：
 
-| #   | 項目           | 狀態      | 內容                                                     |
-| --- | -------------- | --------- | -------------------------------------------------------- |
-| 1   | `d1-schema`    | 📋 待開始 | 建立 `vtaiwan-civic-talks`、設定 `DB` 綁定、`ct_` 前綴 migration |
-| 2   | `tailwind-shell` | 📋 待開始 | 導入 Tailwind、品牌資產、共用版型與中英 i18n            |
-| 3   | `api-port`     | 📋 待開始 | 把舊 Pages Functions API 移植為 Hono + D1 型別化路由     |
-| 4   | `vue-pages`    | 📋 待開始 | 以 Vue SSR/hydration 重建五個頁面及全部互動功能          |
-| 5   | `routes-compat` | 📋 待開始 | 乾淨路由、舊網址導向與 SSR metadata                     |
-| 6   | `verify`       | 📋 待開始 | 型別、建置、D1/API、hydration 與響應式驗證              |
+| #   | 項目             | 狀態    | 內容                                                         |
+| --- | ---------------- | ------- | ------------------------------------------------------------ |
+| 1   | `d1-schema`      | ✅ 完成 | 建立 `vtaiwan-civic-talks`、設定 `DB` 綁定、`ct_` 前綴 migration（本機＋遠端） |
+| 2   | `tailwind-shell` | ✅ 完成 | 導入 Tailwind、品牌資產、共用版型與中英 i18n                 |
+| 3   | `api-port`       | ✅ 完成 | 把舊 Pages Functions API 移植為 Hono + D1 型別化路由         |
+| 4   | `vue-pages`      | ✅ 完成 | 以 Vue SSR/hydration 重建五個頁面及全部互動功能              |
+| 5   | `routes-compat`  | ✅ 完成 | 乾淨路由、舊網址導向與 SSR metadata                          |
+| 6   | `verify`         | ✅ 完成 | 型別、建置、D1/API、hydration 與響應式驗證                   |
 
-> 這些項目有前後依賴（1 → 3、2 → 4 → 5 → 6）。完成任一項後請同步更新本表狀態。
+> 後續可選：切換到 `vue-router` 全站 hydration、自動化測試／CI——動工前先與使用者確認。

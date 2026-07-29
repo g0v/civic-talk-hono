@@ -4,22 +4,22 @@ overview: 把舊 `civic-talk` 的五個頁面、完整 API、雙語與 Polis 功
 todos:
   - id: d1-schema
     content: 建立 vtaiwan-civic-talks、設定 DB binding，新增並套用 ct_ 前綴 migration
-    status: pending
+    status: completed
   - id: tailwind-shell
     content: 導入 Tailwind、品牌資產、共用版型與中英 i18n
-    status: pending
+    status: completed
   - id: api-port
     content: 把舊 Pages Functions API 移植為 Hono + D1 型別化路由
-    status: pending
+    status: completed
   - id: vue-pages
     content: 以 Vue SSR/hydration 重建五個頁面及全部互動功能
-    status: pending
+    status: completed
   - id: routes-compat
     content: 完成乾淨路由、舊網址重新導向與 SSR metadata
-    status: pending
+    status: completed
   - id: verify
     content: 執行型別、建置、D1/API、hydration 與響應式驗證
-    status: pending
+    status: completed
 isProject: false
 ---
 

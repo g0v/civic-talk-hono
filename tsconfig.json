@@ -14,5 +14,5 @@
     "noEmit": true,
     "types": ["vite/client", "node"]
   },
-  "include": ["src", "vite.config.mts"]
+  "include": ["src", "worker-configuration.d.ts", "vite.config.mts", "vite.client.config.mts"]
 }

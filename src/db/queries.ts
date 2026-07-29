@@ -1,0 +1,323 @@
+/** D1 查詢與資料型別 — 所有 SQL 只碰 ct_* 表 */
+
+export type IssueStatus = 'collecting' | 'summarizing' | 'published'
+export type Stance = 'pro' | 'con' | 'neutral' | 'unknown'
+
+export interface Issue {
+  id: number
+  title: string
+  description: string | null
+  status: IssueStatus
+  polis_id: string | null
+  created_at: string
+}
+
+export interface IssueListItem extends Issue {
+  material_count: number
+}
+
+export interface Material {
+  id: number
+  issue_id: number
+  source_name: string | null
+  source_url: string | null
+  stance: Stance
+  content: string
+  verified_count: number
+  created_at: string
+}
+
+export interface Briefing {
+  id: number
+  issue_id: number
+  consensus: string | null
+  disputes: string | null
+  positions: string | null
+  narrative: string | null
+  opinion_prompt: string | null
+  version: number
+  created_at: string
+}
+
+export interface Opinion {
+  id: number
+  issue_id: number
+  summary: string
+  created_at: string
+}
+
+export interface AdminStats {
+  issues: number
+  materials: number
+  opinions: number
+  briefings: number
+}
+
+export async function listIssues(db: D1Database): Promise<IssueListItem[]> {
+  const { results } = await db
+    .prepare(
+      'SELECT id, title, description, status, polis_id, created_at FROM ct_issues ORDER BY created_at DESC',
+    )
+    .all<Issue>()
+  const issues = results ?? []
+  for (const issue of issues) {
+    const row = await db
+      .prepare('SELECT COUNT(*) as cnt FROM ct_materials WHERE issue_id = ?')
+      .bind(issue.id)
+      .first<{ cnt: number }>()
+    ;(issue as IssueListItem).material_count = row?.cnt ?? 0
+  }
+  return issues as IssueListItem[]
+}
+
+export async function getIssue(db: D1Database, id: number): Promise<Issue | null> {
+  return db.prepare('SELECT * FROM ct_issues WHERE id = ?').bind(id).first<Issue>()
+}
+
+export async function createIssue(
+  db: D1Database,
+  input: { title: string; description?: string; polis_id?: string | null },
+): Promise<number> {
+  const { meta } = await db
+    .prepare('INSERT INTO ct_issues (title, description, polis_id) VALUES (?, ?, ?)')
+    .bind(input.title, input.description ?? '', input.polis_id ?? null)
+    .run()
+  return meta.last_row_id
+}
+
+export async function updateIssue(
+  db: D1Database,
+  id: number,
+  input: {
+    title: string
+    description?: string
+    status?: IssueStatus
+    polis_id?: string | null
+  },
+): Promise<void> {
+  await db
+    .prepare(
+      'UPDATE ct_issues SET title = ?, description = ?, status = ?, polis_id = ? WHERE id = ?',
+    )
+    .bind(
+      input.title,
+      input.description ?? '',
+      input.status ?? 'collecting',
+      input.polis_id ?? null,
+      id,
+    )
+    .run()
+}
+
+export async function deleteIssueCascade(db: D1Database, id: number): Promise<void> {
+  await db.prepare('DELETE FROM ct_opinions WHERE issue_id = ?').bind(id).run()
+  await db.prepare('DELETE FROM ct_briefings WHERE issue_id = ?').bind(id).run()
+  await db.prepare('DELETE FROM ct_materials WHERE issue_id = ?').bind(id).run()
+  await db.prepare('DELETE FROM ct_issues WHERE id = ?').bind(id).run()
+}
+
+export async function listMaterials(db: D1Database, issueId: number): Promise<Material[]> {
+  const { results } = await db
+    .prepare('SELECT * FROM ct_materials WHERE issue_id = ? ORDER BY created_at DESC')
+    .bind(issueId)
+    .all<Material>()
+  return results ?? []
+}
+
+export async function createMaterial(
+  db: D1Database,
+  issueId: number,
+  input: {
+    source_name?: string
+    source_url?: string
+    stance?: Stance
+    content: string
+  },
+): Promise<number> {
+  const { meta } = await db
+    .prepare(
+      'INSERT INTO ct_materials (issue_id, source_name, source_url, stance, content) VALUES (?, ?, ?, ?, ?)',
+    )
+    .bind(
+      issueId,
+      input.source_name ?? '',
+      input.source_url ?? '',
+      input.stance ?? 'unknown',
+      input.content,
+    )
+    .run()
+  await db
+    .prepare(
+      "UPDATE ct_issues SET status = 'summarizing' WHERE id = ? AND status = 'collecting'",
+    )
+    .bind(issueId)
+    .run()
+  return meta.last_row_id
+}
+
+export async function deleteMaterial(db: D1Database, id: number): Promise<void> {
+  await db.prepare('DELETE FROM ct_materials WHERE id = ?').bind(id).run()
+}
+
+export async function getLatestBriefing(
+  db: D1Database,
+  issueId: number,
+): Promise<Briefing | null> {
+  return db
+    .prepare('SELECT * FROM ct_briefings WHERE issue_id = ? ORDER BY version DESC LIMIT 1')
+    .bind(issueId)
+    .first<Briefing>()
+}
+
+export async function createBriefing(
+  db: D1Database,
+  issueId: number,
+  input: {
+    consensus?: string
+    disputes?: string
+    positions?: string
+    narrative?: string
+    opinion_prompt?: string
+  },
+): Promise<number> {
+  const existing = await db
+    .prepare('SELECT MAX(version) as maxv FROM ct_briefings WHERE issue_id = ?')
+    .bind(issueId)
+    .first<{ maxv: number | null }>()
+  const nextVersion = (existing?.maxv ?? 0) + 1
+  await db
+    .prepare(
+      'INSERT INTO ct_briefings (issue_id, consensus, disputes, positions, narrative, opinion_prompt, version) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    )
+    .bind(
+      issueId,
+      input.consensus ?? '',
+      input.disputes ?? '',
+      input.positions ?? '',
+      input.narrative ?? '',
+      input.opinion_prompt ?? '',
+      nextVersion,
+    )
+    .run()
+  await db
+    .prepare(
+      "UPDATE ct_issues SET status = 'published' WHERE id = ? AND status IN ('collecting', 'summarizing')",
+    )
+    .bind(issueId)
+    .run()
+  return nextVersion
+}
+
+export async function updateLatestBriefing(
+  db: D1Database,
+  issueId: number,
+  input: {
+    consensus?: string
+    disputes?: string
+    positions?: string
+    narrative?: string
+  },
+): Promise<boolean> {
+  const existing = await getLatestBriefing(db, issueId)
+  if (!existing) return false
+  await db
+    .prepare(
+      'UPDATE ct_briefings SET consensus = ?, disputes = ?, positions = ?, narrative = ? WHERE id = ?',
+    )
+    .bind(
+      input.consensus ?? '',
+      input.disputes ?? '',
+      input.positions ?? '',
+      input.narrative ?? '',
+      existing.id,
+    )
+    .run()
+  return true
+}
+
+export async function listOpinions(db: D1Database, issueId: number): Promise<Opinion[]> {
+  const { results } = await db
+    .prepare(
+      'SELECT id, issue_id, summary, created_at FROM ct_opinions WHERE issue_id = ? ORDER BY created_at DESC',
+    )
+    .bind(issueId)
+    .all<Opinion>()
+  return results ?? []
+}
+
+export async function createOpinion(
+  db: D1Database,
+  issueId: number,
+  summary: string,
+): Promise<number> {
+  const { meta } = await db
+    .prepare('INSERT INTO ct_opinions (issue_id, summary) VALUES (?, ?)')
+    .bind(issueId, summary)
+    .run()
+  return meta.last_row_id
+}
+
+export async function deleteOpinion(db: D1Database, id: number): Promise<void> {
+  await db.prepare('DELETE FROM ct_opinions WHERE id = ?').bind(id).run()
+}
+
+export async function getIssueDetail(
+  db: D1Database,
+  id: number,
+): Promise<{
+  issue: Issue
+  materials: Material[]
+  briefing: Briefing | null
+  opinions: Opinion[]
+} | null> {
+  const issue = await getIssue(db, id)
+  if (!issue) return null
+  const [materials, briefing, opinions] = await Promise.all([
+    listMaterials(db, id),
+    getLatestBriefing(db, id),
+    listOpinions(db, id),
+  ])
+  return { issue, materials, briefing, opinions }
+}
+
+export async function getAdminStats(db: D1Database): Promise<AdminStats> {
+  const [issues, materials, opinions, briefings] = await Promise.all([
+    db.prepare('SELECT COUNT(*) as cnt FROM ct_issues').first<{ cnt: number }>(),
+    db.prepare('SELECT COUNT(*) as cnt FROM ct_materials').first<{ cnt: number }>(),
+    db.prepare('SELECT COUNT(*) as cnt FROM ct_opinions').first<{ cnt: number }>(),
+    db.prepare('SELECT COUNT(*) as cnt FROM ct_briefings').first<{ cnt: number }>(),
+  ])
+  return {
+    issues: issues?.cnt ?? 0,
+    materials: materials?.cnt ?? 0,
+    opinions: opinions?.cnt ?? 0,
+    briefings: briefings?.cnt ?? 0,
+  }
+}
+
+export async function listMaterialsForPrompt(
+  db: D1Database,
+  issueId: number,
+): Promise<Pick<Material, 'source_name' | 'source_url' | 'stance' | 'content'>[]> {
+  const { results } = await db
+    .prepare(
+      'SELECT source_name, source_url, stance, content FROM ct_materials WHERE issue_id = ? ORDER BY created_at',
+    )
+    .bind(issueId)
+    .all<Pick<Material, 'source_name' | 'source_url' | 'stance' | 'content'>>()
+  return results ?? []
+}
+
+export async function listOpinionSummaries(
+  db: D1Database,
+  issueId: number,
+  limit = 50,
+): Promise<Pick<Opinion, 'summary'>[]> {
+  const { results } = await db
+    .prepare(
+      'SELECT summary FROM ct_opinions WHERE issue_id = ? ORDER BY created_at DESC LIMIT ?',
+    )
+    .bind(issueId, limit)
+    .all<Pick<Opinion, 'summary'>>()
+  return results ?? []
+}
