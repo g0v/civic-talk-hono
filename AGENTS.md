@@ -258,14 +258,14 @@ npm install                 # 安裝依賴
 npm run dev                 # 同時監看 Tailwind CSS 與啟動 vite dev，D1 用本機模擬
 npm run dev:remote          # 同時監看 Tailwind CSS 並連遠端 D1；實測登入只能用這個
 npm run css:watch           # 只監看 Tailwind CSS
-npm run build               # client bundle build + server build
+npm run build               # CSS + client bundle + server bundle
 npm run preview             # 預覽建置結果
 npm run typecheck           # tsc --noEmit
 npm run cf-typegen          # 由 wrangler 產生 Cloudflare 綁定型別
 npm run deploy              # build + wrangler deploy（除非使用者要求，否則不要執行）
 ```
 
-**CSS**：`npm run css`（Tailwind CLI：`src/styles/app.css` → `public/styles.css`）。`npm run dev` 會同時跑 Tailwind watcher；`npm run build` 會先跑 css。
+**CSS**：`npm run css`（Tailwind CLI：`src/styles/app.css` → `public/styles.css`）。`npm run dev` 會同時跑 Tailwind watcher；`npm run build` 依序產出 CSS、client bundle，再建 server，避免 server build 收到舊的 `public/js/civic.js`。
 
 **尚未存在**的指令：測試（無 `npm test`、無測試框架）。要新增測試框架，**先說明並取得使用者同意**再動工。
 

@@ -28,7 +28,7 @@ npm run dev
 | `npm run dev:remote` | 同時監看 Tailwind CSS 並以遠端 D1 啟動 Vite；實測登入用這個 |
 | `npm run css` | 由 `src/styles/app.css` 建置 `public/styles.css` |
 | `npm run css:watch` | 只監看並重建 Tailwind CSS |
-| `npm run build` | CSS + server + client bundle |
+| `npm run build` | 依序建置 CSS、client bundle、server bundle |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run cf-typegen` | 產生 Cloudflare 綁定型別 |
 
