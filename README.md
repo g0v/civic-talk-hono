@@ -28,6 +28,8 @@ npm run dev
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run cf-typegen` | 產生 Cloudflare 綁定型別 |
 
+樣式 token 以 `vtaiwan-design-system/project/colors_and_type.css` 為穩定來源，透過 Tailwind v4 的 `vt-*` utilities 使用，例如 `text-vt-democratic-red`、`bg-vt-bg-2`、`font-vt-serif`。
+
 ## 路由
 
 | 路徑 | 說明 |

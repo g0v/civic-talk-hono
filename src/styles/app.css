@@ -1,32 +1,110 @@
 /* Civic Talk — Tailwind v4 source → public/styles.css */
 
-@import 'tailwindcss';
+@import 'tailwindcss' source(none);
 
-@source '../**/*.vue';
-@source '../**/*.ts';
+/* Utilities only need to scan Vue templates; component CSS below is always emitted. */
+@source '../components/**/*.vue';
+@source '../views/**/*.vue';
 
-@theme {
-  --color-red: #d80000;
-  --color-teal: #008888;
-  --color-amber: #db7700;
-  --color-ink: #0b0b0c;
+/*
+ * Stable vTaiwan tokens come from vtaiwan-design-system/project/colors_and_type.css.
+ * Existing Civic Talk aliases remain available during migration.
+ */
+@theme static {
+  /* Core brand */
+  --color-vt-black: #000000;
+  --color-vt-white: #ffffff;
+  --color-vt-democratic-red: #d80000;
+  --color-vt-jade-green: #008888;
+  --color-vt-wheat-yellow: #db7700;
+  --color-vt-red-tint: rgba(216, 0, 0, 0.1);
+  --color-vt-green-tint: rgba(0, 136, 136, 0.1);
+  --color-vt-yellow-tint: rgba(219, 119, 0, 0.1);
 
+  /* Neutrals and semantic roles */
+  --color-vt-gray-100: #f8f8f8;
+  --color-vt-gray-200: #e0e0e0;
+  --color-vt-gray-400: #a0a0a0;
+  --color-vt-gray-700: #505050;
+  --color-vt-gray-800: #1a1a1a;
+  --color-vt-ink: #0b0b0c;
+  --color-vt-fg-1: var(--color-vt-black);
+  --color-vt-fg-2: var(--color-vt-gray-700);
+  --color-vt-fg-3: var(--color-vt-gray-400);
+  --color-vt-fg-inverse: var(--color-vt-white);
+  --color-vt-bg-1: var(--color-vt-white);
+  --color-vt-bg-2: var(--color-vt-gray-100);
+  --color-vt-bg-inverse: var(--color-vt-black);
+  --color-vt-border: var(--color-vt-gray-200);
+  --color-vt-border-strong: var(--color-vt-black);
+
+  /* Type families and scale */
+  --font-vt-serif: 'Noto Serif TC', 'Source Han Serif TC', 'Songti TC', serif;
+  --font-vt-sans: 'Noto Sans TC', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+  --font-vt-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --text-vt-xs: 12px;
+  --text-vt-xs--line-height: 1.4;
+  --text-vt-sm: 14px;
+  --text-vt-sm--line-height: 1.5;
+  --text-vt-base: 16px;
+  --text-vt-base--line-height: 1.6;
+  --text-vt-lg: 18px;
+  --text-vt-lg--line-height: 1.6;
+  --text-vt-xl: 20px;
+  --text-vt-xl--line-height: 1.3;
+  --text-vt-2xl: 24px;
+  --text-vt-2xl--line-height: 1.25;
+  --text-vt-3xl: 30px;
+  --text-vt-3xl--line-height: 1.2;
+  --text-vt-4xl: 36px;
+  --text-vt-4xl--line-height: 1.2;
+  --text-vt-5xl: 48px;
+  --text-vt-5xl--line-height: 1.15;
+
+  /* Spacing */
+  --spacing-vt-0_5: 2px;
+  --spacing-vt-1: 4px;
+  --spacing-vt-2: 8px;
+  --spacing-vt-3: 12px;
+  --spacing-vt-4: 16px;
+  --spacing-vt-6: 24px;
+  --spacing-vt-8: 32px;
+  --spacing-vt-12: 48px;
+  --spacing-vt-16: 64px;
+
+  /* Radii */
+  --radius-vt-none: 0;
+  --radius-vt-sm: 4px;
+  --radius-vt-md: 6px;
+  --radius-vt-lg: 8px;
+  --radius-vt-full: 9999px;
+
+  /* Elevation and motion */
+  --shadow-vt-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-vt-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.06);
+  --shadow-vt-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.05);
+  --ease-vt: cubic-bezier(0.4, 0, 0.2, 1);
+  --duration-vt-fast: 150ms;
+  --duration-vt-base: 200ms;
+
+  /* Civic Talk compatibility aliases */
+  --color-red: var(--color-vt-democratic-red);
+  --color-teal: var(--color-vt-jade-green);
+  --color-amber: var(--color-vt-wheat-yellow);
+  --color-ink: var(--color-vt-ink);
   --color-gray-50: #fafaf8;
   --color-gray-100: #f5f5f3;
   --color-gray-200: #e8e8e5;
   --color-gray-300: #d0d0cc;
   --color-gray-400: #a8a8a3;
   --color-gray-600: #6b6b66;
-  --color-gray-700: #505050;
-  --color-gray-900: #1a1a1a;
-
-  --color-bg: #fafaf8;
-  --color-border: #e8e8e5;
-  --color-muted: #6b6b66;
-
-  --font-sans: 'Noto Sans TC', ui-sans-serif, system-ui, sans-serif;
-  --font-serif: 'Noto Serif TC', ui-serif, Georgia, serif;
-
+  --color-gray-700: var(--color-vt-gray-700);
+  --color-gray-900: var(--color-vt-gray-800);
+  --color-bg: var(--color-gray-50);
+  --color-border: var(--color-gray-200);
+  --color-muted: var(--color-gray-600);
+  --font-sans: var(--font-vt-sans);
+  --font-serif: var(--font-vt-serif);
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 14px;
