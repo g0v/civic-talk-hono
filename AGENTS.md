@@ -46,7 +46,7 @@ Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑�
 - `src/ssr/render.ts` — SSR + 注入 `window.__PAGE__`／`__SSR_STATE__` + `/js/civic.js`（dev 走 `/src/client/civic-entry.ts`）。
 - `src/views/` — `Home`／`Issue`／`Contribute`／`About`／`Admin`；共用 `AppHeader`／`AppFooter`／`StatusBadge`／`IssueCard`／`Toast`。
 - `src/l10n/` — 自製 i18n composable（`zh-TW`／`en` 雙檔 key 同步）；SSR 固定 `zh-TW`，`localStorage.civic_lang` 只在 hydration 後讀寫。
-- `src/styles/app.css` — Tailwind v4 `@theme`（民主紅／青玉綠／麥穗黃）；`npm run css` 產出 `public/styles.css`（**生成物，勿手改**）。
+- `src/styles/app.css` — Tailwind v4 `@theme static`（vTaiwan 色彩、字型、字級、間距、圓角、陰影與動效 token）；`npm run css` 產出 `public/styles.css`（**生成物，勿手改**）。
 - `wrangler.jsonc` — `ASSETS` + D1 `DB` → `vtaiwan-civic-talks`。
 
 **尚不存在**：`vue-router`、`vue-i18n` 套件、自動化測試／CI。
@@ -79,7 +79,8 @@ Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑�
 
 ### 樣式：Tailwind v4 + design token
 
-- 把舊站 `../civic-talk/public/style.css` 的**民主紅／青玉綠／麥穗黃**、字體與響應式規則收斂成 Tailwind `@theme` 的 design token；**不複製舊版大段手寫版面 CSS**。
+- vTaiwan token 的穩定來源是 `../vtaiwan-design-system/project/colors_and_type.css`。Tailwind utilities 使用 `vt-*` namespace（例如 `text-vt-democratic-red`、`font-vt-serif`）。
+- 現有 Civic Talk 模板仍可使用 `red`／`teal`／`amber`、`font-serif` 等相容 alias；新樣式優先使用 `vt-*` token，逐步搬遷，不必在同一個 issue 重畫所有頁面。
 - 模板一律用 token 或既有工具類別，**不硬寫顏色、字級、間距數值**。新增 token 時先在 `@theme` 定義再於模板使用。
 - Tailwind 導入後 `public/styles.css` 變成建置產物——**不可手改**，改 source 後重新建置。
 - View 的 SFC 樣式原則上用 `<style scoped>`，避免跨頁污染；真正全站共用的樣式才放進 CSS source。
