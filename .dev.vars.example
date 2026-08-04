@@ -1,1 +1,14 @@
 ADMIN_PASSWORD=your-admin-password
+
+# Better Auth 服務網址與簽章密鑰
+
+BETTER_AUTH_URL=
+BETTER_AUTH_SECRET=
+
+# Google OAuth 應用程式憑證
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+
+# GitHub OAuth 應用程式憑證
+GITHUB_CLIENT_ID=
+GITHUB_CLIENT_SECRET=
