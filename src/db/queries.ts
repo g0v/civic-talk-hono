@@ -16,6 +16,14 @@ export interface IssueListItem extends Issue {
   material_count: number
 }
 
+/**
+ * 素材的**公開**形狀——刻意不含投稿者欄位。
+ *
+ * 這個型別會出現在公開 API（GET /api/issues/:id、/api/issues/:id/materials）與
+ * SSR 注入的 window.__SSR_STATE__ 裡，也就是「任何人都看得到」。投稿者身分只給
+ * 管理端（見 MaterialWithAuthor），所以查詢一律列舉欄位、不用 SELECT *——
+ * 用 SELECT * 的話，#9 新增的 author_* 會就這樣漏進 HTML 原始碼。
+ */
 export interface Material {
   id: number
   issue_id: number
@@ -25,6 +33,12 @@ export interface Material {
   content: string
   verified_count: number
   created_at: string
+}
+
+/** 素材 + 投稿者（僅供管理端；author_* 對 #9 之前的舊資料是 null） */
+export interface MaterialWithAuthor extends Material {
+  author_id: string | null
+  author_name: string | null
 }
 
 export interface Briefing {
@@ -116,11 +130,30 @@ export async function deleteIssueCascade(db: D1Database, id: number): Promise<vo
   await db.prepare('DELETE FROM ct_issues WHERE id = ?').bind(id).run()
 }
 
+const MATERIAL_PUBLIC_COLUMNS =
+  'id, issue_id, source_name, source_url, stance, content, verified_count, created_at'
+
 export async function listMaterials(db: D1Database, issueId: number): Promise<Material[]> {
   const { results } = await db
-    .prepare('SELECT * FROM ct_materials WHERE issue_id = ? ORDER BY created_at DESC')
+    .prepare(
+      `SELECT ${MATERIAL_PUBLIC_COLUMNS} FROM ct_materials WHERE issue_id = ? ORDER BY created_at DESC`,
+    )
     .bind(issueId)
     .all<Material>()
+  return results ?? []
+}
+
+/** 管理端專用：多回投稿者。呼叫端必須先過 requireAdmin()。 */
+export async function listMaterialsWithAuthor(
+  db: D1Database,
+  issueId: number,
+): Promise<MaterialWithAuthor[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT ${MATERIAL_PUBLIC_COLUMNS}, author_id, author_name FROM ct_materials WHERE issue_id = ? ORDER BY created_at DESC`,
+    )
+    .bind(issueId)
+    .all<MaterialWithAuthor>()
   return results ?? []
 }
 
@@ -132,11 +165,14 @@ export async function createMaterial(
     source_url?: string
     stance?: Stance
     content: string
+    // #9 起投稿一律要登入，所以這兩欄是必填（舊資料才會是 null）
+    author_id: string
+    author_name: string
   },
 ): Promise<number> {
   const { meta } = await db
     .prepare(
-      'INSERT INTO ct_materials (issue_id, source_name, source_url, stance, content) VALUES (?, ?, ?, ?, ?)',
+      'INSERT INTO ct_materials (issue_id, source_name, source_url, stance, content, author_id, author_name) VALUES (?, ?, ?, ?, ?, ?, ?)',
     )
     .bind(
       issueId,
@@ -144,6 +180,8 @@ export async function createMaterial(
       input.source_url ?? '',
       input.stance ?? 'unknown',
       input.content,
+      input.author_id,
+      input.author_name,
     )
     .run()
   await db

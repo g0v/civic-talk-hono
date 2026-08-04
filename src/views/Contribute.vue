@@ -2,13 +2,21 @@
 import { computed, onMounted, ref } from 'vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppFooter from '../components/AppFooter.vue'
+import SignInButtons from '../components/SignInButtons.vue'
 import Toast from '../components/Toast.vue'
 import { useI18n } from '../l10n'
+import { loadAuthSession, signOut, type AuthSession } from '../client/auth-session'
 
 const props = defineProps<{
   issueId: number
   issueTitle?: string
 }>()
+
+/**
+ * 'loading' 是 SSR 與 hydration 首幀共用的狀態——伺服器端不猜登入狀態，兩邊先畫同一個
+ * 骨架，等 onMounted 打 /api/me 才分岔（與 Admin.vue 同一套作法），避免 hydration mismatch。
+ */
+type AuthState = 'loading' | 'anonymous' | 'signed-in'
 
 const { t } = useI18n()
 const title = ref(props.issueTitle ?? '')
@@ -20,10 +28,27 @@ const licenseOk = ref(false)
 const submitting = ref(false)
 const toast = ref<{ show: (msg: string) => void } | null>(null)
 
+const authState = ref<AuthState>('loading')
+const session = ref<AuthSession | null>(null)
+const authError = ref(false)
+/**
+ * 「填表填到一半 session 過期」專用的旗標，**刻意不重用 authState**——
+ * authState 切回 'anonymous' 會把表單整個換成登入卡片，使用者剛打完的素材就沒了。
+ * 這裡改成表單留在原地，只在上方多出一列重新登入的提示。
+ */
+const sessionExpired = ref(false)
+
 const charLabel = computed(() => `${content.value.length}${t('contrib_chars_suffix')}`)
 const backHref = computed(() => `/issues/${props.issueId}`)
+// 登入後導回這一頁，使用者可以接著把剛才想投的素材貼上
+const loginCallbackUrl = computed(() => `/contribute/${props.issueId}`)
 
-onMounted(async () => {
+onMounted(() => {
+  void loadTitle()
+  void refreshSession()
+})
+
+async function loadTitle() {
   if (title.value) return
   try {
     const res = await fetch(`/api/issues/${props.issueId}`)
@@ -33,7 +58,26 @@ onMounted(async () => {
   } catch {
     /* ignore */
   }
-})
+}
+
+async function refreshSession() {
+  authError.value = false
+  try {
+    const current = await loadAuthSession()
+    session.value = current
+    authState.value = current ? 'signed-in' : 'anonymous'
+  } catch {
+    // 讀 session 失敗是「壞掉」不是「未登入」——照樣顯示登入畫面，但要說明白
+    session.value = null
+    authState.value = 'anonymous'
+    authError.value = true
+  }
+}
+
+async function logout() {
+  await signOut()
+  window.location.reload()
+}
 
 async function submitMaterial() {
   const text = content.value.trim()
@@ -61,6 +105,13 @@ async function submitMaterial() {
         content: text,
       }),
     })
+    // session 可能在填表期間過期——真正的守門在伺服器端，前端要能接住 401。
+    // 注意：不要把 authState 切回 'anonymous'，那會連同表單一起消失、吃掉使用者打的內容。
+    if (res.status === 401) {
+      sessionExpired.value = true
+      toast.value?.show(t('contrib_toast_login_required'))
+      return
+    }
     if (!res.ok) {
       toast.value?.show(t('contrib_toast_fail'))
       return
@@ -93,7 +144,37 @@ async function submitMaterial() {
           {{ t('contrib_alert') }}
         </div>
 
-        <div class="card">
+        <!-- 讀取 session 中：SSR 與 hydration 首幀共用這個骨架 -->
+        <div v-if="authState === 'loading'" class="card">
+          <p class="m-0 text-muted">{{ t('loading') }}</p>
+        </div>
+
+        <!-- 未登入：#9 起素材必須登入才能提交，表單一律不出現（守門在伺服器端） -->
+        <div v-else-if="authState === 'anonymous'" class="card">
+          <h2 class="mt-0 mb-2 font-serif text-xl">{{ t('contrib_login_title') }}</h2>
+          <p class="mb-4 text-muted">{{ t('contrib_login_desc') }}</p>
+          <SignInButtons :callback-url="loginCallbackUrl" />
+          <p v-if="authError" class="mt-3 mb-0 text-sm text-red">{{ t('login_err') }}</p>
+          <p class="mt-4 mb-0 text-sm text-muted">{{ t('contrib_login_hint') }}</p>
+          <div class="mt-4">
+            <a :href="backHref" class="btn btn-secondary">{{ t('contrib_back') }}</a>
+          </div>
+        </div>
+
+        <div v-else class="card">
+          <!-- 填表期間 session 過期：表單留著（內容不能丟），只在上面補一列重新登入 -->
+          <div v-if="sessionExpired" class="alert alert-warn mb-5">
+            <p class="mt-0 mb-3">{{ t('contrib_login_expired_hint') }}</p>
+            <SignInButtons :callback-url="loginCallbackUrl" />
+          </div>
+          <div class="mb-5 flex flex-wrap items-center justify-between gap-2 border-b border-border pb-3">
+            <span class="text-sm text-muted">
+              {{ t('contrib_signed_in_as', { name: session?.user.name || session?.user.email || '' }) }}
+            </span>
+            <button type="button" class="btn btn-ghost btn-sm" @click="logout">
+              {{ t('logout') }}
+            </button>
+          </div>
           <div class="form-group">
             <label>
               <span>{{ t('contrib_label_source') }}</span>
