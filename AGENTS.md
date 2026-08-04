@@ -55,7 +55,7 @@ Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑�
 - `src/api/routes.ts` + `src/db/queries.ts` — 舊 Pages Functions API 的型別化移植，SQL 只碰 `ct_*`。
 - `migrations/0001_init.sql` — `ct_issues`／`ct_materials`／`ct_briefings`／`ct_opinions`（含 FK、索引、約束、示範資料）。
 - `migrations/0002_material_author.sql` — `ct_materials` 加上 `author_id`／`author_name`（#9 的投稿者記錄）。本機與遠端皆已套用。
-- `migrations/0003_issue_opinion_author.sql` — `ct_issues` 與 `ct_opinions` 也加上 `author_id`／`author_name`（建立者／投稿者，同樣只給管理端）。⚠️ **本機已套用，遠端狀態見「移植進度」的 #9 表**。
+- `migrations/0003_issue_opinion_author.sql` — `ct_issues` 與 `ct_opinions` 也加上 `author_id`／`author_name`（建立者／投稿者，同樣只給管理端）。本機與遠端皆已套用。
 - `src/ssr/render.ts` — SSR + 注入 `window.__PAGE__`／`__SSR_STATE__` + `/js/civic.js`（dev 走 `/src/client/civic-entry.ts`）。
 - `src/views/` — `Home`／`Issue`／`Contribute`／`About`／`Admin`；共用 `AppHeader`／`AppFooter`／`StatusBadge`／`IssueCard`／`Toast`。
 - `src/composables/useAuth.ts` — 全站共用的登入狀態（`authState`／`session`／`ensureAuthSession`／`signOutAndReload`）。模組層級的 ref，同一頁的 `AppHeader` 與表單共用同一次 `/api/me`；**只在瀏覽器端寫入**（`ensureAuthSession()` 開頭擋掉 SSR），所以 SSR 永遠是 `'loading'`。
@@ -431,10 +431,10 @@ npx wrangler d1 migrations apply vtaiwan-civic-talks --remote   # 🚫 需先取
 | 9-3 | `author-privacy`  | ✅ 完成          | `listMaterials()` 改列舉公開欄位（不再 `SELECT *`）；`listMaterialsWithAuthor()` 只給管理員；管理端素材卡顯示投稿者 |
 | 9-4 | `contribute-ui`   | ✅ 完成          | `Contribute.vue` 三態登入牆；抽出共用 `SignInButtons.vue`；i18n 雙檔同步（新增 `login_*`／`logout`／`contrib_login_*`／`adm_mat_author*`，移除被取代的 `adm_login_google`／`adm_login_github`／`adm_login_err`／`adm_logout`） |
 | 9-5 | `issues-opinions-gate` | ✅ 完成 | 使用者裁示的延伸：`POST /api/issues` 與 `POST /api/issues/:id/opinions` 也走 `requireUser()`；`Home.vue` 建立議題表單與 `Issue.vue` 意見投稿框同樣三態登入牆；過期提示改用共用 key |
-| 9-6 | `author-everywhere` | ✅ 完成（遠端 migration 待辦） | `migrations/0003_issue_opinion_author.sql`：`ct_issues`／`ct_opinions` 也記錄作者；`listIssuesWithAuthor()`／`listOpinionsWithAuthor()` 只給管理員；`getIssue()` 一併改成列舉欄位（原本 `SELECT *` 會漏進 SSR state）；Admin 議題表格加「建立者」欄、意見卡顯示投稿者 |
+| 9-6 | `author-everywhere` | ✅ 完成 | `migrations/0003_issue_opinion_author.sql`：`ct_issues`／`ct_opinions` 也記錄作者；`listIssuesWithAuthor()`／`listOpinionsWithAuthor()` 只給管理員；`getIssue()` 一併改成列舉欄位（原本 `SELECT *` 會漏進 SSR state）；Admin 議題表格加「建立者」欄、意見卡顯示投稿者 |
 | 9-7 | `header-auth-ui`  | ✅ 完成          | `src/composables/useAuth.ts` 全站共用登入狀態（一頁只打一次 `/api/me`）；`AppHeader` 顯示「已登入：{name}」／登出／登入面板；`Home`／`Issue`／`Contribute`／`Admin` 四頁改用同一個 composable，Admin 的 `forbidden` 從共用 session 推導 |
-| 9-8 | `verify`          | 🚧 待遠端實測    | 本機已驗：三支寫入端點未登入皆 401；`/api/issues`、`/api/issues/:id`、素材列表、意見列表與四個 SSR 頁面**都查不到 `author_id`／`author_name`**；三支列表端點帶 `Vary: Cookie`；SSR 標頭不出現登入／登出（`authState==='loading'` 不畫）；`typecheck`＋`build` 綠燈；i18n 雙檔 268/268。**尚未驗**：登入後建議題／投素材／投意見的 `author_*` 真的落庫、管理端三處顯示作者（需 `dev:remote`）
+| 9-8 | `verify`          | 🚧 待遠端實測    | 遠端 migration `0002`／`0003` 皆已套用。本機已驗：三支寫入端點未登入皆 401；`/api/issues`、`/api/issues/:id`、素材列表、意見列表與四個 SSR 頁面**都查不到 `author_id`／`author_name`**；三支列表端點帶 `Vary: Cookie`；SSR 標頭不出現登入／登出（`authState==='loading'` 不畫）；`typecheck`＋`build` 綠燈；i18n 雙檔 268/268。**尚未驗**：登入後建議題／投素材／投意見的 `author_*` 真的落庫、管理端三處顯示作者（需 `dev:remote`）
 
-> **migration 與程式碼是綁在一起的**：`createMaterial()`／`createIssue()`／`createOpinion()` 都會寫 `author_id`，所以遠端 migration 必須先於部署，否則每次寫入都會 runtime error（`no such column: author_id`）。`0002` 已於 2026-08-04 套用到遠端；**`0003` 的遠端狀態見上表 9-6**——沒套用前不要部署，也不要用 `dev:remote` 測寫入。
+> **migration 與程式碼是綁在一起的**：`createMaterial()`／`createIssue()`／`createOpinion()` 都會寫 `author_id`，所以遠端 migration 必須先於部署，否則每次寫入都會 runtime error（`no such column: author_id`）。`0002` 與 `0003` 都已於 2026-08-04 套用到遠端（經使用者授權，套用後查過 `sqlite_master` 沒有新增任何表）。日後若有人重建遠端資料庫，記得這條順序仍然成立。
 
 > 後續可選：切換到 `vue-router` 全站 hydration、自動化測試／CI——動工前先與使用者確認。
