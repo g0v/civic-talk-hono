@@ -2,12 +2,17 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppFooter from '../components/AppFooter.vue'
+import SignInButtons from '../components/SignInButtons.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import Toast from '../components/Toast.vue'
 import { formatDate, useI18n } from '../l10n'
+import { loadAuthSession } from '../client/auth-session'
 import type { Briefing, Issue, Material, Opinion } from '../db/queries'
 
 type TabName = 'briefing' | 'materials' | 'volunteer' | 'opinions'
+
+/** 與 Contribute.vue／Admin.vue 同一套三態；SSR 期間永遠是 'loading' */
+type AuthState = 'loading' | 'anonymous' | 'signed-in'
 
 const props = defineProps<{
   issueId: number
@@ -44,6 +49,12 @@ const disputes = ref('')
 const positions = ref('')
 const narrative = ref('')
 const opinionInput = ref('')
+
+const authState = ref<AuthState>('loading')
+// 送出時才發現 session 過期：意見框留著（別吃掉使用者打的字），只在上方補一列重新登入
+const sessionExpired = ref(false)
+// 登入後導回這一頁的意見分頁
+const loginCallbackUrl = computed(() => `/issues/${props.issueId}`)
 
 const tabs = computed(() => [
   { id: 'briefing' as const, label: t('tab_briefing') },
@@ -86,8 +97,18 @@ async function loadIssue() {
 
 onMounted(() => {
   if (!props.initialDetail) void loadIssue()
+  void refreshSession()
   void nextTick(() => renderPolis())
 })
+
+async function refreshSession() {
+  try {
+    authState.value = (await loadAuthSession()) ? 'signed-in' : 'anonymous'
+  } catch {
+    // 讀 session 失敗一律當未登入處理：真正的守門在伺服器端
+    authState.value = 'anonymous'
+  }
+}
 
 watch(
   () => [issue.value?.polis_id, issue.value?.id, activeTab.value, locale.value] as const,
@@ -280,6 +301,12 @@ async function submitOpinion() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ summary }),
   })
+  // session 可能在打字期間過期——守門在伺服器端，前端接住 401 但保留已寫的意見
+  if (res.status === 401) {
+    sessionExpired.value = true
+    toast.value?.show(t('login_expired_toast'))
+    return
+  }
   if (res.ok) {
     toast.value?.show(t('op_toast_submit_ok'))
     opinionInput.value = ''
@@ -505,16 +532,34 @@ async function submitOpinion() {
             </button>
             <div class="card mb-6">
               <h3 class="mt-0 mb-3 text-base">{{ t('op_submit_title') }}</h3>
-              <div class="form-group">
-                <label>
-                  <span>{{ t('op_label_summary') }}</span>
-                  <span class="label-hint">{{ t('op_hint_summary') }}</span>
-                </label>
-                <textarea v-model="opinionInput" rows="5" :placeholder="t('op_ph_summary')" />
-              </div>
-              <button type="button" class="btn btn-primary" @click="submitOpinion">
-                {{ t('op_submit_btn') }}
-              </button>
+
+              <!-- 讀取 session 中：SSR 與 hydration 首幀共用這個骨架 -->
+              <p v-if="authState === 'loading'" class="m-0 text-muted">{{ t('loading') }}</p>
+
+              <!-- 未登入：意見投稿需登入，輸入框不出現（守門在伺服器端） -->
+              <template v-else-if="authState === 'anonymous'">
+                <p class="mb-4 text-muted">{{ t('op_login_desc') }}</p>
+                <SignInButtons :callback-url="loginCallbackUrl" />
+                <p class="mt-4 mb-0 text-sm text-muted">{{ t('login_shared_account_hint') }}</p>
+              </template>
+
+              <template v-else>
+                <!-- 打字期間 session 過期：輸入框留著，只補一列重新登入 -->
+                <div v-if="sessionExpired" class="alert alert-warn mb-5">
+                  <p class="mt-0 mb-3">{{ t('login_expired_hint') }}</p>
+                  <SignInButtons :callback-url="loginCallbackUrl" />
+                </div>
+                <div class="form-group">
+                  <label>
+                    <span>{{ t('op_label_summary') }}</span>
+                    <span class="label-hint">{{ t('op_hint_summary') }}</span>
+                  </label>
+                  <textarea v-model="opinionInput" rows="5" :placeholder="t('op_ph_summary')" />
+                </div>
+                <button type="button" class="btn btn-primary" @click="submitOpinion">
+                  {{ t('op_submit_btn') }}
+                </button>
+              </template>
             </div>
             <div v-if="!opinions.length" class="empty">
               <div class="empty-icon">💬</div>

@@ -3,13 +3,18 @@ import { onMounted, ref } from 'vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppFooter from '../components/AppFooter.vue'
 import IssueCard from '../components/IssueCard.vue'
+import SignInButtons from '../components/SignInButtons.vue'
 import Toast from '../components/Toast.vue'
 import { useI18n } from '../l10n'
+import { loadAuthSession } from '../client/auth-session'
 import type { IssueListItem } from '../db/queries'
 
 const props = defineProps<{
   initialIssues?: IssueListItem[]
 }>()
+
+/** 與 Contribute.vue／Admin.vue 同一套三態；SSR 期間永遠是 'loading' */
+type AuthState = 'loading' | 'anonymous' | 'signed-in'
 
 const { t } = useI18n()
 const issues = ref<IssueListItem[]>(props.initialIssues ?? [])
@@ -19,6 +24,10 @@ const title = ref('')
 const description = ref('')
 const submitting = ref(false)
 const toast = ref<{ show: (msg: string) => void } | null>(null)
+
+const authState = ref<AuthState>('loading')
+// 送出時才發現 session 過期：表單留著（別吃掉使用者打的字），只在上方補一列重新登入
+const sessionExpired = ref(false)
 
 async function loadIssues() {
   loading.value = true
@@ -30,8 +39,18 @@ async function loadIssues() {
   }
 }
 
+async function refreshSession() {
+  try {
+    authState.value = (await loadAuthSession()) ? 'signed-in' : 'anonymous'
+  } catch {
+    // 讀 session 失敗一律當未登入處理：真正的守門在伺服器端
+    authState.value = 'anonymous'
+  }
+}
+
 onMounted(() => {
   if (!props.initialIssues) void loadIssues()
+  void refreshSession()
 })
 
 async function createIssue() {
@@ -46,6 +65,12 @@ async function createIssue() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ title: title.value.trim(), description: description.value }),
     })
+    // session 可能在填表期間過期——守門在伺服器端，前端接住 401 但保留已填內容
+    if (res.status === 401) {
+      sessionExpired.value = true
+      toast.value?.show(t('login_expired_toast'))
+      return
+    }
     if (!res.ok) {
       toast.value?.show(t('idx_toast_create_fail'))
       return
@@ -85,32 +110,53 @@ async function createIssue() {
       <div class="container">
         <div v-if="showForm" class="card mb-6">
           <h2 class="mb-4 mt-0 font-bold">{{ t('idx_form_title') }}</h2>
-          <div class="form-group">
-            <label>
-              <span>{{ t('idx_label_title') }}</span>
-              <span class="label-hint">{{ t('idx_hint_title') }}</span>
-            </label>
-            <input v-model="title" type="text" :placeholder="t('idx_ph_title')" />
-          </div>
-          <div class="form-group">
-            <label>
-              <span>{{ t('idx_label_desc') }}</span>
-              <span class="label-hint">{{ t('idx_hint_desc') }}</span>
-            </label>
-            <textarea
-              v-model="description"
-              rows="3"
-              :placeholder="t('idx_ph_desc')"
-            />
-          </div>
-          <div class="flex gap-2">
-            <button type="button" class="btn btn-primary" :disabled="submitting" @click="createIssue">
-              {{ t('idx_submit') }}
-            </button>
+
+          <!-- 還在讀 session（onMounted 打 /api/me）：先不決定要出表單還是登入卡 -->
+          <p v-if="authState === 'loading'" class="m-0 text-muted">{{ t('loading') }}</p>
+
+          <!-- 未登入：建立議題需登入，表單不出現（守門在伺服器端） -->
+          <template v-else-if="authState === 'anonymous'">
+            <p class="mb-4 text-muted">{{ t('idx_login_desc') }}</p>
+            <SignInButtons callback-url="/" />
+            <p class="mt-4 mb-4 text-sm text-muted">{{ t('login_shared_account_hint') }}</p>
             <button type="button" class="btn btn-secondary" @click="showForm = false">
               {{ t('cancel') }}
             </button>
-          </div>
+          </template>
+
+          <template v-else>
+            <!-- 填表期間 session 過期：表單留著，只補一列重新登入 -->
+            <div v-if="sessionExpired" class="alert alert-warn mb-5">
+              <p class="mt-0 mb-3">{{ t('login_expired_hint') }}</p>
+              <SignInButtons callback-url="/" />
+            </div>
+            <div class="form-group">
+              <label>
+                <span>{{ t('idx_label_title') }}</span>
+                <span class="label-hint">{{ t('idx_hint_title') }}</span>
+              </label>
+              <input v-model="title" type="text" :placeholder="t('idx_ph_title')" />
+            </div>
+            <div class="form-group">
+              <label>
+                <span>{{ t('idx_label_desc') }}</span>
+                <span class="label-hint">{{ t('idx_hint_desc') }}</span>
+              </label>
+              <textarea
+                v-model="description"
+                rows="3"
+                :placeholder="t('idx_ph_desc')"
+              />
+            </div>
+            <div class="flex gap-2">
+              <button type="button" class="btn btn-primary" :disabled="submitting" @click="createIssue">
+                {{ t('idx_submit') }}
+              </button>
+              <button type="button" class="btn btn-secondary" @click="showForm = false">
+                {{ t('cancel') }}
+              </button>
+            </div>
+          </template>
         </div>
 
         <div class="mb-4">

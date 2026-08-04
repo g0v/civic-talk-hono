@@ -109,7 +109,7 @@ async function submitMaterial() {
     // 注意：不要把 authState 切回 'anonymous'，那會連同表單一起消失、吃掉使用者打的內容。
     if (res.status === 401) {
       sessionExpired.value = true
-      toast.value?.show(t('contrib_toast_login_required'))
+      toast.value?.show(t('login_expired_toast'))
       return
     }
     if (!res.ok) {
@@ -164,7 +164,7 @@ async function submitMaterial() {
         <div v-else class="card">
           <!-- 填表期間 session 過期：表單留著（內容不能丟），只在上面補一列重新登入 -->
           <div v-if="sessionExpired" class="alert alert-warn mb-5">
-            <p class="mt-0 mb-3">{{ t('contrib_login_expired_hint') }}</p>
+            <p class="mt-0 mb-3">{{ t('login_expired_hint') }}</p>
             <SignInButtons :callback-url="loginCallbackUrl" />
           </div>
           <div class="mb-5 flex flex-wrap items-center justify-between gap-2 border-b border-border pb-3">

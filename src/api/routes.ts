@@ -95,7 +95,11 @@ export function registerApiRoutes(app: App): void {
     return json(issues)
   })
 
+  // 建立議題同樣需要登入（#9 的延伸，使用者裁示）：議題是所有素材與意見的容器，
+  // 開放匿名建立等於開一扇沒有守門的門。
   app.post('/api/issues', async (c) => {
+    const auth = await requireUser(c.req.raw, c.env)
+    if ('denied' in auth) return auth.denied
     let body: { title?: string; description?: string; polis_id?: string | null }
     try {
       body = await c.req.json()
@@ -281,7 +285,12 @@ export function registerApiRoutes(app: App): void {
     return json(opinions)
   })
 
+  // 意見投稿同樣需要登入（#9 的延伸，使用者裁示）。注意意見在前台是公開顯示的，
+  // 目前**不記錄投稿者**（ct_opinions 沒有 author 欄位）——登入只當作門檻，
+  // 要做到跟素材一樣可追溯得另外開 migration，先問使用者。
   app.post('/api/issues/:id/opinions', async (c) => {
+    const auth = await requireUser(c.req.raw, c.env)
+    if ('denied' in auth) return auth.denied
     const id = parseId(c.req.param('id'))
     if (!id) return error('Invalid id')
     const issue = await db.getIssue(c.env.DB, id)
