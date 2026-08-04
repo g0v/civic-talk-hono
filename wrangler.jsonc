@@ -21,9 +21,13 @@
       "migrations_dir": "./migrations"
     },
     {
-      // 共用認證資料庫，schema 由 ../vTaiwan-hono 維護。
-      // 刻意不設 migrations_dir：本 repo 不擁有、也不套用任何 auth migration（不變量 11）。
-      // auth 表只存在遠端，所以要實測登入請用 npm run dev:remote。
+      // 共用認證資料庫，schema 由 ../vTaiwan-hono 維護；本 repo 不擁有也不套用
+      // 任何 auth migration（不變量 11）。auth 表只存在遠端，要實測登入請用 dev:remote。
+      //
+      // ⚠️ 這裡不寫 migrations_dir 並不能阻擋 migration——wrangler 會自動填入預設的
+      // ./migrations（見 dist/civic_talk/wrangler.json）。也就是說
+      // `wrangler d1 migrations apply vtaiwan-auth --remote` 會把本專案的 ct_* 建表
+      // SQL 套進 vTaiwan 的正式認證庫。🚫 絕對不要跑那個指令，詳見 deploy_notes.md。
       "remote": true,
       "binding": "DB_AUTH",
       "database_name": "vtaiwan-auth",

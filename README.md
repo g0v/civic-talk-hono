@@ -53,6 +53,6 @@ npm run dev
 
 ## 部署
 
-首次 `npm run deploy` 前請確認 Cloudflare 帳號內沒有會被覆蓋的同名 `civic-talk` Pages／Worker 專案。
+📋 **首次部署前請先讀 [`deploy_notes.md`](./deploy_notes.md)**——裡面有三項會讓部署直接失敗或造成災難的前置條件（Worker 名稱撞名、OAuth callback 網址、正式環境機密），以及一個絕對不能跑的 D1 指令。
 
 更完整的 agent／架構指引見 [`AGENTS.md`](./AGENTS.md)。

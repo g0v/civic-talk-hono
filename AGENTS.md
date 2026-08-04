@@ -34,7 +34,8 @@
 5. **API 相容契約不得片面變更。** 既有 endpoint 的路徑、方法與 JSON 形狀（見「API 契約」）只能擴充、不能改名或改語意。要破壞相容性，先問使用者。
    - **例外（已由 [#5](https://github.com/g0v/civic-talk-hono/issues/5) 授權）：管理端授權方式改為角色制。** 管理權限改看登入使用者的角色是不是 `admin`／`super-admin`（Better Auth session），**不再依賴 `ADMIN_PASSWORD` 環境變數與 `X-Admin-Token` 標頭**。這一項授權**只涵蓋授權機制**：業務 endpoint 的路徑、方法與成功回應形狀照舊，未經授權時回 `401`（未登入）／`403`（已登入但無權限）。
 6. **機密不進 git。** `.dev.vars` 等憑證只留本地；不寫進任何 tracked 檔案、commit 訊息或 log 輸出。目前涵蓋 `ADMIN_PASSWORD`（將隨 #5 淘汰）、`BETTER_AUTH_SECRET`、`GOOGLE_CLIENT_SECRET`、`GITHUB_CLIENT_SECRET` 等。新增設定值時同步更新 `.dev.vars.example`，但只放假值。
-7. **遠端 D1 需授權。** migration 預設只套用到本機（`--local`）。套用 `--remote`、建立或刪除資料庫、跑任何會寫入正式資料的指令前，**必須先問使用者**。本專案（導入 #5 後）會有兩個 D1 綁定：業務庫 `DB` → `vtaiwan-civic-talks`，共用認證庫 `DB_AUTH` → `vtaiwan-auth`。**本 repo 只對 `DB` 做 migration**；`DB_AUTH` 見不變量 11。
+7. **遠端 D1 需授權。** migration 預設只套用到本機（`--local`）。套用 `--remote`、建立或刪除資料庫、跑任何會寫入正式資料的指令前，**必須先問使用者**。本專案有兩個 D1 綁定：業務庫 `DB` → `vtaiwan-civic-talks`，共用認證庫 `DB_AUTH` → `vtaiwan-auth`。**本 repo 只對 `DB` 做 migration**；`DB_AUTH` 見不變量 11。
+   - ⚠️ **`wrangler d1 migrations apply vtaiwan-auth` 是活陷阱**：`DB_AUTH` 沒寫 `migrations_dir`，但 wrangler 會自動填入預設的 `./migrations`，等於把本專案的 `ct_*` 建表 SQL 套進 vTaiwan 的正式認證庫。🚫 不要跑，詳見 [`deploy_notes.md`](./deploy_notes.md)。
 8. **生成物不手改。** `dist/`、`public/js/*.js`（client bundle）、`worker-configuration.d.ts` 皆為建置產物——改源頭重新生成。Tailwind 導入後 `public/styles.css` 也會變成生成物（見「樣式」）。
 9. **完成 = 全部綠燈。** `npm run typecheck` 與 `npm run build` 都過才算改完。紅燈狀態不 commit。
 10. **不擅自 commit／push／deploy。** 界線與長程任務例外見「Git / Commit 慣例」。
