@@ -4,7 +4,7 @@
 
 > ✅ Vue SSR 複刻計畫的六項 todo 已完成。下列「現況」反映移植後的真實結構；「目標架構」中尚未做的項目（例如切換到 `vue-router` 全站 hydration、[#5](https://github.com/g0v/civic-talk-hono/issues/5) 的 Better Auth 登入／權限）仍須先與使用者確認再動工。
 >
-> 🚧 **進行中的工作線：[#5「使用 Better-Auth 來實作登入和 Admin 功能」](https://github.com/g0v/civic-talk-hono/issues/5)**（分支 `feat/better-auth`）。**目前只有設定值與文件就緒，程式碼一行都還沒寫**——請把本檔「身分驗證與權限」一節當成規格，不要把它讀成現況。
+> 🚧 **進行中的工作線：[#5「使用 Better-Auth 來實作登入和 Admin 功能」](https://github.com/g0v/civic-talk-hono/issues/5)**（分支 `feat/better-auth`）。骨架（5-1）已落地，**但管理端仍是舊的密碼制、登入 UI 也還沒有**——「身分驗證與權限」一節是規格，逐項完成度以「移植進度」的 #5 表為準。
 
 ## 專案目的
 
@@ -54,15 +54,20 @@ Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑�
 - `src/views/` — `Home`／`Issue`／`Contribute`／`About`／`Admin`；共用 `AppHeader`／`AppFooter`／`StatusBadge`／`IssueCard`／`Toast`。
 - `src/l10n/` — 自製 i18n composable（`zh-TW`／`en` 雙檔 key 同步）；SSR 固定 `zh-TW`，`localStorage.civic_lang` 只在 hydration 後讀寫。
 - `src/styles/app.css` — Tailwind v4 `@theme static`（vTaiwan 色彩、字型、字級、間距、圓角、陰影與動效 token）；`npm run css` 產出 `public/styles.css`（**生成物，勿手改**）。
-- `wrangler.jsonc` — `ASSETS` + D1 `DB` → `vtaiwan-civic-talks`。**不寫 `account_id`**（與 `../vTaiwan-hono` 一致，由 wrangler 登入的帳號決定）——不要為了「比較保險」把它加回來。
+- `wrangler.jsonc` — `ASSETS` + D1 `DB` → `vtaiwan-civic-talks` + D1 `DB_AUTH` → `vtaiwan-auth`（兩者都標 `remote: true`，只影響本機開發模式）；`compatibility_flags: ["nodejs_compat"]`。**不寫 `account_id`**（與 `../vTaiwan-hono` 一致，由 wrangler 登入的帳號決定）——不要為了「比較保險」把它加回來。
+- `src/auth/` — `createAuth.ts`（Better Auth 實例：Google／GitHub provider、同 email accountLinking、**不開 admin plugin**、以 `additionalFields` 唯讀取 `role`）與 `authorization.ts`（`AppRole`／`resolveRole`／`isAdminRole`／`getAuthContext`／`tryGetAuthContext`）。
+- `src/api/auth.ts` — `/api/auth/*` 轉交 `auth.handler()`、`/api/me` 回登入者；`/api/auth/admin/*` 一律 404。
+- `src/api/types.ts` — `AppBindings`／`App` 型別（原本在 `routes.ts`，抽出來避免 auth 與 routes 互相 import）。
 
-**登入／權限的真實現況（尚未動工的 #5 之前）：**
+**登入／權限的真實現況（#5 做到哪）：**
 
-- 管理端仍是 `src/api/routes.ts` 的 `checkAdmin()`——比對 `X-Admin-Token` 標頭與 `ADMIN_PASSWORD`（**未設定時 fallback 成字面值 `'admin'`**），`POST /api/admin/login` 只是拿密碼換一個「就是密碼本身」的 token，`src/views/Admin.vue` 把它存在 client 端。**沒有使用者概念、沒有角色、沒有 session。**
-- `.dev.vars.example` 已經備妥 Better Auth 需要的變數（`BETTER_AUTH_URL`、`BETTER_AUTH_SECRET`、`GOOGLE_CLIENT_ID/SECRET`、`GITHUB_CLIENT_ID/SECRET`），但**程式碼還沒有任何一處讀它們**。
-- `src/l10n/*.ts` 的 `abt_tech_auth` 仍寫著「Admin token（X-Admin-Token）」——改授權機制時這兩個語言檔要一起改。
+- ✅ **Better Auth 骨架已可運作**：`npm run dev` 起得來，`/api/auth/get-session` 回 200、`/api/me` 未登入回 401、`/api/auth/admin/list-users` 回 404。
+- 🚧 **管理端仍是舊的密碼制**：`src/api/routes.ts` 的 `checkAdmin()` 比對 `X-Admin-Token` 標頭與 `ADMIN_PASSWORD`（**未設定時 fallback 成字面值 `'admin'`**），`POST /api/admin/login` 只是拿密碼換一個「就是密碼本身」的 token，`src/views/Admin.vue` 把它存在 client 端。**角色制還沒接上去，這兩套目前並存。**
+- 🚧 **還沒有登入 UI**，也還沒有任何頁面顯示登入狀態。
+- 🚧 `src/l10n/*.ts` 的 `abt_tech_auth` 仍寫著「Admin token（X-Admin-Token）」——改授權機制時這兩個語言檔要一起改。
+- ⚠️ **本機 `npm run dev` 測不了登入**：auth 表只存在遠端，本機模擬庫是空的，打登入端點會得到 `no such table: verification`。要實測登入必須 `npm run dev:remote`。
 
-**尚不存在**：`better-auth` 套件、`DB_AUTH` 綁定、任何 auth／session／角色相關程式碼、`vue-router`、`vue-i18n` 套件、自動化測試／CI。
+**尚不存在**：`vue-router`、`vue-i18n` 套件、自動化測試／CI。
 
 **待處理的身分問題**：
 
@@ -127,7 +132,7 @@ Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑�
 | `admin` plugin        | 🚫 **不開**（見上一節）                                                                    |
 | `account_id`          | **兩邊都不寫死**——本專案已移除 `wrangler.jsonc` 的 `account_id`，與 `../vTaiwan-hono` 一致，由 wrangler 登入的帳號決定 |
 | Cloudflare 帳號       | 兩專案是**同一個帳號**（所以綁得到 `vtaiwan-auth`），但**不靠設定檔寫死來保證**——`wrangler whoami` 選錯帳號就會綁不到，遇到錯誤先查這個 |
-| `nodejs_compat`       | **非必要就先不加**。實測 better-auth 在 Workers 上跑不起來、且確認是缺 Node API 所致時才補；補之前先跟使用者說一聲 |
+| `nodejs_compat`       | ✅ **已加（實測必要）**——better-auth 直接 import `node:crypto` 與 `node:async_hooks`，沒有這個 flag 連 dev server 都起不來。改 `wrangler.jsonc` 後記得 `npm run cf-typegen` |
 | `BETTER_AUTH_SECRET`  | **與 vTaiwan-hono 共用同一個值**（仍只放 `.dev.vars`／Cloudflare secret，不進 git——不變量 6） |
 
 **仍需先確認的前置條件（🚫 不要臆測）：**
@@ -229,7 +234,8 @@ Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑�
 
 ```bash
 npm install                 # 安裝依賴
-npm run dev                 # vite dev：本機跑 Worker（含 HMR）
+npm run dev                 # vite dev：本機跑 Worker（含 HMR），D1 用本機模擬
+npm run dev:remote          # 同上但 D1 連遠端；實測登入只能用這個（auth 表只存在遠端）
 npm run build               # server build + client bundle build
 npm run preview             # 預覽建置結果
 npm run typecheck           # tsc --noEmit
@@ -383,11 +389,11 @@ npx wrangler d1 migrations apply vtaiwan-civic-talks --remote   # 🚫 需先取
 | #   | 項目               | 狀態      | 內容                                                          |
 | --- | ------------------ | --------- | ------------------------------------------------------------- |
 | 5-0 | `env-vars`         | ✅ 完成   | `.dev.vars.example` 已備妥 Better Auth／Google／GitHub 變數（commit `cfe56b4`） |
-| 5-1 | `better-auth-init` | 📋 未開始 | 安裝 `better-auth`、`createAuth()`、`DB_AUTH` 綁定、`/api/auth/*` |
-| 5-2 | `shared-auth-db`   | 📋 未開始 | 綁定 `vtaiwan-auth`、沿用 vTaiwan-hono 的 user table（**不建表**） |
-| 5-3 | `google-login`     | 📋 未開始 | Google social provider（同一組 client id／secret）            |
-| 5-4 | `github-login`     | 📋 未開始 | GitHub social provider（同一組 client id／secret）            |
-| 5-5 | `account-linking`  | 📋 未開始 | 同 email 帳號整合（`trustedProviders: ['google', 'github']`） |
+| 5-1 | `better-auth-init` | ✅ 完成   | `better-auth` ^1.6.25、`src/auth/`、`/api/auth/*`＋`/api/me`、`nodejs_compat`、`dev:remote`。dev server 起得來，路由煙霧測試過 |
+| 5-2 | `shared-auth-db`   | ✅ 完成   | `DB_AUTH` → `vtaiwan-auth`（`remote: true`，無 `migrations_dir`）；**沿用既有 user table，本 repo 不建表** |
+| 5-3 | `google-login`     | 🚧 code 進、待實測 | provider 已設定；端到端登入要 `dev:remote` 才測得到     |
+| 5-4 | `github-login`     | 🚧 code 進、待實測 | 同上                                                    |
+| 5-5 | `account-linking`  | 🚧 code 進、待實測 | `trustedProviders: ['google', 'github']` 已設；「同 email 是同一個 `user.id`」尚未實證 |
 | 5-6 | `role-based-admin` | 📋 未開始 | Admin 改看 `admin`／`super-admin` 角色；移除 `ADMIN_PASSWORD`／`X-Admin-Token`／`POST /api/admin/login`；CORS 一併調整 |
 | 5-7 | `verify`           | 📋 未開始 | 依「驗證流程」的「登入／權限」列逐項實測                       |
 

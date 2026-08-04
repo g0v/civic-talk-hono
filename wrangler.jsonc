@@ -3,6 +3,9 @@
   "name": "civic-talk",
   "main": "src/index.ts",
   "compatibility_date": "2026-04-17",
+  // better-auth 直接 import node:crypto 與 node:async_hooks（AsyncLocalStorage），
+  // 沒有這個 flag 連 dev server 都起不來——實測必要，非「以防萬一」。
+  "compatibility_flags": ["nodejs_compat"],
   // 刻意不寫死 account_id：與 ../vTaiwan-hono 一致，交給 wrangler 登入的帳號決定
   "assets": { "directory": "./public/", "binding": "ASSETS" },
   "observability": {
@@ -10,10 +13,21 @@
   },
   "d1_databases": [
     {
+      // remote 只影響本機開發：npm run dev 用本機模擬，npm run dev:remote 才連遠端
+      "remote": true,
       "binding": "DB",
       "database_name": "vtaiwan-civic-talks",
       "database_id": "1b5f4077-f5a7-4b0d-9877-952d5726c7b8",
       "migrations_dir": "./migrations"
+    },
+    {
+      // 共用認證資料庫，schema 由 ../vTaiwan-hono 維護。
+      // 刻意不設 migrations_dir：本 repo 不擁有、也不套用任何 auth migration（不變量 11）。
+      // auth 表只存在遠端，所以要實測登入請用 npm run dev:remote。
+      "remote": true,
+      "binding": "DB_AUTH",
+      "database_name": "vtaiwan-auth",
+      "database_id": "e26edd14-d163-427d-8630-9304f815e9fa"
     }
   ]
 }

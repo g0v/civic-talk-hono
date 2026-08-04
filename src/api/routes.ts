@@ -1,4 +1,3 @@
-import type { Hono } from 'hono'
 import type {
   Briefing,
   Issue,
@@ -9,16 +8,7 @@ import type {
   Stance,
 } from '../db/queries'
 import * as db from '../db/queries'
-
-export type AppBindings = {
-  DB: D1Database
-  ADMIN_PASSWORD?: string
-  ASSETS?: {
-    fetch: (request: RequestInfo | URL, init?: RequestInit) => Promise<Response>
-  }
-}
-
-export type App = Hono<{ Bindings: AppBindings }>
+import type { App, AppBindings } from './types'
 
 const CORS_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
