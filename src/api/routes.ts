@@ -8,12 +8,17 @@ import type {
   Stance,
 } from '../db/queries'
 import * as db from '../db/queries'
+import { isAdminRole, tryGetAuthContext } from '../auth/authorization'
 import type { App, AppBindings } from './types'
 
+// 公開讀取端點維持開放跨來源；管理端則刻意「不可跨來源」——
+// 授權改看 cookie session 之後，帶 cookie 的跨來源請求需要
+// Access-Control-Allow-Credentials: true，而那又不能搭配 Allow-Origin: *。
+// 我們兩者都不給：跨來源請求不會帶到 session cookie，管理端一律回 401。
 const CORS_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, X-Admin-Token',
+  'Access-Control-Allow-Headers': 'Content-Type',
 }
 
 function withCors(res: Response): Response {
@@ -35,10 +40,20 @@ function error(msg: string, status = 400): Response {
   return json({ error: msg }, status)
 }
 
-function checkAdmin(request: Request, env: AppBindings): boolean {
-  const token = request.headers.get('X-Admin-Token')
-  const password = env.ADMIN_PASSWORD || 'admin'
-  return token === password
+/**
+ * 管理權限守衛：通過回 null，否則回該擋下的 Response。
+ *
+ * 角色來自共用 auth DB 的 `user.role`（見 src/auth/authorization.ts），本站只讀不寫——
+ * 升降權一律在 vTaiwan-hono 後台做（AGENTS.md 不變量 11）。
+ *
+ * 401 與 403 要分清楚：未登入是 401（前端該引導登入），已登入但權限不足是 403
+ * （前端該說「這個帳號沒有權限」，引導再登入一次只會繞圈）。
+ */
+async function requireAdmin(request: Request, env: AppBindings): Promise<Response | null> {
+  const context = await tryGetAuthContext(env, request.headers)
+  if (!context) return error('Unauthorized', 401)
+  if (!isAdminRole(context.role)) return error('Forbidden', 403)
+  return null
 }
 
 function parseId(raw: string): number | null {
@@ -49,20 +64,12 @@ function parseId(raw: string): number | null {
 export function registerApiRoutes(app: App): void {
   app.options('/api/*', () => withCors(new Response(null, { status: 204 })))
 
-  app.post('/api/admin/login', async (c) => {
-    let body: { password?: string }
-    try {
-      body = await c.req.json()
-    } catch {
-      return error('Invalid JSON')
-    }
-    const password = c.env.ADMIN_PASSWORD || 'admin'
-    if (body.password === password) return json({ ok: true })
-    return json({ ok: false }, 401)
-  })
+  // POST /api/admin/login 已隨密碼制一併移除（#5）：管理身分改由 Better Auth session
+  // 決定，登入入口是 /api/auth/sign-in/social。前端 Admin.vue 已不再呼叫它。
 
   app.get('/api/admin/stats', async (c) => {
-    if (!checkAdmin(c.req.raw, c.env)) return error('Unauthorized', 401)
+    const denied = await requireAdmin(c.req.raw, c.env)
+    if (denied) return denied
     const stats = await db.getAdminStats(c.env.DB)
     return json(stats)
   })
@@ -89,7 +96,8 @@ export function registerApiRoutes(app: App): void {
   })
 
   app.delete('/api/materials/:id', async (c) => {
-    if (!checkAdmin(c.req.raw, c.env)) return error('Unauthorized', 401)
+    const denied = await requireAdmin(c.req.raw, c.env)
+    if (denied) return denied
     const id = parseId(c.req.param('id'))
     if (!id) return error('Invalid id')
     await db.deleteMaterial(c.env.DB, id)
@@ -97,7 +105,8 @@ export function registerApiRoutes(app: App): void {
   })
 
   app.delete('/api/opinions/:id', async (c) => {
-    if (!checkAdmin(c.req.raw, c.env)) return error('Unauthorized', 401)
+    const denied = await requireAdmin(c.req.raw, c.env)
+    if (denied) return denied
     const id = parseId(c.req.param('id'))
     if (!id) return error('Invalid id')
     await db.deleteOpinion(c.env.DB, id)
@@ -113,7 +122,8 @@ export function registerApiRoutes(app: App): void {
   })
 
   app.put('/api/issues/:id', async (c) => {
-    if (!checkAdmin(c.req.raw, c.env)) return error('Unauthorized', 401)
+    const denied = await requireAdmin(c.req.raw, c.env)
+    if (denied) return denied
     const id = parseId(c.req.param('id'))
     if (!id) return error('Invalid id')
     const existing = await db.getIssue(c.env.DB, id)
@@ -140,7 +150,8 @@ export function registerApiRoutes(app: App): void {
   })
 
   app.delete('/api/issues/:id', async (c) => {
-    if (!checkAdmin(c.req.raw, c.env)) return error('Unauthorized', 401)
+    const denied = await requireAdmin(c.req.raw, c.env)
+    if (denied) return denied
     const id = parseId(c.req.param('id'))
     if (!id) return error('Invalid id')
     await db.deleteIssueCascade(c.env.DB, id)
@@ -209,7 +220,8 @@ export function registerApiRoutes(app: App): void {
   })
 
   app.put('/api/issues/:id/briefing', async (c) => {
-    if (!checkAdmin(c.req.raw, c.env)) return error('Unauthorized', 401)
+    const denied = await requireAdmin(c.req.raw, c.env)
+    if (denied) return denied
     const id = parseId(c.req.param('id'))
     if (!id) return error('Invalid id')
     let body: {

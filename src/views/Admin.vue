@@ -5,19 +5,29 @@ import AppFooter from '../components/AppFooter.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import Toast from '../components/Toast.vue'
 import { formatDate, useI18n } from '../l10n'
+import {
+  isAdminSession,
+  loadAuthSession,
+  signInWith,
+  signOut,
+  type AuthSession,
+} from '../client/auth-session'
 import type { Briefing, IssueListItem, IssueStatus, Material, Opinion } from '../db/queries'
 
 type AdminTab = 'issues' | 'materials' | 'opinions'
 
-const TOKEN_KEY = 'civic_admin_token'
+/**
+ * 'loading' 是 SSR 與 hydration 首幀共用的狀態——伺服器端不知道也不該猜登入狀態，
+ * 兩邊都先畫同一個骨架，等 onMounted 打 /api/me 才分岔，避免 hydration mismatch。
+ */
+type AuthState = 'loading' | 'anonymous' | 'forbidden' | 'admin'
 
 const { t, locale } = useI18n()
 const toast = ref<{ show: (msg: string) => void } | null>(null)
 
-const password = ref('')
-const loginError = ref(false)
-const authed = ref(false)
-const adminToken = ref('')
+const authState = ref<AuthState>('loading')
+const session = ref<AuthSession | null>(null)
+const authError = ref(false)
 const activeTab = ref<AdminTab>('issues')
 const stats = ref({ issues: 0, materials: 0, opinions: 0, briefings: 0 })
 const issues = ref<IssueListItem[]>([])
@@ -40,44 +50,45 @@ const briefPositions = ref('')
 const briefNarrative = ref('')
 const briefingIssueId = ref<number | null>(null)
 
+// 管理端請求靠同源 cookie 帶 session，不再有 X-Admin-Token
 function authHeaders(): HeadersInit {
-  return {
-    'Content-Type': 'application/json',
-    'X-Admin-Token': adminToken.value,
-  }
+  return { 'Content-Type': 'application/json' }
 }
 
 onMounted(() => {
-  if (typeof window === 'undefined') return
-  const stored = sessionStorage.getItem(TOKEN_KEY)
-  if (stored) {
-    adminToken.value = stored
-    authed.value = true
-    void bootstrap()
-  }
+  void refreshSession()
 })
 
-async function login() {
-  loginError.value = false
-  const res = await fetch('/api/admin/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ password: password.value }),
-  })
-  const data = (await res.json()) as { ok?: boolean }
-  if (!data.ok) {
-    loginError.value = true
-    return
+async function refreshSession() {
+  authError.value = false
+  try {
+    const current = await loadAuthSession()
+    session.value = current
+    if (!current) {
+      authState.value = 'anonymous'
+      return
+    }
+    authState.value = isAdminSession(current) ? 'admin' : 'forbidden'
+    if (authState.value === 'admin') await bootstrap()
+  } catch {
+    // 讀 session 失敗是「壞掉」不是「未登入」——照樣顯示登入畫面，但要說明白
+    authState.value = 'anonymous'
+    authError.value = true
   }
-  adminToken.value = password.value
-  sessionStorage.setItem(TOKEN_KEY, password.value)
-  authed.value = true
-  password.value = ''
-  await bootstrap()
 }
 
-function logout() {
-  sessionStorage.removeItem(TOKEN_KEY)
+async function login(provider: 'google' | 'github') {
+  authError.value = false
+  try {
+    // 導向 OAuth；回來時再落回 /admin 由 onMounted 重讀 session
+    await signInWith(provider, '/admin')
+  } catch {
+    authError.value = true
+  }
+}
+
+async function logout() {
+  await signOut()
   window.location.reload()
 }
 
@@ -251,21 +262,45 @@ const tabs = computed(() => [
 
     <main class="py-9">
       <div class="container">
-        <!-- Login -->
-        <div v-if="!authed" class="mx-auto max-w-md">
+        <!-- 讀取 session 中：SSR 與 hydration 首幀共用這個骨架 -->
+        <div v-if="authState === 'loading'" class="mx-auto max-w-md">
+          <div class="card">
+            <h1 class="mt-0 mb-2 font-serif text-2xl">{{ t('adm_login_title') }}</h1>
+            <p class="m-0 text-muted">{{ t('loading') }}</p>
+          </div>
+        </div>
+
+        <!-- 未登入 -->
+        <div v-else-if="authState === 'anonymous'" class="mx-auto max-w-md">
           <div class="card">
             <h1 class="mt-0 mb-2 font-serif text-2xl">{{ t('adm_login_title') }}</h1>
             <p class="mb-4 text-muted">{{ t('adm_login_desc') }}</p>
-            <div class="form-group">
-              <input
-                v-model="password"
-                type="password"
-                :placeholder="t('adm_login_placeholder')"
-                @keyup.enter="login"
-              />
+            <div class="flex flex-col gap-2">
+              <button type="button" class="btn btn-primary" @click="login('google')">
+                {{ t('adm_login_google') }}
+              </button>
+              <button type="button" class="btn btn-secondary" @click="login('github')">
+                {{ t('adm_login_github') }}
+              </button>
             </div>
-            <p v-if="loginError" class="mb-3 text-sm text-red">{{ t('adm_login_err') }}</p>
-            <button type="button" class="btn btn-primary" @click="login">{{ t('adm_login_btn') }}</button>
+            <p v-if="authError" class="mt-3 mb-0 text-sm text-red">{{ t('adm_login_err') }}</p>
+            <p class="mt-4 mb-0 text-sm text-muted">{{ t('adm_login_hint') }}</p>
+          </div>
+        </div>
+
+        <!-- 登入了，但這個帳號沒有管理權限 -->
+        <div v-else-if="authState === 'forbidden'" class="mx-auto max-w-md">
+          <div class="card">
+            <h1 class="mt-0 mb-2 font-serif text-2xl">{{ t('adm_forbidden_title') }}</h1>
+            <p class="mb-4 text-muted">
+              {{ t('adm_forbidden_desc', { email: session?.user.email ?? '' }) }}
+            </p>
+            <div class="flex flex-wrap gap-2">
+              <button type="button" class="btn btn-secondary" @click="logout">
+                {{ t('adm_logout') }}
+              </button>
+              <a href="/" class="btn btn-ghost">{{ t('adm_back') }}</a>
+            </div>
           </div>
         </div>
 
@@ -276,7 +311,10 @@ const tabs = computed(() => [
               <span class="status-badge status-published">{{ t('adm_badge') }}</span>
               <h1 class="mt-2 mb-0 font-serif text-2xl">{{ t('adm_login_title') }}</h1>
             </div>
-            <div class="flex gap-2">
+            <div class="flex flex-wrap items-center gap-2">
+              <span v-if="session" class="text-sm text-muted">
+                {{ t('adm_signed_in_as', { name: session.user.name || session.user.email }) }}
+              </span>
               <a href="/" class="btn btn-secondary btn-sm">{{ t('adm_back') }}</a>
               <button type="button" class="btn btn-ghost btn-sm" @click="logout">
                 {{ t('adm_logout') }}

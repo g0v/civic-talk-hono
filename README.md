@@ -12,17 +12,20 @@
 ## 開發
 
 ```bash
-cp .dev.vars.example .dev.vars   # 設定 ADMIN_PASSWORD
+cp .dev.vars.example .dev.vars   # 填入 Better Auth 與 Google／GitHub OAuth 憑證
 npm install
 npx wrangler d1 migrations apply vtaiwan-civic-talks --local
 npm run dev
 ```
 
+> 登入功能在 `npm run dev` 下**測不了**：Better Auth 的資料表在遠端的 `vtaiwan-auth`，本機模擬庫是空的。要實測登入請用 `npm run dev:remote`。
+
 常用指令：
 
 | 指令 | 說明 |
 | ---- | ---- |
-| `npm run dev` | 本機 Vite + Worker（含 HMR） |
+| `npm run dev` | 本機 Vite + Worker（含 HMR），D1 用本機模擬 |
+| `npm run dev:remote` | 同上但 D1 連遠端；實測登入用這個 |
 | `npm run css` | 由 `src/styles/app.css` 建置 `public/styles.css` |
 | `npm run build` | CSS + server + client bundle |
 | `npm run typecheck` | `tsc --noEmit` |
@@ -38,7 +41,7 @@ npm run dev
 | `/issues/:id` | 議題說明、素材、志願者工具、意見、Polis |
 | `/contribute/:id` | 素材投稿 |
 | `/about` | 關於 |
-| `/admin` | 管理後台（`ADMIN_PASSWORD` → `X-Admin-Token`） |
+| `/admin` | 管理後台（Google／GitHub 登入，需 `admin`／`super-admin` 角色） |
 
 舊網址 `/index.html`、`/issue.html?id=`、`/contribute.html?id=`、`/about.html`、`/admin.html` 會導向新路由。
 

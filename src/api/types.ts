@@ -19,8 +19,6 @@ export type AppBindings = {
   /** GitHub OAuth 憑證，與 vTaiwan-hono 共用同一組應用程式 */
   GITHUB_CLIENT_ID: string
   GITHUB_CLIENT_SECRET: string
-  /** @deprecated 舊的密碼制管理驗證，會隨 #5 的角色制授權一併移除 */
-  ADMIN_PASSWORD?: string
   ASSETS?: {
     fetch: (request: RequestInfo | URL, init?: RequestInit) => Promise<Response>
   }

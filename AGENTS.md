@@ -61,11 +61,11 @@ Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑�
 
 **登入／權限的真實現況（#5 做到哪）：**
 
-- ✅ **Better Auth 骨架已可運作**：`npm run dev` 起得來，`/api/auth/get-session` 回 200、`/api/me` 未登入回 401、`/api/auth/admin/list-users` 回 404。
-- 🚧 **管理端仍是舊的密碼制**：`src/api/routes.ts` 的 `checkAdmin()` 比對 `X-Admin-Token` 標頭與 `ADMIN_PASSWORD`（**未設定時 fallback 成字面值 `'admin'`**），`POST /api/admin/login` 只是拿密碼換一個「就是密碼本身」的 token，`src/views/Admin.vue` 把它存在 client 端。**角色制還沒接上去，這兩套目前並存。**
-- 🚧 **還沒有登入 UI**，也還沒有任何頁面顯示登入狀態。
-- 🚧 `src/l10n/*.ts` 的 `abt_tech_auth` 仍寫著「Admin token（X-Admin-Token）」——改授權機制時這兩個語言檔要一起改。
+- ✅ **Better Auth 骨架已可運作**：`/api/auth/get-session` 回 200、`/api/me` 未登入回 401、`/api/auth/admin/list-users` 回 404。
+- ✅ **管理端已是角色制**：`src/api/routes.ts` 的 `requireAdmin()` 讀 session 判 `isAdminRole()`，未登入 401、非管理員 403。**`ADMIN_PASSWORD`、`X-Admin-Token`、`checkAdmin()`、`POST /api/admin/login` 都已移除**（連同 `'admin'` 這個危險的 fallback）。
+- ✅ **`/admin` 是登入入口**：`src/views/Admin.vue` 依 `/api/me` 分成 `loading`／`anonymous`（Google／GitHub 登入鈕）／`forbidden`（登入了但沒權限）／`admin` 四態。SSR 一律只出 `loading` 骨架，所以不會有 hydration mismatch，也不需要為登入狀態關快取。
 - ⚠️ **本機 `npm run dev` 測不了登入**：auth 表只存在遠端，本機模擬庫是空的，打登入端點會得到 `no such table: verification`。要實測登入必須 `npm run dev:remote`。
+- 🚧 **前台（首頁／議題頁）還沒有登入狀態顯示**——目前只有 `/admin` 有登入 UI。
 
 **尚不存在**：`vue-router`、`vue-i18n` 套件、自動化測試／CI。
 
@@ -117,7 +117,7 @@ Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑�
   - 🚫 **不開 `admin` plugin（使用者已裁示，不要自行改）。** vTaiwan-hono 開了 `admin({ adminRoles: ['super-admin'], roles: adminRoleAccess })`，因為它要做成員管理；**開了就會在 `/api/auth/admin/*` 長出 `set-role`／`list-users`／`remove-user` 等會寫入共用 auth DB 的端點**。vTaiwan-hono 用 `requiresStepUp()` 把它們擋在二次驗證之後，而本站**明確不做 step-up**——照抄等於在保護更弱的地方開一扇寫入正式 auth DB 的門，直接違反不變量 11 與 #5 的「不要做額外的權限管理後台」。
   - **改用唯讀方式取 `role`**：以 `user.additionalFields`（`input: false`）之類的設定把既有的 `role` 欄位讀出來，完全不長出任何管理端點。**注意 `role` 欄位是 vTaiwan-hono 的 admin plugin 建的、已經在 `user` 表裡**——本站只是讀它，不要因為「本站沒開 plugin」就去補欄位（違反不變量 11）。實作前先確認 better-auth 該版本讀既有欄位的正確寫法，並實測 `GET /api/me` 真的拿得到值。
   - 若日後有人開了 plugin：**必須在 `auth.handler()` 之前攔掉整段 `/api/auth/admin/*`**，這是「`/api/auth/*` 整段轉交」的唯一例外。
-- **淘汰密碼制**：移除 `checkAdmin()`／`X-Admin-Token`／`ADMIN_PASSWORD`（含 `'admin'` fallback）與 `POST /api/admin/login`，`src/views/Admin.vue` 的密碼輸入改為登入入口。移除節奏見「API 契約」。
+- ✅ **淘汰密碼制（已完成）**：`checkAdmin()`／`X-Admin-Token`／`ADMIN_PASSWORD`（含 `'admin'` fallback）與 `POST /api/admin/login` 都已移除，`src/views/Admin.vue` 的密碼輸入換成 Google／GitHub 登入。
 
 **明確不做的：**
 
@@ -186,17 +186,16 @@ Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑�
 | `POST`   | `/api/issues/:id/opinions` | 投稿意見                                         |
 | `DELETE` | `/api/opinions/:id`        | 刪除意見（admin）                                |
 | `GET`    | `/api/issues/:id/prompt`   | 產生 prompt，`?type=summarize\|narrative\|synthesis`（預設 `summarize`） |
-| `POST`   | `/api/admin/login`         | 以 `ADMIN_PASSWORD` 換 token（**#5 後廢除**，見下）|
 | `GET`    | `/api/admin/stats`         | 管理統計                                         |
+
+> `POST /api/admin/login`（以 `ADMIN_PASSWORD` 換 token）**已於 #5 移除**——這是不變量 5 明列的授權例外。舊網址不必保留：它從來只是管理員自己用的登入端點，不是公開契約。
 
 - 統一 JSON 錯誤形狀 `{ error: string }`，並補齊輸入驗證與 `400` / `401` / `404` 回應。
 - 議題狀態機（**照舊站語意，不要收得更嚴**）：POST material 把 `collecting` 推到 `summarizing`；POST briefing 從 `collecting` **或** `summarizing` 直接推到 `published`——也就是說 `collecting` → `published` 是合法的，可跳過 `summarizing`。素材立場預設 `unknown`。
 
 ### 授權方式（#5 帶來的變更）
 
-**現況**：管理端驗 `X-Admin-Token` 標頭（比對 `ADMIN_PASSWORD`）。
-
-**#5 之後**：管理端改驗 **Better Auth session 的角色**，上表標示 `（admin）` 的 endpoint 與 `/api/admin/stats` 一律要求 `isAdminRole()`（`admin` 或 `super-admin`）。
+✅ **已完成。** 管理端驗 **Better Auth session 的角色**：上表標示 `（admin）` 的 endpoint 與 `/api/admin/stats` 一律走 `src/api/routes.ts` 的 `requireAdmin()`，要求 `isAdminRole()`（`admin` 或 `super-admin`）。舊的 `X-Admin-Token`／`ADMIN_PASSWORD` 已完全移除。
 
 | 方法          | 路徑              | 說明                                                       |
 | ------------- | ----------------- | ---------------------------------------------------------- |
@@ -394,8 +393,8 @@ npx wrangler d1 migrations apply vtaiwan-civic-talks --remote   # 🚫 需先取
 | 5-3 | `google-login`     | 🚧 code 進、待實測 | provider 已設定；端到端登入要 `dev:remote` 才測得到     |
 | 5-4 | `github-login`     | 🚧 code 進、待實測 | 同上                                                    |
 | 5-5 | `account-linking`  | 🚧 code 進、待實測 | `trustedProviders: ['google', 'github']` 已設；「同 email 是同一個 `user.id`」尚未實證 |
-| 5-6 | `role-based-admin` | 📋 未開始 | Admin 改看 `admin`／`super-admin` 角色；移除 `ADMIN_PASSWORD`／`X-Admin-Token`／`POST /api/admin/login`；CORS 一併調整 |
-| 5-7 | `verify`           | 📋 未開始 | 依「驗證流程」的「登入／權限」列逐項實測                       |
+| 5-6 | `role-based-admin` | ✅ 完成   | `requireAdmin()` 判角色（401／403）；`ADMIN_PASSWORD`／`X-Admin-Token`／`POST /api/admin/login` 全數移除；CORS 拿掉 `X-Admin-Token` 且不給 `Allow-Credentials`；Admin 頁改 Google／GitHub 登入；i18n 雙檔同步 |
+| 5-7 | `verify`           | 🚧 待遠端實測 | 本機已驗：未登入打管理端點 401、舊 token 失效、`/api/admin/login` 404、公開端點不受影響、`/admin` SSR 無 mismatch。**尚未驗**：真的登入、同 email 整合、admin 角色可進後台（都需要 `dev:remote`） |
 
 > 已裁示的設定（不開 `admin` plugin、`account_id` 不寫死、`nodejs_compat` 非必要不加、`BETTER_AUTH_SECRET` 與 vTaiwan-hono 共用）與**仍待確認的兩項**（OAuth callback 網址、`BETTER_AUTH_URL`）見「身分驗證與權限」一節——**callback 網址沒加就不要開始寫 5-3／5-4，會卡在登不進去**。
 
