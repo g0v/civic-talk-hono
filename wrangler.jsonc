@@ -3,7 +3,7 @@
   "name": "civic-talk",
   "main": "src/index.ts",
   "compatibility_date": "2026-04-17",
-  "account_id": "349a5e79f2762d62933c03b953a9e7be",
+  // 刻意不寫死 account_id：與 ../vTaiwan-hono 一致，交給 wrangler 登入的帳號決定
   "assets": { "directory": "./public/", "binding": "ASSETS" },
   "observability": {
     "enabled": true
