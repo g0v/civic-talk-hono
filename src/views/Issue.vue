@@ -6,13 +6,10 @@ import SignInButtons from '../components/SignInButtons.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import Toast from '../components/Toast.vue'
 import { formatDate, useI18n } from '../l10n'
-import { loadAuthSession } from '../client/auth-session'
+import { useAuth } from '../composables/useAuth'
 import type { Briefing, Issue, Material, Opinion } from '../db/queries'
 
 type TabName = 'briefing' | 'materials' | 'volunteer' | 'opinions'
-
-/** 與 Contribute.vue／Admin.vue 同一套三態；SSR 期間永遠是 'loading' */
-type AuthState = 'loading' | 'anonymous' | 'signed-in'
 
 const props = defineProps<{
   issueId: number
@@ -50,7 +47,8 @@ const positions = ref('')
 const narrative = ref('')
 const opinionInput = ref('')
 
-const authState = ref<AuthState>('loading')
+// 全站共用的登入狀態（與 AppHeader 共用同一次 /api/me）；SSR 期間永遠是 'loading'
+const { authState, ensureAuthSession } = useAuth()
 // 送出時才發現 session 過期：意見框留著（別吃掉使用者打的字），只在上方補一列重新登入
 const sessionExpired = ref(false)
 // 登入後導回這一頁的意見分頁
@@ -85,7 +83,12 @@ async function loadIssue() {
       toast.value?.show(t('vol_toast_load_fail'))
       return
     }
-    const data = await res.json()
+    const data = (await res.json()) as {
+      issue: Issue
+      materials?: Material[]
+      briefing?: Briefing | null
+      opinions?: Opinion[]
+    }
     issue.value = data.issue
     materials.value = data.materials ?? []
     briefing.value = data.briefing ?? null
@@ -97,18 +100,9 @@ async function loadIssue() {
 
 onMounted(() => {
   if (!props.initialDetail) void loadIssue()
-  void refreshSession()
+  void ensureAuthSession()
   void nextTick(() => renderPolis())
 })
-
-async function refreshSession() {
-  try {
-    authState.value = (await loadAuthSession()) ? 'signed-in' : 'anonymous'
-  } catch {
-    // 讀 session 失敗一律當未登入處理：真正的守門在伺服器端
-    authState.value = 'anonymous'
-  }
-}
 
 watch(
   () => [issue.value?.polis_id, issue.value?.id, activeTab.value, locale.value] as const,

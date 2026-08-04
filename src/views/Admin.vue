@@ -6,35 +6,41 @@ import SignInButtons from '../components/SignInButtons.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import Toast from '../components/Toast.vue'
 import { formatDate, useI18n } from '../l10n'
-import { isAdminSession, loadAuthSession, signOut, type AuthSession } from '../client/auth-session'
+import { useAuth } from '../composables/useAuth'
+import { isAdminSession } from '../client/auth-session'
 import type {
   Briefing,
-  IssueListItem,
+  IssueListItemWithAuthor,
   IssueStatus,
   MaterialWithAuthor,
-  Opinion,
+  OpinionWithAuthor,
 } from '../db/queries'
 
 type AdminTab = 'issues' | 'materials' | 'opinions'
 
-/**
- * 'loading' 是 SSR 與 hydration 首幀共用的狀態——伺服器端不知道也不該猜登入狀態，
- * 兩邊都先畫同一個骨架，等 onMounted 打 /api/me 才分岔，避免 hydration mismatch。
- */
-type AuthState = 'loading' | 'anonymous' | 'forbidden' | 'admin'
-
 const { t, locale } = useI18n()
 const toast = ref<{ show: (msg: string) => void } | null>(null)
 
-const authState = ref<AuthState>('loading')
-const session = ref<AuthSession | null>(null)
-const authError = ref(false)
+/**
+ * 登入狀態走全站共用的 useAuth（與 AppHeader 共用同一次 /api/me）。'loading' 是 SSR 與
+ * hydration 首幀共用的狀態——伺服器端不知道也不該猜登入狀態，兩邊都先畫同一個骨架，
+ * 等 onMounted 打 /api/me 才分岔，避免 hydration mismatch。
+ *
+ * 管理頁多一個 'forbidden'（登入了但角色不足）：從共用的 session 推導出來，
+ * 因為只有這一頁在乎角色。
+ */
+const { authState, session, authFailed, ensureAuthSession, signOutAndReload } = useAuth()
+const adminView = computed<'loading' | 'anonymous' | 'forbidden' | 'admin'>(() => {
+  if (authState.value === 'loading') return 'loading'
+  if (authState.value === 'anonymous' || !session.value) return 'anonymous'
+  return isAdminSession(session.value) ? 'admin' : 'forbidden'
+})
 const activeTab = ref<AdminTab>('issues')
 const stats = ref({ issues: 0, materials: 0, opinions: 0, briefings: 0 })
-const issues = ref<IssueListItem[]>([])
-// 管理端讀到的素材含投稿者（#9）；一般讀取者拿到的是不含 author_* 的公開形狀
+// 管理端讀到的議題／素材／意見都含建立者或投稿者（#9）；一般讀取者拿到的是公開形狀
+const issues = ref<IssueListItemWithAuthor[]>([])
 const materials = ref<MaterialWithAuthor[]>([])
-const opinions = ref<Opinion[]>([])
+const opinions = ref<OpinionWithAuthor[]>([])
 const matIssueId = ref<number | ''>('')
 const opIssueId = ref<number | ''>('')
 
@@ -57,32 +63,10 @@ function authHeaders(): HeadersInit {
   return { 'Content-Type': 'application/json' }
 }
 
-onMounted(() => {
-  void refreshSession()
+onMounted(async () => {
+  await ensureAuthSession()
+  if (adminView.value === 'admin') await bootstrap()
 })
-
-async function refreshSession() {
-  authError.value = false
-  try {
-    const current = await loadAuthSession()
-    session.value = current
-    if (!current) {
-      authState.value = 'anonymous'
-      return
-    }
-    authState.value = isAdminSession(current) ? 'admin' : 'forbidden'
-    if (authState.value === 'admin') await bootstrap()
-  } catch {
-    // 讀 session 失敗是「壞掉」不是「未登入」——照樣顯示登入畫面，但要說明白
-    authState.value = 'anonymous'
-    authError.value = true
-  }
-}
-
-async function logout() {
-  await signOut()
-  window.location.reload()
-}
 
 async function bootstrap() {
   await Promise.all([loadStats(), loadIssues()])
@@ -123,7 +107,7 @@ function openNew() {
   modalNew.value = true
 }
 
-function openEdit(issue: IssueListItem) {
+function openEdit(issue: IssueListItemWithAuthor) {
   editId.value = issue.id
   formTitle.value = issue.title
   formDesc.value = issue.description ?? ''
@@ -132,7 +116,7 @@ function openEdit(issue: IssueListItem) {
   modalEdit.value = true
 }
 
-async function openBriefing(issue: IssueListItem) {
+async function openBriefing(issue: IssueListItemWithAuthor) {
   briefingIssueId.value = issue.id
   const res = await fetch(`/api/issues/${issue.id}/briefing`)
   const b = (res.ok ? await res.json() : null) as Briefing | null
@@ -184,7 +168,7 @@ async function saveIssue() {
   await bootstrap()
 }
 
-async function deleteIssue(issue: IssueListItem) {
+async function deleteIssue(issue: IssueListItemWithAuthor) {
   const msg = t('adm_confirm_delete', { title: issue.title })
   if (!confirm(msg)) return
   const res = await fetch(`/api/issues/${issue.id}`, {
@@ -255,7 +239,7 @@ const tabs = computed(() => [
     <main class="py-9">
       <div class="container">
         <!-- 讀取 session 中：SSR 與 hydration 首幀共用這個骨架 -->
-        <div v-if="authState === 'loading'" class="mx-auto max-w-md">
+        <div v-if="adminView === 'loading'" class="mx-auto max-w-md">
           <div class="card">
             <h1 class="mt-0 mb-2 font-serif text-2xl">{{ t('adm_login_title') }}</h1>
             <p class="m-0 text-muted">{{ t('loading') }}</p>
@@ -263,25 +247,25 @@ const tabs = computed(() => [
         </div>
 
         <!-- 未登入 -->
-        <div v-else-if="authState === 'anonymous'" class="mx-auto max-w-md">
+        <div v-else-if="adminView === 'anonymous'" class="mx-auto max-w-md">
           <div class="card">
             <h1 class="mt-0 mb-2 font-serif text-2xl">{{ t('adm_login_title') }}</h1>
             <p class="mb-4 text-muted">{{ t('adm_login_desc') }}</p>
             <SignInButtons callback-url="/admin" />
-            <p v-if="authError" class="mt-3 mb-0 text-sm text-red">{{ t('login_err') }}</p>
+            <p v-if="authFailed" class="mt-3 mb-0 text-sm text-red">{{ t('login_err') }}</p>
             <p class="mt-4 mb-0 text-sm text-muted">{{ t('adm_login_hint') }}</p>
           </div>
         </div>
 
         <!-- 登入了，但這個帳號沒有管理權限 -->
-        <div v-else-if="authState === 'forbidden'" class="mx-auto max-w-md">
+        <div v-else-if="adminView === 'forbidden'" class="mx-auto max-w-md">
           <div class="card">
             <h1 class="mt-0 mb-2 font-serif text-2xl">{{ t('adm_forbidden_title') }}</h1>
             <p class="mb-4 text-muted">
               {{ t('adm_forbidden_desc', { email: session?.user.email ?? '' }) }}
             </p>
             <div class="flex flex-wrap gap-2">
-              <button type="button" class="btn btn-secondary" @click="logout">
+              <button type="button" class="btn btn-secondary" @click="signOutAndReload">
                 {{ t('logout') }}
               </button>
               <a href="/" class="btn btn-ghost">{{ t('adm_back') }}</a>
@@ -298,12 +282,9 @@ const tabs = computed(() => [
             </div>
             <div class="flex flex-wrap items-center gap-2">
               <span v-if="session" class="text-sm text-muted">
-                {{ t('adm_signed_in_as', { name: session.user.name || session.user.email }) }}
+                {{ t('signed_in_as', { name: session.user.name || session.user.email }) }}
               </span>
               <a href="/" class="btn btn-secondary btn-sm">{{ t('adm_back') }}</a>
-              <button type="button" class="btn btn-ghost btn-sm" @click="logout">
-                {{ t('logout') }}
-              </button>
             </div>
           </div>
 
@@ -355,6 +336,7 @@ const tabs = computed(() => [
                     <th class="px-3 py-2 text-left">{{ t('adm_th_title') }}</th>
                     <th class="px-3 py-2 text-left">{{ t('adm_th_status') }}</th>
                     <th class="px-3 py-2 text-left">{{ t('adm_th_materials') }}</th>
+                    <th class="px-3 py-2 text-left">{{ t('adm_th_author') }}</th>
                     <th class="px-3 py-2 text-left">{{ t('adm_th_created') }}</th>
                     <th class="px-3 py-2 text-left">{{ t('adm_th_actions') }}</th>
                   </tr>
@@ -367,6 +349,7 @@ const tabs = computed(() => [
                     </td>
                     <td class="px-3 py-2"><StatusBadge :status="issue.status" short /></td>
                     <td class="px-3 py-2">{{ issue.material_count }}</td>
+                    <td class="px-3 py-2">{{ issue.author_name || t('adm_author_unknown') }}</td>
                     <td class="px-3 py-2">{{ formatDate(issue.created_at, locale) }}</td>
                     <td class="px-3 py-2">
                       <div class="flex flex-wrap gap-1">
@@ -426,7 +409,7 @@ const tabs = computed(() => [
                 <div class="mt-2 whitespace-pre-wrap text-sm">{{ m.content }}</div>
                 <!-- #9：投稿者只在管理端顯示，公開的素材列表不含這個欄位 -->
                 <p class="mt-2 mb-0 text-sm text-muted">
-                  {{ t('adm_mat_author') }}{{ m.author_name || t('adm_mat_author_unknown') }}
+                  {{ t('adm_author') }}{{ m.author_name || t('adm_author_unknown') }}
                 </p>
               </div>
             </template>
@@ -458,6 +441,10 @@ const tabs = computed(() => [
                   </button>
                 </div>
                 <div class="whitespace-pre-wrap text-sm">{{ o.summary }}</div>
+                <!-- #9：投稿者只在管理端顯示，公開的意見列表不含這個欄位 -->
+                <p class="mt-2 mb-0 text-sm text-muted">
+                  {{ t('adm_author') }}{{ o.author_name || t('adm_author_unknown') }}
+                </p>
               </div>
             </template>
           </section>

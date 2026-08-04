@@ -2,10 +2,12 @@ import type {
   Briefing,
   Issue,
   IssueListItem,
+  IssueListItemWithAuthor,
   IssueStatus,
   Material,
   MaterialWithAuthor,
   Opinion,
+  OpinionWithAuthor,
   Stance,
 } from '../db/queries'
 import * as db from '../db/queries'
@@ -90,9 +92,16 @@ export function registerApiRoutes(app: App): void {
     return json(stats)
   })
 
+  // 建立者只給管理端看（與素材、意見同一套規則）
   app.get('/api/issues', async (c) => {
-    const issues: IssueListItem[] = await db.listIssues(c.env.DB)
-    return json(issues)
+    const context = await tryGetAuthContext(c.env, c.req.raw.headers)
+    const issues: IssueListItem[] | IssueListItemWithAuthor[] =
+      context && isAdminRole(context.role)
+        ? await db.listIssuesWithAuthor(c.env.DB)
+        : await db.listIssues(c.env.DB)
+    const res = json(issues)
+    res.headers.set('Vary', 'Cookie')
+    return res
   })
 
   // 建立議題同樣需要登入（#9 的延伸，使用者裁示）：議題是所有素材與意見的容器，
@@ -111,6 +120,9 @@ export function registerApiRoutes(app: App): void {
       title: body.title.trim(),
       description: body.description ?? '',
       polis_id: body.polis_id ?? null,
+      author_id: auth.context.user.id,
+      // 顯示名稱可能是空字串（某些 provider 沒給 name），退回 email 才有辨識度
+      author_name: auth.context.user.name || auth.context.user.email,
     })
     return json({ id, title: body.title.trim() }, 201)
   })
@@ -278,16 +290,22 @@ export function registerApiRoutes(app: App): void {
     return json({ ok: true })
   })
 
+  // 投稿者只給管理端看：意見在前台是公開顯示的，不能連帶把投稿者曝光
   app.get('/api/issues/:id/opinions', async (c) => {
     const id = parseId(c.req.param('id'))
     if (!id) return error('Invalid id')
-    const opinions: Opinion[] = await db.listOpinions(c.env.DB, id)
-    return json(opinions)
+    const context = await tryGetAuthContext(c.env, c.req.raw.headers)
+    const opinions: Opinion[] | OpinionWithAuthor[] =
+      context && isAdminRole(context.role)
+        ? await db.listOpinionsWithAuthor(c.env.DB, id)
+        : await db.listOpinions(c.env.DB, id)
+    const res = json(opinions)
+    res.headers.set('Vary', 'Cookie')
+    return res
   })
 
-  // 意見投稿同樣需要登入（#9 的延伸，使用者裁示）。注意意見在前台是公開顯示的，
-  // 目前**不記錄投稿者**（ct_opinions 沒有 author 欄位）——登入只當作門檻，
-  // 要做到跟素材一樣可追溯得另外開 migration，先問使用者。
+  // 意見投稿同樣需要登入（#9 的延伸，使用者裁示），並記錄投稿者以便問責。
+  // 注意意見在前台是公開顯示的，所以 author_* 只回給管理員（見 GET 那支）。
   app.post('/api/issues/:id/opinions', async (c) => {
     const auth = await requireUser(c.req.raw, c.env)
     if ('denied' in auth) return auth.denied
@@ -302,7 +320,11 @@ export function registerApiRoutes(app: App): void {
       return error('Invalid JSON')
     }
     if (!body.summary?.trim()) return error('summary is required')
-    const opinionId = await db.createOpinion(c.env.DB, id, body.summary.trim())
+    const opinionId = await db.createOpinion(c.env.DB, id, {
+      summary: body.summary.trim(),
+      author_id: auth.context.user.id,
+      author_name: auth.context.user.name || auth.context.user.email,
+    })
     return json({ id: opinionId }, 201)
   })
 

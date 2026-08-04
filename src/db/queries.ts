@@ -16,6 +16,17 @@ export interface IssueListItem extends Issue {
   material_count: number
 }
 
+/** 議題 + 建立者（僅供管理端；author_* 對「需登入」之前的舊資料是 null） */
+export interface IssueWithAuthor extends Issue {
+  author_id: string | null
+  author_name: string | null
+}
+
+export interface IssueListItemWithAuthor extends IssueListItem {
+  author_id: string | null
+  author_name: string | null
+}
+
 /**
  * 素材的**公開**形狀——刻意不含投稿者欄位。
  *
@@ -53,11 +64,21 @@ export interface Briefing {
   created_at: string
 }
 
+/**
+ * 意見的**公開**形狀——與 Material 同理，刻意不含投稿者欄位（意見在前台是公開顯示的）。
+ * 查詢一律列舉欄位、不用 SELECT *。
+ */
 export interface Opinion {
   id: number
   issue_id: number
   summary: string
   created_at: string
+}
+
+/** 意見 + 投稿者（僅供管理端） */
+export interface OpinionWithAuthor extends Opinion {
+  author_id: string | null
+  author_name: string | null
 }
 
 export interface AdminStats {
@@ -67,34 +88,72 @@ export interface AdminStats {
   briefings: number
 }
 
-export async function listIssues(db: D1Database): Promise<IssueListItem[]> {
-  const { results } = await db
-    .prepare(
-      'SELECT id, title, description, status, polis_id, created_at FROM ct_issues ORDER BY created_at DESC',
-    )
-    .all<Issue>()
-  const issues = results ?? []
+const ISSUE_PUBLIC_COLUMNS = 'id, title, description, status, polis_id, created_at'
+
+async function withMaterialCounts<T extends Issue>(
+  db: D1Database,
+  issues: T[],
+): Promise<(T & { material_count: number })[]> {
   for (const issue of issues) {
     const row = await db
       .prepare('SELECT COUNT(*) as cnt FROM ct_materials WHERE issue_id = ?')
       .bind(issue.id)
       .first<{ cnt: number }>()
-    ;(issue as IssueListItem).material_count = row?.cnt ?? 0
+    ;(issue as T & { material_count: number }).material_count = row?.cnt ?? 0
   }
-  return issues as IssueListItem[]
+  return issues as (T & { material_count: number })[]
 }
 
+export async function listIssues(db: D1Database): Promise<IssueListItem[]> {
+  const { results } = await db
+    .prepare(`SELECT ${ISSUE_PUBLIC_COLUMNS} FROM ct_issues ORDER BY created_at DESC`)
+    .all<Issue>()
+  return withMaterialCounts(db, results ?? [])
+}
+
+/** 管理端專用：多回建立者。呼叫端必須先確認請求者是管理員。 */
+export async function listIssuesWithAuthor(db: D1Database): Promise<IssueListItemWithAuthor[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT ${ISSUE_PUBLIC_COLUMNS}, author_id, author_name FROM ct_issues ORDER BY created_at DESC`,
+    )
+    .all<IssueWithAuthor>()
+  return withMaterialCounts(db, results ?? [])
+}
+
+/**
+ * 🚫 不要改回 `SELECT *`：這支的結果會經 getIssueDetail() 流進 SSR 注入的
+ * window.__SSR_STATE__，把 author_* 撈出來等於寫進 HTML 原始碼。
+ */
 export async function getIssue(db: D1Database, id: number): Promise<Issue | null> {
-  return db.prepare('SELECT * FROM ct_issues WHERE id = ?').bind(id).first<Issue>()
+  return db
+    .prepare(`SELECT ${ISSUE_PUBLIC_COLUMNS} FROM ct_issues WHERE id = ?`)
+    .bind(id)
+    .first<Issue>()
 }
 
 export async function createIssue(
   db: D1Database,
-  input: { title: string; description?: string; polis_id?: string | null },
+  input: {
+    title: string
+    description?: string
+    polis_id?: string | null
+    // 建立議題一律要登入，所以這兩欄是必填（舊資料才會是 null）
+    author_id: string
+    author_name: string
+  },
 ): Promise<number> {
   const { meta } = await db
-    .prepare('INSERT INTO ct_issues (title, description, polis_id) VALUES (?, ?, ?)')
-    .bind(input.title, input.description ?? '', input.polis_id ?? null)
+    .prepare(
+      'INSERT INTO ct_issues (title, description, polis_id, author_id, author_name) VALUES (?, ?, ?, ?, ?)',
+    )
+    .bind(
+      input.title,
+      input.description ?? '',
+      input.polis_id ?? null,
+      input.author_id,
+      input.author_name,
+    )
     .run()
   return meta.last_row_id
 }
@@ -273,24 +332,47 @@ export async function updateLatestBriefing(
   return true
 }
 
+const OPINION_PUBLIC_COLUMNS = 'id, issue_id, summary, created_at'
+
 export async function listOpinions(db: D1Database, issueId: number): Promise<Opinion[]> {
   const { results } = await db
     .prepare(
-      'SELECT id, issue_id, summary, created_at FROM ct_opinions WHERE issue_id = ? ORDER BY created_at DESC',
+      `SELECT ${OPINION_PUBLIC_COLUMNS} FROM ct_opinions WHERE issue_id = ? ORDER BY created_at DESC`,
     )
     .bind(issueId)
     .all<Opinion>()
   return results ?? []
 }
 
+/** 管理端專用：多回投稿者。呼叫端必須先過 requireAdmin()。 */
+export async function listOpinionsWithAuthor(
+  db: D1Database,
+  issueId: number,
+): Promise<OpinionWithAuthor[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT ${OPINION_PUBLIC_COLUMNS}, author_id, author_name FROM ct_opinions WHERE issue_id = ? ORDER BY created_at DESC`,
+    )
+    .bind(issueId)
+    .all<OpinionWithAuthor>()
+  return results ?? []
+}
+
 export async function createOpinion(
   db: D1Database,
   issueId: number,
-  summary: string,
+  input: {
+    summary: string
+    // 意見投稿一律要登入，所以這兩欄是必填（舊資料才會是 null）
+    author_id: string
+    author_name: string
+  },
 ): Promise<number> {
   const { meta } = await db
-    .prepare('INSERT INTO ct_opinions (issue_id, summary) VALUES (?, ?)')
-    .bind(issueId, summary)
+    .prepare(
+      'INSERT INTO ct_opinions (issue_id, summary, author_id, author_name) VALUES (?, ?, ?, ?)',
+    )
+    .bind(issueId, input.summary, input.author_id, input.author_name)
     .run()
   return meta.last_row_id
 }

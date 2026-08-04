@@ -55,8 +55,11 @@ Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑�
 - `src/api/routes.ts` + `src/db/queries.ts` — 舊 Pages Functions API 的型別化移植，SQL 只碰 `ct_*`。
 - `migrations/0001_init.sql` — `ct_issues`／`ct_materials`／`ct_briefings`／`ct_opinions`（含 FK、索引、約束、示範資料）。
 - `migrations/0002_material_author.sql` — `ct_materials` 加上 `author_id`／`author_name`（#9 的投稿者記錄）。本機與遠端皆已套用。
+- `migrations/0003_issue_opinion_author.sql` — `ct_issues` 與 `ct_opinions` 也加上 `author_id`／`author_name`（建立者／投稿者，同樣只給管理端）。⚠️ **本機已套用，遠端狀態見「移植進度」的 #9 表**。
 - `src/ssr/render.ts` — SSR + 注入 `window.__PAGE__`／`__SSR_STATE__` + `/js/civic.js`（dev 走 `/src/client/civic-entry.ts`）。
 - `src/views/` — `Home`／`Issue`／`Contribute`／`About`／`Admin`；共用 `AppHeader`／`AppFooter`／`StatusBadge`／`IssueCard`／`Toast`。
+- `src/composables/useAuth.ts` — 全站共用的登入狀態（`authState`／`session`／`ensureAuthSession`／`signOutAndReload`）。模組層級的 ref，同一頁的 `AppHeader` 與表單共用同一次 `/api/me`；**只在瀏覽器端寫入**（`ensureAuthSession()` 開頭擋掉 SSR），所以 SSR 永遠是 `'loading'`。
+- `src/components/SignInButtons.vue` — Google／GitHub 登入鈕（`/`、`/issues/:id`、`/contribute/:id`、`/admin` 與 `AppHeader` 共用）。
 - `src/l10n/` — 自製 i18n composable（`zh-TW`／`en` 雙檔 key 同步）；SSR 固定 `zh-TW`，`localStorage.civic_lang` 只在 hydration 後讀寫。
 - `src/styles/app.css` — Tailwind v4 `@theme static`（vTaiwan 色彩、字型、字級、間距、圓角、陰影與動效 token）；`npm run css` 產出 `public/styles.css`（**生成物，勿手改**）。
 - `wrangler.jsonc` — `ASSETS` + D1 `DB` → `vtaiwan-civic-talks` + D1 `DB_AUTH` → `vtaiwan-auth`（兩者都標 `remote: true`，只影響本機開發模式）；`compatibility_flags: ["nodejs_compat"]`。**不寫 `account_id`**（與 `../vTaiwan-hono` 一致，由 wrangler 登入的帳號決定）——不要為了「比較保險」把它加回來。
@@ -70,8 +73,8 @@ Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑�
 - ✅ **管理端已是角色制**：`src/api/routes.ts` 的 `requireAdmin()` 讀 session 判 `isAdminRole()`，未登入 401、非管理員 403。**`ADMIN_PASSWORD`、`X-Admin-Token`、`checkAdmin()`、`POST /api/admin/login` 都已移除**（連同 `'admin'` 這個危險的 fallback）。
 - ✅ **`/admin` 是登入入口**：`src/views/Admin.vue` 依 `/api/me` 分成 `loading`／`anonymous`（Google／GitHub 登入鈕）／`forbidden`（登入了但沒權限）／`admin` 四態。SSR 一律只出 `loading` 骨架，所以不會有 hydration mismatch，也不需要為登入狀態關快取。
 - ⚠️ **本機 `npm run dev` 測不了登入**：auth 表只存在遠端，本機模擬庫是空的，打登入端點會得到 `no such table: verification`。要實測登入必須 `npm run dev:remote`。
-- ✅ **`/contribute/:id` 也是登入牆（#9）**：`src/views/Contribute.vue` 依 `/api/me` 分成 `loading`／`anonymous`（`SignInButtons`）／`signed-in`（表單）三態，同樣 SSR 只出 `loading` 骨架。登入按鈕已抽成共用元件 `src/components/SignInButtons.vue`（`/admin` 與 `/contribute` 共用，i18n key 是通用的 `login_google`／`login_github`／`login_err`／`logout`）。
-- 🚧 **前台（首頁／議題頁）還沒有登入狀態顯示**——目前只有 `/admin` 與 `/contribute/:id` 有登入 UI。
+- ✅ **三個投稿入口都是登入牆（#9）**：`/contribute/:id` 的素材表單、`/` 的建立議題表單、`/issues/:id` 意見分頁的投稿框，都依 `useAuth()` 分成 `loading`／`anonymous`（`SignInButtons`）／`signed-in` 三態，SSR 一律只出 `loading` 骨架。
+- ✅ **全站標頭顯示登入狀態**：`AppHeader` 已登入時出「已登入：{name}」＋登出，未登入時出「登入」鈕（展開內嵌的 provider 面板，登入後導回當前頁）。`authState === 'loading'` 時什麼都不畫——伺服器端不猜登入狀態，所以不會 mismatch。
 
 **尚不存在**：`vue-router`、`vue-i18n` 套件、自動化測試／CI。
 
@@ -207,11 +210,11 @@ Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑�
 
 ✅ **已完成。** `POST /api/issues`、`POST /api/issues/:id/materials`、`POST /api/issues/:id/opinions` 三支都走 `src/api/routes.ts` 的 `requireUser()`：**只看有沒有登入，不看角色**（一般 `user` 就能寫）。未登入回 `401`；沒有 `403` 這一態——這幾支不是權限分級。
 
-- **只有素材記錄投稿者**：`ct_materials` 有 `author_id`／`author_name`，`ct_issues` 與 `ct_opinions` **沒有**——議題與意見的登入目前只是門檻，不具可追溯性。要補齊得另開 migration，**先問使用者**（意見在前台是公開顯示的，記錄投稿者是隱私決定）。
+- **三種內容都記錄作者**：`ct_materials`（0002）、`ct_issues` 與 `ct_opinions`（0003）都有 `author_id`／`author_name`。`author_id` 是共用 auth DB 的 `user.id`，`author_name` 是投稿當下的顯示名稱快照（name 為空時退回 email）；**一律不存 email 欄位**。
 
 - **投稿者記錄**：成功投稿會把 `user.id` 寫進 `ct_materials.author_id`，並存一份投稿當下的顯示名稱 `author_name`（name 為空時退回 email）。**不存 email 欄位**——需要對應到真人時拿 `author_id` 去 vTaiwan 後台查（不變量 11：本站不擁有使用者資料）。
-- 🚫 **投稿者不公開**：`author_*` 只在請求者是管理員時才回。所以 `src/db/queries.ts` 的 `listMaterials()` **一律列舉欄位、不准用 `SELECT *`**——`getIssueDetail()` 會流進 SSR 注入的 `window.__SSR_STATE__`，用 `SELECT *` 等於把投稿者寫進 HTML 原始碼。管理端專用的是 `listMaterialsWithAuthor()`。要改成公開顯示投稿者，**先問使用者**（那是隱私決定，不是實作細節）。
-- **#9 之前的素材** `author_*` 是 `NULL`，不回填；管理端顯示為「未登入時期的舊素材」。
+- 🚫 **作者一律不公開**：`author_*` 只在請求者是管理員時才回（`GET /api/issues`、`/api/issues/:id/materials`、`/api/issues/:id/opinions` 三支都是這個規則，且都標 `Vary: Cookie`）。所以 `src/db/queries.ts` 的 `listIssues()`／`getIssue()`／`listMaterials()`／`listOpinions()` **一律列舉欄位、不准用 `SELECT *`**——`getIssueDetail()` 會流進 SSR 注入的 `window.__SSR_STATE__`，用 `SELECT *` 等於把作者寫進 HTML 原始碼。管理端專用的是 `list*WithAuthor()` 系列。要改成公開顯示作者，**先問使用者**（那是隱私決定，不是實作細節）。
+- **需登入之前的舊資料** `author_*` 是 `NULL`，不回填；管理端顯示為「需登入之前的舊資料」。
 - 前端三處都是同一套三態（`loading`／`anonymous`／`signed-in`）：`/contribute/:id` 的素材表單、`/` 的建立議題表單、`/issues/:id` 意見分頁的投稿框。SSR 一律只出 `loading` 骨架，避免 hydration mismatch。
 - **送出時遇 `401` 不要把 `authState` 切回 `anonymous`**——那會把表單換成登入卡片、吃掉使用者剛打的內容。三處都改用獨立的 `sessionExpired` 旗標：表單留在原地，只在上方補一列重新登入與「先複製你打的內容」提示（共用 key `login_expired_toast`／`login_expired_hint`）。
 - **守門在伺服器端**——前端隱藏表單只是體驗，不是防線。
@@ -427,9 +430,11 @@ npx wrangler d1 migrations apply vtaiwan-civic-talks --remote   # 🚫 需先取
 | 9-2 | `api-gate`        | ✅ 完成          | `requireUser()`；`POST /api/issues/:id/materials` 未登入 401；投稿寫入 `author_id`／`author_name` |
 | 9-3 | `author-privacy`  | ✅ 完成          | `listMaterials()` 改列舉公開欄位（不再 `SELECT *`）；`listMaterialsWithAuthor()` 只給管理員；管理端素材卡顯示投稿者 |
 | 9-4 | `contribute-ui`   | ✅ 完成          | `Contribute.vue` 三態登入牆；抽出共用 `SignInButtons.vue`；i18n 雙檔同步（新增 `login_*`／`logout`／`contrib_login_*`／`adm_mat_author*`，移除被取代的 `adm_login_google`／`adm_login_github`／`adm_login_err`／`adm_logout`） |
-| 9-5 | `issues-opinions-gate` | ✅ 完成 | 使用者裁示的延伸：`POST /api/issues` 與 `POST /api/issues/:id/opinions` 也走 `requireUser()`；`Home.vue` 建立議題表單與 `Issue.vue` 意見投稿框同樣三態登入牆；過期提示改用共用 key。**未記錄投稿者**（沒開 migration） |
-| 9-6 | `verify`          | 🚧 待遠端實測    | 本機已驗：未登入 POST 素材／議題／意見皆 401、公開素材列表與 `/issues/:id` 的 `__SSR_STATE__` 都不含 `author_*`、素材列表帶 `Vary: Cookie`、意見／議題／prompt 端點不受影響、`/contribute/:id` SSR 只出骨架、`typecheck`＋`build` 綠燈、本機與遠端 D1 都只多出 `ct_materials` 的兩個欄位。**尚未驗**：登入後真的投稿成功、`author_id` 落庫、管理端看得到投稿者——都需要 `dev:remote`，而那會寫入正式資料庫（使用者已裁示「先不要測」） |
+| 9-5 | `issues-opinions-gate` | ✅ 完成 | 使用者裁示的延伸：`POST /api/issues` 與 `POST /api/issues/:id/opinions` 也走 `requireUser()`；`Home.vue` 建立議題表單與 `Issue.vue` 意見投稿框同樣三態登入牆；過期提示改用共用 key |
+| 9-6 | `author-everywhere` | ✅ 完成（遠端 migration 待辦） | `migrations/0003_issue_opinion_author.sql`：`ct_issues`／`ct_opinions` 也記錄作者；`listIssuesWithAuthor()`／`listOpinionsWithAuthor()` 只給管理員；`getIssue()` 一併改成列舉欄位（原本 `SELECT *` 會漏進 SSR state）；Admin 議題表格加「建立者」欄、意見卡顯示投稿者 |
+| 9-7 | `header-auth-ui`  | ✅ 完成          | `src/composables/useAuth.ts` 全站共用登入狀態（一頁只打一次 `/api/me`）；`AppHeader` 顯示「已登入：{name}」／登出／登入面板；`Home`／`Issue`／`Contribute`／`Admin` 四頁改用同一個 composable，Admin 的 `forbidden` 從共用 session 推導 |
+| 9-8 | `verify`          | 🚧 待遠端實測    | 本機已驗：三支寫入端點未登入皆 401；`/api/issues`、`/api/issues/:id`、素材列表、意見列表與四個 SSR 頁面**都查不到 `author_id`／`author_name`**；三支列表端點帶 `Vary: Cookie`；SSR 標頭不出現登入／登出（`authState==='loading'` 不畫）；`typecheck`＋`build` 綠燈；i18n 雙檔 268/268。**尚未驗**：登入後建議題／投素材／投意見的 `author_*` 真的落庫、管理端三處顯示作者（需 `dev:remote`）
 
-> **9-1 與程式碼是綁在一起的**：`createMaterial()` 會寫 `author_id`，所以遠端 migration 必須先於部署——這一步已完成（2026-08-04），部署不再被它擋住。日後若有人重建遠端資料庫，記得這條順序仍然成立。
+> **migration 與程式碼是綁在一起的**：`createMaterial()`／`createIssue()`／`createOpinion()` 都會寫 `author_id`，所以遠端 migration 必須先於部署，否則每次寫入都會 runtime error（`no such column: author_id`）。`0002` 已於 2026-08-04 套用到遠端；**`0003` 的遠端狀態見上表 9-6**——沒套用前不要部署，也不要用 `dev:remote` 測寫入。
 
 > 後續可選：切換到 `vue-router` 全站 hydration、自動化測試／CI——動工前先與使用者確認。

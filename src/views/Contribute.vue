@@ -5,18 +5,12 @@ import AppFooter from '../components/AppFooter.vue'
 import SignInButtons from '../components/SignInButtons.vue'
 import Toast from '../components/Toast.vue'
 import { useI18n } from '../l10n'
-import { loadAuthSession, signOut, type AuthSession } from '../client/auth-session'
+import { useAuth } from '../composables/useAuth'
 
 const props = defineProps<{
   issueId: number
   issueTitle?: string
 }>()
-
-/**
- * 'loading' 是 SSR 與 hydration 首幀共用的狀態——伺服器端不猜登入狀態，兩邊先畫同一個
- * 骨架，等 onMounted 打 /api/me 才分岔（與 Admin.vue 同一套作法），避免 hydration mismatch。
- */
-type AuthState = 'loading' | 'anonymous' | 'signed-in'
 
 const { t } = useI18n()
 const title = ref(props.issueTitle ?? '')
@@ -28,9 +22,11 @@ const licenseOk = ref(false)
 const submitting = ref(false)
 const toast = ref<{ show: (msg: string) => void } | null>(null)
 
-const authState = ref<AuthState>('loading')
-const session = ref<AuthSession | null>(null)
-const authError = ref(false)
+/**
+ * 登入狀態走全站共用的 useAuth（與 AppHeader 共用同一次 /api/me）。'loading' 是 SSR 與
+ * hydration 首幀共用的狀態——伺服器端不猜登入狀態，兩邊先畫同一個骨架，避免 mismatch。
+ */
+const { authState, session, authFailed, ensureAuthSession } = useAuth()
 /**
  * 「填表填到一半 session 過期」專用的旗標，**刻意不重用 authState**——
  * authState 切回 'anonymous' 會把表單整個換成登入卡片，使用者剛打完的素材就沒了。
@@ -45,7 +41,7 @@ const loginCallbackUrl = computed(() => `/contribute/${props.issueId}`)
 
 onMounted(() => {
   void loadTitle()
-  void refreshSession()
+  void ensureAuthSession()
 })
 
 async function loadTitle() {
@@ -53,31 +49,13 @@ async function loadTitle() {
   try {
     const res = await fetch(`/api/issues/${props.issueId}`)
     if (!res.ok) return
-    const data = await res.json()
+    const data = (await res.json()) as { issue?: { title?: string } }
     title.value = data.issue?.title ?? ''
   } catch {
     /* ignore */
   }
 }
 
-async function refreshSession() {
-  authError.value = false
-  try {
-    const current = await loadAuthSession()
-    session.value = current
-    authState.value = current ? 'signed-in' : 'anonymous'
-  } catch {
-    // 讀 session 失敗是「壞掉」不是「未登入」——照樣顯示登入畫面，但要說明白
-    session.value = null
-    authState.value = 'anonymous'
-    authError.value = true
-  }
-}
-
-async function logout() {
-  await signOut()
-  window.location.reload()
-}
 
 async function submitMaterial() {
   const text = content.value.trim()
@@ -154,7 +132,7 @@ async function submitMaterial() {
           <h2 class="mt-0 mb-2 font-serif text-xl">{{ t('contrib_login_title') }}</h2>
           <p class="mb-4 text-muted">{{ t('contrib_login_desc') }}</p>
           <SignInButtons :callback-url="loginCallbackUrl" />
-          <p v-if="authError" class="mt-3 mb-0 text-sm text-red">{{ t('login_err') }}</p>
+          <p v-if="authFailed" class="mt-3 mb-0 text-sm text-red">{{ t('login_err') }}</p>
           <p class="mt-4 mb-0 text-sm text-muted">{{ t('contrib_login_hint') }}</p>
           <div class="mt-4">
             <a :href="backHref" class="btn btn-secondary">{{ t('contrib_back') }}</a>
@@ -167,14 +145,10 @@ async function submitMaterial() {
             <p class="mt-0 mb-3">{{ t('login_expired_hint') }}</p>
             <SignInButtons :callback-url="loginCallbackUrl" />
           </div>
-          <div class="mb-5 flex flex-wrap items-center justify-between gap-2 border-b border-border pb-3">
-            <span class="text-sm text-muted">
-              {{ t('contrib_signed_in_as', { name: session?.user.name || session?.user.email || '' }) }}
-            </span>
-            <button type="button" class="btn btn-ghost btn-sm" @click="logout">
-              {{ t('logout') }}
-            </button>
-          </div>
+          <!-- 登出鈕在 AppHeader，這裡只交代「你會以誰的身分投稿」 -->
+          <p class="mb-5 border-b border-border pb-3 text-sm text-muted">
+            {{ t('contrib_signed_in_as', { name: session?.user.name || session?.user.email || '' }) }}
+          </p>
           <div class="form-group">
             <label>
               <span>{{ t('contrib_label_source') }}</span>

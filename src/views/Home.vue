@@ -6,15 +6,12 @@ import IssueCard from '../components/IssueCard.vue'
 import SignInButtons from '../components/SignInButtons.vue'
 import Toast from '../components/Toast.vue'
 import { useI18n } from '../l10n'
-import { loadAuthSession } from '../client/auth-session'
+import { useAuth } from '../composables/useAuth'
 import type { IssueListItem } from '../db/queries'
 
 const props = defineProps<{
   initialIssues?: IssueListItem[]
 }>()
-
-/** 與 Contribute.vue／Admin.vue 同一套三態；SSR 期間永遠是 'loading' */
-type AuthState = 'loading' | 'anonymous' | 'signed-in'
 
 const { t } = useI18n()
 const issues = ref<IssueListItem[]>(props.initialIssues ?? [])
@@ -25,7 +22,8 @@ const description = ref('')
 const submitting = ref(false)
 const toast = ref<{ show: (msg: string) => void } | null>(null)
 
-const authState = ref<AuthState>('loading')
+// 全站共用的登入狀態（與 AppHeader 共用同一次 /api/me）；SSR 期間永遠是 'loading'
+const { authState, ensureAuthSession } = useAuth()
 // 送出時才發現 session 過期：表單留著（別吃掉使用者打的字），只在上方補一列重新登入
 const sessionExpired = ref(false)
 
@@ -39,18 +37,9 @@ async function loadIssues() {
   }
 }
 
-async function refreshSession() {
-  try {
-    authState.value = (await loadAuthSession()) ? 'signed-in' : 'anonymous'
-  } catch {
-    // 讀 session 失敗一律當未登入處理：真正的守門在伺服器端
-    authState.value = 'anonymous'
-  }
-}
-
 onMounted(() => {
   if (!props.initialIssues) void loadIssues()
-  void refreshSession()
+  void ensureAuthSession()
 })
 
 async function createIssue() {
