@@ -1,1 +1,17 @@
-ADMIN_PASSWORD=your-admin-password
+# 管理權限改看 Better Auth 的登入角色（admin／super-admin），
+# 舊的 ADMIN_PASSWORD 已於 #5 移除，不再有任何程式碼讀取它。
+
+# Better Auth 服務網址與簽章密鑰
+# BETTER_AUTH_URL 逐環境不同（本機 http://localhost:5173）；
+# BETTER_AUTH_SECRET 與 vTaiwan-hono 共用同一個值。
+
+BETTER_AUTH_URL=
+BETTER_AUTH_SECRET=
+
+# Google OAuth 應用程式憑證
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+
+# GitHub OAuth 應用程式憑證
+GITHUB_CLIENT_ID=
+GITHUB_CLIENT_SECRET=

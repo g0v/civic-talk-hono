@@ -1,5 +1,7 @@
 import { Hono } from 'hono'
-import { registerApiRoutes, type AppBindings } from './api/routes'
+import { registerApiRoutes } from './api/routes'
+import { registerAuthRoutes } from './api/auth'
+import type { AppBindings } from './api/types'
 import { listIssues, getIssue, getIssueDetail } from './db/queries'
 import { renderPage } from './ssr/render'
 import {
@@ -17,6 +19,8 @@ import AdminView from './views/Admin.vue'
 
 const app = new Hono<{ Bindings: AppBindings }>()
 
+// 先掛 auth：/api/auth/* 與 /api/me 要在 registerApiRoutes 的 /api/* 泛用處理之前命中
+registerAuthRoutes(app)
 registerApiRoutes(app)
 
 // ── 舊網址導向（只能新增、不能刪除）──────────────────────────

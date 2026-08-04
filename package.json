@@ -6,6 +6,7 @@
   "license": "MIT",
   "scripts": {
     "dev": "vite dev",
+    "dev:remote": "vite dev --mode remote",
     "css": "tailwindcss -i ./src/styles/app.css -o ./public/styles.css",
     "build": "npm run css && vite build && vite build -c vite.client.config.mts",
     "preview": "vite preview",
@@ -15,6 +16,7 @@
   },
   "dependencies": {
     "@vue/server-renderer": "^3.5.32",
+    "better-auth": "^1.6.25",
     "hono": "^4.12.14",
     "vue": "^3.5.32"
   },
