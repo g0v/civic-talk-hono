@@ -58,6 +58,13 @@ onMounted(() => {
 })
 
 const backText = computed(() => props.backLabel ?? t('back_to_issues'))
+
+/** avatar fallback：取名字或 email 的第一個字元。image 由 session 直接拿。 */
+const avatarInitial = computed(() => {
+  const name = session.value?.user.name || session.value?.user.email || '?'
+  return name.charAt(0).toUpperCase()
+})
+const avatarImage = computed(() => session.value?.user.image ?? null)
 </script>
 
 <template>
@@ -72,22 +79,22 @@ const backText = computed(() => props.backLabel ?? t('back_to_issues'))
         <a
           v-if="backHref"
           :href="backHref"
-          class="rounded-pill px-3 py-1.5 text-[13px] text-[#2a2a30] no-underline hover:bg-black/5"
+          class="rounded-pill px-3 py-1.5 text-[13px] text-vt-fg-2 no-underline hover:bg-black/5"
         >
           {{ backText }}
         </a>
         <a
           v-else
           href="/"
-          class="rounded-pill px-3 py-1.5 text-[13px] text-[#2a2a30] no-underline hover:bg-black/5"
-          :class="{ 'font-semibold text-red': current === 'home' }"
+          class="rounded-pill px-3 py-1.5 text-[13px] text-vt-fg-2 no-underline hover:bg-black/5"
+          :class="{ 'font-semibold text-vt-democratic-red': current === 'home' }"
         >
           {{ t('nav_issues') }}
         </a>
         <a
           href="/about"
-          class="rounded-pill px-3 py-1.5 text-[13px] text-[#2a2a30] no-underline hover:bg-black/5"
-          :class="{ 'font-semibold text-red': current === 'about' }"
+          class="hidden rounded-pill px-3 py-1.5 text-[13px] text-vt-fg-2 no-underline hover:bg-black/5 sm:inline-flex"
+          :class="{ 'font-semibold text-vt-democratic-red': current === 'about' }"
         >
           {{ t('nav_about') }}
         </a>
@@ -111,16 +118,24 @@ const backText = computed(() => props.backLabel ?? t('back_to_issues'))
         <template v-if="authState === 'signed-in'">
           <span class="mx-1 h-4 w-px bg-gray-200" aria-hidden="true" />
           <!--
-            窄螢幕也要看得到是誰（需求就是「顯示登入為某某人」），所以不用 hidden sm:inline，
-            改成一律顯示但收緊寬度＋truncate；完整 email 放 title。
+            avatar：有 OAuth 圖片就用真實頭像，否則顯示名字首字母（紅底白字圓圈）。
+            名字文字在 sm 以上才顯示，手機只留圓形頭像節省空間。
           -->
+          <div
+            class="avatar"
+            :title="session?.user.email ?? displayName"
+            aria-hidden="true"
+          >
+            <img v-if="avatarImage" :src="avatarImage" :alt="displayName" />
+            <span v-else>{{ avatarInitial }}</span>
+          </div>
           <span
-            class="max-w-[5rem] truncate text-[13px] text-muted sm:max-w-[12rem]"
+            class="hidden max-w-[10rem] truncate text-[13px] text-vt-fg-2 sm:inline"
             :title="session?.user.email ?? ''"
           >
-            {{ t('signed_in_as', { name: displayName }) }}
+            {{ displayName }}
           </span>
-          <button type="button" class="btn btn-ghost btn-sm" @click="signOutAndReload">
+          <button type="button" class="btn btn-ghost btn-sm text-[13px]" @click="signOutAndReload">
             {{ t('logout') }}
           </button>
         </template>
