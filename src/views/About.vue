@@ -89,7 +89,7 @@ const techRows = computed(() => [
             </li>
             <li>
               <a
-                href="https://github.com/bestian/civic-talk-hono"
+                href="https://github.com/g0v/civic-talk-hono"
                 target="_blank"
                 rel="noopener noreferrer"
                 >{{ t('abt_contact_github') }}</a
