@@ -17,6 +17,7 @@ export const messages = {
   login_shared_account_hint: '與 vTaiwan 共用同一組帳號；同一個 email 用哪種方式登入都是同一個帳號。',
   login_expired_toast: '登入狀態已過期，請重新登入後再提交',
   login_expired_hint: '登入狀態已過期。請先把下方填好的內容複製起來再重新登入——登入會跳轉到 Google／GitHub，這一頁的內容不會保留。',
+  banned_toast: '你的帳號已遭停權，無法執行此操作。如有疑問請聯絡 vTaiwan 管理員。',
   status_collecting: '素材收集中',
   status_summarizing: '彙整中',
   status_published: '說明頁已發布',

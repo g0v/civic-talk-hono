@@ -30,6 +30,8 @@ export interface AuthSession {
     image: string | null
   }
   role: AppRole
+  /** 帳號是否已被停權（vTaiwan-hono admin 管理）。停權者伺服器端寫入一律 403。 */
+  banned: boolean
 }
 
 /**
