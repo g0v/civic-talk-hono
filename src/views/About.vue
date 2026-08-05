@@ -37,13 +37,11 @@ const techRows = computed(() => [
   <div>
     <AppHeader current="about" />
 
-    <section class="bg-gradient-to-b from-[#1a3a5c] to-[#0f2a45] px-5 py-14 text-white">
-      <div class="container">
-        <div class="mb-3 text-xs font-bold tracking-[0.12em] uppercase text-white/70">
-          {{ t('abt_hero_tag') }}
-        </div>
-        <h1 class="m-0 mb-4 font-serif text-3xl font-black leading-snug md:text-4xl" v-html="heroTitleHtml" />
-        <p class="m-0 max-w-2xl text-white/80">{{ t('abt_hero_desc') }}</p>
+    <section class="vt-hero">
+      <div class="vt-hero-inner">
+        <div class="hero-tag">{{ t('abt_hero_tag') }}</div>
+        <h1 class="hero-title" v-html="heroTitleHtml" />
+        <p class="hero-desc">{{ t('abt_hero_desc') }}</p>
       </div>
     </section>
 
