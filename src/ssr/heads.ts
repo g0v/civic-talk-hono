@@ -10,7 +10,7 @@ export interface HeadConfig {
 
 const SITE_NAME = 'Civic Talk'
 
-const DEFAULT_OG_IMAGE = `https://www.moedict.tw/${encodeURIComponent('審議')}.png`
+const DEFAULT_OG_IMAGE = (origin: string) => `${origin}/img/og-image.png`
 
 function buildOg(
   title: string,
@@ -48,7 +48,7 @@ export function headForHome(origin: string): HeadConfig {
   return {
     title,
     description,
-    meta: buildOg(title, description, DEFAULT_OG_IMAGE, `${origin}/`),
+    meta: buildOg(title, description, DEFAULT_OG_IMAGE(origin), `${origin}/`),
   }
 }
 
@@ -58,7 +58,7 @@ export function headForAbout(origin: string): HeadConfig {
   return {
     title,
     description,
-    meta: buildOg(title, description, DEFAULT_OG_IMAGE, `${origin}/about`),
+    meta: buildOg(title, description, DEFAULT_OG_IMAGE(origin), `${origin}/about`),
   }
 }
 
@@ -68,7 +68,7 @@ export function headForIssue(title: string, description: string, id: number, ori
   return {
     title: pageTitle,
     description: desc,
-    meta: buildOg(pageTitle, desc, DEFAULT_OG_IMAGE, `${origin}/issues/${id}`),
+    meta: buildOg(pageTitle, desc, DEFAULT_OG_IMAGE(origin), `${origin}/issues/${id}`),
   }
 }
 
@@ -78,7 +78,7 @@ export function headForContribute(title: string, id: number, origin: string): He
   return {
     title: pageTitle,
     description,
-    meta: buildOg(pageTitle, description, DEFAULT_OG_IMAGE, `${origin}/contribute/${id}`),
+    meta: buildOg(pageTitle, description, DEFAULT_OG_IMAGE(origin), `${origin}/contribute/${id}`),
   }
 }
 
@@ -88,7 +88,7 @@ export function headForAdmin(origin: string): HeadConfig {
   return {
     title,
     description,
-    meta: buildOg(title, description, DEFAULT_OG_IMAGE, `${origin}/admin`),
+    meta: buildOg(title, description, DEFAULT_OG_IMAGE(origin), `${origin}/admin`),
   }
 }
 
