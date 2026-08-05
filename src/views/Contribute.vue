@@ -90,6 +90,11 @@ async function submitMaterial() {
       toast.value?.show(t('login_expired_toast'))
       return
     }
+    // 帳號被停權（#11）：提示並保留表單內容
+    if (res.status === 403) {
+      toast.value?.show(t('banned_toast'))
+      return
+    }
     if (!res.ok) {
       toast.value?.show(t('contrib_toast_fail'))
       return

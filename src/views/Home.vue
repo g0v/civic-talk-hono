@@ -60,6 +60,11 @@ async function createIssue() {
       toast.value?.show(t('login_expired_toast'))
       return
     }
+    // 帳號被停權：提示並保留表單內容（不清表單、不切登入狀態，守門在伺服器端）
+    if (res.status === 403) {
+      toast.value?.show(t('banned_toast'))
+      return
+    }
     if (!res.ok) {
       toast.value?.show(t('idx_toast_create_fail'))
       return

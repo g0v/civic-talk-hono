@@ -12,6 +12,11 @@ export interface AuthContext {
     image: string | null
   }
   role: AppRole
+  /**
+   * 帳號是否被停權。由 vTaiwan-hono 的 admin plugin 管理（user.banned 欄位）；
+   * 本站只讀取。被停權的使用者不得執行任何寫入動作（見 requireUser()）。
+   */
+  banned: boolean
 }
 
 /**
@@ -54,6 +59,9 @@ export async function getAuthContext(
       image: session.user.image ?? null,
     },
     role: resolveRole(session.user.role),
+    // Better Auth admin plugin 在 banExpires 到期後會自動把 banned 改回 false，
+    // 所以直接信任 session.user.banned，不需要額外對照 banExpires。
+    banned: session.user.banned === true,
   }
 }
 

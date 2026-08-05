@@ -301,6 +301,11 @@ async function submitOpinion() {
     toast.value?.show(t('login_expired_toast'))
     return
   }
+  // 帳號被停權（#11）：提示並保留意見內容
+  if (res.status === 403) {
+    toast.value?.show(t('banned_toast'))
+    return
+  }
   if (res.ok) {
     toast.value?.show(t('op_toast_submit_ok'))
     opinionInput.value = ''

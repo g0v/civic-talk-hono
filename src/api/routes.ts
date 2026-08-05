@@ -55,6 +55,8 @@ function error(msg: string, status = 400): Response {
 async function requireAdmin(request: Request, env: AppBindings): Promise<Response | null> {
   const context = await tryGetAuthContext(env, request.headers)
   if (!context) return error('Unauthorized', 401)
+  // 停權帳號即使有 admin 角色也不得操作：先判 banned，再判角色（#11）
+  if (context.banned) return error('Forbidden: account is suspended', 403)
   if (!isAdminRole(context.role)) return error('Forbidden', 403)
   return null
 }
@@ -71,6 +73,8 @@ async function requireUser(
 ): Promise<{ context: AuthContext } | { denied: Response }> {
   const context = await tryGetAuthContext(env, request.headers)
   if (!context) return { denied: error('Unauthorized', 401) }
+  // 停權帳號不得執行任何寫入動作（#11）
+  if (context.banned) return { denied: error('Forbidden: account is suspended', 403) }
   return { context }
 }
 

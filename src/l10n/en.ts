@@ -17,6 +17,7 @@ export const messages = {
   login_shared_account_hint: 'Accounts are shared with vTaiwan; the same email is the same account whichever provider you use.',
   login_expired_toast: 'Your session has expired. Please sign in again before submitting.',
   login_expired_hint: "Your session has expired. Copy what you have written below before signing in again — signing in navigates away and this page's content will not be kept.",
+  banned_toast: 'Your account has been suspended and cannot perform this action. Contact a vTaiwan admin if you have questions.',
   status_collecting: 'Collecting',
   status_summarizing: 'Summarizing',
   status_published: 'Published',
