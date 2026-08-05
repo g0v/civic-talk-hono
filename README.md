@@ -24,10 +24,11 @@ npm run dev
 
 | 指令 | 說明 |
 | ---- | ---- |
-| `npm run dev` | 本機 Vite + Worker（含 HMR），D1 用本機模擬 |
-| `npm run dev:remote` | 同上但 D1 連遠端；實測登入用這個 |
+| `npm run dev` | 同時監看 Tailwind CSS 與啟動本機 Vite + Worker（含 HMR） |
+| `npm run dev:remote` | 同時監看 Tailwind CSS 並以遠端 D1 啟動 Vite；實測登入用這個 |
 | `npm run css` | 由 `src/styles/app.css` 建置 `public/styles.css` |
-| `npm run build` | CSS + server + client bundle |
+| `npm run css:watch` | 只監看並重建 Tailwind CSS |
+| `npm run build` | 依序建置 CSS、client bundle、server bundle |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run cf-typegen` | 產生 Cloudflare 綁定型別 |
 

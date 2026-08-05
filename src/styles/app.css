@@ -158,6 +158,11 @@
   textarea {
     font: inherit;
   }
+
+  :focus-visible {
+    outline: 3px solid color-mix(in srgb, var(--color-red) 42%, transparent);
+    outline-offset: 3px;
+  }
 }
 
 @layer components {
@@ -302,10 +307,11 @@
     color: var(--color-ink);
   }
 
-  .form-group input:focus,
-  .form-group textarea:focus,
-  .form-group select:focus {
+  .form-group input:focus-visible,
+  .form-group textarea:focus-visible,
+  .form-group select:focus-visible {
     outline: 2px solid color-mix(in srgb, var(--color-red) 35%, transparent);
+    outline-offset: 1px;
     border-color: var(--color-red);
   }
 
@@ -540,5 +546,19 @@
 
   .vt-hero {
     padding: 2.5rem 1rem 2rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }
