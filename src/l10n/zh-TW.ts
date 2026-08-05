@@ -186,6 +186,7 @@ export const messages = {
   adm_op_count_prefix: '共 ',
   adm_op_count_suffix: ' 份意見',
   nav_about: '關於',
+  nav_admin: '管理後台',
   nav_issues: "所有議題",
   abt_hero_tag: '實驗中的公民審議平台',
   abt_hero_title: '讓更多人真正理解公共議題\n而不只是選邊站',

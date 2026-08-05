@@ -186,6 +186,7 @@ export const messages = {
   adm_op_count_prefix: '',
   adm_op_count_suffix: ' opinions',
   nav_about: 'About',
+  nav_admin: 'Admin',
   nav_issues: "All Issues",
   abt_hero_tag: 'An Experimental Civic Deliberation Platform',
   abt_hero_title: 'Helping more people truly understand public issues\n— not just pick sides',

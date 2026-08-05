@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useI18n, useLocaleLabel, type Locale } from '../l10n'
+import { isAdminSession } from '../client/auth-session'
 import { useAuth } from '../composables/useAuth'
 import SignInButtons from './SignInButtons.vue'
 
@@ -34,6 +35,7 @@ const showMenu = ref(false)
 const displayName = computed(
   () => session.value?.user.name || session.value?.user.email || '',
 )
+const hasAdminAccess = computed(() => isAdminSession(session.value))
 /** 登入後導回當前頁面。SSR 期間不會用到（未登入的 UI 只在瀏覽器端出現），仍加守衛 */
 const loginCallbackUrl = computed(() =>
   typeof window === 'undefined' ? '/' : window.location.pathname + window.location.search,
@@ -112,6 +114,14 @@ function handleNewIssue() {
           :class="{ 'font-semibold text-vt-democratic-red': current === 'about' }"
         >
           {{ t('nav_about') }}
+        </a>
+        <a
+          v-if="hasAdminAccess"
+          href="/admin"
+          class="rounded-pill px-3 py-1.5 text-[13px] text-vt-fg-2 no-underline hover:bg-black/5"
+          :class="{ 'font-semibold text-vt-democratic-red': current === 'admin' }"
+        >
+          {{ t('nav_admin') }}
         </a>
         <span class="mx-1 h-4 w-px bg-gray-200" aria-hidden="true" />
         <button type="button" class="btn btn-ghost btn-sm" @click="toggleLocale">
@@ -228,6 +238,15 @@ function handleNewIssue() {
           @click="closeMenu"
         >
           {{ t('nav_about') }}
+        </a>
+        <a
+          v-if="hasAdminAccess"
+          href="/admin"
+          class="rounded-lg px-3 py-2.5 text-[15px] no-underline hover:bg-black/5"
+          :class="current === 'admin' ? 'font-semibold text-vt-democratic-red' : 'text-vt-fg-1'"
+          @click="closeMenu"
+        >
+          {{ t('nav_admin') }}
         </a>
       </nav>
 
