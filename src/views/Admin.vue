@@ -2,37 +2,45 @@
 import { computed, onMounted, ref } from 'vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppFooter from '../components/AppFooter.vue'
+import SignInButtons from '../components/SignInButtons.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import Toast from '../components/Toast.vue'
 import { formatDate, useI18n } from '../l10n'
-import {
-  isAdminSession,
-  loadAuthSession,
-  signInWith,
-  signOut,
-  type AuthSession,
-} from '../client/auth-session'
-import type { Briefing, IssueListItem, IssueStatus, Material, Opinion } from '../db/queries'
+import { useAuth } from '../composables/useAuth'
+import { isAdminSession } from '../client/auth-session'
+import type {
+  Briefing,
+  IssueListItemWithAuthor,
+  IssueStatus,
+  MaterialWithAuthor,
+  OpinionWithAuthor,
+} from '../db/queries'
 
 type AdminTab = 'issues' | 'materials' | 'opinions'
-
-/**
- * 'loading' 是 SSR 與 hydration 首幀共用的狀態——伺服器端不知道也不該猜登入狀態，
- * 兩邊都先畫同一個骨架，等 onMounted 打 /api/me 才分岔，避免 hydration mismatch。
- */
-type AuthState = 'loading' | 'anonymous' | 'forbidden' | 'admin'
 
 const { t, locale } = useI18n()
 const toast = ref<{ show: (msg: string) => void } | null>(null)
 
-const authState = ref<AuthState>('loading')
-const session = ref<AuthSession | null>(null)
-const authError = ref(false)
+/**
+ * 登入狀態走全站共用的 useAuth（與 AppHeader 共用同一次 /api/me）。'loading' 是 SSR 與
+ * hydration 首幀共用的狀態——伺服器端不知道也不該猜登入狀態，兩邊都先畫同一個骨架，
+ * 等 onMounted 打 /api/me 才分岔，避免 hydration mismatch。
+ *
+ * 管理頁多一個 'forbidden'（登入了但角色不足）：從共用的 session 推導出來，
+ * 因為只有這一頁在乎角色。
+ */
+const { authState, session, authFailed, ensureAuthSession, signOutAndReload } = useAuth()
+const adminView = computed<'loading' | 'anonymous' | 'forbidden' | 'admin'>(() => {
+  if (authState.value === 'loading') return 'loading'
+  if (authState.value === 'anonymous' || !session.value) return 'anonymous'
+  return isAdminSession(session.value) ? 'admin' : 'forbidden'
+})
 const activeTab = ref<AdminTab>('issues')
 const stats = ref({ issues: 0, materials: 0, opinions: 0, briefings: 0 })
-const issues = ref<IssueListItem[]>([])
-const materials = ref<Material[]>([])
-const opinions = ref<Opinion[]>([])
+// 管理端讀到的議題／素材／意見都含建立者或投稿者（#9）；一般讀取者拿到的是公開形狀
+const issues = ref<IssueListItemWithAuthor[]>([])
+const materials = ref<MaterialWithAuthor[]>([])
+const opinions = ref<OpinionWithAuthor[]>([])
 const matIssueId = ref<number | ''>('')
 const opIssueId = ref<number | ''>('')
 
@@ -55,42 +63,10 @@ function authHeaders(): HeadersInit {
   return { 'Content-Type': 'application/json' }
 }
 
-onMounted(() => {
-  void refreshSession()
+onMounted(async () => {
+  await ensureAuthSession()
+  if (adminView.value === 'admin') await bootstrap()
 })
-
-async function refreshSession() {
-  authError.value = false
-  try {
-    const current = await loadAuthSession()
-    session.value = current
-    if (!current) {
-      authState.value = 'anonymous'
-      return
-    }
-    authState.value = isAdminSession(current) ? 'admin' : 'forbidden'
-    if (authState.value === 'admin') await bootstrap()
-  } catch {
-    // 讀 session 失敗是「壞掉」不是「未登入」——照樣顯示登入畫面，但要說明白
-    authState.value = 'anonymous'
-    authError.value = true
-  }
-}
-
-async function login(provider: 'google' | 'github') {
-  authError.value = false
-  try {
-    // 導向 OAuth；回來時再落回 /admin 由 onMounted 重讀 session
-    await signInWith(provider, '/admin')
-  } catch {
-    authError.value = true
-  }
-}
-
-async function logout() {
-  await signOut()
-  window.location.reload()
-}
 
 async function bootstrap() {
   await Promise.all([loadStats(), loadIssues()])
@@ -131,7 +107,7 @@ function openNew() {
   modalNew.value = true
 }
 
-function openEdit(issue: IssueListItem) {
+function openEdit(issue: IssueListItemWithAuthor) {
   editId.value = issue.id
   formTitle.value = issue.title
   formDesc.value = issue.description ?? ''
@@ -140,7 +116,7 @@ function openEdit(issue: IssueListItem) {
   modalEdit.value = true
 }
 
-async function openBriefing(issue: IssueListItem) {
+async function openBriefing(issue: IssueListItemWithAuthor) {
   briefingIssueId.value = issue.id
   const res = await fetch(`/api/issues/${issue.id}/briefing`)
   const b = (res.ok ? await res.json() : null) as Briefing | null
@@ -192,7 +168,7 @@ async function saveIssue() {
   await bootstrap()
 }
 
-async function deleteIssue(issue: IssueListItem) {
+async function deleteIssue(issue: IssueListItemWithAuthor) {
   const msg = t('adm_confirm_delete', { title: issue.title })
   if (!confirm(msg)) return
   const res = await fetch(`/api/issues/${issue.id}`, {
@@ -263,7 +239,7 @@ const tabs = computed(() => [
     <main class="py-9">
       <div class="container">
         <!-- 讀取 session 中：SSR 與 hydration 首幀共用這個骨架 -->
-        <div v-if="authState === 'loading'" class="mx-auto max-w-md">
+        <div v-if="adminView === 'loading'" class="mx-auto max-w-md">
           <div class="card">
             <h1 class="mt-0 mb-2 font-serif text-2xl">{{ t('adm_login_title') }}</h1>
             <p class="m-0 text-muted">{{ t('loading') }}</p>
@@ -271,63 +247,26 @@ const tabs = computed(() => [
         </div>
 
         <!-- 未登入 -->
-        <div v-else-if="authState === 'anonymous'" class="mx-auto max-w-md">
+        <div v-else-if="adminView === 'anonymous'" class="mx-auto max-w-md">
           <div class="card">
             <h1 class="mt-0 mb-2 font-serif text-2xl">{{ t('adm_login_title') }}</h1>
             <p class="mb-4 text-muted">{{ t('adm_login_desc') }}</p>
-            <!--
-              兩顆都用 btn-secondary（白底）：品牌標誌有各自的使用規範，四色 Google G
-              放在 btn-primary 的紅底上既不好看也不符合 Google 的品牌指引。兩個 provider
-              本來也是平行選項，不該有主次之分。
-              SVG 內嵌而非拉外部資源：Worker 不打外部請求，也不為兩個圖示加 icon 套件。
-              下面的色碼是品牌資產的一部分（不是設計決策），所以刻意不走 vt-* token。
-            -->
-            <div class="flex flex-col gap-2">
-              <button type="button" class="btn btn-secondary" @click="login('google')">
-                <svg class="h-4 w-4 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
-                  <path
-                    fill="#4285F4"
-                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                  />
-                  <path
-                    fill="#34A853"
-                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                  />
-                  <path
-                    fill="#FBBC05"
-                    d="M5.84 14.1c-.22-.66-.35-1.36-.35-2.1s.13-1.44.35-2.1V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.83z"
-                  />
-                  <path
-                    fill="#EA4335"
-                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.83C6.71 7.31 9.14 5.38 12 5.38z"
-                  />
-                </svg>
-                {{ t('adm_login_google') }}
-              </button>
-              <button type="button" class="btn btn-secondary" @click="login('github')">
-                <svg class="h-4 w-4 shrink-0" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-                  <path
-                    d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"
-                  />
-                </svg>
-                {{ t('adm_login_github') }}
-              </button>
-            </div>
-            <p v-if="authError" class="mt-3 mb-0 text-sm text-red">{{ t('adm_login_err') }}</p>
+            <SignInButtons callback-url="/admin" />
+            <p v-if="authFailed" class="mt-3 mb-0 text-sm text-red">{{ t('login_err') }}</p>
             <p class="mt-4 mb-0 text-sm text-muted">{{ t('adm_login_hint') }}</p>
           </div>
         </div>
 
         <!-- 登入了，但這個帳號沒有管理權限 -->
-        <div v-else-if="authState === 'forbidden'" class="mx-auto max-w-md">
+        <div v-else-if="adminView === 'forbidden'" class="mx-auto max-w-md">
           <div class="card">
             <h1 class="mt-0 mb-2 font-serif text-2xl">{{ t('adm_forbidden_title') }}</h1>
             <p class="mb-4 text-muted">
               {{ t('adm_forbidden_desc', { email: session?.user.email ?? '' }) }}
             </p>
             <div class="flex flex-wrap gap-2">
-              <button type="button" class="btn btn-secondary" @click="logout">
-                {{ t('adm_logout') }}
+              <button type="button" class="btn btn-secondary" @click="signOutAndReload">
+                {{ t('logout') }}
               </button>
               <a href="/" class="btn btn-ghost">{{ t('adm_back') }}</a>
             </div>
@@ -343,12 +282,9 @@ const tabs = computed(() => [
             </div>
             <div class="flex flex-wrap items-center gap-2">
               <span v-if="session" class="text-sm text-muted">
-                {{ t('adm_signed_in_as', { name: session.user.name || session.user.email }) }}
+                {{ t('signed_in_as', { name: session.user.name || session.user.email }) }}
               </span>
               <a href="/" class="btn btn-secondary btn-sm">{{ t('adm_back') }}</a>
-              <button type="button" class="btn btn-ghost btn-sm" @click="logout">
-                {{ t('adm_logout') }}
-              </button>
             </div>
           </div>
 
@@ -400,6 +336,7 @@ const tabs = computed(() => [
                     <th class="px-3 py-2 text-left">{{ t('adm_th_title') }}</th>
                     <th class="px-3 py-2 text-left">{{ t('adm_th_status') }}</th>
                     <th class="px-3 py-2 text-left">{{ t('adm_th_materials') }}</th>
+                    <th class="px-3 py-2 text-left">{{ t('adm_th_author') }}</th>
                     <th class="px-3 py-2 text-left">{{ t('adm_th_created') }}</th>
                     <th class="px-3 py-2 text-left">{{ t('adm_th_actions') }}</th>
                   </tr>
@@ -412,6 +349,7 @@ const tabs = computed(() => [
                     </td>
                     <td class="px-3 py-2"><StatusBadge :status="issue.status" short /></td>
                     <td class="px-3 py-2">{{ issue.material_count }}</td>
+                    <td class="px-3 py-2">{{ issue.author_name || t('adm_author_unknown') }}</td>
                     <td class="px-3 py-2">{{ formatDate(issue.created_at, locale) }}</td>
                     <td class="px-3 py-2">
                       <div class="flex flex-wrap gap-1">
@@ -469,6 +407,10 @@ const tabs = computed(() => [
                   >{{ t('adm_mat_link') }}</a
                 >
                 <div class="mt-2 whitespace-pre-wrap text-sm">{{ m.content }}</div>
+                <!-- #9：投稿者只在管理端顯示，公開的素材列表不含這個欄位 -->
+                <p class="mt-2 mb-0 text-sm text-muted">
+                  {{ t('adm_author') }}{{ m.author_name || t('adm_author_unknown') }}
+                </p>
               </div>
             </template>
           </section>
@@ -499,6 +441,10 @@ const tabs = computed(() => [
                   </button>
                 </div>
                 <div class="whitespace-pre-wrap text-sm">{{ o.summary }}</div>
+                <!-- #9：投稿者只在管理端顯示，公開的意見列表不含這個欄位 -->
+                <p class="mt-2 mb-0 text-sm text-muted">
+                  {{ t('adm_author') }}{{ o.author_name || t('adm_author_unknown') }}
+                </p>
               </div>
             </template>
           </section>
