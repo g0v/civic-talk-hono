@@ -8,7 +8,7 @@
     "dev": "vite dev",
     "dev:remote": "vite dev --mode remote",
     "css": "tailwindcss -i ./src/styles/app.css -o ./public/styles.css",
-    "build": "npm run css && vite build && vite build -c vite.client.config.mts",
+    "build": "npm run css && vite build -c vite.client.config.mts && vite build",
     "preview": "vite preview",
     "deploy": "npm run build && wrangler deploy",
     "typecheck": "tsc --noEmit",
