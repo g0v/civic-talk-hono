@@ -29,6 +29,7 @@ const date = computed(() => formatDate(props.issue.created_at, locale.value))
     </p>
     <p class="mt-3 mb-0 text-xs text-muted">
       {{ issue.material_count }} {{ t('idx_materials_unit') }}
+      · {{ issue.opinion_count }} {{ t('idx_opinions_unit') }}
     </p>
   </a>
 </template>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppFooter from '../components/AppFooter.vue'
 import IssueCard from '../components/IssueCard.vue'
@@ -26,6 +26,30 @@ const toast = ref<{ show: (msg: string) => void } | null>(null)
 const { authState, ensureAuthSession } = useAuth()
 // 送出時才發現 session 過期：表單留著（別吃掉使用者打的字），只在上方補一列重新登入
 const sessionExpired = ref(false)
+
+const searchQuery = ref('')
+type SortOrder = 'newest' | 'most' | 'least'
+const sortOrder = ref<SortOrder>('newest')
+
+const filteredAndSortedIssues = computed(() => {
+  const q = searchQuery.value.trim().toLowerCase()
+  let result = q
+    ? issues.value.filter(
+        (i) =>
+          i.title.toLowerCase().includes(q) ||
+          (i.description ?? '').toLowerCase().includes(q),
+      )
+    : [...issues.value]
+  if (sortOrder.value === 'most') {
+    result.sort((a, b) => (b.material_count + b.opinion_count) - (a.material_count + a.opinion_count))
+  } else if (sortOrder.value === 'least') {
+    result.sort((a, b) => (a.material_count + a.opinion_count) - (b.material_count + b.opinion_count))
+  } else {
+    // newest: created_at DESC (API already returns this order; preserve stable sort)
+    result.sort((a, b) => (a.created_at < b.created_at ? 1 : a.created_at > b.created_at ? -1 : 0))
+  }
+  return result
+})
 
 async function loadIssues() {
   loading.value = true
@@ -153,8 +177,26 @@ async function createIssue() {
           </template>
         </div>
 
-        <div class="mb-4">
-          <div class="section-label">ISSUES</div>
+        <div class="mb-4 flex flex-wrap items-center gap-3">
+          <div class="section-label shrink-0">ISSUES</div>
+          <input
+            v-model="searchQuery"
+            type="search"
+            class="flex-1 min-w-40 rounded border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-vt-democratic-red/40"
+            :placeholder="t('idx_search_ph')"
+          />
+          <div class="flex gap-1 shrink-0">
+            <button
+              v-for="s in (['newest', 'most', 'least'] as const)"
+              :key="s"
+              type="button"
+              class="btn btn-sm"
+              :class="sortOrder === s ? 'btn-primary' : 'btn-secondary'"
+              @click="sortOrder = s"
+            >
+              {{ t(s === 'newest' ? 'idx_sort_newest' : s === 'most' ? 'idx_sort_most' : 'idx_sort_least') }}
+            </button>
+          </div>
         </div>
 
         <div v-if="loading" class="empty">
@@ -165,8 +207,12 @@ async function createIssue() {
           <div class="empty-icon">🌱</div>
           {{ t('idx_empty') }}
         </div>
+        <div v-else-if="!filteredAndSortedIssues.length" class="empty">
+          <div class="empty-icon">🔍</div>
+          {{ t('idx_search_no_result', { keyword: searchQuery.trim() }) }}
+        </div>
         <div v-else>
-          <IssueCard v-for="issue in issues" :key="issue.id" :issue="issue" />
+          <IssueCard v-for="issue in filteredAndSortedIssues" :key="issue.id" :issue="issue" />
         </div>
       </div>
     </main>
