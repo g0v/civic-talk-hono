@@ -14,6 +14,7 @@ export interface Issue {
 
 export interface IssueListItem extends Issue {
   material_count: number
+  opinion_count: number
 }
 
 /** 議題 + 建立者（僅供管理端；author_* 對「需登入」之前的舊資料是 null） */
@@ -90,35 +91,27 @@ export interface AdminStats {
 
 const ISSUE_PUBLIC_COLUMNS = 'id, title, description, status, polis_id, created_at'
 
-async function withMaterialCounts<T extends Issue>(
-  db: D1Database,
-  issues: T[],
-): Promise<(T & { material_count: number })[]> {
-  for (const issue of issues) {
-    const row = await db
-      .prepare('SELECT COUNT(*) as cnt FROM ct_materials WHERE issue_id = ?')
-      .bind(issue.id)
-      .first<{ cnt: number }>()
-    ;(issue as T & { material_count: number }).material_count = row?.cnt ?? 0
-  }
-  return issues as (T & { material_count: number })[]
-}
+const ISSUE_COUNT_SUBQUERIES = `
+  (SELECT COUNT(*) FROM ct_materials WHERE issue_id = ct_issues.id) AS material_count,
+  (SELECT COUNT(*) FROM ct_opinions  WHERE issue_id = ct_issues.id) AS opinion_count`
 
 export async function listIssues(db: D1Database): Promise<IssueListItem[]> {
   const { results } = await db
-    .prepare(`SELECT ${ISSUE_PUBLIC_COLUMNS} FROM ct_issues ORDER BY created_at DESC`)
-    .all<Issue>()
-  return withMaterialCounts(db, results ?? [])
+    .prepare(
+      `SELECT ${ISSUE_PUBLIC_COLUMNS}, ${ISSUE_COUNT_SUBQUERIES} FROM ct_issues ORDER BY created_at DESC`,
+    )
+    .all<IssueListItem>()
+  return results ?? []
 }
 
 /** 管理端專用：多回建立者。呼叫端必須先確認請求者是管理員。 */
 export async function listIssuesWithAuthor(db: D1Database): Promise<IssueListItemWithAuthor[]> {
   const { results } = await db
     .prepare(
-      `SELECT ${ISSUE_PUBLIC_COLUMNS}, author_id, author_name FROM ct_issues ORDER BY created_at DESC`,
+      `SELECT ${ISSUE_PUBLIC_COLUMNS}, author_id, author_name, ${ISSUE_COUNT_SUBQUERIES} FROM ct_issues ORDER BY created_at DESC`,
     )
-    .all<IssueWithAuthor>()
-  return withMaterialCounts(db, results ?? [])
+    .all<IssueListItemWithAuthor>()
+  return results ?? []
 }
 
 /**
