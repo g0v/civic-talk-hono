@@ -9,7 +9,7 @@
   // 刻意不寫死 account_id：與 ../vTaiwan-hono 一致，交給 wrangler 登入的帳號決定
   "assets": { "directory": "./public/", "binding": "ASSETS" },
   "observability": {
-    "enabled": true
+    "enabled": true,
   },
   "d1_databases": [
     {
@@ -18,7 +18,7 @@
       "binding": "DB",
       "database_name": "vtaiwan-civic-talks",
       "database_id": "1b5f4077-f5a7-4b0d-9877-952d5726c7b8",
-      "migrations_dir": "./migrations"
+      "migrations_dir": "./migrations",
     },
     {
       // 共用認證資料庫，schema 由 ../vTaiwan-hono 維護；本 repo 不擁有也不套用
@@ -31,7 +31,7 @@
       "remote": true,
       "binding": "DB_AUTH",
       "database_name": "vtaiwan-auth",
-      "database_id": "e26edd14-d163-427d-8630-9304f815e9fa"
-    }
-  ]
+      "database_id": "e26edd14-d163-427d-8630-9304f815e9fa",
+    },
+  ],
 }

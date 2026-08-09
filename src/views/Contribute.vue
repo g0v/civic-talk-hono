@@ -56,7 +56,6 @@ async function loadTitle() {
   }
 }
 
-
 async function submitMaterial() {
   const text = content.value.trim()
   if (!text) {
@@ -118,9 +117,7 @@ async function submitMaterial() {
     <main class="py-9">
       <div class="container">
         <h1 class="page-title">{{ t('contrib_title') }}</h1>
-        <p class="page-subtitle">
-          {{ t('contrib_issue_prefix') }}{{ title || t('loading') }}
-        </p>
+        <p class="page-subtitle">{{ t('contrib_issue_prefix') }}{{ title || t('loading') }}</p>
 
         <div class="alert alert-info mb-7">
           <strong>{{ t('contrib_alert_strong') }}</strong>
@@ -195,12 +192,7 @@ async function submitMaterial() {
             </label>
           </div>
           <div class="flex gap-2">
-            <button
-              type="button"
-              class="btn btn-primary"
-              :disabled="submitting"
-              @click="submitMaterial"
-            >
+            <button type="button" class="btn btn-primary" :disabled="submitting" @click="submitMaterial">
               {{ t('contrib_submit') }}
             </button>
             <a :href="backHref" class="btn btn-secondary">{{ t('cancel') }}</a>

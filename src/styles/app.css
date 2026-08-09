@@ -216,7 +216,11 @@
     font-weight: 500;
     cursor: pointer;
     text-decoration: none;
-    transition: background 0.15s, color 0.15s, border-color 0.15s, opacity 0.15s;
+    transition:
+      background 0.15s,
+      color 0.15s,
+      border-color 0.15s,
+      opacity 0.15s;
   }
 
   .btn:hover {
@@ -416,7 +420,9 @@
     box-shadow: var(--shadow-md);
     opacity: 0;
     pointer-events: none;
-    transition: transform 0.2s, opacity 0.2s;
+    transition:
+      transform 0.2s,
+      opacity 0.2s;
     z-index: 200;
     max-width: min(90vw, 420px);
     text-align: center;
@@ -429,10 +435,8 @@
 
   .vt-hero {
     background:
-      radial-gradient(ellipse at 15% 20%, rgba(216, 0, 0, 0.35), transparent 45%),
-      radial-gradient(ellipse at 85% 10%, rgba(0, 136, 136, 0.28), transparent 40%),
-      radial-gradient(ellipse at 70% 90%, rgba(219, 119, 0, 0.22), transparent 45%),
-      #0b0b0c;
+      radial-gradient(ellipse at 15% 20%, rgba(216, 0, 0, 0.35), transparent 45%), radial-gradient(ellipse at 85% 10%, rgba(0, 136, 136, 0.28), transparent 40%),
+      radial-gradient(ellipse at 70% 90%, rgba(219, 119, 0, 0.22), transparent 45%), #0b0b0c;
     color: white;
     padding: 3.5rem 1.25rem 3rem;
   }
@@ -471,7 +475,6 @@
     gap: 0.6rem;
     align-items: center;
   }
-
 
   .section-label {
     font-size: 11px;

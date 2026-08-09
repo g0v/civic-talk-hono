@@ -9,19 +9,19 @@ const { t } = useI18n()
 const heroTitleHtml = computed(() => t('abt_hero_title').replace(/\n/g, '<br>'))
 
 const roles = computed(() =>
-  [1, 2, 3, 4].map((n) => ({
+  [1, 2, 3, 4].map(n => ({
     icon: t(`abt_role${n}_icon` as 'abt_role1_icon'),
     title: t(`abt_role${n}_title` as 'abt_role1_title'),
     desc: t(`abt_role${n}_desc` as 'abt_role1_desc'),
-  })),
+  }))
 )
 
 const steps = computed(() =>
-  [1, 2, 3].map((n) => ({
+  [1, 2, 3].map(n => ({
     label: t(`abt_step${n}_label` as 'abt_step1_label'),
     title: t(`abt_step${n}_title` as 'abt_step1_title'),
     desc: t(`abt_step${n}_desc` as 'abt_step1_desc'),
-  })),
+  }))
 )
 
 const techRows = computed(() => [
@@ -83,17 +83,10 @@ const techRows = computed(() => [
             <li>{{ t('abt_contact_slack') }}</li>
             <li>{{ t('abt_contact_channel') }}</li>
             <li>
-              <a href="https://join.g0v.tw" target="_blank" rel="noopener noreferrer">{{
-                t('abt_contact_join')
-              }}</a>
+              <a href="https://join.g0v.tw" target="_blank" rel="noopener noreferrer">{{ t('abt_contact_join') }}</a>
             </li>
             <li>
-              <a
-                href="https://github.com/g0v/civic-talk-hono"
-                target="_blank"
-                rel="noopener noreferrer"
-                >{{ t('abt_contact_github') }}</a
-              >
+              <a href="https://github.com/g0v/civic-talk-hono" target="_blank" rel="noopener noreferrer">{{ t('abt_contact_github') }}</a>
             </li>
           </ul>
           <div class="mt-6">

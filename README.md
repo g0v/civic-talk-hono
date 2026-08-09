@@ -4,7 +4,6 @@
 
 平台**不呼叫任何 AI API**——志願者用自己的 AI token 跑彙整，平台只產生 prompt 並收回結果。
 
-
 ## 目前進展狀態
 
 先複刻了原本civic talk的頁面與功能，可在近端執行，尚未部署
@@ -22,28 +21,28 @@ vp run dev
 
 常用指令：
 
-| 指令 | 說明 |
-| ---- | ---- |
-| `vp run dev` | 先建置 CSS 再啟動本機 Worker + HMR（D1 本機模擬） |
-| `vp run dev:remote` | 先建置 CSS 再連遠端 D1；實測登入用這個 |
-| `vp run css` | 由 `src/styles/app.css` 建置 `public/styles.css` |
-| `vp run css:watch` | 監看並自動重建 Tailwind CSS |
-| `vp run build` | 依序建置 CSS、client bundle、server bundle |
-| `vp check --no-fmt --no-lint` | tsc 型別檢查 |
-| `vp test` | 執行自動化測試（Vitest） |
-| `vp exec wrangler types` | 產生 Cloudflare 綁定型別 |
+| 指令                          | 說明                                              |
+| ----------------------------- | ------------------------------------------------- |
+| `vp run dev`                  | 先建置 CSS 再啟動本機 Worker + HMR（D1 本機模擬） |
+| `vp run dev:remote`           | 先建置 CSS 再連遠端 D1；實測登入用這個            |
+| `vp run css`                  | 由 `src/styles/app.css` 建置 `public/styles.css`  |
+| `vp run css:watch`            | 監看並自動重建 Tailwind CSS                       |
+| `vp run build`                | 依序建置 CSS、client bundle、server bundle        |
+| `vp check --no-fmt --no-lint` | tsc 型別檢查                                      |
+| `vp test`                     | 執行自動化測試（Vitest）                          |
+| `vp exec wrangler types`      | 產生 Cloudflare 綁定型別                          |
 
 樣式 token 以 `vtaiwan-design-system/project/colors_and_type.css` 為穩定來源，透過 Tailwind v4 的 `vt-*` utilities 使用，例如 `text-vt-democratic-red`、`bg-vt-bg-2`、`font-vt-serif`。
 
 ## 路由
 
-| 路徑 | 說明 |
-| ---- | ---- |
-| `/` | 議題列表／新增議題 |
-| `/issues/:id` | 議題說明、素材、志願者工具、意見、Polis |
-| `/contribute/:id` | 素材投稿 |
-| `/about` | 關於 |
-| `/admin` | 管理後台（Google／GitHub 登入，需 `admin`／`super-admin` 角色） |
+| 路徑              | 說明                                                            |
+| ----------------- | --------------------------------------------------------------- |
+| `/`               | 議題列表／新增議題                                              |
+| `/issues/:id`     | 議題說明、素材、志願者工具、意見、Polis                         |
+| `/contribute/:id` | 素材投稿                                                        |
+| `/about`          | 關於                                                            |
+| `/admin`          | 管理後台（Google／GitHub 登入，需 `admin`／`super-admin` 角色） |
 
 舊網址 `/index.html`、`/issue.html?id=`、`/contribute.html?id=`、`/about.html`、`/admin.html` 會導向新路由。
 

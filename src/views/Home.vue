@@ -33,17 +33,11 @@ const sortOrder = ref<SortOrder>('newest')
 
 const filteredAndSortedIssues = computed(() => {
   const q = searchQuery.value.trim().toLowerCase()
-  let result = q
-    ? issues.value.filter(
-        (i) =>
-          i.title.toLowerCase().includes(q) ||
-          (i.description ?? '').toLowerCase().includes(q),
-      )
-    : [...issues.value]
+  let result = q ? issues.value.filter(i => i.title.toLowerCase().includes(q) || (i.description ?? '').toLowerCase().includes(q)) : [...issues.value]
   if (sortOrder.value === 'most') {
-    result.sort((a, b) => (b.material_count + b.opinion_count) - (a.material_count + a.opinion_count))
+    result.sort((a, b) => b.material_count + b.opinion_count - (a.material_count + a.opinion_count))
   } else if (sortOrder.value === 'least') {
-    result.sort((a, b) => (a.material_count + a.opinion_count) - (b.material_count + b.opinion_count))
+    result.sort((a, b) => a.material_count + a.opinion_count - (b.material_count + b.opinion_count))
   } else {
     // newest: created_at DESC (API already returns this order; preserve stable sort)
     result.sort((a, b) => (a.created_at < b.created_at ? 1 : a.created_at > b.created_at ? -1 : 0))
@@ -160,11 +154,7 @@ async function createIssue() {
                 <span>{{ t('idx_label_desc') }}</span>
                 <span class="label-hint">{{ t('idx_hint_desc') }}</span>
               </label>
-              <textarea
-                v-model="description"
-                rows="3"
-                :placeholder="t('idx_ph_desc')"
-              />
+              <textarea v-model="description" rows="3" :placeholder="t('idx_ph_desc')" />
             </div>
             <div class="flex gap-2">
               <button type="button" class="btn btn-primary" :disabled="submitting" @click="createIssue">
@@ -186,14 +176,7 @@ async function createIssue() {
             :placeholder="t('idx_search_ph')"
           />
           <div class="flex gap-1 shrink-0">
-            <button
-              v-for="s in (['newest', 'most', 'least'] as const)"
-              :key="s"
-              type="button"
-              class="btn btn-sm"
-              :class="sortOrder === s ? 'btn-primary' : 'btn-secondary'"
-              @click="sortOrder = s"
-            >
+            <button v-for="s in ['newest', 'most', 'least'] as const" :key="s" type="button" class="btn btn-sm" :class="sortOrder === s ? 'btn-primary' : 'btn-secondary'" @click="sortOrder = s">
               {{ t(s === 'newest' ? 'idx_sort_newest' : s === 'most' ? 'idx_sort_most' : 'idx_sort_least') }}
             </button>
           </div>

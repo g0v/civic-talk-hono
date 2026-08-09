@@ -1,6 +1,4 @@
-export type MetaEntry =
-  | { name: string; content: string }
-  | { property: string; content: string }
+export type MetaEntry = { name: string; content: string } | { property: string; content: string }
 
 export interface HeadConfig {
   title: string
@@ -12,12 +10,7 @@ const SITE_NAME = 'Civic Talk'
 
 const DEFAULT_OG_IMAGE = (origin: string) => `${origin}/img/og-image.png`
 
-function buildOg(
-  title: string,
-  description: string,
-  image: string,
-  url: string,
-): MetaEntry[] {
+function buildOg(title: string, description: string, image: string, url: string): MetaEntry[] {
   return [
     { property: 'og:type', content: 'website' },
     { property: 'og:site_name', content: SITE_NAME },
@@ -33,18 +26,12 @@ function buildOg(
 }
 
 function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
 }
 
 export function headForHome(origin: string): HeadConfig {
   const title = `${SITE_NAME}｜公共議題審議平台`
-  const description =
-    '用 AI 降低參與門檻，讓更多人真正了解議題全貌，而不只是選邊站。'
+  const description = '用 AI 降低參與門檻，讓更多人真正了解議題全貌，而不只是選邊站。'
   return {
     title,
     description,
@@ -93,11 +80,7 @@ export function headForAdmin(origin: string): HeadConfig {
 }
 
 export function renderHeadTags(head: HeadConfig): string {
-  const parts: string[] = [
-    '<meta charset="UTF-8" />',
-    '<meta name="viewport" content="width=device-width, initial-scale=1.0" />',
-    `<title>${escapeHtml(head.title)}</title>`,
-  ]
+  const parts: string[] = ['<meta charset="UTF-8" />', '<meta name="viewport" content="width=device-width, initial-scale=1.0" />', `<title>${escapeHtml(head.title)}</title>`]
   if (head.description) {
     parts.push(`<meta name="description" content="${escapeHtml(head.description)}" />`)
   }
@@ -105,9 +88,7 @@ export function renderHeadTags(head: HeadConfig): string {
     if ('name' in m) {
       parts.push(`<meta name="${escapeHtml(m.name)}" content="${escapeHtml(m.content)}" />`)
     } else {
-      parts.push(
-        `<meta property="${escapeHtml(m.property)}" content="${escapeHtml(m.content)}" />`,
-      )
+      parts.push(`<meta property="${escapeHtml(m.property)}" content="${escapeHtml(m.content)}" />`)
     }
   }
   return parts.join('\n    ')

@@ -2,8 +2,8 @@
   "name": "civic-talk",
   "version": "0.1.0",
   "private": true,
-  "type": "module",
   "license": "MIT",
+  "type": "module",
   "scripts": {
     "dev": "vp run build:css && vp dev",
     "dev:remote": "vp run build:css && vp dev --mode remote",

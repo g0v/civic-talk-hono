@@ -21,11 +21,11 @@ export function createAuth(env: AppBindings) {
     user: {
       additionalFields: {
         // input: false —— 不接受任何請求端寫入，本站只讀不寫（AGENTS.md 不變量 11）。
-        role:      { type: 'string',  required: false, input: false },
+        role: { type: 'string', required: false, input: false },
         // 停權相關欄位由 vTaiwan-hono 的 admin plugin 管理；本站只讀取以決定是否放行。
-        banned:    { type: 'boolean', required: false, input: false },
-        banReason: { type: 'string',  required: false, input: false },
-        banExpires: { type: 'date',   required: false, input: false },
+        banned: { type: 'boolean', required: false, input: false },
+        banReason: { type: 'string', required: false, input: false },
+        banExpires: { type: 'date', required: false, input: false },
       },
     },
     account: {

@@ -25,13 +25,13 @@
 3. **SSR 路徑絕不碰瀏覽器 API。** 任何在 SSR 期間執行的程式碼（元件 `setup`、模組頂層、共用工廠）不得使用 `window`／`document`／`localStorage`／`navigator`——需要時用 `typeof window === 'undefined'` 守衛或放到 `onMounted`。每請求新建獨立的 app 實例，嚴禁跨請求共享可變狀態。
 4. **舊網址永不失效。** 下列舊路徑必須以 301／302 導向新的乾淨路由，且此對應表只能新增、不能刪除：
 
-   | 舊網址                  | 新路由            |
-   | ----------------------- | ----------------- |
-   | `/index.html`           | `/`               |
-   | `/issue.html?id=<n>`    | `/issues/<n>`     |
+   | 舊網址                    | 新路由            |
+   | ------------------------- | ----------------- |
+   | `/index.html`             | `/`               |
+   | `/issue.html?id=<n>`      | `/issues/<n>`     |
    | `/contribute.html?id=<n>` | `/contribute/<n>` |
-   | `/about.html`           | `/about`          |
-   | `/admin.html`           | `/admin`          |
+   | `/about.html`             | `/about`          |
+   | `/admin.html`             | `/admin`          |
 
 5. **API 相容契約不得片面變更。** 既有 endpoint 的路徑、方法與 JSON 形狀（見「API 契約」）只能擴充、不能改名或改語意。要破壞相容性，先問使用者。
    - **例外（已由 [#5](https://github.com/g0v/civic-talk-hono/issues/5) 授權）：管理端授權方式改為角色制。** 管理權限改看登入使用者的角色是不是 `admin`／`super-admin`（Better Auth session），**不再依賴 `ADMIN_PASSWORD` 環境變數與 `X-Admin-Token` 標頭**。這一項授權**只涵蓋授權機制**：業務 endpoint 的路徑、方法與成功回應形狀照舊，未經授權時回 `401`（未登入）／`403`（已登入但無權限）。
@@ -107,14 +107,14 @@ Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑�
 
 **權威參考檔（照著抄，不要自創形狀）：**
 
-| 檔案                                                | 作用                                                  |
-| --------------------------------------------------- | ----------------------------------------------------- |
-| `../vTaiwan-hono/src/server/lib/createAuth.ts`      | `betterAuth()` 設定：D1 database、socialProviders、accountLinking、admin plugin 與角色表 |
-| `../vTaiwan-hono/src/server/lib/authorization.ts`   | `AppRole`／`resolveRole()`／`isAdminRole()`／`getAuthContext()` |
-| `../vTaiwan-hono/src/api/auth.ts`                   | `GET`／`POST` `/api/auth/*` 交給 `auth.handler()`、`GET /api/me` |
-| `../vTaiwan-hono/src/client/authClient.ts`          | client 端 `createAuthClient()`，角色表須與 server 對齊 |
-| `../vTaiwan-hono/src/client/auth-session.ts`        | `loadAuthSession()`／`isAdminSession()` 等前端判定     |
-| `../vTaiwan-hono/migrations/auth/20260727_init_better_auth_tables.sql` | auth schema 的唯一來源（**本 repo 不複製、不套用**，見不變量 11） |
+| 檔案                                                                   | 作用                                                                                     |
+| ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `../vTaiwan-hono/src/server/lib/createAuth.ts`                         | `betterAuth()` 設定：D1 database、socialProviders、accountLinking、admin plugin 與角色表 |
+| `../vTaiwan-hono/src/server/lib/authorization.ts`                      | `AppRole`／`resolveRole()`／`isAdminRole()`／`getAuthContext()`                          |
+| `../vTaiwan-hono/src/api/auth.ts`                                      | `GET`／`POST` `/api/auth/*` 交給 `auth.handler()`、`GET /api/me`                         |
+| `../vTaiwan-hono/src/client/authClient.ts`                             | client 端 `createAuthClient()`，角色表須與 server 對齊                                   |
+| `../vTaiwan-hono/src/client/auth-session.ts`                           | `loadAuthSession()`／`isAdminSession()` 等前端判定                                       |
+| `../vTaiwan-hono/migrations/auth/20260727_init_better_auth_tables.sql` | auth schema 的唯一來源（**本 repo 不複製、不套用**，見不變量 11）                        |
 
 **要做的（對應 #5 的 checkbox）：**
 
@@ -136,13 +136,13 @@ Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑�
 
 **已裁示的設定（使用者已決定，照做即可，不要再自行更動）：**
 
-| 項目                  | 決定                                                                                     |
-| --------------------- | ---------------------------------------------------------------------------------------- |
-| `admin` plugin        | 🚫 **不開**（見上一節）                                                                    |
-| `account_id`          | **兩邊都不寫死**——本專案已移除 `wrangler.jsonc` 的 `account_id`，與 `../vTaiwan-hono` 一致，由 wrangler 登入的帳號決定 |
-| Cloudflare 帳號       | 兩專案是**同一個帳號**（所以綁得到 `vtaiwan-auth`），但**不靠設定檔寫死來保證**——`wrangler whoami` 選錯帳號就會綁不到，遇到錯誤先查這個 |
-| `nodejs_compat`       | ✅ **已加（實測必要）**——better-auth 直接 import `node:crypto` 與 `node:async_hooks`，沒有這個 flag 連 dev server 都起不來。改 `wrangler.jsonc` 後記得 `vp exec wrangler types` |
-| `BETTER_AUTH_SECRET`  | **與 vTaiwan-hono 共用同一個值**（仍只放 `.dev.vars`／Cloudflare secret，不進 git——不變量 6） |
+| 項目                 | 決定                                                                                                                                                                            |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `admin` plugin       | 🚫 **不開**（見上一節）                                                                                                                                                         |
+| `account_id`         | **兩邊都不寫死**——本專案已移除 `wrangler.jsonc` 的 `account_id`，與 `../vTaiwan-hono` 一致，由 wrangler 登入的帳號決定                                                          |
+| Cloudflare 帳號      | 兩專案是**同一個帳號**（所以綁得到 `vtaiwan-auth`），但**不靠設定檔寫死來保證**——`wrangler whoami` 選錯帳號就會綁不到，遇到錯誤先查這個                                         |
+| `nodejs_compat`      | ✅ **已加（實測必要）**——better-auth 直接 import `node:crypto` 與 `node:async_hooks`，沒有這個 flag 連 dev server 都起不來。改 `wrangler.jsonc` 後記得 `vp exec wrangler types` |
+| `BETTER_AUTH_SECRET` | **與 vTaiwan-hono 共用同一個值**（仍只放 `.dev.vars`／Cloudflare secret，不進 git——不變量 6）                                                                                   |
 
 **仍需先確認的前置條件（🚫 不要臆測）：**
 
@@ -178,24 +178,24 @@ Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑�
 
 以型別化 Hono handlers 重寫 `../civic-talk/functions/api/[[route]].js`，**路徑與語意保持相容**：
 
-| 方法     | 路徑                       | 說明                                             |
-| -------- | -------------------------- | ------------------------------------------------ |
-| `GET`    | `/api/issues`              | 議題列表                                         |
-| `POST`   | `/api/issues`              | 新增議題（**需登入**，#9 延伸）                  |
-| `GET`    | `/api/issues/:id`          | 議題詳情                                         |
-| `PUT`    | `/api/issues/:id`          | 編輯議題（admin）                                |
-| `DELETE` | `/api/issues/:id`          | 刪除議題（admin，級聯刪 materials/briefings/opinions） |
-| `GET`    | `/api/issues/:id/materials` | 素材列表（管理員多拿 `author_id`／`author_name`，一般讀取者拿不到） |
-| `POST`   | `/api/issues/:id/materials` | 投稿素材（**需登入**，#9；`collecting` → `summarizing` 狀態轉換） |
-| `DELETE` | `/api/materials/:id`       | 刪除素材（admin）                                |
-| `GET`    | `/api/issues/:id/briefing` | 取得說明頁                                       |
-| `POST`   | `/api/issues/:id/briefing` | 新增說明頁（版本遞增；→ `published`）            |
-| `PUT`    | `/api/issues/:id/briefing` | 編輯說明頁（admin）                              |
-| `GET`    | `/api/issues/:id/opinions` | 意見列表                                         |
-| `POST`   | `/api/issues/:id/opinions` | 投稿意見（**需登入**，#9 延伸）                  |
-| `DELETE` | `/api/opinions/:id`        | 刪除意見（admin）                                |
-| `GET`    | `/api/issues/:id/prompt`   | 產生 prompt，`?type=summarize\|narrative\|synthesis`（預設 `summarize`） |
-| `GET`    | `/api/admin/stats`         | 管理統計                                         |
+| 方法     | 路徑                        | 說明                                                                     |
+| -------- | --------------------------- | ------------------------------------------------------------------------ |
+| `GET`    | `/api/issues`               | 議題列表                                                                 |
+| `POST`   | `/api/issues`               | 新增議題（**需登入**，#9 延伸）                                          |
+| `GET`    | `/api/issues/:id`           | 議題詳情                                                                 |
+| `PUT`    | `/api/issues/:id`           | 編輯議題（admin）                                                        |
+| `DELETE` | `/api/issues/:id`           | 刪除議題（admin，級聯刪 materials/briefings/opinions）                   |
+| `GET`    | `/api/issues/:id/materials` | 素材列表（管理員多拿 `author_id`／`author_name`，一般讀取者拿不到）      |
+| `POST`   | `/api/issues/:id/materials` | 投稿素材（**需登入**，#9；`collecting` → `summarizing` 狀態轉換）        |
+| `DELETE` | `/api/materials/:id`        | 刪除素材（admin）                                                        |
+| `GET`    | `/api/issues/:id/briefing`  | 取得說明頁                                                               |
+| `POST`   | `/api/issues/:id/briefing`  | 新增說明頁（版本遞增；→ `published`）                                    |
+| `PUT`    | `/api/issues/:id/briefing`  | 編輯說明頁（admin）                                                      |
+| `GET`    | `/api/issues/:id/opinions`  | 意見列表                                                                 |
+| `POST`   | `/api/issues/:id/opinions`  | 投稿意見（**需登入**，#9 延伸）                                          |
+| `DELETE` | `/api/opinions/:id`         | 刪除意見（admin）                                                        |
+| `GET`    | `/api/issues/:id/prompt`    | 產生 prompt，`?type=summarize\|narrative\|synthesis`（預設 `summarize`） |
+| `GET`    | `/api/admin/stats`          | 管理統計                                                                 |
 
 > `POST /api/admin/login`（以 `ADMIN_PASSWORD` 換 token）**已於 #5 移除**——這是不變量 5 明列的授權例外。舊網址不必保留：它從來只是管理員自己用的登入端點，不是公開契約。
 
@@ -219,10 +219,10 @@ Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑�
 - **送出時遇 `401` 不要把 `authState` 切回 `anonymous`**——那會把表單換成登入卡片、吃掉使用者剛打的內容。三處都改用獨立的 `sessionExpired` 旗標：表單留在原地，只在上方補一列重新登入與「先複製你打的內容」提示（共用 key `login_expired_toast`／`login_expired_hint`）。
 - **守門在伺服器端**——前端隱藏表單只是體驗，不是防線。
 
-| 方法          | 路徑              | 說明                                                       |
-| ------------- | ----------------- | ---------------------------------------------------------- |
-| `GET`／`POST` | `/api/auth/*`     | Better Auth 內建端點（登入、callback、登出、session）；整段交給 `auth.handler()` |
-| `GET`         | `/api/me`         | 回傳目前登入者 `{ user, role }`；未登入回 `401`              |
+| 方法          | 路徑          | 說明                                                                             |
+| ------------- | ------------- | -------------------------------------------------------------------------------- |
+| `GET`／`POST` | `/api/auth/*` | Better Auth 內建端點（登入、callback、登出、session）；整段交給 `auth.handler()` |
+| `GET`         | `/api/me`     | 回傳目前登入者 `{ user, role }`；未登入回 `401`                                  |
 
 - 回應碼語意：**未登入 `401`、已登入但角色不足 `403`**（現行程式碼只有 `401`，改的時候要補 `403`）。
 - **`/api/me` 只回 `role`，不要複製 vTaiwan 的 `permissions`。** vTaiwan-hono 的 `Permission` 詞彙是 `meeting.join`／`meeting.moderate`／`transcription.update`／`topic.manage`——全是它的業務語彙，搬過來只會是四個永遠用不到的字串。Civic Talk 一律用 `isAdminRole()` 判角色；真的需要更細的權限模型，**先問使用者**再定義本站自己的詞彙。
@@ -231,22 +231,22 @@ Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑�
 - **CORS 要跟著改**：現行 `src/api/routes.ts` 是 `Access-Control-Allow-Origin: '*'` + `Allow-Headers: 'Content-Type, X-Admin-Token'`。session 走 **cookie**，跨來源要帶 cookie 就必須 `Access-Control-Allow-Credentials: true`，而**帶 credentials 時 `Allow-Origin` 不得為 `*`**——必須回具體 origin。改法（先問使用者選哪一種）：
   1. **管理端不開放跨來源**（建議）：`/api/auth/*`、`/api/me` 與管理端點不掛 CORS，只有公開讀取端點維持 `*`；或
   2. 維持跨來源：改成 allowlist 回具體 origin + `Allow-Credentials: true`。
-  無論哪種，`X-Admin-Token` 都要從 `Allow-Headers` 移除。
+     無論哪種，`X-Admin-Token` 都要從 `Allow-Headers` 移除。
 
 ## 技術棧與工具鏈
 
 **Hono + Vue 3 SSR + Cloudflare Workers**，套件安裝走 **npm**，開發指令走 **vp**（Vite Plus CLI）。
 
-| 工具            | 版本   | 鎖定位置          |
-| --------------- | ------ | ----------------- |
-| Hono            | ^4.12  | `dependencies`    |
-| Vue             | ^3.5   | `dependencies`    |
-| TypeScript      | ^5.6   | `devDependencies` |
-| Vite Plus (`vp`) | 0.2.4 | `devDependencies` |
-| vite-plus-core   | 0.2.4（`vite` 的 npm alias） | `devDependencies` + `overrides` |
-| Wrangler        | ^4.83  | `devDependencies` |
-| @cloudflare/vite-plugin | ^1.32 | `devDependencies` |
-| better-auth     | ^1.6.25 | `dependencies` |
+| 工具                    | 版本                         | 鎖定位置                        |
+| ----------------------- | ---------------------------- | ------------------------------- |
+| Hono                    | ^4.12                        | `dependencies`                  |
+| Vue                     | ^3.5                         | `dependencies`                  |
+| TypeScript              | ^5.6                         | `devDependencies`               |
+| Vite Plus (`vp`)        | 0.2.4                        | `devDependencies`               |
+| vite-plus-core          | 0.2.4（`vite` 的 npm alias） | `devDependencies` + `overrides` |
+| Wrangler                | ^4.83                        | `devDependencies`               |
+| @cloudflare/vite-plugin | ^1.32                        | `devDependencies`               |
+| better-auth             | ^1.6.25                      | `dependencies`                  |
 
 > better-auth 的版本**刻意對齊 `../vTaiwan-hono/package.json`**——兩站共用同一顆 auth D1，版本落差可能導致 schema 或 session 格式不一致。要升級先確認兩邊一起升。
 
@@ -329,18 +329,18 @@ npx wrangler d1 migrations apply vtaiwan-civic-talks --remote   # 🚫 需先取
 
 每完成一個邏輯完整的子步驟就跑對應檢查——不要等功能全部完成才驗證，累積改動後出錯難以定位。
 
-| 改動類型                     | 必跑檢查                                                          |
-| ---------------------------- | ----------------------------------------------------------------- |
-| 文件（`.md`）                | 核對文中引用的指令／檔案／設定與現實一致                          |
-| 元件／頁面（`.vue`）         | `vp check --no-fmt --no-lint` + `vp run build`；互動 session 加 `vp run dev` 目視 |
-| 新增／修改路由               | `vp check --no-fmt --no-lint` + `vp run build`（靜態 import 驗證）+ 手動打一次新舊網址 |
-| API / `src/db/`              | `vp check --no-fmt --no-lint` + 對本機 D1 逐一 smoke test（CRUD、狀態轉換、admin 驗證、404/400/401） |
-| 登入／權限（auth）           | `vp check --no-fmt --no-lint` + `vp run build`；互動 session 實測：Google 登入、GitHub 登入、**同 email 兩種 provider 登入後是同一個 `user.id`**、登出、`GET /api/me`、非 admin 打管理端點得 `403`、未登入得 `401`、`/admin` 導向登入。**改完後查 `vtaiwan-auth` 的 `sqlite_master` 確認沒有多出任何表**（不變量 11） |
-| migration                    | 先 `--local` 套用，查 `sqlite_master` 確認只新增 `ct_` 表；`--remote` 需授權 |
-| 樣式／token                  | `vp run css` + `vp run build`；互動 session 目視桌機／手機兩種寬度 |
-| i18n 檔                      | `vp test`（l10n.test.ts 自動驗 key 同步）+ 人工核對值翻譯正確     |
-| 依賴／`package.json`         | `npm install` + `vp check --no-fmt --no-lint` + `vp run build`    |
-| Vite／wrangler 設定          | `vp check --no-fmt --no-lint` + `vp run build`                    |
+| 改動類型             | 必跑檢查                                                                                                                                                                                                                                                                                                              |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 文件（`.md`）        | 核對文中引用的指令／檔案／設定與現實一致                                                                                                                                                                                                                                                                              |
+| 元件／頁面（`.vue`） | `vp check --no-fmt --no-lint` + `vp run build`；互動 session 加 `vp run dev` 目視                                                                                                                                                                                                                                     |
+| 新增／修改路由       | `vp check --no-fmt --no-lint` + `vp run build`（靜態 import 驗證）+ 手動打一次新舊網址                                                                                                                                                                                                                                |
+| API / `src/db/`      | `vp check --no-fmt --no-lint` + 對本機 D1 逐一 smoke test（CRUD、狀態轉換、admin 驗證、404/400/401）                                                                                                                                                                                                                  |
+| 登入／權限（auth）   | `vp check --no-fmt --no-lint` + `vp run build`；互動 session 實測：Google 登入、GitHub 登入、**同 email 兩種 provider 登入後是同一個 `user.id`**、登出、`GET /api/me`、非 admin 打管理端點得 `403`、未登入得 `401`、`/admin` 導向登入。**改完後查 `vtaiwan-auth` 的 `sqlite_master` 確認沒有多出任何表**（不變量 11） |
+| migration            | 先 `--local` 套用，查 `sqlite_master` 確認只新增 `ct_` 表；`--remote` 需授權                                                                                                                                                                                                                                          |
+| 樣式／token          | `vp run css` + `vp run build`；互動 session 目視桌機／手機兩種寬度                                                                                                                                                                                                                                                    |
+| i18n 檔              | `vp test`（l10n.test.ts 自動驗 key 同步）+ 人工核對值翻譯正確                                                                                                                                                                                                                                                         |
+| 依賴／`package.json` | `npm install` + `vp check --no-fmt --no-lint` + `vp run build`                                                                                                                                                                                                                                                        |
+| Vite／wrangler 設定  | `vp check --no-fmt --no-lint` + `vp run build`                                                                                                                                                                                                                                                                        |
 
 **改完後的完整驗收（依序）：**
 
@@ -400,29 +400,29 @@ npx wrangler d1 migrations apply vtaiwan-civic-talks --remote   # 🚫 需先取
 
 ### 已完成：Vue SSR 複刻（原計畫的六個 todo，計畫檔已於 `f880295` 刪除）
 
-| #   | 項目             | 狀態    | 內容                                                         |
-| --- | ---------------- | ------- | ------------------------------------------------------------ |
+| #   | 項目             | 狀態    | 內容                                                                           |
+| --- | ---------------- | ------- | ------------------------------------------------------------------------------ |
 | 1   | `d1-schema`      | ✅ 完成 | 建立 `vtaiwan-civic-talks`、設定 `DB` 綁定、`ct_` 前綴 migration（本機＋遠端） |
-| 2   | `tailwind-shell` | ✅ 完成 | 導入 Tailwind、品牌資產、共用版型與中英 i18n                 |
-| 3   | `api-port`       | ✅ 完成 | 把舊 Pages Functions API 移植為 Hono + D1 型別化路由         |
-| 4   | `vue-pages`      | ✅ 完成 | 以 Vue SSR/hydration 重建五個頁面及全部互動功能              |
-| 5   | `routes-compat`  | ✅ 完成 | 乾淨路由、舊網址導向與 SSR metadata                          |
-| 6   | `verify`         | ✅ 完成 | 型別、建置、D1/API、hydration 與響應式驗證                   |
+| 2   | `tailwind-shell` | ✅ 完成 | 導入 Tailwind、品牌資產、共用版型與中英 i18n                                   |
+| 3   | `api-port`       | ✅ 完成 | 把舊 Pages Functions API 移植為 Hono + D1 型別化路由                           |
+| 4   | `vue-pages`      | ✅ 完成 | 以 Vue SSR/hydration 重建五個頁面及全部互動功能                                |
+| 5   | `routes-compat`  | ✅ 完成 | 乾淨路由、舊網址導向與 SSR metadata                                            |
+| 6   | `verify`         | ✅ 完成 | 型別、建置、D1/API、hydration 與響應式驗證                                     |
 
 ### 進行中：#5 Better Auth 登入與 Admin 權限
 
 分支 **`feat/better-auth`**（issue 內文寫 `feat-better/auth`，但兩個 repo 實際用的都是 `feat/better-auth`，以實際分支為準）。狀態一律以「程式碼是否真的在 repo 裡」為準，**不要憑 commit 訊息或 issue 勾選臆測完成度**。
 
-| #   | 項目               | 狀態      | 內容                                                          |
-| --- | ------------------ | --------- | ------------------------------------------------------------- |
-| 5-0 | `env-vars`         | ✅ 完成   | `.dev.vars.example` 已備妥 Better Auth／Google／GitHub 變數（commit `cfe56b4`） |
-| 5-1 | `better-auth-init` | ✅ 完成   | `better-auth` ^1.6.25、`src/auth/`、`/api/auth/*`＋`/api/me`、`nodejs_compat`、`dev:remote`。dev server 起得來，路由煙霧測試過 |
-| 5-2 | `shared-auth-db`   | ✅ 完成   | `DB_AUTH` → `vtaiwan-auth`（`remote: true`，無 `migrations_dir`）；**沿用既有 user table，本 repo 不建表** |
-| 5-3 | `google-login`     | 🚧 code 進、待實測 | provider 已設定；端到端登入要 `dev:remote` 才測得到     |
-| 5-4 | `github-login`     | 🚧 code 進、待實測 | 同上                                                    |
-| 5-5 | `account-linking`  | 🚧 code 進、待實測 | `trustedProviders: ['google', 'github']` 已設；「同 email 是同一個 `user.id`」尚未實證 |
-| 5-6 | `role-based-admin` | ✅ 完成   | `requireAdmin()` 判角色（401／403）；`ADMIN_PASSWORD`／`X-Admin-Token`／`POST /api/admin/login` 全數移除；CORS 拿掉 `X-Admin-Token` 且不給 `Allow-Credentials`；Admin 頁改 Google／GitHub 登入；i18n 雙檔同步 |
-| 5-7 | `verify`           | 🚧 待遠端實測 | 本機已驗：未登入打管理端點 401、舊 token 失效、`/api/admin/login` 404、公開端點不受影響、`/admin` SSR 無 mismatch。**尚未驗**：真的登入、同 email 整合、admin 角色可進後台（都需要 `dev:remote`） |
+| #   | 項目               | 狀態               | 內容                                                                                                                                                                                                          |
+| --- | ------------------ | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 5-0 | `env-vars`         | ✅ 完成            | `.dev.vars.example` 已備妥 Better Auth／Google／GitHub 變數（commit `cfe56b4`）                                                                                                                               |
+| 5-1 | `better-auth-init` | ✅ 完成            | `better-auth` ^1.6.25、`src/auth/`、`/api/auth/*`＋`/api/me`、`nodejs_compat`、`dev:remote`。dev server 起得來，路由煙霧測試過                                                                                |
+| 5-2 | `shared-auth-db`   | ✅ 完成            | `DB_AUTH` → `vtaiwan-auth`（`remote: true`，無 `migrations_dir`）；**沿用既有 user table，本 repo 不建表**                                                                                                    |
+| 5-3 | `google-login`     | 🚧 code 進、待實測 | provider 已設定；端到端登入要 `dev:remote` 才測得到                                                                                                                                                           |
+| 5-4 | `github-login`     | 🚧 code 進、待實測 | 同上                                                                                                                                                                                                          |
+| 5-5 | `account-linking`  | 🚧 code 進、待實測 | `trustedProviders: ['google', 'github']` 已設；「同 email 是同一個 `user.id`」尚未實證                                                                                                                        |
+| 5-6 | `role-based-admin` | ✅ 完成            | `requireAdmin()` 判角色（401／403）；`ADMIN_PASSWORD`／`X-Admin-Token`／`POST /api/admin/login` 全數移除；CORS 拿掉 `X-Admin-Token` 且不給 `Allow-Credentials`；Admin 頁改 Google／GitHub 登入；i18n 雙檔同步 |
+| 5-7 | `verify`           | 🚧 待遠端實測      | 本機已驗：未登入打管理端點 401、舊 token 失效、`/api/admin/login` 404、公開端點不受影響、`/admin` SSR 無 mismatch。**尚未驗**：真的登入、同 email 整合、admin 角色可進後台（都需要 `dev:remote`）             |
 
 > 已裁示的設定（不開 `admin` plugin、`account_id` 不寫死、`nodejs_compat` 非必要不加、`BETTER_AUTH_SECRET` 與 vTaiwan-hono 共用）與**仍待確認的兩項**（OAuth callback 網址、`BETTER_AUTH_URL`）見「身分驗證與權限」一節——**callback 網址沒加就不要開始寫 5-3／5-4，會卡在登不進去**。
 
@@ -430,16 +430,16 @@ npx wrangler d1 migrations apply vtaiwan-civic-talks --remote   # 🚫 需先取
 
 分支 **`feat/require-login-for-materials`**。規格見「API 契約 → 素材投稿需登入（#9 帶來的變更）」。
 
-| #   | 項目              | 狀態             | 內容                                                                 |
-| --- | ----------------- | ---------------- | -------------------------------------------------------------------- |
-| 9-1 | `migration`       | ✅ 完成          | `migrations/0002_material_author.sql`（`ct_materials` 加 `author_id`／`author_name` 與索引）。本機＋遠端皆已套用（遠端已取得使用者授權），套用後查過 `sqlite_master`：沒有新增任何表 |
-| 9-2 | `api-gate`        | ✅ 完成          | `requireUser()`；`POST /api/issues/:id/materials` 未登入 401；投稿寫入 `author_id`／`author_name` |
-| 9-3 | `author-privacy`  | ✅ 完成          | `listMaterials()` 改列舉公開欄位（不再 `SELECT *`）；`listMaterialsWithAuthor()` 只給管理員；管理端素材卡顯示投稿者 |
-| 9-4 | `contribute-ui`   | ✅ 完成          | `Contribute.vue` 三態登入牆；抽出共用 `SignInButtons.vue`；i18n 雙檔同步（新增 `login_*`／`logout`／`contrib_login_*`／`adm_mat_author*`，移除被取代的 `adm_login_google`／`adm_login_github`／`adm_login_err`／`adm_logout`） |
-| 9-5 | `issues-opinions-gate` | ✅ 完成 | 使用者裁示的延伸：`POST /api/issues` 與 `POST /api/issues/:id/opinions` 也走 `requireUser()`；`Home.vue` 建立議題表單與 `Issue.vue` 意見投稿框同樣三態登入牆；過期提示改用共用 key |
-| 9-6 | `author-everywhere` | ✅ 完成 | `migrations/0003_issue_opinion_author.sql`：`ct_issues`／`ct_opinions` 也記錄作者；`listIssuesWithAuthor()`／`listOpinionsWithAuthor()` 只給管理員；`getIssue()` 一併改成列舉欄位（原本 `SELECT *` 會漏進 SSR state）；Admin 議題表格加「建立者」欄、意見卡顯示投稿者 |
-| 9-7 | `header-auth-ui`  | ✅ 完成          | `src/composables/useAuth.ts` 全站共用登入狀態（一頁只打一次 `/api/me`）；`AppHeader` 顯示「已登入：{name}」／登出／登入面板；`Home`／`Issue`／`Contribute`／`Admin` 四頁改用同一個 composable，Admin 的 `forbidden` 從共用 session 推導 |
-| 9-8 | `verify`          | 🚧 待遠端實測    | 遠端 migration `0002`／`0003` 皆已套用。本機已驗：三支寫入端點未登入皆 401；`/api/issues`、`/api/issues/:id`、素材列表、意見列表與四個 SSR 頁面**都查不到 `author_id`／`author_name`**；三支列表端點帶 `Vary: Cookie`；SSR 標頭不出現登入／登出（`authState==='loading'` 不畫）；`typecheck`＋`build` 綠燈；i18n 雙檔 268/268。**尚未驗**：登入後建議題／投素材／投意見的 `author_*` 真的落庫、管理端三處顯示作者（需 `dev:remote`）
+| #   | 項目                   | 狀態          | 內容                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| --- | ---------------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 9-1 | `migration`            | ✅ 完成       | `migrations/0002_material_author.sql`（`ct_materials` 加 `author_id`／`author_name` 與索引）。本機＋遠端皆已套用（遠端已取得使用者授權），套用後查過 `sqlite_master`：沒有新增任何表                                                                                                                                                                                                                                                 |
+| 9-2 | `api-gate`             | ✅ 完成       | `requireUser()`；`POST /api/issues/:id/materials` 未登入 401；投稿寫入 `author_id`／`author_name`                                                                                                                                                                                                                                                                                                                                    |
+| 9-3 | `author-privacy`       | ✅ 完成       | `listMaterials()` 改列舉公開欄位（不再 `SELECT *`）；`listMaterialsWithAuthor()` 只給管理員；管理端素材卡顯示投稿者                                                                                                                                                                                                                                                                                                                  |
+| 9-4 | `contribute-ui`        | ✅ 完成       | `Contribute.vue` 三態登入牆；抽出共用 `SignInButtons.vue`；i18n 雙檔同步（新增 `login_*`／`logout`／`contrib_login_*`／`adm_mat_author*`，移除被取代的 `adm_login_google`／`adm_login_github`／`adm_login_err`／`adm_logout`）                                                                                                                                                                                                       |
+| 9-5 | `issues-opinions-gate` | ✅ 完成       | 使用者裁示的延伸：`POST /api/issues` 與 `POST /api/issues/:id/opinions` 也走 `requireUser()`；`Home.vue` 建立議題表單與 `Issue.vue` 意見投稿框同樣三態登入牆；過期提示改用共用 key                                                                                                                                                                                                                                                   |
+| 9-6 | `author-everywhere`    | ✅ 完成       | `migrations/0003_issue_opinion_author.sql`：`ct_issues`／`ct_opinions` 也記錄作者；`listIssuesWithAuthor()`／`listOpinionsWithAuthor()` 只給管理員；`getIssue()` 一併改成列舉欄位（原本 `SELECT *` 會漏進 SSR state）；Admin 議題表格加「建立者」欄、意見卡顯示投稿者                                                                                                                                                                |
+| 9-7 | `header-auth-ui`       | ✅ 完成       | `src/composables/useAuth.ts` 全站共用登入狀態（一頁只打一次 `/api/me`）；`AppHeader` 顯示「已登入：{name}」／登出／登入面板；`Home`／`Issue`／`Contribute`／`Admin` 四頁改用同一個 composable，Admin 的 `forbidden` 從共用 session 推導                                                                                                                                                                                              |
+| 9-8 | `verify`               | 🚧 待遠端實測 | 遠端 migration `0002`／`0003` 皆已套用。本機已驗：三支寫入端點未登入皆 401；`/api/issues`、`/api/issues/:id`、素材列表、意見列表與四個 SSR 頁面**都查不到 `author_id`／`author_name`**；三支列表端點帶 `Vary: Cookie`；SSR 標頭不出現登入／登出（`authState==='loading'` 不畫）；`typecheck`＋`build` 綠燈；i18n 雙檔 268/268。**尚未驗**：登入後建議題／投素材／投意見的 `author_*` 真的落庫、管理端三處顯示作者（需 `dev:remote`） |
 
 > **migration 與程式碼是綁在一起的**：`createMaterial()`／`createIssue()`／`createOpinion()` 都會寫 `author_id`，所以遠端 migration 必須先於部署，否則每次寫入都會 runtime error（`no such column: author_id`）。`0002` 與 `0003` 都已於 2026-08-04 套用到遠端（經使用者授權，套用後查過 `sqlite_master` 沒有新增任何表）。日後若有人重建遠端資料庫，記得這條順序仍然成立。
 

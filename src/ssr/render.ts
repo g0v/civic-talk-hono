@@ -13,12 +13,7 @@ export interface RenderPageOptions {
   }
 }
 
-export async function renderPage(
-  component: Component,
-  props: Record<string, unknown>,
-  head: HeadConfig,
-  options?: RenderPageOptions,
-): Promise<string> {
+export async function renderPage(component: Component, props: Record<string, unknown>, head: HeadConfig, options?: RenderPageOptions): Promise<string> {
   const app = createSSRApp(component, props)
   provideI18n(app, 'zh-TW')
   const bodyHtml = await renderToString(app)
@@ -27,9 +22,7 @@ export async function renderPage(
   const hydrateBits: string[] = []
   if (options?.hydrate) {
     const state = options.hydrate.state ?? props
-    hydrateBits.push(
-      `<script>window.__PAGE__=${JSON.stringify(options.hydrate.page)};window.__SSR_STATE__=${serializeState(state)}</script>`,
-    )
+    hydrateBits.push(`<script>window.__PAGE__=${JSON.stringify(options.hydrate.page)};window.__SSR_STATE__=${serializeState(state)}</script>`)
     const src = import.meta.env.PROD ? '/js/civic.js' : '/src/client/civic-entry.ts'
     hydrateBits.push(`<script type="module" src="${src}"></script>`)
   }

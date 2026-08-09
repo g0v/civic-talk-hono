@@ -34,14 +34,14 @@ https://<正式 origin>/api/auth/callback/github
 
 `.dev.vars` **只有本機吃得到**，不會隨 deploy 上傳。以下六個值必須另外設進 Worker：
 
-| 名稱 | 說明 | 建議設法 |
-| ---- | ---- | -------- |
-| `BETTER_AUTH_SECRET` | 簽章密鑰，**與 vTaiwan-hono 用同一個值** | `wrangler secret put` |
-| `GOOGLE_CLIENT_ID` | 與 vTaiwan-hono 共用 | `wrangler secret put` |
-| `GOOGLE_CLIENT_SECRET` | 與 vTaiwan-hono 共用 | `wrangler secret put` |
-| `GITHUB_CLIENT_ID` | 與 vTaiwan-hono 共用 | `wrangler secret put` |
-| `GITHUB_CLIENT_SECRET` | 與 vTaiwan-hono 共用 | `wrangler secret put` |
-| `BETTER_AUTH_URL` | **正式站自己的 origin**，不是 localhost、也不要從 vTaiwan-hono 複製 | 見下方說明 |
+| 名稱                   | 說明                                                                | 建議設法              |
+| ---------------------- | ------------------------------------------------------------------- | --------------------- |
+| `BETTER_AUTH_SECRET`   | 簽章密鑰，**與 vTaiwan-hono 用同一個值**                            | `wrangler secret put` |
+| `GOOGLE_CLIENT_ID`     | 與 vTaiwan-hono 共用                                                | `wrangler secret put` |
+| `GOOGLE_CLIENT_SECRET` | 與 vTaiwan-hono 共用                                                | `wrangler secret put` |
+| `GITHUB_CLIENT_ID`     | 與 vTaiwan-hono 共用                                                | `wrangler secret put` |
+| `GITHUB_CLIENT_SECRET` | 與 vTaiwan-hono 共用                                                | `wrangler secret put` |
+| `BETTER_AUTH_URL`      | **正式站自己的 origin**，不是 localhost、也不要從 vTaiwan-hono 複製 | 見下方說明            |
 
 ```bash
 npx wrangler secret put BETTER_AUTH_SECRET     # 逐一設定，值用貼的、不要放進指令歷史
@@ -98,11 +98,11 @@ npm run deploy    # = npm run build && wrangler deploy
 
 實際部署的東西：
 
-| 項目 | 來源 |
-| ---- | ---- |
-| Worker 程式 | `dist/civic_talk/`（`vite build` 產物） |
+| 項目                      | 來源                                                                      |
+| ------------------------- | ------------------------------------------------------------------------- |
+| Worker 程式               | `dist/civic_talk/`（`vite build` 產物）                                   |
 | 靜態資產（`ASSETS` 綁定） | **`dist/client/`**——build 時由 `public/` 複製而來，不是直接上傳 `public/` |
-| 部署設定 | `dist/civic_talk/wrangler.json`（由 `wrangler.jsonc` 產生） |
+| 部署設定                  | `dist/civic_talk/wrangler.json`（由 `wrangler.jsonc` 產生）               |
 
 幾個容易誤解的點：
 
@@ -120,20 +120,20 @@ npm run deploy    # = npm run build && wrangler deploy
 
 把 `<origin>` 換成正式網址，逐項確認：
 
-| 檢查 | 預期 |
-| ---- | ---- |
-| `GET /` | 200，議題列表正常渲染 |
-| `GET /api/issues` | 200 |
-| `GET /api/me`（未登入） | 401 |
-| `GET /api/auth/get-session` | 200 |
-| `GET /api/auth/admin/list-users` | **404**（本站刻意不開成員管理端點） |
-| `GET /api/admin/stats`（未登入） | 401 |
-| `GET /index.html` | 301 → `/` |
-| `GET /issue.html?id=1` | 302 → `/issues/1` |
-| 瀏覽器開 `/admin` | 顯示 Google／GitHub 登入卡片 |
-| 用 Google 登入 | 導回 `/admin`；角色是 `admin`／`super-admin` 就進後台，否則顯示「沒有管理權限」 |
-| 用 GitHub 登入（**同一個 email**） | 同一個帳號、同樣權限，不會變成新帳號 |
-| 登出後 `GET /api/me` | 401 |
+| 檢查                               | 預期                                                                            |
+| ---------------------------------- | ------------------------------------------------------------------------------- |
+| `GET /`                            | 200，議題列表正常渲染                                                           |
+| `GET /api/issues`                  | 200                                                                             |
+| `GET /api/me`（未登入）            | 401                                                                             |
+| `GET /api/auth/get-session`        | 200                                                                             |
+| `GET /api/auth/admin/list-users`   | **404**（本站刻意不開成員管理端點）                                             |
+| `GET /api/admin/stats`（未登入）   | 401                                                                             |
+| `GET /index.html`                  | 301 → `/`                                                                       |
+| `GET /issue.html?id=1`             | 302 → `/issues/1`                                                               |
+| 瀏覽器開 `/admin`                  | 顯示 Google／GitHub 登入卡片                                                    |
+| 用 Google 登入                     | 導回 `/admin`；角色是 `admin`／`super-admin` 就進後台，否則顯示「沒有管理權限」 |
+| 用 GitHub 登入（**同一個 email**） | 同一個帳號、同樣權限，不會變成新帳號                                            |
+| 登出後 `GET /api/me`               | 401                                                                             |
 
 登入失敗時的判讀：
 

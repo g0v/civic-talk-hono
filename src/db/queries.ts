@@ -96,21 +96,13 @@ const ISSUE_COUNT_SUBQUERIES = `
   (SELECT COUNT(*) FROM ct_opinions  WHERE issue_id = ct_issues.id) AS opinion_count`
 
 export async function listIssues(db: D1Database): Promise<IssueListItem[]> {
-  const { results } = await db
-    .prepare(
-      `SELECT ${ISSUE_PUBLIC_COLUMNS}, ${ISSUE_COUNT_SUBQUERIES} FROM ct_issues ORDER BY created_at DESC`,
-    )
-    .all<IssueListItem>()
+  const { results } = await db.prepare(`SELECT ${ISSUE_PUBLIC_COLUMNS}, ${ISSUE_COUNT_SUBQUERIES} FROM ct_issues ORDER BY created_at DESC`).all<IssueListItem>()
   return results ?? []
 }
 
 /** 管理端專用：多回建立者。呼叫端必須先確認請求者是管理員。 */
 export async function listIssuesWithAuthor(db: D1Database): Promise<IssueListItemWithAuthor[]> {
-  const { results } = await db
-    .prepare(
-      `SELECT ${ISSUE_PUBLIC_COLUMNS}, author_id, author_name, ${ISSUE_COUNT_SUBQUERIES} FROM ct_issues ORDER BY created_at DESC`,
-    )
-    .all<IssueListItemWithAuthor>()
+  const { results } = await db.prepare(`SELECT ${ISSUE_PUBLIC_COLUMNS}, author_id, author_name, ${ISSUE_COUNT_SUBQUERIES} FROM ct_issues ORDER BY created_at DESC`).all<IssueListItemWithAuthor>()
   return results ?? []
 }
 
@@ -119,10 +111,7 @@ export async function listIssuesWithAuthor(db: D1Database): Promise<IssueListIte
  * window.__SSR_STATE__，把 author_* 撈出來等於寫進 HTML 原始碼。
  */
 export async function getIssue(db: D1Database, id: number): Promise<Issue | null> {
-  return db
-    .prepare(`SELECT ${ISSUE_PUBLIC_COLUMNS} FROM ct_issues WHERE id = ?`)
-    .bind(id)
-    .first<Issue>()
+  return db.prepare(`SELECT ${ISSUE_PUBLIC_COLUMNS} FROM ct_issues WHERE id = ?`).bind(id).first<Issue>()
 }
 
 export async function createIssue(
@@ -134,19 +123,11 @@ export async function createIssue(
     // 建立議題一律要登入，所以這兩欄是必填（舊資料才會是 null）
     author_id: string
     author_name: string
-  },
+  }
 ): Promise<number> {
   const { meta } = await db
-    .prepare(
-      'INSERT INTO ct_issues (title, description, polis_id, author_id, author_name) VALUES (?, ?, ?, ?, ?)',
-    )
-    .bind(
-      input.title,
-      input.description ?? '',
-      input.polis_id ?? null,
-      input.author_id,
-      input.author_name,
-    )
+    .prepare('INSERT INTO ct_issues (title, description, polis_id, author_id, author_name) VALUES (?, ?, ?, ?, ?)')
+    .bind(input.title, input.description ?? '', input.polis_id ?? null, input.author_id, input.author_name)
     .run()
   return meta.last_row_id
 }
@@ -159,19 +140,11 @@ export async function updateIssue(
     description?: string
     status?: IssueStatus
     polis_id?: string | null
-  },
+  }
 ): Promise<void> {
   await db
-    .prepare(
-      'UPDATE ct_issues SET title = ?, description = ?, status = ?, polis_id = ? WHERE id = ?',
-    )
-    .bind(
-      input.title,
-      input.description ?? '',
-      input.status ?? 'collecting',
-      input.polis_id ?? null,
-      id,
-    )
+    .prepare('UPDATE ct_issues SET title = ?, description = ?, status = ?, polis_id = ? WHERE id = ?')
+    .bind(input.title, input.description ?? '', input.status ?? 'collecting', input.polis_id ?? null, id)
     .run()
 }
 
@@ -182,28 +155,17 @@ export async function deleteIssueCascade(db: D1Database, id: number): Promise<vo
   await db.prepare('DELETE FROM ct_issues WHERE id = ?').bind(id).run()
 }
 
-const MATERIAL_PUBLIC_COLUMNS =
-  'id, issue_id, source_name, source_url, stance, content, verified_count, created_at'
+const MATERIAL_PUBLIC_COLUMNS = 'id, issue_id, source_name, source_url, stance, content, verified_count, created_at'
 
 export async function listMaterials(db: D1Database, issueId: number): Promise<Material[]> {
-  const { results } = await db
-    .prepare(
-      `SELECT ${MATERIAL_PUBLIC_COLUMNS} FROM ct_materials WHERE issue_id = ? ORDER BY created_at DESC`,
-    )
-    .bind(issueId)
-    .all<Material>()
+  const { results } = await db.prepare(`SELECT ${MATERIAL_PUBLIC_COLUMNS} FROM ct_materials WHERE issue_id = ? ORDER BY created_at DESC`).bind(issueId).all<Material>()
   return results ?? []
 }
 
 /** 管理端專用：多回投稿者。呼叫端必須先過 requireAdmin()。 */
-export async function listMaterialsWithAuthor(
-  db: D1Database,
-  issueId: number,
-): Promise<MaterialWithAuthor[]> {
+export async function listMaterialsWithAuthor(db: D1Database, issueId: number): Promise<MaterialWithAuthor[]> {
   const { results } = await db
-    .prepare(
-      `SELECT ${MATERIAL_PUBLIC_COLUMNS}, author_id, author_name FROM ct_materials WHERE issue_id = ? ORDER BY created_at DESC`,
-    )
+    .prepare(`SELECT ${MATERIAL_PUBLIC_COLUMNS}, author_id, author_name FROM ct_materials WHERE issue_id = ? ORDER BY created_at DESC`)
     .bind(issueId)
     .all<MaterialWithAuthor>()
   return results ?? []
@@ -220,28 +182,13 @@ export async function createMaterial(
     // #9 起投稿一律要登入，所以這兩欄是必填（舊資料才會是 null）
     author_id: string
     author_name: string
-  },
+  }
 ): Promise<number> {
   const { meta } = await db
-    .prepare(
-      'INSERT INTO ct_materials (issue_id, source_name, source_url, stance, content, author_id, author_name) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    )
-    .bind(
-      issueId,
-      input.source_name ?? '',
-      input.source_url ?? '',
-      input.stance ?? 'unknown',
-      input.content,
-      input.author_id,
-      input.author_name,
-    )
+    .prepare('INSERT INTO ct_materials (issue_id, source_name, source_url, stance, content, author_id, author_name) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .bind(issueId, input.source_name ?? '', input.source_url ?? '', input.stance ?? 'unknown', input.content, input.author_id, input.author_name)
     .run()
-  await db
-    .prepare(
-      "UPDATE ct_issues SET status = 'summarizing' WHERE id = ? AND status = 'collecting'",
-    )
-    .bind(issueId)
-    .run()
+  await db.prepare("UPDATE ct_issues SET status = 'summarizing' WHERE id = ? AND status = 'collecting'").bind(issueId).run()
   return meta.last_row_id
 }
 
@@ -249,14 +196,8 @@ export async function deleteMaterial(db: D1Database, id: number): Promise<void> 
   await db.prepare('DELETE FROM ct_materials WHERE id = ?').bind(id).run()
 }
 
-export async function getLatestBriefing(
-  db: D1Database,
-  issueId: number,
-): Promise<Briefing | null> {
-  return db
-    .prepare('SELECT * FROM ct_briefings WHERE issue_id = ? ORDER BY version DESC LIMIT 1')
-    .bind(issueId)
-    .first<Briefing>()
+export async function getLatestBriefing(db: D1Database, issueId: number): Promise<Briefing | null> {
+  return db.prepare('SELECT * FROM ct_briefings WHERE issue_id = ? ORDER BY version DESC LIMIT 1').bind(issueId).first<Briefing>()
 }
 
 export async function createBriefing(
@@ -268,33 +209,15 @@ export async function createBriefing(
     positions?: string
     narrative?: string
     opinion_prompt?: string
-  },
+  }
 ): Promise<number> {
-  const existing = await db
-    .prepare('SELECT MAX(version) as maxv FROM ct_briefings WHERE issue_id = ?')
-    .bind(issueId)
-    .first<{ maxv: number | null }>()
+  const existing = await db.prepare('SELECT MAX(version) as maxv FROM ct_briefings WHERE issue_id = ?').bind(issueId).first<{ maxv: number | null }>()
   const nextVersion = (existing?.maxv ?? 0) + 1
   await db
-    .prepare(
-      'INSERT INTO ct_briefings (issue_id, consensus, disputes, positions, narrative, opinion_prompt, version) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    )
-    .bind(
-      issueId,
-      input.consensus ?? '',
-      input.disputes ?? '',
-      input.positions ?? '',
-      input.narrative ?? '',
-      input.opinion_prompt ?? '',
-      nextVersion,
-    )
+    .prepare('INSERT INTO ct_briefings (issue_id, consensus, disputes, positions, narrative, opinion_prompt, version) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .bind(issueId, input.consensus ?? '', input.disputes ?? '', input.positions ?? '', input.narrative ?? '', input.opinion_prompt ?? '', nextVersion)
     .run()
-  await db
-    .prepare(
-      "UPDATE ct_issues SET status = 'published' WHERE id = ? AND status IN ('collecting', 'summarizing')",
-    )
-    .bind(issueId)
-    .run()
+  await db.prepare("UPDATE ct_issues SET status = 'published' WHERE id = ? AND status IN ('collecting', 'summarizing')").bind(issueId).run()
   return nextVersion
 }
 
@@ -306,21 +229,13 @@ export async function updateLatestBriefing(
     disputes?: string
     positions?: string
     narrative?: string
-  },
+  }
 ): Promise<boolean> {
   const existing = await getLatestBriefing(db, issueId)
   if (!existing) return false
   await db
-    .prepare(
-      'UPDATE ct_briefings SET consensus = ?, disputes = ?, positions = ?, narrative = ? WHERE id = ?',
-    )
-    .bind(
-      input.consensus ?? '',
-      input.disputes ?? '',
-      input.positions ?? '',
-      input.narrative ?? '',
-      existing.id,
-    )
+    .prepare('UPDATE ct_briefings SET consensus = ?, disputes = ?, positions = ?, narrative = ? WHERE id = ?')
+    .bind(input.consensus ?? '', input.disputes ?? '', input.positions ?? '', input.narrative ?? '', existing.id)
     .run()
   return true
 }
@@ -328,26 +243,13 @@ export async function updateLatestBriefing(
 const OPINION_PUBLIC_COLUMNS = 'id, issue_id, summary, created_at'
 
 export async function listOpinions(db: D1Database, issueId: number): Promise<Opinion[]> {
-  const { results } = await db
-    .prepare(
-      `SELECT ${OPINION_PUBLIC_COLUMNS} FROM ct_opinions WHERE issue_id = ? ORDER BY created_at DESC`,
-    )
-    .bind(issueId)
-    .all<Opinion>()
+  const { results } = await db.prepare(`SELECT ${OPINION_PUBLIC_COLUMNS} FROM ct_opinions WHERE issue_id = ? ORDER BY created_at DESC`).bind(issueId).all<Opinion>()
   return results ?? []
 }
 
 /** 管理端專用：多回投稿者。呼叫端必須先過 requireAdmin()。 */
-export async function listOpinionsWithAuthor(
-  db: D1Database,
-  issueId: number,
-): Promise<OpinionWithAuthor[]> {
-  const { results } = await db
-    .prepare(
-      `SELECT ${OPINION_PUBLIC_COLUMNS}, author_id, author_name FROM ct_opinions WHERE issue_id = ? ORDER BY created_at DESC`,
-    )
-    .bind(issueId)
-    .all<OpinionWithAuthor>()
+export async function listOpinionsWithAuthor(db: D1Database, issueId: number): Promise<OpinionWithAuthor[]> {
+  const { results } = await db.prepare(`SELECT ${OPINION_PUBLIC_COLUMNS}, author_id, author_name FROM ct_opinions WHERE issue_id = ? ORDER BY created_at DESC`).bind(issueId).all<OpinionWithAuthor>()
   return results ?? []
 }
 
@@ -359,14 +261,9 @@ export async function createOpinion(
     // 意見投稿一律要登入，所以這兩欄是必填（舊資料才會是 null）
     author_id: string
     author_name: string
-  },
+  }
 ): Promise<number> {
-  const { meta } = await db
-    .prepare(
-      'INSERT INTO ct_opinions (issue_id, summary, author_id, author_name) VALUES (?, ?, ?, ?)',
-    )
-    .bind(issueId, input.summary, input.author_id, input.author_name)
-    .run()
+  const { meta } = await db.prepare('INSERT INTO ct_opinions (issue_id, summary, author_id, author_name) VALUES (?, ?, ?, ?)').bind(issueId, input.summary, input.author_id, input.author_name).run()
   return meta.last_row_id
 }
 
@@ -376,7 +273,7 @@ export async function deleteOpinion(db: D1Database, id: number): Promise<void> {
 
 export async function getIssueDetail(
   db: D1Database,
-  id: number,
+  id: number
 ): Promise<{
   issue: Issue
   materials: Material[]
@@ -385,11 +282,7 @@ export async function getIssueDetail(
 } | null> {
   const issue = await getIssue(db, id)
   if (!issue) return null
-  const [materials, briefing, opinions] = await Promise.all([
-    listMaterials(db, id),
-    getLatestBriefing(db, id),
-    listOpinions(db, id),
-  ])
+  const [materials, briefing, opinions] = await Promise.all([listMaterials(db, id), getLatestBriefing(db, id), listOpinions(db, id)])
   return { issue, materials, briefing, opinions }
 }
 
@@ -408,29 +301,15 @@ export async function getAdminStats(db: D1Database): Promise<AdminStats> {
   }
 }
 
-export async function listMaterialsForPrompt(
-  db: D1Database,
-  issueId: number,
-): Promise<Pick<Material, 'source_name' | 'source_url' | 'stance' | 'content'>[]> {
+export async function listMaterialsForPrompt(db: D1Database, issueId: number): Promise<Pick<Material, 'source_name' | 'source_url' | 'stance' | 'content'>[]> {
   const { results } = await db
-    .prepare(
-      'SELECT source_name, source_url, stance, content FROM ct_materials WHERE issue_id = ? ORDER BY created_at',
-    )
+    .prepare('SELECT source_name, source_url, stance, content FROM ct_materials WHERE issue_id = ? ORDER BY created_at')
     .bind(issueId)
     .all<Pick<Material, 'source_name' | 'source_url' | 'stance' | 'content'>>()
   return results ?? []
 }
 
-export async function listOpinionSummaries(
-  db: D1Database,
-  issueId: number,
-  limit = 50,
-): Promise<Pick<Opinion, 'summary'>[]> {
-  const { results } = await db
-    .prepare(
-      'SELECT summary FROM ct_opinions WHERE issue_id = ? ORDER BY created_at DESC LIMIT ?',
-    )
-    .bind(issueId, limit)
-    .all<Pick<Opinion, 'summary'>>()
+export async function listOpinionSummaries(db: D1Database, issueId: number, limit = 50): Promise<Pick<Opinion, 'summary'>[]> {
+  const { results } = await db.prepare('SELECT summary FROM ct_opinions WHERE issue_id = ? ORDER BY created_at DESC LIMIT ?').bind(issueId, limit).all<Pick<Opinion, 'summary'>>()
   return results ?? []
 }

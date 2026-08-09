@@ -15,10 +15,7 @@ const date = computed(() => formatDate(props.issue.created_at, locale.value))
 </script>
 
 <template>
-  <a
-    :href="href"
-    class="card mb-4 block no-underline transition hover:border-red/30 hover:shadow-md"
-  >
+  <a :href="href" class="card mb-4 block no-underline transition hover:border-red/30 hover:shadow-md">
     <div class="mb-2 flex flex-wrap items-center gap-2">
       <StatusBadge :status="issue.status" short />
       <span class="text-xs text-muted">{{ date }}</span>
@@ -27,9 +24,6 @@ const date = computed(() => formatDate(props.issue.created_at, locale.value))
     <p v-if="issue.description" class="mt-2 mb-0 text-sm text-muted">
       {{ issue.description }}
     </p>
-    <p class="mt-3 mb-0 text-xs text-muted">
-      {{ issue.material_count }} {{ t('idx_materials_unit') }}
-      · {{ issue.opinion_count }} {{ t('idx_opinions_unit') }}
-    </p>
+    <p class="mt-3 mb-0 text-xs text-muted">{{ issue.material_count }} {{ t('idx_materials_unit') }} · {{ issue.opinion_count }} {{ t('idx_opinions_unit') }}</p>
   </a>
 </template>

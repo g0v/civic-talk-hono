@@ -108,7 +108,7 @@ watch(
   () => [issue.value?.polis_id, issue.value?.id, activeTab.value, locale.value] as const,
   () => {
     if (activeTab.value === 'briefing') void nextTick(() => renderPolis())
-  },
+  }
 )
 
 function renderPolis() {
@@ -330,21 +330,11 @@ async function submitOpinion() {
             <StatusBadge :status="issue.status" />
             <h1 class="mt-3 mb-2 font-serif text-3xl font-bold">{{ issue.title }}</h1>
             <p v-if="issue.description" class="mt-0 mb-3 text-muted">{{ issue.description }}</p>
-            <p class="m-0 text-sm text-muted">
-              {{ t('issue_created') }} {{ formatDate(issue.created_at, locale) }} ·
-              {{ materials.length }} {{ t('issue_materials_unit') }}
-            </p>
+            <p class="m-0 text-sm text-muted">{{ t('issue_created') }} {{ formatDate(issue.created_at, locale) }} · {{ materials.length }} {{ t('issue_materials_unit') }}</p>
           </div>
 
           <div class="tabs">
-            <button
-              v-for="tab in tabs"
-              :key="tab.id"
-              type="button"
-              class="tab"
-              :class="{ active: activeTab === tab.id }"
-              @click="activeTab = tab.id"
-            >
+            <button v-for="tab in tabs" :key="tab.id" type="button" class="tab" :class="{ active: activeTab === tab.id }" @click="activeTab = tab.id">
               {{ tab.label }}
             </button>
           </div>
@@ -358,9 +348,7 @@ async function submitOpinion() {
                 {{ t('brief_go_volunteer') }}
               </div>
               <div class="mt-4 flex gap-2">
-                <a :href="`/contribute/${issueId}`" class="btn btn-primary">{{
-                  t('brief_submit_material')
-                }}</a>
+                <a :href="`/contribute/${issueId}`" class="btn btn-primary">{{ t('brief_submit_material') }}</a>
                 <button type="button" class="btn btn-secondary" @click="activeTab = 'volunteer'">
                   {{ t('tab_volunteer') }}
                 </button>
@@ -402,9 +390,7 @@ async function submitOpinion() {
           <section v-show="activeTab === 'materials'">
             <div class="mb-4 flex items-center justify-between gap-3">
               <h2 class="m-0 font-serif text-xl">{{ t('mat_title') }}</h2>
-              <a :href="`/contribute/${issueId}`" class="btn btn-primary btn-sm">{{
-                t('mat_submit_btn')
-              }}</a>
+              <a :href="`/contribute/${issueId}`" class="btn btn-primary btn-sm">{{ t('mat_submit_btn') }}</a>
             </div>
             <div class="alert alert-info mb-4">{{ t('mat_alert') }}</div>
             <div v-if="!materials.length" class="empty">
@@ -415,14 +401,7 @@ async function submitOpinion() {
               <div class="mb-2 flex flex-wrap items-center gap-3">
                 <span class="font-medium">{{ m.source_name || t('mat_source_unknown') }}</span>
                 <span class="text-sm" :class="stanceClass(m.stance)">{{ stanceLabel(m.stance) }}</span>
-                <a
-                  v-if="m.source_url"
-                  :href="m.source_url"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="text-sm"
-                  >{{ t('mat_link') }}</a
-                >
+                <a v-if="m.source_url" :href="m.source_url" target="_blank" rel="noopener noreferrer" class="text-sm">{{ t('mat_link') }}</a>
               </div>
               <div class="whitespace-pre-wrap text-sm leading-relaxed">{{ m.content }}</div>
               <p class="mt-2 mb-0 text-sm text-muted">
@@ -436,9 +415,7 @@ async function submitOpinion() {
           <section v-show="activeTab === 'volunteer'">
             <h2 class="mt-0 mb-2 font-serif text-xl">{{ t('vol_title') }}</h2>
             <p class="mb-6 text-muted">{{ t('vol_intro') }}</p>
-            <p class="mb-6 text-sm text-muted">
-              {{ t('vol_step1') }} → {{ t('vol_step2') }} → {{ t('vol_step3') }}
-            </p>
+            <p class="mb-6 text-sm text-muted">{{ t('vol_step1') }} → {{ t('vol_step2') }} → {{ t('vol_step3') }}</p>
 
             <div class="card mb-4">
               <h3 class="mt-0 mb-2 text-base">{{ t('vol_s1_title') }}</h3>
@@ -447,12 +424,7 @@ async function submitOpinion() {
                 <button type="button" class="btn btn-primary btn-sm" @click="loadPrompt('summarize')">
                   {{ t('vol_gen_summarize') }}
                 </button>
-                <button
-                  v-if="promptVisible.summarize"
-                  type="button"
-                  class="btn btn-secondary btn-sm"
-                  @click="copyPrompt('summarize')"
-                >
+                <button v-if="promptVisible.summarize" type="button" class="btn btn-secondary btn-sm" @click="copyPrompt('summarize')">
                   {{ t('vol_copy') }}
                 </button>
               </div>
@@ -483,12 +455,7 @@ async function submitOpinion() {
                 <button type="button" class="btn btn-primary btn-sm" @click="loadPrompt('narrative')">
                   {{ t('vol_gen_narrative') }}
                 </button>
-                <button
-                  v-if="promptVisible.narrative"
-                  type="button"
-                  class="btn btn-secondary btn-sm"
-                  @click="copyPrompt('narrative')"
-                >
+                <button v-if="promptVisible.narrative" type="button" class="btn btn-secondary btn-sm" @click="copyPrompt('narrative')">
                   {{ t('vol_copy') }}
                 </button>
               </div>
@@ -509,12 +476,7 @@ async function submitOpinion() {
                 <button type="button" class="btn btn-primary btn-sm" @click="loadPrompt('synthesis')">
                   {{ t('vol_gen_synthesis') }}
                 </button>
-                <button
-                  v-if="promptVisible.synthesis"
-                  type="button"
-                  class="btn btn-secondary btn-sm"
-                  @click="copyPrompt('synthesis')"
-                >
+                <button v-if="promptVisible.synthesis" type="button" class="btn btn-secondary btn-sm" @click="copyPrompt('synthesis')">
                   {{ t('vol_copy') }}
                 </button>
               </div>
@@ -565,9 +527,7 @@ async function submitOpinion() {
               {{ t('op_empty') }}
             </div>
             <template v-else>
-              <h3 class="mb-4 font-medium">
-                {{ t('op_count_prefix') }}{{ opinions.length }}{{ t('op_count_suffix') }}
-              </h3>
+              <h3 class="mb-4 font-medium">{{ t('op_count_prefix') }}{{ opinions.length }}{{ t('op_count_suffix') }}</h3>
               <div v-for="o in opinions" :key="o.id" class="card mb-4">
                 <p class="mt-0 mb-2 text-sm text-muted">{{ formatDate(o.created_at, locale) }}</p>
                 <div class="whitespace-pre-wrap text-sm leading-relaxed">{{ o.summary }}</div>

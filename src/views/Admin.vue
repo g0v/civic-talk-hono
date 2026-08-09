@@ -8,13 +8,7 @@ import Toast from '../components/Toast.vue'
 import { formatDate, useI18n } from '../l10n'
 import { useAuth } from '../composables/useAuth'
 import { isAdminSession } from '../client/auth-session'
-import type {
-  Briefing,
-  IssueListItemWithAuthor,
-  IssueStatus,
-  MaterialWithAuthor,
-  OpinionWithAuthor,
-} from '../db/queries'
+import type { Briefing, IssueListItemWithAuthor, IssueStatus, MaterialWithAuthor, OpinionWithAuthor } from '../db/queries'
 
 type AdminTab = 'issues' | 'materials' | 'opinions'
 
@@ -308,14 +302,7 @@ const tabs = computed(() => [
           </div>
 
           <div class="tabs">
-            <button
-              v-for="tab in tabs"
-              :key="tab.id"
-              type="button"
-              class="tab"
-              :class="{ active: activeTab === tab.id }"
-              @click="activeTab = tab.id"
-            >
+            <button v-for="tab in tabs" :key="tab.id" type="button" class="tab" :class="{ active: activeTab === tab.id }" @click="activeTab = tab.id">
               {{ tab.label }}
             </button>
           </div>
@@ -375,10 +362,7 @@ const tabs = computed(() => [
             <h2 class="mt-0 mb-4 font-serif text-xl">{{ t('adm_mat_section_title') }}</h2>
             <div class="form-group max-w-md">
               <label>{{ t('adm_select_issue_label') }}</label>
-              <select
-                v-model="matIssueId"
-                @change="loadMaterials"
-              >
+              <select v-model="matIssueId" @change="loadMaterials">
                 <option value="">{{ t('adm_select_placeholder') }}</option>
                 <option v-for="issue in issues" :key="issue.id" :value="issue.id">
                   {{ issue.title }}
@@ -388,9 +372,7 @@ const tabs = computed(() => [
             <div v-if="!matIssueId" class="empty">{{ t('adm_empty_select') }}</div>
             <div v-else-if="!materials.length" class="empty">{{ t('adm_empty_materials') }}</div>
             <template v-else>
-              <p class="mb-3 text-sm text-muted">
-                {{ t('adm_mat_count_prefix') }}{{ materials.length }}{{ t('adm_mat_count_suffix') }}
-              </p>
+              <p class="mb-3 text-sm text-muted">{{ t('adm_mat_count_prefix') }}{{ materials.length }}{{ t('adm_mat_count_suffix') }}</p>
               <div v-for="m in materials" :key="m.id" class="card mb-3">
                 <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
                   <strong>{{ m.source_name || t('adm_mat_source_unknown') }}</strong>
@@ -398,19 +380,10 @@ const tabs = computed(() => [
                     {{ t('delete') }}
                   </button>
                 </div>
-                <a
-                  v-if="m.source_url"
-                  :href="m.source_url"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="text-sm"
-                  >{{ t('adm_mat_link') }}</a
-                >
+                <a v-if="m.source_url" :href="m.source_url" target="_blank" rel="noopener noreferrer" class="text-sm">{{ t('adm_mat_link') }}</a>
                 <div class="mt-2 whitespace-pre-wrap text-sm">{{ m.content }}</div>
                 <!-- #9：投稿者只在管理端顯示，公開的素材列表不含這個欄位 -->
-                <p class="mt-2 mb-0 text-sm text-muted">
-                  {{ t('adm_author') }}{{ m.author_name || t('adm_author_unknown') }}
-                </p>
+                <p class="mt-2 mb-0 text-sm text-muted">{{ t('adm_author') }}{{ m.author_name || t('adm_author_unknown') }}</p>
               </div>
             </template>
           </section>
@@ -430,9 +403,7 @@ const tabs = computed(() => [
             <div v-if="!opIssueId" class="empty">{{ t('adm_empty_select') }}</div>
             <div v-else-if="!opinions.length" class="empty">{{ t('adm_empty_opinions') }}</div>
             <template v-else>
-              <p class="mb-3 text-sm text-muted">
-                {{ t('adm_op_count_prefix') }}{{ opinions.length }}{{ t('adm_op_count_suffix') }}
-              </p>
+              <p class="mb-3 text-sm text-muted">{{ t('adm_op_count_prefix') }}{{ opinions.length }}{{ t('adm_op_count_suffix') }}</p>
               <div v-for="o in opinions" :key="o.id" class="card mb-3">
                 <div class="mb-2 flex items-center justify-between gap-2">
                   <span class="text-sm text-muted">{{ formatDate(o.created_at, locale) }}</span>
@@ -442,9 +413,7 @@ const tabs = computed(() => [
                 </div>
                 <div class="whitespace-pre-wrap text-sm">{{ o.summary }}</div>
                 <!-- #9：投稿者只在管理端顯示，公開的意見列表不含這個欄位 -->
-                <p class="mt-2 mb-0 text-sm text-muted">
-                  {{ t('adm_author') }}{{ o.author_name || t('adm_author_unknown') }}
-                </p>
+                <p class="mt-2 mb-0 text-sm text-muted">{{ t('adm_author') }}{{ o.author_name || t('adm_author_unknown') }}</p>
               </div>
             </template>
           </section>
