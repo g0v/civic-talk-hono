@@ -14,7 +14,7 @@
 
 - **功能／內容來源**：`../civic-talk`（現行站，`public/*.html`、`functions/api/[[route]].js`、`schema.sql`、`public/i18n.js`）。
 - **移植藍圖**：原 `.cursor/plans/vue_ssr_複刻_8a18e2ed.plan.md` 已在六項 todo 完成後刪除（commit `f880295`）；**現在的待辦來源是 GitHub issues**，本檔的「移植進度」是它的落地對照。與本檔衝突時**先問使用者**。
-- **參考但不照抄**：`../vTaiwan-hono` 的 SSR 寫法與工程慣例可借鏡，但本專案**不**採用它的 Vite+（`vp`）／LemmaScript 工具鏈。**例外**：#5 的 Better Auth 是要「對齊」而非「借鏡」——見「身分驗證與權限」與「多 repo 工作區」。
+- **參考但不照抄**：`../vTaiwan-hono` 的 SSR 寫法與工程慣例可借鏡，但本專案**不**採用它的 LemmaScript／Dafny 工具鏈。**例外**：#5 的 Better Auth 是要「對齊」而非「借鏡」——見「身分驗證與權限」與「多 repo 工作區」。本專案已採用 Vite+（`vp`，issue #24），但**不含** LemmaScript。
 
 ## 不可妥協的不變量（Non-negotiable invariants）
 
@@ -40,7 +40,7 @@
 7. **遠端 D1 需授權。** migration 預設只套用到本機（`--local`）。套用 `--remote`、建立或刪除資料庫、跑任何會寫入正式資料的指令前，**必須先問使用者**。本專案有兩個 D1 綁定：業務庫 `DB` → `vtaiwan-civic-talks`，共用認證庫 `DB_AUTH` → `vtaiwan-auth`。**本 repo 只對 `DB` 做 migration**；`DB_AUTH` 見不變量 11。
    - ⚠️ **`wrangler d1 migrations apply vtaiwan-auth` 是活陷阱**：`DB_AUTH` 沒寫 `migrations_dir`，但 wrangler 會自動填入預設的 `./migrations`，等於把本專案的 `ct_*` 建表 SQL 套進 vTaiwan 的正式認證庫。🚫 不要跑，詳見 [`deploy_notes.md`](./deploy_notes.md)。
 8. **生成物不手改。** `dist/`、`public/js/*.js`（client bundle）、`worker-configuration.d.ts` 皆為建置產物——改源頭重新生成。Tailwind 導入後 `public/styles.css` 也會變成生成物（見「樣式」）。
-9. **完成 = 全部綠燈。** `npm run typecheck` 與 `npm run build` 都過才算改完。紅燈狀態不 commit。
+9. **完成 = 全部綠燈。** `vp check --no-fmt --no-lint` 與 `vp run build` 都過、`vp test` 全部通過，才算改完。紅燈狀態不 commit。
 10. **不擅自 commit／push／deploy。** 界線與長程任務例外見「Git / Commit 慣例」。
 11. **共用認證資料庫只讀不改，角色由 vTaiwan-hono 管。** D1 `vtaiwan-auth`（Better Auth 的 `user`／`session`／`account`／`verification`）是 **`../vTaiwan-hono` 的正式資料庫**，本專案只是**消費端**。不變量 1 的 `ct_` 前綴保護的是業務庫，保護不到這裡——所以另立一條：
     - 🚫 **不在本 repo 建立 `migrations/auth/`，不對 auth 資料表下任何 DDL**（`CREATE`／`ALTER`／`DROP`／加欄位／加索引）。schema 的唯一來源是 `../vTaiwan-hono/migrations/auth/`。要動 schema，去那邊動並先問使用者。
@@ -61,7 +61,7 @@ Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑�
 - `src/composables/useAuth.ts` — 全站共用的登入狀態（`authState`／`session`／`ensureAuthSession`／`signOutAndReload`）。模組層級的 ref，同一頁的 `AppHeader` 與表單共用同一次 `/api/me`；**只在瀏覽器端寫入**（`ensureAuthSession()` 開頭擋掉 SSR），所以 SSR 永遠是 `'loading'`。
 - `src/components/SignInButtons.vue` — Google／GitHub 登入鈕（`/`、`/issues/:id`、`/contribute/:id`、`/admin` 與 `AppHeader` 共用）。
 - `src/l10n/` — 自製 i18n composable（`zh-TW`／`en` 雙檔 key 同步）；SSR 固定 `zh-TW`，`localStorage.civic_lang` 只在 hydration 後讀寫。
-- `src/styles/app.css` — Tailwind v4 `@theme static`（vTaiwan 色彩、字型、字級、間距、圓角、陰影與動效 token）；`npm run css` 產出 `public/styles.css`（**生成物，勿手改**）。
+- `src/styles/app.css` — Tailwind v4 `@theme static`（vTaiwan 色彩、字型、字級、間距、圓角、陰影與動效 token）；`vp run css` 產出 `public/styles.css`（**生成物，勿手改**）。
 - `wrangler.jsonc` — `ASSETS` + D1 `DB` → `vtaiwan-civic-talks` + D1 `DB_AUTH` → `vtaiwan-auth`（兩者都標 `remote: true`，只影響本機開發模式）；`compatibility_flags: ["nodejs_compat"]`。**不寫 `account_id`**（與 `../vTaiwan-hono` 一致，由 wrangler 登入的帳號決定）——不要為了「比較保險」把它加回來。
 - `src/auth/` — `createAuth.ts`（Better Auth 實例：Google／GitHub provider、同 email accountLinking、**不開 admin plugin**、以 `additionalFields` 唯讀取 `role`）與 `authorization.ts`（`AppRole`／`resolveRole`／`isAdminRole`／`getAuthContext`／`tryGetAuthContext`）。
 - `src/api/auth.ts` — `/api/auth/*` 轉交 `auth.handler()`、`/api/me` 回登入者；`/api/auth/admin/*` 一律 404。
@@ -72,11 +72,11 @@ Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑�
 - ✅ **Better Auth 骨架已可運作**：`/api/auth/get-session` 回 200、`/api/me` 未登入回 401、`/api/auth/admin/list-users` 回 404。
 - ✅ **管理端已是角色制**：`src/api/routes.ts` 的 `requireAdmin()` 讀 session 判 `isAdminRole()`，未登入 401、非管理員 403。**`ADMIN_PASSWORD`、`X-Admin-Token`、`checkAdmin()`、`POST /api/admin/login` 都已移除**（連同 `'admin'` 這個危險的 fallback）。
 - ✅ **`/admin` 是登入入口**：`src/views/Admin.vue` 依 `/api/me` 分成 `loading`／`anonymous`（Google／GitHub 登入鈕）／`forbidden`（登入了但沒權限）／`admin` 四態。SSR 一律只出 `loading` 骨架，所以不會有 hydration mismatch，也不需要為登入狀態關快取。
-- ⚠️ **本機 `npm run dev` 測不了登入**：auth 表只存在遠端，本機模擬庫是空的，打登入端點會得到 `no such table: verification`。要實測登入必須 `npm run dev:remote`。
+- ⚠️ **本機 `vp run dev` 測不了登入**：auth 表只存在遠端，本機模擬庫是空的，打登入端點會得到 `no such table: verification`。要實測登入必須 `vp run dev:remote`。
 - ✅ **三個投稿入口都是登入牆（#9）**：`/contribute/:id` 的素材表單、`/` 的建立議題表單、`/issues/:id` 意見分頁的投稿框，都依 `useAuth()` 分成 `loading`／`anonymous`（`SignInButtons`）／`signed-in` 三態，SSR 一律只出 `loading` 骨架。
 - ✅ **全站標頭顯示登入狀態**：`AppHeader` 已登入時出「已登入：{name}」＋登出，未登入時出「登入」鈕（展開內嵌的 provider 面板，登入後導回當前頁）。`authState === 'loading'` 時什麼都不畫——伺服器端不猜登入狀態，所以不會 mismatch。
 
-**尚不存在**：`vue-router`、`vue-i18n` 套件、自動化測試／CI。
+**尚不存在**：`vue-router`、`vue-i18n` 套件、CI。已有自動化測試（`src/tests/`，`vp test` 執行）。
 
 **待處理的身分問題**：
 
@@ -141,7 +141,7 @@ Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑�
 | `admin` plugin        | 🚫 **不開**（見上一節）                                                                    |
 | `account_id`          | **兩邊都不寫死**——本專案已移除 `wrangler.jsonc` 的 `account_id`，與 `../vTaiwan-hono` 一致，由 wrangler 登入的帳號決定 |
 | Cloudflare 帳號       | 兩專案是**同一個帳號**（所以綁得到 `vtaiwan-auth`），但**不靠設定檔寫死來保證**——`wrangler whoami` 選錯帳號就會綁不到，遇到錯誤先查這個 |
-| `nodejs_compat`       | ✅ **已加（實測必要）**——better-auth 直接 import `node:crypto` 與 `node:async_hooks`，沒有這個 flag 連 dev server 都起不來。改 `wrangler.jsonc` 後記得 `npm run cf-typegen` |
+| `nodejs_compat`       | ✅ **已加（實測必要）**——better-auth 直接 import `node:crypto` 與 `node:async_hooks`，沒有這個 flag 連 dev server 都起不來。改 `wrangler.jsonc` 後記得 `vp exec wrangler types` |
 | `BETTER_AUTH_SECRET`  | **與 vTaiwan-hono 共用同一個值**（仍只放 `.dev.vars`／Cloudflare secret，不進 git——不變量 6） |
 
 **仍需先確認的前置條件（🚫 不要臆測）：**
@@ -235,39 +235,43 @@ Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑�
 
 ## 技術棧與工具鏈
 
-**Hono + Vue 3 SSR + Cloudflare Workers**，套件管理與指令一律走 **npm**。
+**Hono + Vue 3 SSR + Cloudflare Workers**，套件安裝走 **npm**，開發指令走 **vp**（Vite Plus CLI）。
 
 | 工具            | 版本   | 鎖定位置          |
 | --------------- | ------ | ----------------- |
 | Hono            | ^4.12  | `dependencies`    |
 | Vue             | ^3.5   | `dependencies`    |
 | TypeScript      | ^5.6   | `devDependencies` |
-| Vite            | ^7.0   | `devDependencies` |
+| Vite Plus (`vp`) | 0.2.4 | `devDependencies` |
+| vite-plus-core   | 0.2.4（`vite` 的 npm alias） | `devDependencies` + `overrides` |
 | Wrangler        | ^4.83  | `devDependencies` |
 | @cloudflare/vite-plugin | ^1.32 | `devDependencies` |
-| better-auth     | ^1.6.25（**尚未安裝**，#5 才裝） | 屆時進 `dependencies` |
+| better-auth     | ^1.6.25 | `dependencies` |
 
 > better-auth 的版本**刻意對齊 `../vTaiwan-hono/package.json`**——兩站共用同一顆 auth D1，版本落差可能導致 schema 或 session 格式不一致。要升級先確認兩邊一起升。
 
-> **不要改用其他套件管理器**（pnpm／yarn／bun），也**不要**引入 `../vTaiwan-hono` 的 Vite+（`vp`）或 LemmaScript／Dafny——本專案明確選擇維持 npm + vite。日後若要遷移到 `vp`，先與使用者確認。
+> **不要改用其他套件管理器**（pnpm／yarn／bun），也**不要**引入 LemmaScript／Dafny——本專案採用 Vite+（`vp`）但**不含** LemmaScript。
 
 ## 常用指令
 
 ```bash
-npm install                 # 安裝依賴
-npm run dev                 # 同時監看 Tailwind CSS 與啟動 vite dev，D1 用本機模擬
-npm run dev:remote          # 同時監看 Tailwind CSS 並連遠端 D1；實測登入只能用這個
-npm run css:watch           # 只監看 Tailwind CSS
-npm run build               # CSS + client bundle + server bundle
-npm run preview             # 預覽建置結果
-npm run typecheck           # tsc --noEmit
-npm run cf-typegen          # 由 wrangler 產生 Cloudflare 綁定型別
-npm run deploy              # build + wrangler deploy（除非使用者要求，否則不要執行）
+npm install                         # 安裝依賴（套件管理仍走 npm）
+vp run dev                          # 先建置 CSS 再啟動開發伺服器，D1 用本機模擬
+vp run dev:remote                   # 先建置 CSS 再連遠端 D1；實測登入只能用這個
+vp run css:watch                    # 只監看 Tailwind CSS（dev 期間需另開終端機）
+vp run build                        # CSS + client bundle + server bundle
+vp preview                          # 預覽建置結果
+vp check --no-fmt --no-lint         # tsc 型別檢查
+vp test                             # Vitest（src/tests/**/*.test.ts）
+vp check                            # fmt + lint + typecheck 全開
+vp fmt                              # oxfmt 格式化
+vp exec wrangler types              # 產生 Cloudflare 綁定型別
+vp run deploy                       # build + wrangler deploy（除非使用者要求，否則不要執行）
 ```
 
-**CSS**：`npm run css`（Tailwind CLI：`src/styles/app.css` → `public/styles.css`）。`npm run dev` 會同時跑 Tailwind watcher；`npm run build` 依序產出 CSS、client bundle，再建 server，避免 server build 收到舊的 `public/js/civic.js`。
+**CSS**：`vp run css`（Tailwind CLI：`src/styles/app.css` → `public/styles.css`）。`vp run dev` 在啟動伺服器前先跑一次 CSS 建置，**不**自動 watch；需要邊改 CSS 邊看效果時，另開終端機跑 `vp run css:watch`。`vp run build` 依序產出 CSS、client bundle，再建 server，避免 server build 收到舊的 `public/js/civic.js`。
 
-**尚未存在**的指令：測試（無 `npm test`、無測試框架）。要新增測試框架，**先說明並取得使用者同意**再動工。
+**測試**：`vp test` 跑 `src/tests/**/*.test.ts`，目前涵蓋 i18n key 同步（`l10n.test.ts`）。新測試放進 `src/tests/`，從 `vite-plus/test` import `describe`／`it`／`expect`。
 
 D1 相關（導入後）：
 
@@ -286,7 +290,7 @@ npx wrangler d1 migrations apply vtaiwan-civic-talks --remote   # 🚫 需先取
 ## 動工前的原則（重要）
 
 - **禁止憑空臆測。** 遇到模糊、不完整或有歧義的指令，先與使用者核對清楚，確認後才動工——不要自行假設需求就開始改。
-- 動大結構（切換到 vue-router、導入 Tailwind、建立 D1）或加新工具鏈（測試框架、i18n 套件）前先說明並確認。
+- 動大結構（切換到 vue-router、導入 Tailwind、建立 D1）或加新工具鏈（i18n 套件等）前先說明並確認。
 - 需要知道舊站行為時，**直接讀 `../civic-talk` 的原始碼**，不要憑印象重寫。
 
 ## SSR 架構
@@ -317,7 +321,7 @@ npx wrangler d1 migrations apply vtaiwan-civic-talks --remote   # 🚫 需先取
 2. `src/ssr/heads.ts` — 新增 `headForXxx(origin)`。
 3. `src/index.ts` — 接上路由，呼叫 `renderPage(XxxView, props, headForXxx(origin))`。
 4. 需要互動時：`src/client/xxx-entry.ts` + `vite.client.config.mts` 加 input，並在 `renderPage` 傳入 `hydrate` 選項。
-5. 驗證：`npm run typecheck` + `npm run build`，`npm run dev` 目視。
+5. 驗證：`vp check --no-fmt --no-lint` + `vp test` + `vp run build`，`vp run dev` 目視。
 
 **切換到 vue-router 之後：** 步驟 3、4 換成「在路由表加一筆（**靜態 import**）」，並同步 i18n 兩個語言檔的 key。
 
@@ -328,26 +332,27 @@ npx wrangler d1 migrations apply vtaiwan-civic-talks --remote   # 🚫 需先取
 | 改動類型                     | 必跑檢查                                                          |
 | ---------------------------- | ----------------------------------------------------------------- |
 | 文件（`.md`）                | 核對文中引用的指令／檔案／設定與現實一致                          |
-| 元件／頁面（`.vue`）         | `npm run typecheck` + `npm run build`；互動 session 加 `npm run dev` 目視 |
-| 新增／修改路由               | `npm run typecheck` + `npm run build`（靜態 import 驗證）+ 手動打一次新舊網址 |
-| API / `src/db/`              | `npm run typecheck` + 對本機 D1 逐一 smoke test（CRUD、狀態轉換、admin 驗證、404/400/401） |
-| 登入／權限（auth）           | `npm run typecheck` + `npm run build`；互動 session 實測：Google 登入、GitHub 登入、**同 email 兩種 provider 登入後是同一個 `user.id`**、登出、`GET /api/me`、非 admin 打管理端點得 `403`、未登入得 `401`、`/admin` 導向登入。**改完後查 `vtaiwan-auth` 的 `sqlite_master` 確認沒有多出任何表**（不變量 11） |
+| 元件／頁面（`.vue`）         | `vp check --no-fmt --no-lint` + `vp run build`；互動 session 加 `vp run dev` 目視 |
+| 新增／修改路由               | `vp check --no-fmt --no-lint` + `vp run build`（靜態 import 驗證）+ 手動打一次新舊網址 |
+| API / `src/db/`              | `vp check --no-fmt --no-lint` + 對本機 D1 逐一 smoke test（CRUD、狀態轉換、admin 驗證、404/400/401） |
+| 登入／權限（auth）           | `vp check --no-fmt --no-lint` + `vp run build`；互動 session 實測：Google 登入、GitHub 登入、**同 email 兩種 provider 登入後是同一個 `user.id`**、登出、`GET /api/me`、非 admin 打管理端點得 `403`、未登入得 `401`、`/admin` 導向登入。**改完後查 `vtaiwan-auth` 的 `sqlite_master` 確認沒有多出任何表**（不變量 11） |
 | migration                    | 先 `--local` 套用，查 `sqlite_master` 確認只新增 `ct_` 表；`--remote` 需授權 |
-| 樣式／token                  | 重建 CSS + `npm run build`；互動 session 目視桌機／手機兩種寬度    |
-| i18n 檔                      | 人工核對 `zh-TW` / `en` key 集合完全一致                          |
-| 依賴／`package.json`         | `npm install` + `npm run typecheck` + `npm run build`             |
-| Vite／wrangler 設定          | `npm run typecheck` + `npm run build`                             |
+| 樣式／token                  | `vp run css` + `vp run build`；互動 session 目視桌機／手機兩種寬度 |
+| i18n 檔                      | `vp test`（l10n.test.ts 自動驗 key 同步）+ 人工核對值翻譯正確     |
+| 依賴／`package.json`         | `npm install` + `vp check --no-fmt --no-lint` + `vp run build`    |
+| Vite／wrangler 設定          | `vp check --no-fmt --no-lint` + `vp run build`                    |
 
 **改完後的完整驗收（依序）：**
 
-1. `npm run typecheck` — 零錯誤。
-2. `npm run build` — server + client 都能成功建置。
-3. 本機 `npm run dev` 目視（**僅互動 session**）：
+1. `vp check --no-fmt --no-lint` — 零錯誤。
+2. `vp test` — 全部通過。
+3. `vp run build` — server + client 都能成功建置。
+4. 本機 `vp run dev` 目視（**僅互動 session**）：
    - hydration **無 mismatch 警告**（開 devtools console 檢查）
    - 中英切換、桌機／手機排版、Polis 條件載入、`OPINION.md` 下載
    - 舊網址導向確實生效
 
-> **尚未涵蓋**（需先與使用者確認再動工）：自動化測試（SSR 煙霧測試、連結完整性、i18n key 同步 gate、hydration 一致性）與 CI。目前這些全靠人工驗收——所以驗收步驟不能跳。
+> **尚未涵蓋**（需先與使用者確認再動工）：SSR 煙霧測試、連結完整性、hydration 一致性。i18n key 同步已由 `l10n.test.ts` 自動化。CI 仍未建立——驗收步驟不能跳。
 
 ## Git / Commit 慣例
 
@@ -386,7 +391,7 @@ npx wrangler d1 migrations apply vtaiwan-civic-talks --remote   # 🚫 需先取
 
 `../vTaiwan-hono` 的**兩種參考強度不同，別混為一談**：
 
-- **工程慣例（SSR 寫法等）＝ 僅參考，不照抄工具鏈**（不引入 Vite+／`vp`／LemmaScript）。
+- **工程慣例（SSR 寫法等）＝ 僅參考**；Vite+（`vp`）工具鏈本專案已採用（issue #24），**不含** LemmaScript。
 - **Better Auth 登入／權限＝ 要對齊的實作**：#5 明確要求共用同一套 auth DB、user table 與 OAuth 憑證，所以 `createAuth.ts`／`authorization.ts`／auth schema 的形狀要照著來（見「身分驗證與權限」）。相關程式碼在該 repo 的 **`feat/better-auth`** 分支。
 
 要了解舊站行為時，直接讀 `../civic-talk` 對應檔案。

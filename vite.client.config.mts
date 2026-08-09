@@ -28,7 +28,6 @@ export default defineConfig({
       output: {
         format: 'es',
         entryFileNames: 'js/civic.js',
-        inlineDynamicImports: true,
       },
     },
   },

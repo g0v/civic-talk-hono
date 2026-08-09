@@ -15,22 +15,23 @@
 cp .dev.vars.example .dev.vars   # 填入 Better Auth 與 Google／GitHub OAuth 憑證
 npm install
 npx wrangler d1 migrations apply vtaiwan-civic-talks --local
-npm run dev
+vp run dev
 ```
 
-> 登入功能在 `npm run dev` 下**測不了**：Better Auth 的資料表在遠端的 `vtaiwan-auth`，本機模擬庫是空的。要實測登入請用 `npm run dev:remote`。
+> 登入功能在 `vp run dev` 下**測不了**：Better Auth 的資料表在遠端的 `vtaiwan-auth`，本機模擬庫是空的。要實測登入請用 `vp run dev:remote`。
 
 常用指令：
 
 | 指令 | 說明 |
 | ---- | ---- |
-| `npm run dev` | 同時監看 Tailwind CSS 與啟動本機 Vite + Worker（含 HMR） |
-| `npm run dev:remote` | 同時監看 Tailwind CSS 並以遠端 D1 啟動 Vite；實測登入用這個 |
-| `npm run css` | 由 `src/styles/app.css` 建置 `public/styles.css` |
-| `npm run css:watch` | 只監看並重建 Tailwind CSS |
-| `npm run build` | 依序建置 CSS、client bundle、server bundle |
-| `npm run typecheck` | `tsc --noEmit` |
-| `npm run cf-typegen` | 產生 Cloudflare 綁定型別 |
+| `vp run dev` | 先建置 CSS 再啟動本機 Worker + HMR（D1 本機模擬） |
+| `vp run dev:remote` | 先建置 CSS 再連遠端 D1；實測登入用這個 |
+| `vp run css` | 由 `src/styles/app.css` 建置 `public/styles.css` |
+| `vp run css:watch` | 監看並自動重建 Tailwind CSS |
+| `vp run build` | 依序建置 CSS、client bundle、server bundle |
+| `vp check --no-fmt --no-lint` | tsc 型別檢查 |
+| `vp test` | 執行自動化測試（Vitest） |
+| `vp exec wrangler types` | 產生 Cloudflare 綁定型別 |
 
 樣式 token 以 `vtaiwan-design-system/project/colors_and_type.css` 為穩定來源，透過 Tailwind v4 的 `vt-*` utilities 使用，例如 `text-vt-democratic-red`、`bg-vt-bg-2`、`font-vt-serif`。
 

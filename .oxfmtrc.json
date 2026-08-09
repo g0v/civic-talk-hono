@@ -1,0 +1,10 @@
+// 針對於 vscode oxc 套件的 workaround 設定，要自行同步 vite.config.mts 中的 fmt 配置
+{
+  "semi": false,
+  "singleQuote": true,
+  "trailingComma": "es5",
+  "printWidth": 200,
+  "bracketSpacing": true,
+  "arrowParens": "avoid",
+  "ignorePatterns": ["public/**", "dist/**", ".claude/**", ".vscode/**", ".wrangler/**"]
+}
