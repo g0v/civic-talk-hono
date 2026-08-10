@@ -40,6 +40,7 @@ export const messages = {
   idx_sort_most: 'Most attention',
   idx_sort_least: 'Least attention',
   idx_search_no_result: 'No issues match "{keyword}"',
+  idx_similar_hint: 'Found existing issues with similar titles — feel free to check them out, or ignore this and submit as usual:',
   idx_materials_unit: 'materials',
   idx_opinions_unit: 'opinions',
   idx_toast_title_required: 'Please enter an issue title',
