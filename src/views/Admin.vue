@@ -285,19 +285,19 @@ const tabs = computed(() => [
           <div class="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
             <div class="card text-center">
               <div class="text-2xl font-bold text-red">{{ stats.issues }}</div>
-              <div class="text-xs text-muted">{{ t('adm_stat_issues') }}</div>
+              <div class="text-sm text-muted">{{ t('adm_stat_issues') }}</div>
             </div>
             <div class="card text-center">
               <div class="text-2xl font-bold text-teal">{{ stats.materials }}</div>
-              <div class="text-xs text-muted">{{ t('adm_stat_materials') }}</div>
+              <div class="text-sm text-muted">{{ t('adm_stat_materials') }}</div>
             </div>
             <div class="card text-center">
               <div class="text-2xl font-bold text-amber">{{ stats.opinions }}</div>
-              <div class="text-xs text-muted">{{ t('adm_stat_opinions') }}</div>
+              <div class="text-sm text-muted">{{ t('adm_stat_opinions') }}</div>
             </div>
             <div class="card text-center">
               <div class="text-2xl font-bold text-ink">{{ stats.briefings }}</div>
-              <div class="text-xs text-muted">{{ t('adm_stat_briefings') }}</div>
+              <div class="text-sm text-muted">{{ t('adm_stat_briefings') }}</div>
             </div>
           </div>
 

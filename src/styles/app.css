@@ -212,7 +212,7 @@
     border-radius: var(--radius-pill);
     border: 1px solid transparent;
     padding: 0.55rem 1.1rem;
-    font-size: 0.875rem;
+    font-size: 1rem;
     font-weight: 500;
     cursor: pointer;
     text-decoration: none;
@@ -272,7 +272,7 @@
 
   .btn-sm {
     padding: 0.4rem 0.85rem;
-    font-size: 0.8125rem;
+    font-size: 0.875rem;
   }
 
   .card {
@@ -295,8 +295,7 @@
 
   .label-hint {
     margin-left: 0.4rem;
-    font-size: 0.8rem;
-    font-weight: 400;
+    font-size: 0.875rem;
     color: var(--color-muted);
   }
 
@@ -324,7 +323,7 @@
     align-items: center;
     border-radius: var(--radius-pill);
     padding: 0.2rem 0.65rem;
-    font-size: 0.75rem;
+    font-size: 0.8125rem;
     font-weight: 600;
   }
 
@@ -358,7 +357,7 @@
   .alert {
     border-radius: var(--radius-md);
     padding: 0.9rem 1rem;
-    font-size: 0.9rem;
+    font-size: 1rem;
   }
 
   .alert-info {
@@ -394,7 +393,7 @@
     border: none;
     background: transparent;
     padding: 0.75rem 0.9rem;
-    font-size: 0.875rem;
+    font-size: 1rem;
     color: var(--color-muted);
     cursor: pointer;
     border-bottom: 2px solid transparent;
@@ -416,7 +415,7 @@
     color: white;
     padding: 0.7rem 1.15rem;
     border-radius: var(--radius-pill);
-    font-size: 0.875rem;
+    font-size: 0.9375rem;
     box-shadow: var(--shadow-md);
     opacity: 0;
     pointer-events: none;
@@ -447,8 +446,7 @@
   }
 
   .hero-tag {
-    font-size: 0.75rem;
-    font-weight: 700;
+    font-size: 0.8125rem;
     letter-spacing: 0.12em;
     text-transform: uppercase;
     color: color-mix(in srgb, white 70%, var(--color-red));
@@ -477,7 +475,7 @@
   }
 
   .section-label {
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 700;
     letter-spacing: 0.1em;
     color: var(--color-red);
@@ -536,7 +534,7 @@
     border-radius: var(--radius-md);
     padding: 0.9rem;
     white-space: pre-wrap;
-    font-size: 0.85rem;
+    font-size: 0.9375rem;
     max-height: 280px;
     overflow: auto;
   }
