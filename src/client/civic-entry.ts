@@ -7,6 +7,7 @@ import ContributeView from '../views/Contribute.vue'
 import AdminView from '../views/Admin.vue'
 import MaterialDetailView from '../views/MaterialDetail.vue'
 import OpinionDetailView from '../views/OpinionDetail.vue'
+import NotFoundView from '../views/NotFound.vue'
 import type { PageName } from '../ssr/render'
 
 declare global {
@@ -24,6 +25,7 @@ const pages: Record<PageName, Component> = {
   admin: AdminView,
   material: MaterialDetailView,
   opinion: OpinionDetailView,
+  'not-found': NotFoundView,
 }
 
 const page = window.__PAGE__
