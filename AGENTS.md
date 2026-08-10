@@ -51,13 +51,13 @@
 
 Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑起來（尚未切到 `vue-router`）：
 
-- `src/index.ts` — 乾淨路由 `/`、`/issues/:id`、`/contribute/:id`、`/about`、`/admin`；舊 `.html` 導向；掛上 `registerApiRoutes`；fallback `ASSETS`。
+- `src/index.ts` — 乾淨路由 `/`、`/issues/:id`、`/issues/:id/source/:materialId`、`/issues/:id/comment/:opinionId`、`/contribute/:id`、`/about`、`/admin`；舊 `.html` 導向；掛上 `registerApiRoutes`；fallback `ASSETS`。
 - `src/api/routes.ts` + `src/db/queries.ts` — 舊 Pages Functions API 的型別化移植，SQL 只碰 `ct_*`。
 - `migrations/0001_init.sql` — `ct_issues`／`ct_materials`／`ct_briefings`／`ct_opinions`（含 FK、索引、約束、示範資料）。
 - `migrations/0002_material_author.sql` — `ct_materials` 加上 `author_id`／`author_name`（#9 的投稿者記錄）。本機與遠端皆已套用。
 - `migrations/0003_issue_opinion_author.sql` — `ct_issues` 與 `ct_opinions` 也加上 `author_id`／`author_name`（建立者／投稿者，同樣只給管理端）。本機與遠端皆已套用。
 - `src/ssr/render.ts` — SSR + 注入 `window.__PAGE__`／`__SSR_STATE__` + `/js/civic.js`（dev 走 `/src/client/civic-entry.ts`）。
-- `src/views/` — `Home`／`Issue`／`Contribute`／`About`／`Admin`；共用 `AppHeader`／`AppFooter`／`StatusBadge`／`IssueCard`／`Toast`。
+- `src/views/` — `Home`／`Issue`／`Contribute`／`About`／`Admin`／`MaterialDetail`／`OpinionDetail`；共用 `AppHeader`／`AppFooter`／`StatusBadge`／`IssueCard`／`Toast`。
 - `src/composables/useAuth.ts` — 全站共用的登入狀態（`authState`／`session`／`ensureAuthSession`／`signOutAndReload`）。模組層級的 ref，同一頁的 `AppHeader` 與表單共用同一次 `/api/me`；**只在瀏覽器端寫入**（`ensureAuthSession()` 開頭擋掉 SSR），所以 SSR 永遠是 `'loading'`。
 - `src/components/SignInButtons.vue` — Google／GitHub 登入鈕（`/`、`/issues/:id`、`/contribute/:id`、`/admin` 與 `AppHeader` 共用）。
 - `src/l10n/` — 自製 i18n composable（`zh-TW`／`en` 雙檔 key 同步）；SSR 固定 `zh-TW`，`localStorage.civic_lang` 只在 hydration 後讀寫。
@@ -444,3 +444,16 @@ npx wrangler d1 migrations apply vtaiwan-civic-talks --remote   # 🚫 需先取
 > **migration 與程式碼是綁在一起的**：`createMaterial()`／`createIssue()`／`createOpinion()` 都會寫 `author_id`，所以遠端 migration 必須先於部署，否則每次寫入都會 runtime error（`no such column: author_id`）。`0002` 與 `0003` 都已於 2026-08-04 套用到遠端（經使用者授權，套用後查過 `sqlite_master` 沒有新增任何表）。日後若有人重建遠端資料庫，記得這條順序仍然成立。
 
 > 後續可選：切換到 `vue-router` 全站 hydration、自動化測試／CI——動工前先與使用者確認。
+
+### 已完成：#25 素材與意見的獨立連結（專屬路由）
+
+分支 **`feat/issue-25-dedicated-routes`**。
+
+| #    | 項目          | 狀態    | 內容                                                                                                                                               |
+| ---- | ------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 25-1 | `routes`      | ✅ 完成 | `GET /issues/:id/source/:materialId`（素材詳情）與 `GET /issues/:id/comment/:opinionId`（意見詳情）；URL 中的 `issueId` 與資料實際所屬不符時回 404 |
+| 25-2 | `views`       | ✅ 完成 | `src/views/MaterialDetail.vue`、`src/views/OpinionDetail.vue`；SSR + hydration；麵包屑連回議題頁；分享區塊顯示永久連結＋複製按鈕                   |
+| 25-3 | `og-meta`     | ✅ 完成 | `headForMaterial()`／`headForOpinion()` 以素材標題或意見摘要前 80 字產生 OG title + description，適合分享到社群                                    |
+| 25-4 | `issue-links` | ✅ 完成 | `Issue.vue` 素材卡與意見卡各加「🔗 專屬連結」，讓使用者可從議題頁直接複製個別連結                                                                  |
+| 25-5 | `i18n`        | ✅ 完成 | 新增 `src_*`／`op_detail_*`／`card_permalink` 等 key；zh-TW 與 en 雙檔同步（`vp test` 通過）                                                       |
+| 25-6 | `verify`      | ✅ 完成 | `vp check --no-fmt --no-lint` 零錯誤；`vp test` 全部通過；`vp run build` 成功；DB 查詢只用公開欄位，無 author_* 洩漏風險                           |

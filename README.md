@@ -36,13 +36,15 @@ vp run dev
 
 ## 路由
 
-| 路徑              | 說明                                                            |
-| ----------------- | --------------------------------------------------------------- |
-| `/`               | 議題列表／新增議題                                              |
-| `/issues/:id`     | 議題說明、素材、志願者工具、意見、Polis                         |
-| `/contribute/:id` | 素材投稿                                                        |
-| `/about`          | 關於                                                            |
-| `/admin`          | 管理後台（Google／GitHub 登入，需 `admin`／`super-admin` 角色） |
+| 路徑                             | 說明                                                            |
+| -------------------------------- | --------------------------------------------------------------- |
+| `/`                              | 議題列表／新增議題                                              |
+| `/issues/:id`                    | 議題說明、素材、志願者工具、意見、Polis                         |
+| `/issues/:id/source/:materialId` | 素材詳情（獨立分享連結，含 OG meta）                            |
+| `/issues/:id/comment/:opinionId` | 意見詳情（獨立分享連結，含 OG meta）                            |
+| `/contribute/:id`                | 素材投稿                                                        |
+| `/about`                         | 關於                                                            |
+| `/admin`                         | 管理後台（Google／GitHub 登入，需 `admin`／`super-admin` 角色） |
 
 舊網址 `/index.html`、`/issue.html?id=`、`/contribute.html?id=`、`/about.html`、`/admin.html` 會導向新路由。
 

@@ -313,3 +313,21 @@ export async function listOpinionSummaries(db: D1Database, issueId: number, limi
   const { results } = await db.prepare('SELECT summary FROM ct_opinions WHERE issue_id = ? ORDER BY created_at DESC LIMIT ?').bind(issueId, limit).all<Pick<Opinion, 'summary'>>()
   return results ?? []
 }
+
+/** 素材詳情頁用：取單筆素材（公開欄位）及其所屬議題，用於 /issues/:id/source/:materialId */
+export async function getMaterialWithIssue(db: D1Database, materialId: number): Promise<{ material: Material; issue: Issue } | null> {
+  const material = await db.prepare(`SELECT ${MATERIAL_PUBLIC_COLUMNS} FROM ct_materials WHERE id = ?`).bind(materialId).first<Material>()
+  if (!material) return null
+  const issue = await getIssue(db, material.issue_id)
+  if (!issue) return null
+  return { material, issue }
+}
+
+/** 意見詳情頁用：取單筆意見（公開欄位）及其所屬議題，用於 /issues/:id/comment/:opinionId */
+export async function getOpinionWithIssue(db: D1Database, opinionId: number): Promise<{ opinion: Opinion; issue: Issue } | null> {
+  const opinion = await db.prepare(`SELECT ${OPINION_PUBLIC_COLUMNS} FROM ct_opinions WHERE id = ?`).bind(opinionId).first<Opinion>()
+  if (!opinion) return null
+  const issue = await getIssue(db, opinion.issue_id)
+  if (!issue) return null
+  return { opinion, issue }
+}
