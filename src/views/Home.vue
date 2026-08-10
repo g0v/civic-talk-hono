@@ -31,6 +31,13 @@ const searchQuery = ref('')
 type SortOrder = 'newest' | 'most' | 'least'
 const sortOrder = ref<SortOrder>('newest')
 
+// 建立議題表單：標題相近的既有議題提示（僅供參考，不擋送出、不做審核判斷，見 #36）
+const similarIssues = computed(() => {
+  const q = title.value.trim().toLowerCase()
+  if (q.length < 2) return []
+  return issues.value.filter(i => i.title.toLowerCase().includes(q)).slice(0, 5)
+})
+
 const filteredAndSortedIssues = computed(() => {
   const q = searchQuery.value.trim().toLowerCase()
   let result = q ? issues.value.filter(i => i.title.toLowerCase().includes(q) || (i.description ?? '').toLowerCase().includes(q)) : [...issues.value]
@@ -148,6 +155,12 @@ async function createIssue() {
                 <span class="label-hint">{{ t('idx_hint_title') }}</span>
               </label>
               <input v-model="title" type="text" :placeholder="t('idx_ph_title')" />
+              <ul v-if="similarIssues.length" class="mt-2 space-y-1 text-sm">
+                <li class="text-muted">{{ t('idx_similar_hint') }}</li>
+                <li v-for="s in similarIssues" :key="s.id">
+                  <a :href="`/issues/${s.id}`" target="_blank" rel="noopener noreferrer">{{ s.title }}</a>
+                </li>
+              </ul>
             </div>
             <div class="form-group">
               <label>

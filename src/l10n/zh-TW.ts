@@ -40,6 +40,7 @@ export const messages = {
   idx_sort_most: '最多關注',
   idx_sort_least: '最少關注',
   idx_search_no_result: '沒有符合「{keyword}」的議題',
+  idx_similar_hint: '找到標題相近的既有議題，你可以先看看，或忽略此提示照常送出：',
   idx_materials_unit: '份素材',
   idx_opinions_unit: '份意見',
   idx_toast_title_required: '請填寫議題標題',
