@@ -11,6 +11,7 @@ const markdown = new MarkdownIt({
 markdown.renderer.rules.image = () => ''
 
 /** 將不受信任的 Markdown 轉為可安全插入頁面的 HTML。 */
-export function renderSafeMarkdown(source: string): string {
+export function renderSafeMarkdown(source: string | null): string {
+  if (!source) return ''
   return markdown.render(source)
 }
