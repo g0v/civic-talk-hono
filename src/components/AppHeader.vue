@@ -87,19 +87,19 @@ function handleNewIssue() {
 
       <!-- ── 桌面 nav（md 以上才顯示）── -->
       <nav class="hidden items-center gap-0.5 md:flex">
-        <a v-if="backHref" :href="backHref" class="rounded-pill px-3 py-1.5 text-[13px] text-vt-fg-2 no-underline hover:bg-black/5">
+        <a v-if="backHref" :href="backHref" class="rounded-pill px-3 py-1.5 text-[15px] text-vt-fg-2 no-underline hover:bg-black/5">
           {{ backText }}
         </a>
-        <a v-else href="/" class="rounded-pill px-3 py-1.5 text-[13px] text-vt-fg-2 no-underline hover:bg-black/5" :class="{ 'font-semibold text-vt-democratic-red': current === 'home' }">
+        <a v-else href="/" class="rounded-pill px-3 py-1.5 text-[15px] text-vt-fg-2 no-underline hover:bg-black/5" :class="{ 'font-semibold text-vt-democratic-red': current === 'home' }">
           {{ t('nav_issues') }}
         </a>
-        <a href="/about" class="rounded-pill px-3 py-1.5 text-[13px] text-vt-fg-2 no-underline hover:bg-black/5" :class="{ 'font-semibold text-vt-democratic-red': current === 'about' }">
+        <a href="/about" class="rounded-pill px-3 py-1.5 text-[15px] text-vt-fg-2 no-underline hover:bg-black/5" :class="{ 'font-semibold text-vt-democratic-red': current === 'about' }">
           {{ t('nav_about') }}
         </a>
         <a
           v-if="hasAdminAccess"
           href="/admin"
-          class="rounded-pill px-3 py-1.5 text-[13px] text-vt-fg-2 no-underline hover:bg-black/5"
+          class="rounded-pill px-3 py-1.5 text-[15px] text-vt-fg-2 no-underline hover:bg-black/5"
           :class="{ 'font-semibold text-vt-democratic-red': current === 'admin' }"
         >
           {{ t('nav_admin') }}
@@ -122,10 +122,10 @@ function handleNewIssue() {
             <img v-if="avatarImage" :src="avatarImage" :alt="displayName" referrerpolicy="no-referrer" />
             <span v-else>{{ avatarInitial }}</span>
           </div>
-          <span class="max-w-[10rem] truncate text-[13px] text-vt-fg-2" :title="session?.user.email ?? ''">
+          <span class="max-w-[10rem] truncate text-[14px] text-vt-fg-2" :title="session?.user.email ?? ''">
             {{ displayName }}
           </span>
-          <button type="button" class="btn btn-ghost btn-sm text-[13px]" @click="signOutAndReload">
+          <button type="button" class="btn btn-ghost btn-sm" @click="signOutAndReload">
             {{ t('logout') }}
           </button>
         </template>
@@ -238,7 +238,7 @@ function handleNewIssue() {
           </div>
           <div class="min-w-0">
             <div class="truncate text-[14px] font-medium text-vt-fg-1">{{ displayName }}</div>
-            <div class="truncate text-[12px] text-vt-fg-3">{{ session?.user.email }}</div>
+            <div class="truncate text-[13px] text-vt-fg-3">{{ session?.user.email }}</div>
           </div>
         </div>
         <button type="button" class="btn btn-secondary btn-sm" @click="signOutAndReload">
