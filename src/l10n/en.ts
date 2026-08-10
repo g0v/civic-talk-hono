@@ -305,4 +305,8 @@ export const messages = {
   op_detail_share_hint: 'Share a permanent link to this opinion',
   // Permalink button on Issue.vue cards
   card_permalink: 'Permalink',
+  // Not found page (404)
+  nf_title: 'Page Not Found',
+  nf_desc: 'This page may have moved, the link might be mistyped, or the content may have been removed.',
+  nf_home_btn: 'Back to Home',
 } as const

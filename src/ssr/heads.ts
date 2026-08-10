@@ -101,6 +101,16 @@ export function headForOpinion(opinionSnippet: string, issueTitle: string, issue
   }
 }
 
+export function headForNotFound(origin: string): HeadConfig {
+  const title = `找不到頁面 — ${SITE_NAME}`
+  const description = '這個網址可能已經移動、輸入錯誤，或內容已經被刪除。'
+  return {
+    title,
+    description,
+    meta: buildOg(title, description, DEFAULT_OG_IMAGE(origin), `${origin}/`),
+  }
+}
+
 export function renderHeadTags(head: HeadConfig): string {
   const parts: string[] = ['<meta charset="UTF-8" />', '<meta name="viewport" content="width=device-width, initial-scale=1.0" />', `<title>${escapeHtml(head.title)}</title>`]
   if (head.description) {

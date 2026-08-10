@@ -39,6 +39,12 @@ export function persistLocale(locale: Locale): void {
   }
 }
 
+/** 與 src/ssr/render.ts 的 `<html lang="zh-Hant">` 對齊；只在瀏覽器端執行（不變量 3） */
+export function syncDocumentLang(locale: Locale): void {
+  if (typeof window === 'undefined') return
+  document.documentElement.lang = locale === 'zh-TW' ? 'zh-Hant' : 'en'
+}
+
 export function createI18n(initial: Locale = 'zh-TW') {
   const locale = ref<Locale>(initial)
 
@@ -56,6 +62,7 @@ export function createI18n(initial: Locale = 'zh-TW') {
   function setLocale(next: Locale) {
     locale.value = next
     persistLocale(next)
+    syncDocumentLang(next)
   }
 
   function toggleLocale() {

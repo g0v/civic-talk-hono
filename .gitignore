@@ -7,3 +7,7 @@ dist
 *.log
 .DS_Store
 worker-configuration.d.ts
+
+# Ignore all files in the public/js directory (built artifacts)
+/public/js
+

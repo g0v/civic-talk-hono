@@ -4,7 +4,7 @@ import { registerAuthRoutes } from './api/auth'
 import type { AppBindings } from './api/types'
 import { listIssues, getIssue, getIssueDetail, getMaterialWithIssue, getOpinionWithIssue } from './db/queries'
 import { renderPage } from './ssr/render'
-import { headForAbout, headForAdmin, headForContribute, headForHome, headForIssue, headForMaterial, headForOpinion } from './ssr/heads'
+import { headForAbout, headForAdmin, headForContribute, headForHome, headForIssue, headForMaterial, headForNotFound, headForOpinion } from './ssr/heads'
 import HomeView from './views/Home.vue'
 import AboutView from './views/About.vue'
 import IssueView from './views/Issue.vue'
@@ -12,8 +12,15 @@ import ContributeView from './views/Contribute.vue'
 import AdminView from './views/Admin.vue'
 import MaterialDetailView from './views/MaterialDetail.vue'
 import OpinionDetailView from './views/OpinionDetail.vue'
+import NotFoundView from './views/NotFound.vue'
 
 const app = new Hono<{ Bindings: AppBindings }>()
+
+async function notFoundHtml(origin: string): Promise<string> {
+  return renderPage(NotFoundView, {}, headForNotFound(origin), {
+    hydrate: { page: 'not-found', state: {} },
+  })
+}
 
 // 先掛 auth：/api/auth/* 與 /api/me 要在 registerApiRoutes 的 /api/* 泛用處理之前命中
 registerAuthRoutes(app)
@@ -56,7 +63,7 @@ app.get('/issues/:id', async c => {
   if (!Number.isFinite(id) || id <= 0) return c.redirect('/', 302)
   const origin = new URL(c.req.url).origin
   const detail = await getIssueDetail(c.env.DB, id)
-  if (!detail) return c.notFound()
+  if (!detail) return c.html(await notFoundHtml(origin), 404)
   const html = await renderPage(IssueView, { issueId: id, initialDetail: detail }, headForIssue(detail.issue.title, detail.issue.description ?? '', id, origin), {
     hydrate: {
       page: 'issue',
@@ -73,7 +80,7 @@ app.get('/issues/:id/source/:materialId', async c => {
   const origin = new URL(c.req.url).origin
   const data = await getMaterialWithIssue(c.env.DB, materialId)
   // 素材不存在，或 URL 裡的 issueId 與素材實際所屬不符 → 404
-  if (!data || data.material.issue_id !== issueId) return c.notFound()
+  if (!data || data.material.issue_id !== issueId) return c.html(await notFoundHtml(origin), 404)
   const { material, issue } = data
   const html = await renderPage(MaterialDetailView, { issueId, materialId, initialData: { material, issue } }, headForMaterial(material.source_name, issue.title, issueId, materialId, origin), {
     hydrate: { page: 'material', state: { issueId, materialId, initialData: { material, issue } } },
@@ -88,7 +95,7 @@ app.get('/issues/:id/comment/:opinionId', async c => {
   const origin = new URL(c.req.url).origin
   const data = await getOpinionWithIssue(c.env.DB, opinionId)
   // 意見不存在，或 URL 裡的 issueId 與意見實際所屬不符 → 404
-  if (!data || data.opinion.issue_id !== issueId) return c.notFound()
+  if (!data || data.opinion.issue_id !== issueId) return c.html(await notFoundHtml(origin), 404)
   const { opinion, issue } = data
   const html = await renderPage(OpinionDetailView, { issueId, opinionId, initialData: { opinion, issue } }, headForOpinion(opinion.summary, issue.title, issueId, opinionId, origin), {
     hydrate: { page: 'opinion', state: { issueId, opinionId, initialData: { opinion, issue } } },
@@ -101,7 +108,7 @@ app.get('/contribute/:id', async c => {
   if (!Number.isFinite(id) || id <= 0) return c.redirect('/', 302)
   const origin = new URL(c.req.url).origin
   const issue = await getIssue(c.env.DB, id)
-  if (!issue) return c.notFound()
+  if (!issue) return c.html(await notFoundHtml(origin), 404)
   const html = await renderPage(ContributeView, { issueId: id, issueTitle: issue.title }, headForContribute(issue.title, id, origin), {
     hydrate: {
       page: 'contribute',
@@ -120,8 +127,11 @@ app.get('/admin', async c => {
 })
 
 app.get('*', async c => {
-  if (!c.env.ASSETS) return c.notFound()
-  return c.env.ASSETS.fetch(c.req.raw)
+  const origin = new URL(c.req.url).origin
+  if (!c.env.ASSETS) return c.html(await notFoundHtml(origin), 404)
+  const assetResponse = await c.env.ASSETS.fetch(c.req.raw)
+  if (assetResponse.status === 404) return c.html(await notFoundHtml(origin), 404)
+  return assetResponse
 })
 
 export default app
