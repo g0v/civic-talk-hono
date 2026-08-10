@@ -28,6 +28,7 @@
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.32.3",
+    "@cloudflare/workers-types": "^5.20260810.1",
     "@tailwindcss/cli": "^4.3.3",
     "@types/node": "^22.10.0",
     "@vitejs/plugin-vue": "^6.0.6",
