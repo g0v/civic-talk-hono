@@ -5,6 +5,8 @@ import AboutView from '../views/About.vue'
 import IssueView from '../views/Issue.vue'
 import ContributeView from '../views/Contribute.vue'
 import AdminView from '../views/Admin.vue'
+import MaterialDetailView from '../views/MaterialDetail.vue'
+import OpinionDetailView from '../views/OpinionDetail.vue'
 import type { PageName } from '../ssr/render'
 
 declare global {
@@ -20,6 +22,8 @@ const pages: Record<PageName, Component> = {
   issue: IssueView,
   contribute: ContributeView,
   admin: AdminView,
+  material: MaterialDetailView,
+  opinion: OpinionDetailView,
 }
 
 const page = window.__PAGE__

@@ -79,6 +79,28 @@ export function headForAdmin(origin: string): HeadConfig {
   }
 }
 
+export function headForMaterial(sourceName: string | null, issueTitle: string, issueId: number, materialId: number, origin: string): HeadConfig {
+  const label = sourceName || '素材'
+  const pageTitle = `${label}｜${issueTitle} — ${SITE_NAME}`
+  const description = `來自「${issueTitle}」的素材：${label}`
+  return {
+    title: pageTitle,
+    description,
+    meta: buildOg(pageTitle, description, DEFAULT_OG_IMAGE(origin), `${origin}/issues/${issueId}/source/${materialId}`),
+  }
+}
+
+export function headForOpinion(opinionSnippet: string, issueTitle: string, issueId: number, opinionId: number, origin: string): HeadConfig {
+  const snippet = opinionSnippet.slice(0, 80) + (opinionSnippet.length > 80 ? '…' : '')
+  const pageTitle = `意見：${snippet}｜${issueTitle} — ${SITE_NAME}`
+  const description = `來自「${issueTitle}」的公眾意見：${snippet}`
+  return {
+    title: pageTitle,
+    description,
+    meta: buildOg(pageTitle, description, DEFAULT_OG_IMAGE(origin), `${origin}/issues/${issueId}/comment/${opinionId}`),
+  }
+}
+
 export function renderHeadTags(head: HeadConfig): string {
   const parts: string[] = ['<meta charset="UTF-8" />', '<meta name="viewport" content="width=device-width, initial-scale=1.0" />', `<title>${escapeHtml(head.title)}</title>`]
   if (head.description) {

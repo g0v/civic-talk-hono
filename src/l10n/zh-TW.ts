@@ -278,6 +278,26 @@ export const messages = {
   polis_title: '加入意見投票',
   polis_desc: '對各種立場陳述表達同意或不同意，幫助彙整這個議題的多元觀點。',
   polis_powered: '由',
+  // 素材詳情頁 (/issues/:id/source/:materialId)
+  src_page_title: '素材詳情',
+  src_issue_label: '所屬議題',
+  src_source_label: '素材來源',
+  src_copy_link: '複製連結',
+  src_link_copied: '✅ 已複製！',
+  src_not_found: '找不到這份素材',
+  src_back: '← 返回議題',
+  src_share_hint: '可分享這份素材的獨立連結',
+  // 意見詳情頁 (/issues/:id/comment/:opinionId)
+  op_detail_page_title: '意見詳情',
+  op_detail_issue_label: '所屬議題',
+  op_detail_summary_label: '意見摘要',
+  op_detail_not_found: '找不到這份意見',
+  op_detail_back: '← 返回議題',
+  op_detail_copy_link: '複製連結',
+  op_detail_link_copied: '✅ 已複製！',
+  op_detail_share_hint: '可分享這份意見的獨立連結',
+  // 議題頁卡片的分享連結
+  card_permalink: '專屬連結',
 } as const
 
 export type MessageKey = keyof typeof messages

@@ -404,9 +404,9 @@ async function submitOpinion() {
                 <a v-if="m.source_url" :href="m.source_url" target="_blank" rel="noopener noreferrer" class="text-sm">{{ t('mat_link') }}</a>
               </div>
               <div class="whitespace-pre-wrap text-sm leading-relaxed">{{ m.content }}</div>
-              <p class="mt-2 mb-0 text-sm text-muted">
-                {{ formatDate(m.created_at, locale) }} · {{ m.verified_count }}
-                {{ t('mat_contributor') }}
+              <p class="mt-2 mb-0 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
+                <span>{{ formatDate(m.created_at, locale) }} · {{ m.verified_count }} {{ t('mat_contributor') }}</span>
+                <a :href="`/issues/${issueId}/source/${m.id}`" class="ml-auto text-xs text-muted hover:underline"> 🔗 {{ t('card_permalink') }} </a>
               </p>
             </div>
           </section>
@@ -529,7 +529,10 @@ async function submitOpinion() {
             <template v-else>
               <h3 class="mb-4 font-medium">{{ t('op_count_prefix') }}{{ opinions.length }}{{ t('op_count_suffix') }}</h3>
               <div v-for="o in opinions" :key="o.id" class="card mb-4">
-                <p class="mt-0 mb-2 text-sm text-muted">{{ formatDate(o.created_at, locale) }}</p>
+                <p class="mt-0 mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
+                  <span>{{ formatDate(o.created_at, locale) }}</span>
+                  <a :href="`/issues/${issueId}/comment/${o.id}`" class="ml-auto text-xs text-muted hover:underline"> 🔗 {{ t('card_permalink') }} </a>
+                </p>
                 <div class="whitespace-pre-wrap text-sm leading-relaxed">{{ o.summary }}</div>
               </div>
             </template>

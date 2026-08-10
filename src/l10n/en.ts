@@ -284,4 +284,24 @@ export const messages = {
   polis_title: 'Join the Opinion Poll',
   polis_desc: 'Agree or disagree with various statements to help map out the diversity of views on this issue.',
   polis_powered: 'Powered by',
+  // Material detail page (/issues/:id/source/:materialId)
+  src_page_title: 'Material Detail',
+  src_issue_label: 'Issue',
+  src_source_label: 'Source',
+  src_copy_link: 'Copy link',
+  src_link_copied: '✅ Copied!',
+  src_not_found: 'Material not found',
+  src_back: '← Back to issue',
+  src_share_hint: 'Share a permanent link to this material',
+  // Opinion detail page (/issues/:id/comment/:opinionId)
+  op_detail_page_title: 'Opinion Detail',
+  op_detail_issue_label: 'Issue',
+  op_detail_summary_label: 'Opinion Summary',
+  op_detail_not_found: 'Opinion not found',
+  op_detail_back: '← Back to issue',
+  op_detail_copy_link: 'Copy link',
+  op_detail_link_copied: '✅ Copied!',
+  op_detail_share_hint: 'Share a permanent link to this opinion',
+  // Permalink button on Issue.vue cards
+  card_permalink: 'Permalink',
 } as const
