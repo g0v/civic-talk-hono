@@ -538,6 +538,105 @@
     max-height: 280px;
     overflow: auto;
   }
+
+  /* 已由 renderSafeMarkdown 過濾後的說明頁 Markdown。 */
+  .markdown-content {
+    overflow-wrap: anywhere;
+    line-height: 1.65;
+  }
+
+  .markdown-content > :first-child {
+    margin-top: 0;
+  }
+
+  .markdown-content > :last-child {
+    margin-bottom: 0;
+  }
+
+  .markdown-content p,
+  .markdown-content ul,
+  .markdown-content ol,
+  .markdown-content blockquote,
+  .markdown-content pre {
+    margin: 0 0 0.75rem;
+  }
+
+  .markdown-content h1,
+  .markdown-content h2,
+  .markdown-content h3,
+  .markdown-content h4,
+  .markdown-content h5,
+  .markdown-content h6 {
+    font-family: var(--font-serif);
+    font-weight: 700;
+    line-height: 1.35;
+    margin: 1.1rem 0 0.5rem;
+  }
+
+  .markdown-content h1 {
+    font-size: var(--text-vt-xl);
+  }
+
+  .markdown-content h2 {
+    font-size: var(--text-vt-lg);
+  }
+
+  .markdown-content h3,
+  .markdown-content h4,
+  .markdown-content h5,
+  .markdown-content h6 {
+    font-size: var(--text-vt-base);
+  }
+
+  .markdown-content ul,
+  .markdown-content ol {
+    padding-left: 1.4rem;
+  }
+
+  .markdown-content ul {
+    list-style: disc;
+  }
+
+  .markdown-content ol {
+    list-style: decimal;
+  }
+
+  .markdown-content li + li {
+    margin-top: 0.25rem;
+  }
+
+  .markdown-content blockquote {
+    border-left: 3px solid var(--color-vt-jade-green);
+    color: var(--color-muted);
+    padding-left: var(--spacing-vt-3);
+  }
+
+  .markdown-content a {
+    text-decoration: underline;
+    text-underline-offset: 0.15em;
+  }
+
+  .markdown-content code {
+    background: var(--color-gray-100);
+    border-radius: var(--radius-vt-sm);
+    font-family: var(--font-vt-mono);
+    font-size: 0.9em;
+    padding: 0.1em 0.3em;
+  }
+
+  .markdown-content pre {
+    background: var(--color-vt-ink);
+    border-radius: var(--radius-vt-md);
+    color: var(--color-vt-white);
+    overflow-x: auto;
+    padding: var(--spacing-vt-3);
+  }
+
+  .markdown-content pre code {
+    background: transparent;
+    color: inherit;
+    padding: 0;
+  }
 }
 
 @media (max-width: 600px) {

@@ -8,6 +8,7 @@ import Toast from '../components/Toast.vue'
 import { formatDate, useI18n } from '../l10n'
 import { useAuth } from '../composables/useAuth'
 import type { Briefing, Issue, Material, Opinion } from '../db/queries'
+import { renderSafeMarkdown } from '../markdown/renderSafeMarkdown'
 
 type TabName = 'briefing' | 'materials' | 'volunteer' | 'opinions'
 
@@ -30,6 +31,16 @@ const briefing = ref<Briefing | null>(props.initialDetail?.briefing ?? null)
 const opinions = ref<Opinion[]>(props.initialDetail?.opinions ?? [])
 const loading = ref(!props.initialDetail)
 const activeTab = ref<TabName>('briefing')
+const renderedBriefing = computed(() => {
+  const current = briefing.value
+  if (!current) return null
+
+  return {
+    consensus: renderSafeMarkdown(current.consensus),
+    disputes: renderSafeMarkdown(current.disputes),
+    positions: renderSafeMarkdown(current.positions),
+  }
+})
 
 const promptText = ref<Record<string, string>>({
   summarize: '',
@@ -360,16 +371,16 @@ async function submitOpinion() {
               <div class="grid-2 mb-6">
                 <div class="card">
                   <h3 class="mt-0 mb-2 text-base">{{ t('brief_consensus') }}</h3>
-                  <div class="whitespace-pre-wrap text-sm">{{ briefing.consensus }}</div>
+                  <div class="markdown-content text-sm" v-html="renderedBriefing?.consensus ?? ''" />
                 </div>
                 <div class="card">
                   <h3 class="mt-0 mb-2 text-base">{{ t('brief_disputes') }}</h3>
-                  <div class="whitespace-pre-wrap text-sm">{{ briefing.disputes }}</div>
+                  <div class="markdown-content text-sm" v-html="renderedBriefing?.disputes ?? ''" />
                 </div>
               </div>
               <div class="card mb-6">
                 <h3 class="mt-0 mb-2 text-base">{{ t('brief_positions') }}</h3>
-                <div class="whitespace-pre-wrap text-sm">{{ briefing.positions }}</div>
+                <div class="markdown-content text-sm" v-html="renderedBriefing?.positions ?? ''" />
               </div>
               <div class="alert alert-info mb-4">
                 {{ t('brief_opinion_alert') }}
