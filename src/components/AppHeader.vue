@@ -7,7 +7,7 @@ import SignInButtons from './SignInButtons.vue'
 
 const props = withDefaults(
   defineProps<{
-    current?: 'home' | 'about' | 'admin' | 'issue' | 'contribute'
+    current?: 'home' | 'about' | 'admin' | 'issue' | 'contribute' | 'other'
     showNewIssue?: boolean
     backHref?: string
     backLabel?: string

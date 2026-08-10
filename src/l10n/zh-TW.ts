@@ -298,6 +298,10 @@ export const messages = {
   op_detail_share_hint: '可分享這份意見的獨立連結',
   // 議題頁卡片的分享連結
   card_permalink: '專屬連結',
+  // 找不到頁面（404）
+  nf_title: '找不到頁面',
+  nf_desc: '這個網址可能已經移動、輸入錯誤，或內容已經被刪除。',
+  nf_home_btn: '回首頁',
 } as const
 
 export type MessageKey = keyof typeof messages
