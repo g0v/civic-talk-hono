@@ -24,6 +24,9 @@ const date = computed(() => formatDate(props.issue.created_at, locale.value))
     <p v-if="issue.description" class="mt-2 mb-0 text-sm text-muted">
       {{ issue.description }}
     </p>
-    <p class="mt-3 mb-0 text-sm text-muted">{{ issue.material_count }} {{ t('idx_materials_unit') }} · {{ issue.opinion_count }} {{ t('idx_opinions_unit') }}</p>
+    <p class="mt-3 mb-0 text-sm text-muted">
+      {{ issue.material_count }} {{ t('idx_materials_unit') }} · {{ issue.opinion_count }} {{ t('idx_opinions_unit') }} · {{ t('issue_author_label') }}：{{ issue.author_name || t('author_system') }}
+      <template v-if="issue.author_email"> · {{ t('author_email_label') }}：{{ issue.author_email }}</template>
+    </p>
   </a>
 </template>

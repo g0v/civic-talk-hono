@@ -106,7 +106,10 @@ async function copyLink() {
           <!-- 意見主卡 -->
           <div class="card mb-6">
             <h1 class="mt-0 mb-3 font-serif text-2xl font-bold">{{ t('op_detail_page_title') }}</h1>
-            <p class="mb-4 text-sm text-muted">{{ t('issue_created') }} {{ formatDate(opinion.created_at, locale) }}</p>
+            <p class="mb-4 text-sm text-muted">
+              {{ t('issue_created') }} {{ formatDate(opinion.created_at, locale) }} · {{ t('op_author_label') }}：{{ opinion.author_name || t('author_system') }}
+              <template v-if="opinion.author_email"> · {{ t('author_email_label') }}：{{ opinion.author_email }}</template>
+            </p>
 
             <h2 class="mt-0 mb-2 text-base font-medium">{{ t('op_detail_summary_label') }}</h2>
             <div class="whitespace-pre-wrap leading-relaxed">{{ opinion.summary }}</div>

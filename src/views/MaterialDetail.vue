@@ -140,7 +140,12 @@ async function copyLink() {
             <div class="whitespace-pre-wrap leading-relaxed">{{ material.content }}</div>
 
             <!-- 後設資訊 -->
-            <p class="mt-4 mb-0 text-sm text-muted">{{ t('issue_created') }} {{ formatDate(material.created_at, locale) }} · {{ material.verified_count }} {{ t('mat_contributor') }}</p>
+            <p class="mt-4 mb-0 text-sm text-muted">
+              {{ t('issue_created') }} {{ formatDate(material.created_at, locale) }} · {{ material.verified_count }} {{ t('mat_contributor') }} · {{ t('mat_author_label') }}：{{
+                material.author_name || t('author_system')
+              }}
+              <template v-if="material.author_email"> · {{ t('author_email_label') }}：{{ material.author_email }}</template>
+            </p>
           </div>
 
           <!-- 分享區塊 -->

@@ -2,6 +2,18 @@
 
 export type IssueStatus = 'collecting' | 'summarizing' | 'published'
 export type Stance = 'pro' | 'con' | 'neutral' | 'unknown'
+export type AuthorVisibility = 0 | 1
+
+export interface AuthorSnapshotInput {
+  author_id: string
+  author_name: string | null
+  author_email: string
+  show_email: boolean
+}
+
+export interface SubmissionConsentInput {
+  terms_version: string
+}
 
 export interface Issue {
   id: number
@@ -10,6 +22,10 @@ export interface Issue {
   status: IssueStatus
   polis_id: string | null
   created_at: string
+  /** 建立者的 OAuth 顯示名稱；#9 之前的舊資料或系統建立為 null */
+  author_name: string | null
+  /** 建立者投稿當下的 email 快照；公開查詢只在 show_email = 1 時回傳 */
+  author_email: string | null
 }
 
 export interface IssueListItem extends Issue {
@@ -17,24 +33,24 @@ export interface IssueListItem extends Issue {
   opinion_count: number
 }
 
-/** 議題 + 建立者（僅供管理端；author_* 對「需登入」之前的舊資料是 null） */
+/** 議題 + 完整作者快照（僅供管理端；author_id／show_email 不進公開回應） */
 export interface IssueWithAuthor extends Issue {
   author_id: string | null
-  author_name: string | null
+  show_email: AuthorVisibility
+  terms_version: string | null
+  terms_accepted_at: string | null
 }
 
 export interface IssueListItemWithAuthor extends IssueListItem {
   author_id: string | null
-  author_name: string | null
+  show_email: AuthorVisibility
+  terms_version: string | null
+  terms_accepted_at: string | null
 }
 
 /**
- * 素材的**公開**形狀——刻意不含投稿者欄位。
- *
- * 這個型別會出現在公開 API（GET /api/issues/:id、/api/issues/:id/materials）與
- * SSR 注入的 window.__SSR_STATE__ 裡，也就是「任何人都看得到」。投稿者身分只給
- * 管理端（見 MaterialWithAuthor），所以查詢一律列舉欄位、不用 SELECT *——
- * 用 SELECT * 的話，#9 新增的 author_* 會就這樣漏進 HTML 原始碼。
+ * 素材的**公開**形狀——含 author_name 供前台顯示（#27），但 author_id 不公開。
+ * 查詢一律列舉欄位、不用 SELECT *（防止 SSR state 洩漏 author_id）。
  */
 export interface Material {
   id: number
@@ -45,14 +61,24 @@ export interface Material {
   content: string
   verified_count: number
   created_at: string
+  /** 投稿者的 OAuth 顯示名稱；#9 之前的舊資料為 null */
+  author_name: string | null
+  /** 投稿者投稿當下的 email 快照；公開查詢只在 show_email = 1 時回傳 */
+  author_email: string | null
 }
 
-/** 素材 + 投稿者（僅供管理端；author_* 對 #9 之前的舊資料是 null） */
+/** 素材 + 完整作者快照（僅供管理端） */
 export interface MaterialWithAuthor extends Material {
   author_id: string | null
-  author_name: string | null
+  show_email: AuthorVisibility
+  terms_version: string | null
+  terms_accepted_at: string | null
 }
 
+/**
+ * 說明頁的**公開**形狀——含 author_name（#27），email 僅在 show_email = 1 時投影。
+ * author_id／show_email 不進公開回應或 SSR state。
+ */
 export interface Briefing {
   id: number
   issue_id: number
@@ -63,10 +89,18 @@ export interface Briefing {
   opinion_prompt: string | null
   version: number
   created_at: string
+  author_name: string | null
+  author_email: string | null
+}
+
+/** briefing + 完整作者快照（僅供管理端） */
+export interface BriefingWithAuthor extends Briefing {
+  author_id: string | null
+  show_email: AuthorVisibility
 }
 
 /**
- * 意見的**公開**形狀——與 Material 同理，刻意不含投稿者欄位（意見在前台是公開顯示的）。
+ * 意見的**公開**形狀——含 author_name 供前台顯示（#27），但 author_id 不公開。
  * 查詢一律列舉欄位、不用 SELECT *。
  */
 export interface Opinion {
@@ -74,12 +108,18 @@ export interface Opinion {
   issue_id: number
   summary: string
   created_at: string
+  /** 投稿者的 OAuth 顯示名稱；#9 之前的舊資料為 null */
+  author_name: string | null
+  /** 投稿者投稿當下的 email 快照；公開查詢只在 show_email = 1 時回傳 */
+  author_email: string | null
 }
 
-/** 意見 + 投稿者（僅供管理端） */
+/** 意見 + 完整作者快照（僅供管理端） */
 export interface OpinionWithAuthor extends Opinion {
   author_id: string | null
-  author_name: string | null
+  show_email: AuthorVisibility
+  terms_version: string | null
+  terms_accepted_at: string | null
 }
 
 export interface AdminStats {
@@ -89,7 +129,12 @@ export interface AdminStats {
   briefings: number
 }
 
-const ISSUE_PUBLIC_COLUMNS = 'id, title, description, status, polis_id, created_at'
+const PUBLIC_AUTHOR_COLUMNS = 'author_name, CASE WHEN show_email = 1 THEN author_email ELSE NULL END AS author_email'
+const PRIVATE_AUTHOR_COLUMNS = 'author_id, author_name, author_email, show_email'
+const SUBMISSION_CONSENT_COLUMNS = 'terms_version, terms_accepted_at'
+const ISSUE_BASE_COLUMNS = 'id, title, description, status, polis_id, created_at'
+const ISSUE_PUBLIC_COLUMNS = `${ISSUE_BASE_COLUMNS}, ${PUBLIC_AUTHOR_COLUMNS}`
+const ISSUE_ADMIN_COLUMNS = `${ISSUE_BASE_COLUMNS}, ${PRIVATE_AUTHOR_COLUMNS}, ${SUBMISSION_CONSENT_COLUMNS}`
 
 const ISSUE_COUNT_SUBQUERIES = `
   (SELECT COUNT(*) FROM ct_materials WHERE issue_id = ct_issues.id) AS material_count,
@@ -100,15 +145,15 @@ export async function listIssues(db: D1Database): Promise<IssueListItem[]> {
   return results ?? []
 }
 
-/** 管理端專用：多回建立者。呼叫端必須先確認請求者是管理員。 */
+/** 管理端專用：回傳完整作者快照。呼叫端必須先確認請求者是管理員。 */
 export async function listIssuesWithAuthor(db: D1Database): Promise<IssueListItemWithAuthor[]> {
-  const { results } = await db.prepare(`SELECT ${ISSUE_PUBLIC_COLUMNS}, author_id, author_name, ${ISSUE_COUNT_SUBQUERIES} FROM ct_issues ORDER BY created_at DESC`).all<IssueListItemWithAuthor>()
+  const { results } = await db.prepare(`SELECT ${ISSUE_ADMIN_COLUMNS}, ${ISSUE_COUNT_SUBQUERIES} FROM ct_issues ORDER BY created_at DESC`).all<IssueListItemWithAuthor>()
   return results ?? []
 }
 
 /**
  * 🚫 不要改回 `SELECT *`：這支的結果會經 getIssueDetail() 流進 SSR 注入的
- * window.__SSR_STATE__，把 author_* 撈出來等於寫進 HTML 原始碼。
+ * window.__SSR_STATE__。author_name 已在公開欄位（#27），但 author_id 仍不得洩漏。
  */
 export async function getIssue(db: D1Database, id: number): Promise<Issue | null> {
   return db.prepare(`SELECT ${ISSUE_PUBLIC_COLUMNS} FROM ct_issues WHERE id = ?`).bind(id).first<Issue>()
@@ -120,14 +165,14 @@ export async function createIssue(
     title: string
     description?: string
     polis_id?: string | null
-    // 建立議題一律要登入，所以這兩欄是必填（舊資料才會是 null）
-    author_id: string
-    author_name: string
-  }
+  } & AuthorSnapshotInput &
+    SubmissionConsentInput
 ): Promise<number> {
   const { meta } = await db
-    .prepare('INSERT INTO ct_issues (title, description, polis_id, author_id, author_name) VALUES (?, ?, ?, ?, ?)')
-    .bind(input.title, input.description ?? '', input.polis_id ?? null, input.author_id, input.author_name)
+    .prepare(
+      'INSERT INTO ct_issues (title, description, polis_id, author_id, author_name, author_email, show_email, terms_version, terms_accepted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)',
+    )
+    .bind(input.title, input.description ?? '', input.polis_id ?? null, input.author_id, input.author_name, input.author_email, input.show_email ? 1 : 0, input.terms_version)
     .run()
   return meta.last_row_id
 }
@@ -155,19 +200,18 @@ export async function deleteIssueCascade(db: D1Database, id: number): Promise<vo
   await db.prepare('DELETE FROM ct_issues WHERE id = ?').bind(id).run()
 }
 
-const MATERIAL_PUBLIC_COLUMNS = 'id, issue_id, source_name, source_url, stance, content, verified_count, created_at'
+const MATERIAL_BASE_COLUMNS = 'id, issue_id, source_name, source_url, stance, content, verified_count, created_at'
+const MATERIAL_PUBLIC_COLUMNS = `${MATERIAL_BASE_COLUMNS}, ${PUBLIC_AUTHOR_COLUMNS}`
+const MATERIAL_ADMIN_COLUMNS = `${MATERIAL_BASE_COLUMNS}, ${PRIVATE_AUTHOR_COLUMNS}, ${SUBMISSION_CONSENT_COLUMNS}`
 
 export async function listMaterials(db: D1Database, issueId: number): Promise<Material[]> {
   const { results } = await db.prepare(`SELECT ${MATERIAL_PUBLIC_COLUMNS} FROM ct_materials WHERE issue_id = ? ORDER BY created_at DESC`).bind(issueId).all<Material>()
   return results ?? []
 }
 
-/** 管理端專用：多回投稿者。呼叫端必須先過 requireAdmin()。 */
+/** 管理端專用：回傳完整作者快照。呼叫端必須先過 requireAdmin()。 */
 export async function listMaterialsWithAuthor(db: D1Database, issueId: number): Promise<MaterialWithAuthor[]> {
-  const { results } = await db
-    .prepare(`SELECT ${MATERIAL_PUBLIC_COLUMNS}, author_id, author_name FROM ct_materials WHERE issue_id = ? ORDER BY created_at DESC`)
-    .bind(issueId)
-    .all<MaterialWithAuthor>()
+  const { results } = await db.prepare(`SELECT ${MATERIAL_ADMIN_COLUMNS} FROM ct_materials WHERE issue_id = ? ORDER BY created_at DESC`).bind(issueId).all<MaterialWithAuthor>()
   return results ?? []
 }
 
@@ -179,14 +223,14 @@ export async function createMaterial(
     source_url?: string
     stance?: Stance
     content: string
-    // #9 起投稿一律要登入，所以這兩欄是必填（舊資料才會是 null）
-    author_id: string
-    author_name: string
-  }
+  } & AuthorSnapshotInput &
+    SubmissionConsentInput
 ): Promise<number> {
   const { meta } = await db
-    .prepare('INSERT INTO ct_materials (issue_id, source_name, source_url, stance, content, author_id, author_name) VALUES (?, ?, ?, ?, ?, ?, ?)')
-    .bind(issueId, input.source_name ?? '', input.source_url ?? '', input.stance ?? 'unknown', input.content, input.author_id, input.author_name)
+    .prepare(
+      'INSERT INTO ct_materials (issue_id, source_name, source_url, stance, content, author_id, author_name, author_email, show_email, terms_version, terms_accepted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)',
+    )
+    .bind(issueId, input.source_name ?? '', input.source_url ?? '', input.stance ?? 'unknown', input.content, input.author_id, input.author_name, input.author_email, input.show_email ? 1 : 0, input.terms_version)
     .run()
   await db.prepare("UPDATE ct_issues SET status = 'summarizing' WHERE id = ? AND status = 'collecting'").bind(issueId).run()
   return meta.last_row_id
@@ -196,16 +240,22 @@ export async function deleteMaterial(db: D1Database, id: number): Promise<void> 
   await db.prepare('DELETE FROM ct_materials WHERE id = ?').bind(id).run()
 }
 
-const BRIEFING_PUBLIC_COLUMNS = 'id, issue_id, consensus, disputes, positions, narrative, opinion_prompt, version, created_at'
+const BRIEFING_BASE_COLUMNS = 'id, issue_id, consensus, disputes, positions, narrative, opinion_prompt, version, created_at'
+const BRIEFING_PUBLIC_COLUMNS = `${BRIEFING_BASE_COLUMNS}, ${PUBLIC_AUTHOR_COLUMNS}`
+const BRIEFING_ADMIN_COLUMNS = `${BRIEFING_BASE_COLUMNS}, ${PRIVATE_AUTHOR_COLUMNS}`
 
 export async function getLatestBriefing(db: D1Database, issueId: number): Promise<Briefing | null> {
   return db.prepare(`SELECT ${BRIEFING_PUBLIC_COLUMNS} FROM ct_briefings WHERE issue_id = ? ORDER BY version DESC LIMIT 1`).bind(issueId).first<Briefing>()
 }
 
+export async function getLatestBriefingWithAuthor(db: D1Database, issueId: number): Promise<BriefingWithAuthor | null> {
+  return db.prepare(`SELECT ${BRIEFING_ADMIN_COLUMNS} FROM ct_briefings WHERE issue_id = ? ORDER BY version DESC LIMIT 1`).bind(issueId).first<BriefingWithAuthor>()
+}
+
 export async function createBriefing(
   db: D1Database,
   issueId: number,
-  authorId: string,
+  author: AuthorSnapshotInput,
   input: {
     consensus?: string
     disputes?: string
@@ -217,8 +267,22 @@ export async function createBriefing(
   const existing = await db.prepare('SELECT MAX(version) as maxv FROM ct_briefings WHERE issue_id = ?').bind(issueId).first<{ maxv: number | null }>()
   const nextVersion = (existing?.maxv ?? 0) + 1
   await db
-    .prepare('INSERT INTO ct_briefings (issue_id, consensus, disputes, positions, narrative, opinion_prompt, version, author_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-    .bind(issueId, input.consensus ?? '', input.disputes ?? '', input.positions ?? '', input.narrative ?? '', input.opinion_prompt ?? '', nextVersion, authorId)
+    .prepare(
+      'INSERT INTO ct_briefings (issue_id, consensus, disputes, positions, narrative, opinion_prompt, version, author_id, author_name, author_email, show_email) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    )
+    .bind(
+      issueId,
+      input.consensus ?? '',
+      input.disputes ?? '',
+      input.positions ?? '',
+      input.narrative ?? '',
+      input.opinion_prompt ?? '',
+      nextVersion,
+      author.author_id,
+      author.author_name,
+      author.author_email,
+      author.show_email ? 1 : 0
+    )
     .run()
   await db.prepare("UPDATE ct_issues SET status = 'published' WHERE id = ? AND status IN ('collecting', 'summarizing')").bind(issueId).run()
   return nextVersion
@@ -243,16 +307,18 @@ export async function updateLatestBriefing(
   return true
 }
 
-const OPINION_PUBLIC_COLUMNS = 'id, issue_id, summary, created_at'
+const OPINION_BASE_COLUMNS = 'id, issue_id, summary, created_at'
+const OPINION_PUBLIC_COLUMNS = `${OPINION_BASE_COLUMNS}, ${PUBLIC_AUTHOR_COLUMNS}`
+const OPINION_ADMIN_COLUMNS = `${OPINION_BASE_COLUMNS}, ${PRIVATE_AUTHOR_COLUMNS}, ${SUBMISSION_CONSENT_COLUMNS}`
 
 export async function listOpinions(db: D1Database, issueId: number): Promise<Opinion[]> {
   const { results } = await db.prepare(`SELECT ${OPINION_PUBLIC_COLUMNS} FROM ct_opinions WHERE issue_id = ? ORDER BY created_at DESC`).bind(issueId).all<Opinion>()
   return results ?? []
 }
 
-/** 管理端專用：多回投稿者。呼叫端必須先過 requireAdmin()。 */
+/** 管理端專用：回傳完整作者快照。呼叫端必須先過 requireAdmin()。 */
 export async function listOpinionsWithAuthor(db: D1Database, issueId: number): Promise<OpinionWithAuthor[]> {
-  const { results } = await db.prepare(`SELECT ${OPINION_PUBLIC_COLUMNS}, author_id, author_name FROM ct_opinions WHERE issue_id = ? ORDER BY created_at DESC`).bind(issueId).all<OpinionWithAuthor>()
+  const { results } = await db.prepare(`SELECT ${OPINION_ADMIN_COLUMNS} FROM ct_opinions WHERE issue_id = ? ORDER BY created_at DESC`).bind(issueId).all<OpinionWithAuthor>()
   return results ?? []
 }
 
@@ -261,12 +327,15 @@ export async function createOpinion(
   issueId: number,
   input: {
     summary: string
-    // 意見投稿一律要登入，所以這兩欄是必填（舊資料才會是 null）
-    author_id: string
-    author_name: string
-  }
+  } & AuthorSnapshotInput &
+    SubmissionConsentInput
 ): Promise<number> {
-  const { meta } = await db.prepare('INSERT INTO ct_opinions (issue_id, summary, author_id, author_name) VALUES (?, ?, ?, ?)').bind(issueId, input.summary, input.author_id, input.author_name).run()
+  const { meta } = await db
+    .prepare(
+      'INSERT INTO ct_opinions (issue_id, summary, author_id, author_name, author_email, show_email, terms_version, terms_accepted_at) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)',
+    )
+    .bind(issueId, input.summary, input.author_id, input.author_name, input.author_email, input.show_email ? 1 : 0, input.terms_version)
+    .run()
   return meta.last_row_id
 }
 

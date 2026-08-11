@@ -19,6 +19,10 @@ const sourceUrl = ref('')
 const stance = ref('unknown')
 const content = ref('')
 const licenseOk = ref(false)
+// ToS 同意 checkbox（#27）
+const tosAgreed = ref(false)
+// Email 公開選項（#27）
+const showEmail = ref(false)
 const submitting = ref(false)
 const toast = ref<{ show: (msg: string) => void } | null>(null)
 
@@ -70,6 +74,10 @@ async function submitMaterial() {
     toast.value?.show(t('contrib_toast_license'))
     return
   }
+  if (!tosAgreed.value) {
+    toast.value?.show(t('tos_required_toast'))
+    return
+  }
   submitting.value = true
   try {
     const res = await fetch(`/api/issues/${props.issueId}/materials`, {
@@ -80,6 +88,8 @@ async function submitMaterial() {
         source_url: sourceUrl.value.trim(),
         stance: stance.value,
         content: text,
+        show_email: showEmail.value,
+        terms_accepted: tosAgreed.value,
       }),
     })
     // session 可能在填表期間過期——真正的守門在伺服器端，前端要能接住 401。
@@ -189,6 +199,24 @@ async function submitMaterial() {
             <label class="flex items-start gap-2 font-normal">
               <input v-model="licenseOk" type="checkbox" class="mt-1 w-auto" />
               <span>{{ t('contrib_license') }}</span>
+            </label>
+          </div>
+          <div class="form-group">
+            <label class="flex items-start gap-2 font-normal">
+              <input v-model="tosAgreed" type="checkbox" class="mt-1 w-auto" />
+              <span
+                >{{ t('tos_agree_prefix') }}<a href="/terms" target="_blank" class="underline">{{ t('tos_terms_link') }}</a
+                >{{ t('tos_agree_mid') }}<a href="/privacy" target="_blank" class="underline">{{ t('tos_privacy_link') }}</a
+                >{{ t('tos_agree_suffix') }}</span
+              >
+            </label>
+          </div>
+          <div class="form-group">
+            <label class="flex items-start gap-2 font-normal">
+              <input v-model="showEmail" type="checkbox" class="mt-1 w-auto" />
+              <span
+                >{{ t('show_email_label', { email: session?.user.email || '' }) }} <span class="text-muted">{{ t('show_email_hint') }}</span></span
+              >
             </label>
           </div>
           <div class="flex gap-2">

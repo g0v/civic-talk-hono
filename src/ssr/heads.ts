@@ -110,6 +110,26 @@ export function headForNotFound(origin: string): HeadConfig {
     meta: buildOg(title, description, DEFAULT_OG_IMAGE(origin), `${origin}/`),
   }
 }
+export function headForPrivacy(origin: string): HeadConfig {
+  const title = `隱私權政策 — ${SITE_NAME}`
+  const description = 'Civic Talk 隱私權政策：說明平台收集、使用及保護個人資料的方式。'
+  return {
+    title,
+    description,
+    meta: buildOg(title, description, DEFAULT_OG_IMAGE(origin), `${origin}/privacy`),
+  }
+}
+
+export function headForTerms(origin: string): HeadConfig {
+  const title = `使用條款 — ${SITE_NAME}`
+  const description = 'Civic Talk 使用條款：具名提交、素材授權規範與平台行為準則。'
+  return {
+    title,
+    description,
+    meta: buildOg(title, description, DEFAULT_OG_IMAGE(origin), `${origin}/terms`),
+  }
+}
+
 
 export function renderHeadTags(head: HeadConfig): string {
   const parts: string[] = ['<meta charset="UTF-8" />', '<meta name="viewport" content="width=device-width, initial-scale=1.0" />', `<title>${escapeHtml(head.title)}</title>`]

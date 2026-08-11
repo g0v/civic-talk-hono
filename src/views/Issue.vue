@@ -57,9 +57,15 @@ const disputes = ref('')
 const positions = ref('')
 const narrative = ref('')
 const opinionInput = ref('')
+// ToS 同意 checkbox（#27）
+const opinionTosAgreed = ref(false)
+// Email 公開選項（#27）
+const opinionShowEmail = ref(false)
+// 志願者送出說明頁時的 email 公開選項
+const volunteerShowEmail = ref(false)
 
 // 全站共用的登入狀態（與 AppHeader 共用同一次 /api/me）；SSR 期間永遠是 'loading'
-const { authState, ensureAuthSession } = useAuth()
+const { authState, session, ensureAuthSession } = useAuth()
 // 送出時才發現 session 過期：意見框留著（別吃掉使用者打的字），只在上方補一列重新登入
 const sessionExpired = ref(false)
 // 志願者工具同樣需要登入；若操作時 session 過期，保留已填內容並引導重新登入。
@@ -196,7 +202,7 @@ async function submitSummarize() {
   const res = await fetch(`/api/issues/${props.issueId}/briefing`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ ...body, show_email: volunteerShowEmail.value }),
   })
   if (res.status === 401) {
     volunteerSessionExpired.value = true
@@ -224,7 +230,7 @@ async function submitNarrative() {
   const res = await fetch(`/api/issues/${props.issueId}/briefing`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ ...body, show_email: volunteerShowEmail.value }),
   })
   if (res.status === 401) {
     volunteerSessionExpired.value = true
@@ -318,10 +324,18 @@ async function submitOpinion() {
     toast.value?.show(t('op_toast_too_short'))
     return
   }
+  if (!opinionTosAgreed.value) {
+    toast.value?.show(t('tos_required_toast'))
+    return
+  }
   const res = await fetch(`/api/issues/${props.issueId}/opinions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ summary }),
+    body: JSON.stringify({
+      summary,
+      show_email: opinionShowEmail.value,
+      terms_accepted: opinionTosAgreed.value,
+    }),
   })
   // session 可能在打字期間過期——守門在伺服器端，前端接住 401 但保留已寫的意見
   if (res.status === 401) {
@@ -337,6 +351,8 @@ async function submitOpinion() {
   if (res.ok) {
     toast.value?.show(t('op_toast_submit_ok'))
     opinionInput.value = ''
+    opinionTosAgreed.value = false
+    opinionShowEmail.value = false
     await loadIssue()
   } else toast.value?.show(t('op_toast_submit_fail'))
 }
@@ -358,7 +374,11 @@ async function submitOpinion() {
             <StatusBadge :status="issue.status" />
             <h1 class="mt-3 mb-2 font-serif text-3xl font-bold">{{ issue.title }}</h1>
             <p v-if="issue.description" class="mt-0 mb-3 text-muted">{{ issue.description }}</p>
-            <p class="m-0 text-sm text-muted">{{ t('issue_created') }} {{ formatDate(issue.created_at, locale) }} · {{ materials.length }} {{ t('issue_materials_unit') }}</p>
+            <p class="m-0 text-sm text-muted">
+              {{ t('issue_created') }} {{ formatDate(issue.created_at, locale) }} · {{ materials.length }} {{ t('issue_materials_unit') }} · {{ t('issue_author_label') }}：{{
+                issue.author_name || t('author_system')
+              }}<template v-if="issue.author_email"> · {{ t('author_email_label') }}：{{ issue.author_email }}</template>
+            </p>
           </div>
 
           <div class="tabs">
@@ -408,7 +428,8 @@ async function submitOpinion() {
               </div>
               <p class="text-sm text-muted">
                 {{ t('brief_version_prefix') }}{{ briefing.version }}，{{ t('brief_updated') }}
-                {{ formatDate(briefing.created_at, locale) }}
+                {{ formatDate(briefing.created_at, locale) }} · {{ t('brief_author_label') }}：{{ briefing.author_name || t('author_system') }}
+                <template v-if="briefing.author_email"> · {{ t('author_email_label') }}：{{ briefing.author_email }}</template>
               </p>
             </template>
             <div id="polis-section" class="my-8" style="display: none" />
@@ -434,6 +455,9 @@ async function submitOpinion() {
               <div class="whitespace-pre-wrap text-sm leading-relaxed">{{ m.content }}</div>
               <p class="mt-2 mb-0 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
                 <span>{{ formatDate(m.created_at, locale) }} · {{ m.verified_count }} {{ t('mat_contributor') }}</span>
+                <span
+                  >{{ t('mat_author_label') }}：{{ m.author_name || t('author_system') }}<template v-if="m.author_email"> · {{ t('author_email_label') }}：{{ m.author_email }}</template></span
+                >
                 <a :href="`/issues/${issueId}/source/${m.id}`" class="ml-auto text-xs text-muted hover:underline"> 🔗 {{ t('card_permalink') }} </a>
               </p>
             </div>
@@ -457,6 +481,14 @@ async function submitOpinion() {
                 <SignInButtons :callback-url="loginCallbackUrl" />
               </div>
               <p class="mb-6 text-sm text-muted">{{ t('vol_step1') }} → {{ t('vol_step2') }} → {{ t('vol_step3') }}</p>
+              <div class="form-group mb-6">
+                <label class="flex items-start gap-2 font-normal">
+                  <input v-model="volunteerShowEmail" type="checkbox" class="mt-1 w-auto" />
+                  <span
+                    >{{ t('show_email_label', { email: session?.user.email || '' }) }} <span class="text-muted">{{ t('show_email_hint') }}</span></span
+                  >
+                </label>
+              </div>
 
               <div class="card mb-4">
                 <h3 class="mt-0 mb-2 text-base">{{ t('vol_s1_title') }}</h3>
@@ -559,6 +591,24 @@ async function submitOpinion() {
                   </label>
                   <textarea v-model="opinionInput" rows="5" :placeholder="t('op_ph_summary')" />
                 </div>
+                <div class="form-group">
+                  <label class="flex items-start gap-2 font-normal">
+                    <input v-model="opinionTosAgreed" type="checkbox" class="mt-1 w-auto" />
+                    <span
+                      >{{ t('tos_agree_prefix') }}<a href="/terms" target="_blank" class="underline">{{ t('tos_terms_link') }}</a
+                      >{{ t('tos_agree_mid') }}<a href="/privacy" target="_blank" class="underline">{{ t('tos_privacy_link') }}</a
+                      >{{ t('tos_agree_suffix') }}</span
+                    >
+                  </label>
+                </div>
+                <div class="form-group">
+                  <label class="flex items-start gap-2 font-normal">
+                    <input v-model="opinionShowEmail" type="checkbox" class="mt-1 w-auto" />
+                    <span
+                      >{{ t('show_email_label', { email: session?.user.email || '' }) }} <span class="text-muted">{{ t('show_email_hint') }}</span></span
+                    >
+                  </label>
+                </div>
                 <button type="button" class="btn btn-primary" @click="submitOpinion">
                   {{ t('op_submit_btn') }}
                 </button>
@@ -573,6 +623,9 @@ async function submitOpinion() {
               <div v-for="o in opinions" :key="o.id" class="card mb-4">
                 <p class="mt-0 mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
                   <span>{{ formatDate(o.created_at, locale) }}</span>
+                  <span
+                    >{{ t('op_author_label') }}：{{ o.author_name || t('author_system') }}<template v-if="o.author_email"> · {{ t('author_email_label') }}：{{ o.author_email }}</template></span
+                  >
                   <a :href="`/issues/${issueId}/comment/${o.id}`" class="ml-auto text-xs text-muted hover:underline"> 🔗 {{ t('card_permalink') }} </a>
                 </p>
                 <div class="whitespace-pre-wrap text-sm leading-relaxed">{{ o.summary }}</div>
