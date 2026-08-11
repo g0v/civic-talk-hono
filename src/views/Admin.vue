@@ -8,7 +8,7 @@ import Toast from '../components/Toast.vue'
 import { formatDate, useI18n } from '../l10n'
 import { useAuth } from '../composables/useAuth'
 import { isAdminSession } from '../client/auth-session'
-import type { Briefing, IssueListItemWithAuthor, IssueStatus, MaterialWithAuthor, OpinionWithAuthor } from '../db/queries'
+import type { BriefingWithAuthor, IssueListItemWithAuthor, IssueStatus, MaterialWithAuthor, OpinionWithAuthor } from '../db/queries'
 
 type AdminTab = 'issues' | 'materials' | 'opinions'
 
@@ -46,11 +46,13 @@ const formTitle = ref('')
 const formDesc = ref('')
 const formStatus = ref<IssueStatus>('collecting')
 const formPolis = ref(false)
+const formTermsAgreed = ref(false)
 const briefConsensus = ref('')
 const briefDisputes = ref('')
 const briefPositions = ref('')
 const briefNarrative = ref('')
 const briefingIssueId = ref<number | null>(null)
+const briefingAuthor = ref<BriefingWithAuthor | null>(null)
 
 // 管理端請求靠同源 cookie 帶 session，不再有 X-Admin-Token
 function authHeaders(): HeadersInit {
@@ -98,6 +100,7 @@ function openNew() {
   formTitle.value = ''
   formDesc.value = ''
   formPolis.value = false
+  formTermsAgreed.value = false
   modalNew.value = true
 }
 
@@ -113,7 +116,8 @@ function openEdit(issue: IssueListItemWithAuthor) {
 async function openBriefing(issue: IssueListItemWithAuthor) {
   briefingIssueId.value = issue.id
   const res = await fetch(`/api/issues/${issue.id}/briefing`)
-  const b = (res.ok ? await res.json() : null) as Briefing | null
+  const b = (res.ok ? await res.json() : null) as BriefingWithAuthor | null
+  briefingAuthor.value = b
   briefConsensus.value = b?.consensus ?? ''
   briefDisputes.value = b?.disputes ?? ''
   briefPositions.value = b?.positions ?? ''
@@ -126,6 +130,10 @@ async function createIssue() {
     toast.value?.show(t('adm_toast_title_required'))
     return
   }
+  if (!formTermsAgreed.value) {
+    toast.value?.show(t('tos_required_toast'))
+    return
+  }
   const res = await fetch('/api/issues', {
     method: 'POST',
     headers: authHeaders(),
@@ -133,6 +141,8 @@ async function createIssue() {
       title: formTitle.value.trim(),
       description: formDesc.value,
       polis_id: formPolis.value ? 'enabled' : null,
+      show_email: false,
+      terms_accepted: formTermsAgreed.value,
     }),
   })
   if (!res.ok) return
@@ -336,7 +346,14 @@ const tabs = computed(() => [
                     </td>
                     <td class="px-3 py-2"><StatusBadge :status="issue.status" short /></td>
                     <td class="px-3 py-2">{{ issue.material_count }}</td>
-                    <td class="px-3 py-2">{{ issue.author_name || t('adm_author_unknown') }}</td>
+                    <td class="px-3 py-2">
+                      <div>{{ issue.author_name || t('adm_author_unknown') }}</div>
+                      <div v-if="issue.author_id" class="text-xs text-muted">{{ t('adm_author_id') }}{{ issue.author_id }}</div>
+                      <div v-if="issue.author_email" class="text-xs text-muted">
+                        {{ t('adm_author_email') }}{{ issue.author_email }} · {{ issue.show_email === 1 ? t('adm_email_public') : t('adm_email_private') }}
+                      </div>
+                      <div v-if="issue.terms_version" class="text-xs text-muted">{{ t('adm_terms_record') }}{{ issue.terms_version }} · {{ issue.terms_accepted_at }}</div>
+                    </td>
                     <td class="px-3 py-2">{{ formatDate(issue.created_at, locale) }}</td>
                     <td class="px-3 py-2">
                       <div class="flex flex-wrap gap-1">
@@ -382,8 +399,12 @@ const tabs = computed(() => [
                 </div>
                 <a v-if="m.source_url" :href="m.source_url" target="_blank" rel="noopener noreferrer" class="text-sm">{{ t('adm_mat_link') }}</a>
                 <div class="mt-2 whitespace-pre-wrap text-sm">{{ m.content }}</div>
-                <!-- #9：投稿者只在管理端顯示，公開的素材列表不含這個欄位 -->
-                <p class="mt-2 mb-0 text-sm text-muted">{{ t('adm_author') }}{{ m.author_name || t('adm_author_unknown') }}</p>
+                <div class="mt-2 text-sm text-muted">
+                  <p class="m-0">{{ t('adm_author') }}{{ m.author_name || t('adm_author_unknown') }}</p>
+                  <p v-if="m.author_id" class="m-0 text-xs">{{ t('adm_author_id') }}{{ m.author_id }}</p>
+                  <p v-if="m.author_email" class="m-0 text-xs">{{ t('adm_author_email') }}{{ m.author_email }} · {{ m.show_email === 1 ? t('adm_email_public') : t('adm_email_private') }}</p>
+                  <p v-if="m.terms_version" class="m-0 text-xs">{{ t('adm_terms_record') }}{{ m.terms_version }} · {{ m.terms_accepted_at }}</p>
+                </div>
               </div>
             </template>
           </section>
@@ -412,8 +433,12 @@ const tabs = computed(() => [
                   </button>
                 </div>
                 <div class="whitespace-pre-wrap text-sm">{{ o.summary }}</div>
-                <!-- #9：投稿者只在管理端顯示，公開的意見列表不含這個欄位 -->
-                <p class="mt-2 mb-0 text-sm text-muted">{{ t('adm_author') }}{{ o.author_name || t('adm_author_unknown') }}</p>
+                <div class="mt-2 text-sm text-muted">
+                  <p class="m-0">{{ t('adm_author') }}{{ o.author_name || t('adm_author_unknown') }}</p>
+                  <p v-if="o.author_id" class="m-0 text-xs">{{ t('adm_author_id') }}{{ o.author_id }}</p>
+                  <p v-if="o.author_email" class="m-0 text-xs">{{ t('adm_author_email') }}{{ o.author_email }} · {{ o.show_email === 1 ? t('adm_email_public') : t('adm_email_private') }}</p>
+                  <p v-if="o.terms_version" class="m-0 text-xs">{{ t('adm_terms_record') }}{{ o.terms_version }} · {{ o.terms_accepted_at }}</p>
+                </div>
               </div>
             </template>
           </section>
@@ -440,6 +465,16 @@ const tabs = computed(() => [
               <strong>{{ t('adm_polis_label') }}</strong>
               <span class="mt-1 block text-sm text-muted">{{ t('adm_polis_hint_new') }}</span>
             </span>
+          </label>
+        </div>
+        <div class="form-group">
+          <label class="flex items-start gap-2 font-normal">
+            <input v-model="formTermsAgreed" type="checkbox" class="mt-1 w-auto" />
+            <span
+              >{{ t('tos_agree_prefix') }}<a href="/terms" target="_blank" class="underline">{{ t('tos_terms_link') }}</a
+              >{{ t('tos_agree_mid') }}<a href="/privacy" target="_blank" class="underline">{{ t('tos_privacy_link') }}</a
+              >{{ t('tos_agree_suffix') }}</span
+            >
           </label>
         </div>
         <div class="flex gap-2">
@@ -487,6 +522,11 @@ const tabs = computed(() => [
     <div v-if="modalBriefing" class="modal-overlay" @click.self="modalBriefing = false">
       <div class="modal">
         <h2 class="mt-0 mb-4 font-serif text-xl">{{ t('adm_modal_briefing_title') }}</h2>
+        <div v-if="briefingAuthor?.author_id" class="mb-4 rounded-lg bg-gray-50 p-3 text-sm text-muted">
+          <p class="m-0">{{ t('adm_briefing_author') }}{{ briefingAuthor.author_name || t('adm_author_unknown') }}</p>
+          <p class="m-0 text-xs">{{ t('adm_author_id') }}{{ briefingAuthor.author_id }}</p>
+          <p v-if="briefingAuthor.author_email" class="m-0 text-xs">{{ t('adm_author_email') }}{{ briefingAuthor.author_email }}</p>
+        </div>
         <div class="form-group">
           <label>{{ t('adm_label_consensus') }}</label>
           <textarea v-model="briefConsensus" rows="3" />

@@ -54,9 +54,11 @@ Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑�
 - `src/index.ts` — 乾淨路由 `/`、`/issues/:id`、`/issues/:id/source/:materialId`、`/issues/:id/comment/:opinionId`、`/contribute/:id`、`/about`、`/admin`；舊 `.html` 導向；掛上 `registerApiRoutes`；fallback `ASSETS`。
 - `src/api/routes.ts` + `src/db/queries.ts` — 舊 Pages Functions API 的型別化移植，SQL 只碰 `ct_*`。
 - `migrations/0001_init.sql` — `ct_issues`／`ct_materials`／`ct_briefings`／`ct_opinions`（含 FK、索引、約束、示範資料）。
-- `migrations/0002_material_author.sql` — `ct_materials` 加上 `author_id`／`author_name`（#9 的投稿者記錄）。本機與遠端皆已套用。
-- `migrations/0003_issue_opinion_author.sql` — `ct_issues` 與 `ct_opinions` 也加上 `author_id`／`author_name`（建立者／投稿者，同樣只給管理端）。本機與遠端皆已套用。
-- `migrations/0004_briefing_author.sql` — `ct_briefings` 加上 `author_id`（志願者送出 briefing 的帳號；不公開）。尚未套用。
+- `migrations/0002_material_author.sql` — `ct_materials` 加上 `author_id`／`author_name`（#9 的投稿者記錄）。本機與遠端皆已套用；#27 起 name 公開、ID 仍只給管理端。
+- `migrations/0003_issue_opinion_author.sql` — `ct_issues` 與 `ct_opinions` 也加上 `author_id`／`author_name`。本機與遠端皆已套用；公開規則同上。
+- `migrations/0004_briefing_author.sql` — `ct_briefings` 加上 `author_id`（志願者送出 briefing 的帳號；不公開）。本機與遠端皆已套用。
+- `migrations/0005_author_email.sql` — 四種內容補齊投稿當下的作者快照；`author_email` 一律保存，`show_email`（0／1）只控制前台是否公開。本機與遠端皆已套用。遠端先前另有舊檔名 `0004_author_email.sql`（只加三表 `author_email`），因此遠端是補齊 `show_email` 與 briefing 快照後再標記 0005 已套用。
+- `migrations/0006_submission_consent.sql` — 議題、素材與意見保存伺服器端確認的 `terms_version`／`terms_accepted_at`。本機與遠端皆已套用。
 - `src/ssr/render.ts` — SSR + 注入 `window.__PAGE__`／`__SSR_STATE__` + `/js/civic.js`（dev 走 `/src/client/civic-entry.ts`）。
 - `src/views/` — `Home`／`Issue`／`Contribute`／`About`／`Admin`／`MaterialDetail`／`OpinionDetail`；共用 `AppHeader`／`AppFooter`／`StatusBadge`／`IssueCard`／`Toast`。
 - `src/composables/useAuth.ts` — 全站共用的登入狀態（`authState`／`session`／`ensureAuthSession`／`signOutAndReload`）。模組層級的 ref，同一頁的 `AppHeader` 與表單共用同一次 `/api/me`；**只在瀏覽器端寫入**（`ensureAuthSession()` 開頭擋掉 SSR），所以 SSR 永遠是 `'loading'`。
@@ -179,24 +181,24 @@ Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑�
 
 以型別化 Hono handlers 重寫 `../civic-talk/functions/api/[[route]].js`，**路徑與語意保持相容**：
 
-| 方法     | 路徑                        | 說明                                                                     |
-| -------- | --------------------------- | ------------------------------------------------------------------------ |
-| `GET`    | `/api/issues`               | 議題列表                                                                 |
-| `POST`   | `/api/issues`               | 新增議題（**需登入**，#9 延伸）                                          |
-| `GET`    | `/api/issues/:id`           | 議題詳情                                                                 |
-| `PUT`    | `/api/issues/:id`           | 編輯議題（admin）                                                        |
-| `DELETE` | `/api/issues/:id`           | 刪除議題（admin，級聯刪 materials/briefings/opinions）                   |
-| `GET`    | `/api/issues/:id/materials` | 素材列表（管理員多拿 `author_id`／`author_name`，一般讀取者拿不到）      |
-| `POST`   | `/api/issues/:id/materials` | 投稿素材（**需登入**，#9；`collecting` → `summarizing` 狀態轉換）        |
-| `DELETE` | `/api/materials/:id`        | 刪除素材（admin）                                                        |
-| `GET`    | `/api/issues/:id/briefing`  | 取得說明頁                                                               |
-| `POST`   | `/api/issues/:id/briefing`  | 新增說明頁（**需登入**；版本遞增；→ `published`）                        |
-| `PUT`    | `/api/issues/:id/briefing`  | 編輯說明頁（admin）                                                      |
-| `GET`    | `/api/issues/:id/opinions`  | 意見列表                                                                 |
-| `POST`   | `/api/issues/:id/opinions`  | 投稿意見（**需登入**，#9 延伸）                                          |
-| `DELETE` | `/api/opinions/:id`         | 刪除意見（admin）                                                        |
+| 方法     | 路徑                        | 說明                                                                                   |
+| -------- | --------------------------- | -------------------------------------------------------------------------------------- |
+| `GET`    | `/api/issues`               | 議題列表                                                                               |
+| `POST`   | `/api/issues`               | 新增議題（**需登入**，#9 延伸）                                                        |
+| `GET`    | `/api/issues/:id`           | 議題詳情                                                                               |
+| `PUT`    | `/api/issues/:id`           | 編輯議題（admin）                                                                      |
+| `DELETE` | `/api/issues/:id`           | 刪除議題（admin，級聯刪 materials/briefings/opinions）                                 |
+| `GET`    | `/api/issues/:id/materials` | 素材列表（公開顯示 `author_name`，email 僅依 opt-in 顯示；管理員另拿完整作者快照）     |
+| `POST`   | `/api/issues/:id/materials` | 投稿素材（**需登入**，#9；`collecting` → `summarizing` 狀態轉換）                      |
+| `DELETE` | `/api/materials/:id`        | 刪除素材（admin）                                                                      |
+| `GET`    | `/api/issues/:id/briefing`  | 取得說明頁（公開不含作者；管理員另拿完整作者快照）                                     |
+| `POST`   | `/api/issues/:id/briefing`  | 新增說明頁（**需登入**；版本遞增；→ `published`）                                      |
+| `PUT`    | `/api/issues/:id/briefing`  | 編輯說明頁（admin）                                                                    |
+| `GET`    | `/api/issues/:id/opinions`  | 意見列表                                                                               |
+| `POST`   | `/api/issues/:id/opinions`  | 投稿意見（**需登入**，#9 延伸）                                                        |
+| `DELETE` | `/api/opinions/:id`         | 刪除意見（admin）                                                                      |
 | `GET`    | `/api/issues/:id/prompt`    | 產生 prompt（**需登入**），`?type=summarize\|narrative\|synthesis`（預設 `summarize`） |
-| `GET`    | `/api/admin/stats`          | 管理統計                                                                 |
+| `GET`    | `/api/admin/stats`          | 管理統計                                                                               |
 
 > `POST /api/admin/login`（以 `ADMIN_PASSWORD` 換 token）**已於 #5 移除**——這是不變量 5 明列的授權例外。舊網址不必保留：它從來只是管理員自己用的登入端點，不是公開契約。
 
@@ -209,16 +211,16 @@ Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑�
 
 ### 投稿與志願者工具需登入（#9 與使用者裁示帶來的變更）
 
-✅ **已完成。** `POST /api/issues`、`POST /api/issues/:id/materials`、`POST /api/issues/:id/opinions`、`POST /api/issues/:id/briefing` 與 `GET /api/issues/:id/prompt` 都走 `src/api/routes.ts` 的 `requireUser()`：**只看有沒有登入，不看角色**（一般 `user` 就能使用）。未登入回 `401`；停權帳號回 `403`。前三類投稿記錄 `author_id`／`author_name`；briefing 僅記錄 `author_id`，且作者資料都不公開。
+✅ **已完成。** `POST /api/issues`、`POST /api/issues/:id/materials`、`POST /api/issues/:id/opinions`、`POST /api/issues/:id/briefing` 與 `GET /api/issues/:id/prompt` 都走 `src/api/routes.ts` 的 `requireUser()`：**只看有沒有登入，不看角色**（一般 `user` 就能使用）。未登入回 `401`；停權帳號回 `403`。四種寫入都保存投稿當下的完整作者快照；briefing 作者仍完全不公開。
 
-- **投稿與 briefing 都記錄作者**：`ct_materials`（0002）、`ct_issues` 與 `ct_opinions`（0003）都有 `author_id`／`author_name`；`ct_briefings`（0004）只有 `author_id`。`author_id` 是共用 auth DB 的 `user.id`，`author_name` 是投稿當下的顯示名稱快照（name 為空時退回 email）；**一律不存 email 欄位**，作者資料也不公開。
+- **完整作者快照**：`ct_issues`、`ct_materials`、`ct_opinions`、`ct_briefings` 最終都有 `author_id`、`author_name`、`author_email`、`show_email`。`author_id` 是 Better Auth `user.id`；name／email 是投稿當下快照，不隨帳號日後更新。`author_name` 缺漏時一律為 `NULL`，**禁止退回 email**，否則會繞過 email opt-in。
+- **儲存與公開分離**：`author_email` 無論使用者是否 opt-in 都保存，供管理端追溯；`show_email INTEGER NOT NULL DEFAULT 0 CHECK (show_email IN (0, 1))` 才是公開同意。建立議題、投稿素材與意見的 API 只接受 boolean `show_email`，並要求 `terms_accepted === true`；兩者都由伺服器端驗證，不能只靠 checkbox。驗證通過後由伺服器寫入 `TERMS_VERSION` 與 `CURRENT_TIMESTAMP`，不採信 client 自報的版本或時間。
 
-- **投稿者記錄**：成功投稿會把 `user.id` 寫進 `ct_materials.author_id`，並存一份投稿當下的顯示名稱 `author_name`（name 為空時退回 email）。**不存 email 欄位**——需要對應到真人時拿 `author_id` 去 vTaiwan 後台查（不變量 11：本站不擁有使用者資料）。
-- 🚫 **作者一律不公開**：`author_*` 只在請求者是管理員時才回（`GET /api/issues`、`/api/issues/:id/materials`、`/api/issues/:id/opinions` 三支都是這個規則，且都標 `Vary: Cookie`）。所以 `src/db/queries.ts` 的 `listIssues()`／`getIssue()`／`listMaterials()`／`listOpinions()` **一律列舉欄位、不准用 `SELECT *`**——`getIssueDetail()` 會流進 SSR 注入的 `window.__SSR_STATE__`，用 `SELECT *` 等於把作者寫進 HTML 原始碼。管理端專用的是 `list*WithAuthor()` 系列。要改成公開顯示作者，**先問使用者**（那是隱私決定，不是實作細節）。
+- **公開投影（#27 使用者已裁示）**：議題、素材與意見公開顯示 `author_name`；公開 SQL 只能用 `CASE WHEN show_email = 1 THEN author_email ELSE NULL END AS author_email`，且不得回傳 `author_id`／`show_email`。`getIssueDetail()` 與獨立詳情頁都會進 SSR state，因此一律列舉公開欄位、禁止 `SELECT *`。管理端 `list*WithAuthor()`／`getLatestBriefingWithAuthor()` 才可取得完整快照。briefing 的公開 API 不回任何作者欄位，管理員版本標示 `Vary: Cookie`。
 - **需登入之前的舊資料** `author_*` 是 `NULL`，不回填；管理端顯示為「需登入之前的舊資料」。
 - 前端三處都是同一套三態（`loading`／`anonymous`／`signed-in`）：`/contribute/:id` 的素材表單、`/` 的建立議題表單、`/issues/:id` 意見分頁的投稿框。SSR 一律只出 `loading` 骨架，避免 hydration mismatch。
 - **送出時遇 `401` 不要把 `authState` 切回 `anonymous`**——那會把表單換成登入卡片、吃掉使用者剛打的內容。三處都改用獨立的 `sessionExpired` 旗標：表單留在原地，只在上方補一列重新登入與「先複製你打的內容」提示（共用 key `login_expired_toast`／`login_expired_hint`）。
-- **守門在伺服器端**——前端隱藏表單只是體驗，不是防線。
+- **守門在伺服器端**——登入、停權、條款同意與 `show_email` 型別都由 API 驗證；前端隱藏表單與 checkbox 只是體驗，不是防線。
 
 | 方法          | 路徑          | 說明                                                                             |
 | ------------- | ------------- | -------------------------------------------------------------------------------- |
@@ -431,18 +433,27 @@ npx wrangler d1 migrations apply vtaiwan-civic-talks --remote   # 🚫 需先取
 
 分支 **`feat/require-login-for-materials`**。規格見「API 契約 → 素材投稿需登入（#9 帶來的變更）」。
 
-| #   | 項目                   | 狀態          | 內容                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| --- | ---------------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 9-1 | `migration`            | ✅ 完成       | `migrations/0002_material_author.sql`（`ct_materials` 加 `author_id`／`author_name` 與索引）。本機＋遠端皆已套用（遠端已取得使用者授權），套用後查過 `sqlite_master`：沒有新增任何表                                                                                                                                                                                                                                                 |
-| 9-2 | `api-gate`             | ✅ 完成       | `requireUser()`；`POST /api/issues/:id/materials` 未登入 401；投稿寫入 `author_id`／`author_name`                                                                                                                                                                                                                                                                                                                                    |
-| 9-3 | `author-privacy`       | ✅ 完成       | `listMaterials()` 改列舉公開欄位（不再 `SELECT *`）；`listMaterialsWithAuthor()` 只給管理員；管理端素材卡顯示投稿者                                                                                                                                                                                                                                                                                                                  |
-| 9-4 | `contribute-ui`        | ✅ 完成       | `Contribute.vue` 三態登入牆；抽出共用 `SignInButtons.vue`；i18n 雙檔同步（新增 `login_*`／`logout`／`contrib_login_*`／`adm_mat_author*`，移除被取代的 `adm_login_google`／`adm_login_github`／`adm_login_err`／`adm_logout`）                                                                                                                                                                                                       |
-| 9-5 | `issues-opinions-gate` | ✅ 完成       | 使用者裁示的延伸：`POST /api/issues` 與 `POST /api/issues/:id/opinions` 也走 `requireUser()`；`Home.vue` 建立議題表單與 `Issue.vue` 意見投稿框同樣三態登入牆；過期提示改用共用 key                                                                                                                                                                                                                                                   |
-| 9-6 | `author-everywhere`    | ✅ 完成       | `migrations/0003_issue_opinion_author.sql`：`ct_issues`／`ct_opinions` 也記錄作者；`listIssuesWithAuthor()`／`listOpinionsWithAuthor()` 只給管理員；`getIssue()` 一併改成列舉欄位（原本 `SELECT *` 會漏進 SSR state）；Admin 議題表格加「建立者」欄、意見卡顯示投稿者                                                                                                                                                                |
-| 9-7 | `header-auth-ui`       | ✅ 完成       | `src/composables/useAuth.ts` 全站共用登入狀態（一頁只打一次 `/api/me`）；`AppHeader` 顯示「已登入：{name}」／登出／登入面板；`Home`／`Issue`／`Contribute`／`Admin` 四頁改用同一個 composable，Admin 的 `forbidden` 從共用 session 推導                                                                                                                                                                                              |
-| 9-8 | `verify`               | 🚧 待遠端實測 | 遠端 migration `0002`／`0003` 皆已套用。本機已驗：三支寫入端點未登入皆 401；`/api/issues`、`/api/issues/:id`、素材列表、意見列表與四個 SSR 頁面**都查不到 `author_id`／`author_name`**；三支列表端點帶 `Vary: Cookie`；SSR 標頭不出現登入／登出（`authState==='loading'` 不畫）；`typecheck`＋`build` 綠燈；i18n 雙檔 268/268。**尚未驗**：登入後建議題／投素材／投意見的 `author_*` 真的落庫、管理端三處顯示作者（需 `dev:remote`） |
+| #   | 項目                   | 狀態          | 內容                                                                                                                                                                                                                                                                                               |
+| --- | ---------------------- | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 9-1 | `migration`            | ✅ 完成       | `migrations/0002_material_author.sql`（`ct_materials` 加 `author_id`／`author_name` 與索引）。本機＋遠端皆已套用（遠端已取得使用者授權），套用後查過 `sqlite_master`：沒有新增任何表                                                                                                               |
+| 9-2 | `api-gate`             | ✅ 完成       | `requireUser()`；`POST /api/issues/:id/materials` 未登入 401；投稿寫入 `author_id`／`author_name`                                                                                                                                                                                                  |
+| 9-3 | `author-privacy`       | ✅ 完成       | `listMaterials()` 改列舉公開欄位（不再 `SELECT *`）；`listMaterialsWithAuthor()` 只給管理員；管理端素材卡顯示投稿者                                                                                                                                                                                |
+| 9-4 | `contribute-ui`        | ✅ 完成       | `Contribute.vue` 三態登入牆；抽出共用 `SignInButtons.vue`；i18n 雙檔同步（新增 `login_*`／`logout`／`contrib_login_*`／`adm_mat_author*`，移除被取代的 `adm_login_google`／`adm_login_github`／`adm_login_err`／`adm_logout`）                                                                     |
+| 9-5 | `issues-opinions-gate` | ✅ 完成       | 使用者裁示的延伸：`POST /api/issues` 與 `POST /api/issues/:id/opinions` 也走 `requireUser()`；`Home.vue` 建立議題表單與 `Issue.vue` 意見投稿框同樣三態登入牆；過期提示改用共用 key                                                                                                                 |
+| 9-6 | `author-everywhere`    | ✅ 完成       | `migrations/0003_issue_opinion_author.sql`：`ct_issues`／`ct_opinions` 也記錄作者；`listIssuesWithAuthor()`／`listOpinionsWithAuthor()` 只給管理員；`getIssue()` 一併改成列舉欄位（原本 `SELECT *` 會漏進 SSR state）；Admin 議題表格加「建立者」欄、意見卡顯示投稿者                              |
+| 9-7 | `header-auth-ui`       | ✅ 完成       | `src/composables/useAuth.ts` 全站共用登入狀態（一頁只打一次 `/api/me`）；`AppHeader` 顯示「已登入：{name}」／登出／登入面板；`Home`／`Issue`／`Contribute`／`Admin` 四頁改用同一個 composable，Admin 的 `forbidden` 從共用 session 推導                                                            |
+| 9-8 | `verify`               | 🚧 待遠端實測 | 遠端 migration `0002`–`0006` 皆已套用。本機已驗未登入守門；#27 後公開回應改為顯示 `author_name` 與 opt-in email，但仍不得含 `author_id`／`show_email` 或未同意公開的 email。**尚未驗**：登入後四種寫入的完整作者快照真的落庫、管理端取得完整快照（需 `dev:remote` 實測）。 |
 
 > **migration 與程式碼是綁在一起的**：`createMaterial()`／`createIssue()`／`createOpinion()` 都會寫 `author_id`，所以遠端 migration 必須先於部署，否則每次寫入都會 runtime error（`no such column: author_id`）。`0002` 與 `0003` 都已於 2026-08-04 套用到遠端（經使用者授權，套用後查過 `sqlite_master` 沒有新增任何表）。日後若有人重建遠端資料庫，記得這條順序仍然成立。
+
+### 進行中：#27 具名提交與 email opt-in
+
+- `migrations/0005_author_email.sql` 讓四種內容都有完整作者快照；0004／0005／0006 本機與遠端皆已套用。
+- `migrations/0006_submission_consent.sql` 保存三類具名投稿接受的條款版本與時間；版本常數在 `src/legal/terms.ts`，修改條款時必須同步更新。
+- 公開頁面固定顯示投稿當下的 `author_name`，email 只有該筆內容的 `show_email = 1` 才顯示；名稱缺漏時不以 email 代替。
+- 公開 SQL 直接遮蔽未 opt-in email，並排除 `author_id`／`show_email`；管理端才取得完整快照。
+- 三個投稿 API 要求 `terms_accepted === true` 且嚴格驗證 `show_email` 為 boolean；版本與同意時間由伺服器寫入。
+- `/privacy`、`/terms` 已說明快照、公開選擇及帳號刪除不會自動清除跨資料庫內容快照。
 
 > 後續可選：切換到 `vue-router` 全站 hydration、自動化測試／CI——動工前先與使用者確認。
 

@@ -178,6 +178,12 @@ export const messages = {
   adm_mat_link: '🔗 原始連結',
   adm_author: '投稿者／建立者：',
   adm_author_unknown: '（需登入之前的舊資料）',
+  adm_author_id: '帳號 ID：',
+  adm_author_email: 'Email：',
+  adm_email_public: '已公開',
+  adm_email_private: '未公開',
+  adm_terms_record: '條款同意：',
+  adm_briefing_author: '彙整建立者：',
   adm_empty_select: '👆 請先選擇議題',
   adm_empty_materials: '尚無素材',
   adm_empty_opinions: '尚無意見',
@@ -305,7 +311,7 @@ export const messages = {
   nf_desc: '這個網址可能已經移動、輸入錯誤，或內容已經被刪除。',
   nf_home_btn: '回首頁',
   // 提交者顯示（#27）
-  author_system: '系統資料',
+  author_system: '未提供顯示名稱',
   mat_author_label: '提交者',
   op_author_label: '提交者',
   issue_author_label: '建立者',
@@ -325,7 +331,7 @@ export const messages = {
   policy_back_home: '回首頁',
   // Email 公開選項（#27）
   show_email_label: '公開我的 email：{email}',
-  show_email_hint: '（選填，讓閱覽者可以聯繫你，增加公信度）',
+  show_email_hint: '（選填；email 快照會保存，勾選後才會公開）',
   author_email_label: 'Email',
 } as const
 

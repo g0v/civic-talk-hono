@@ -1,6 +1,7 @@
-import type { Briefing, Issue, IssueListItem, IssueListItemWithAuthor, IssueStatus, Material, MaterialWithAuthor, Opinion, OpinionWithAuthor, Stance } from '../db/queries'
+import type { AuthorSnapshotInput, Briefing, BriefingWithAuthor, Issue, IssueListItem, IssueListItemWithAuthor, IssueStatus, Material, MaterialWithAuthor, Opinion, OpinionWithAuthor, Stance } from '../db/queries'
 import * as db from '../db/queries'
 import { isAdminRole, tryGetAuthContext, type AuthContext } from '../auth/authorization'
+import { TERMS_VERSION } from '../legal/terms'
 import type { App, AppBindings } from './types'
 
 // 公開讀取端點維持開放跨來源；管理端則刻意「不可跨來源」——
@@ -69,6 +70,28 @@ function parseId(raw: string): number | null {
   return Number.isFinite(n) && n > 0 ? n : null
 }
 
+type SubmissionOptions = {
+  show_email?: unknown
+  terms_accepted?: unknown
+}
+
+export function validateSubmissionOptions(body: SubmissionOptions): Response | null {
+  if (body.terms_accepted !== true) return error('terms_accepted must be true')
+  if (body.show_email !== undefined && typeof body.show_email !== 'boolean') return error('show_email must be a boolean')
+  return null
+}
+
+export function buildAuthorSnapshot(user: AuthContext['user'], showEmail: boolean): AuthorSnapshotInput {
+  const name = user.name?.trim()
+  return {
+    author_id: user.id,
+    // 公開名稱不可退回 email，否則未勾選公開 email 仍可能經 author_name 洩漏。
+    author_name: name || null,
+    author_email: user.email,
+    show_email: showEmail,
+  }
+}
+
 export function registerApiRoutes(app: App): void {
   app.options('/api/*', () => withCors(new Response(null, { status: 204 })))
 
@@ -82,7 +105,7 @@ export function registerApiRoutes(app: App): void {
     return json(stats)
   })
 
-  // 建立者只給管理端看（與素材、意見同一套規則）
+  // 一般讀取只拿公開作者投影；管理員另拿完整快照與條款同意記錄。
   app.get('/api/issues', async c => {
     const context = await tryGetAuthContext(c.env, c.req.raw.headers)
     const issues: IssueListItem[] | IssueListItemWithAuthor[] = context && isAdminRole(context.role) ? await db.listIssuesWithAuthor(c.env.DB) : await db.listIssues(c.env.DB)
@@ -96,20 +119,21 @@ export function registerApiRoutes(app: App): void {
   app.post('/api/issues', async c => {
     const auth = await requireUser(c.req.raw, c.env)
     if ('denied' in auth) return auth.denied
-    let body: { title?: string; description?: string; polis_id?: string | null; show_email?: boolean }
+    let body: { title?: string; description?: string; polis_id?: string | null } & SubmissionOptions
     try {
       body = await c.req.json()
     } catch {
       return error('Invalid JSON')
     }
     if (!body.title?.trim()) return error('title is required')
+    const invalidOptions = validateSubmissionOptions(body)
+    if (invalidOptions) return invalidOptions
     const id = await db.createIssue(c.env.DB, {
       title: body.title.trim(),
       description: body.description ?? '',
       polis_id: body.polis_id ?? null,
-      author_id: auth.context.user.id,
-      author_name: auth.context.user.name || auth.context.user.email,
-      author_email: body.show_email ? auth.context.user.email : null,
+      ...buildAuthorSnapshot(auth.context.user, body.show_email === true),
+      terms_version: TERMS_VERSION,
     })
     return json({ id, title: body.title.trim() }, 201)
   })
@@ -177,8 +201,7 @@ export function registerApiRoutes(app: App): void {
     return json({ ok: true })
   })
 
-  // 投稿者只給管理端看：一般讀取回公開欄位，管理員多拿 author_id／author_name。
-  // 這是擴充而非變更——公開回應的欄位與語意不變（不變量 5）。
+  // 一般讀取公開顯示名稱與 opt-in email；管理員另拿完整快照與條款同意記錄。
   app.get('/api/issues/:id/materials', async c => {
     const id = parseId(c.req.param('id'))
     if (!id) return error('Invalid id')
@@ -206,22 +229,22 @@ export function registerApiRoutes(app: App): void {
       source_name?: string
       source_url?: string
       stance?: Stance
-      show_email?: boolean
-    }
+    } & SubmissionOptions
     try {
       body = await c.req.json()
     } catch {
       return error('Invalid JSON')
     }
     if (!body.content?.trim()) return error('content is required')
+    const invalidOptions = validateSubmissionOptions(body)
+    if (invalidOptions) return invalidOptions
     const materialId = await db.createMaterial(c.env.DB, id, {
       content: body.content.trim(),
       source_name: body.source_name ?? '',
       source_url: body.source_url ?? '',
       stance: body.stance ?? 'unknown',
-      author_id: auth.context.user.id,
-      author_name: auth.context.user.name || auth.context.user.email,
-      author_email: body.show_email ? auth.context.user.email : null,
+      ...buildAuthorSnapshot(auth.context.user, body.show_email === true),
+      terms_version: TERMS_VERSION,
     })
     return json({ id: materialId }, 201)
   })
@@ -229,8 +252,12 @@ export function registerApiRoutes(app: App): void {
   app.get('/api/issues/:id/briefing', async c => {
     const id = parseId(c.req.param('id'))
     if (!id) return error('Invalid id')
-    const briefing: Briefing | null = await db.getLatestBriefing(c.env.DB, id)
-    return json(briefing)
+    const context = await tryGetAuthContext(c.env, c.req.raw.headers)
+    const briefing: Briefing | BriefingWithAuthor | null =
+      context && isAdminRole(context.role) ? await db.getLatestBriefingWithAuthor(c.env.DB, id) : await db.getLatestBriefing(c.env.DB, id)
+    const res = json(briefing)
+    res.headers.set('Vary', 'Cookie')
+    return res
   })
 
   app.post('/api/issues/:id/briefing', async c => {
@@ -254,7 +281,8 @@ export function registerApiRoutes(app: App): void {
     } catch {
       return error('Invalid JSON')
     }
-    const version = await db.createBriefing(c.env.DB, id, auth.context.user.id, body)
+    // briefing 作者目前不公開，仍保存完整快照供稽核；show_email 固定為 false。
+    const version = await db.createBriefing(c.env.DB, id, buildAuthorSnapshot(auth.context.user, false), body)
     return json({ version }, 201)
   })
 
@@ -279,7 +307,7 @@ export function registerApiRoutes(app: App): void {
     return json({ ok: true })
   })
 
-  // 投稿者只給管理端看：意見在前台是公開顯示的，不能連帶把投稿者曝光
+  // 一般讀取公開顯示名稱與 opt-in email；管理員另拿完整快照與條款同意記錄。
   app.get('/api/issues/:id/opinions', async c => {
     const id = parseId(c.req.param('id'))
     if (!id) return error('Invalid id')
@@ -290,8 +318,7 @@ export function registerApiRoutes(app: App): void {
     return res
   })
 
-  // 意見投稿同樣需要登入（#9 的延伸，使用者裁示），並記錄投稿者以便問責。
-  // 注意意見在前台是公開顯示的，所以 author_* 只回給管理員（見 GET 那支）。
+  // 意見投稿同樣需要登入（#9 的延伸，使用者裁示），並記錄完整作者快照以便問責。
   app.post('/api/issues/:id/opinions', async c => {
     const auth = await requireUser(c.req.raw, c.env)
     if ('denied' in auth) return auth.denied
@@ -299,18 +326,19 @@ export function registerApiRoutes(app: App): void {
     if (!id) return error('Invalid id')
     const issue = await db.getIssue(c.env.DB, id)
     if (!issue) return error('Issue not found', 404)
-    let body: { summary?: string; show_email?: boolean }
+    let body: { summary?: string } & SubmissionOptions
     try {
       body = await c.req.json()
     } catch {
       return error('Invalid JSON')
     }
     if (!body.summary?.trim()) return error('summary is required')
+    const invalidOptions = validateSubmissionOptions(body)
+    if (invalidOptions) return invalidOptions
     const opinionId = await db.createOpinion(c.env.DB, id, {
       summary: body.summary.trim(),
-      author_id: auth.context.user.id,
-      author_name: auth.context.user.name || auth.context.user.email,
-      author_email: body.show_email ? auth.context.user.email : null,
+      ...buildAuthorSnapshot(auth.context.user, body.show_email === true),
+      terms_version: TERMS_VERSION,
     })
     return json({ id: opinionId }, 201)
   })

@@ -84,7 +84,12 @@ async function createIssue() {
     const res = await fetch('/api/issues', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: title.value.trim(), description: description.value, show_email: issueShowEmail.value }),
+      body: JSON.stringify({
+        title: title.value.trim(),
+        description: description.value,
+        show_email: issueShowEmail.value,
+        terms_accepted: issueTosAgreed.value,
+      }),
     })
     // session 可能在填表期間過期——守門在伺服器端，前端接住 401 但保留已填內容
     if (res.status === 401) {
@@ -181,13 +186,19 @@ async function createIssue() {
             <div class="form-group">
               <label class="flex items-start gap-2 font-normal">
                 <input v-model="issueTosAgreed" type="checkbox" class="mt-1 w-auto" />
-                <span>{{ t('tos_agree_prefix') }}<a href="/terms" target="_blank" class="underline">{{ t('tos_terms_link') }}</a>{{ t('tos_agree_mid') }}<a href="/privacy" target="_blank" class="underline">{{ t('tos_privacy_link') }}</a>{{ t('tos_agree_suffix') }}</span>
+                <span
+                  >{{ t('tos_agree_prefix') }}<a href="/terms" target="_blank" class="underline">{{ t('tos_terms_link') }}</a
+                  >{{ t('tos_agree_mid') }}<a href="/privacy" target="_blank" class="underline">{{ t('tos_privacy_link') }}</a
+                  >{{ t('tos_agree_suffix') }}</span
+                >
               </label>
             </div>
             <div class="form-group">
               <label class="flex items-start gap-2 font-normal">
                 <input v-model="issueShowEmail" type="checkbox" class="mt-1 w-auto" />
-                <span>{{ t('show_email_label', { email: session?.user.email || '' }) }} <span class="text-muted">{{ t('show_email_hint') }}</span></span>
+                <span
+                  >{{ t('show_email_label', { email: session?.user.email || '' }) }} <span class="text-muted">{{ t('show_email_hint') }}</span></span
+                >
               </label>
             </div>
             <div class="flex gap-2">

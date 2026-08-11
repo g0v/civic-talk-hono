@@ -179,6 +179,12 @@ export const messages = {
   adm_mat_link: '🔗 Source',
   adm_author: 'Submitted / created by: ',
   adm_author_unknown: '(legacy record, created before sign-in was required)',
+  adm_author_id: 'Account ID: ',
+  adm_author_email: 'Email: ',
+  adm_email_public: 'public',
+  adm_email_private: 'private',
+  adm_terms_record: 'Terms consent: ',
+  adm_briefing_author: 'Briefing author: ',
   adm_empty_select: '👆 Please select an issue first',
   adm_empty_materials: 'No materials yet',
   adm_empty_opinions: 'No opinions yet',
@@ -311,7 +317,7 @@ export const messages = {
   nf_desc: 'This page may have moved, the link might be mistyped, or the content may have been removed.',
   nf_home_btn: 'Back to Home',
   // Submitter display (#27)
-  author_system: 'System Data',
+  author_system: 'Display name unavailable',
   mat_author_label: 'Submitted by',
   op_author_label: 'Submitted by',
   issue_author_label: 'Created by',
@@ -331,6 +337,6 @@ export const messages = {
   policy_back_home: 'Back to Home',
   // Email disclosure option (#27)
   show_email_label: 'Make my email public: {email}',
-  show_email_hint: '(optional; lets readers contact you and adds credibility)',
+  show_email_hint: '(optional; an email snapshot is stored and only published when checked)',
   author_email_label: 'Email',
 } as const

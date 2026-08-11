@@ -89,6 +89,7 @@ async function submitMaterial() {
         stance: stance.value,
         content: text,
         show_email: showEmail.value,
+        terms_accepted: tosAgreed.value,
       }),
     })
     // session 可能在填表期間過期——真正的守門在伺服器端，前端要能接住 401。
@@ -203,13 +204,19 @@ async function submitMaterial() {
           <div class="form-group">
             <label class="flex items-start gap-2 font-normal">
               <input v-model="tosAgreed" type="checkbox" class="mt-1 w-auto" />
-              <span>{{ t('tos_agree_prefix') }}<a href="/terms" target="_blank" class="underline">{{ t('tos_terms_link') }}</a>{{ t('tos_agree_mid') }}<a href="/privacy" target="_blank" class="underline">{{ t('tos_privacy_link') }}</a>{{ t('tos_agree_suffix') }}</span>
+              <span
+                >{{ t('tos_agree_prefix') }}<a href="/terms" target="_blank" class="underline">{{ t('tos_terms_link') }}</a
+                >{{ t('tos_agree_mid') }}<a href="/privacy" target="_blank" class="underline">{{ t('tos_privacy_link') }}</a
+                >{{ t('tos_agree_suffix') }}</span
+              >
             </label>
           </div>
           <div class="form-group">
             <label class="flex items-start gap-2 font-normal">
               <input v-model="showEmail" type="checkbox" class="mt-1 w-auto" />
-              <span>{{ t('show_email_label', { email: session?.user.email || '' }) }} <span class="text-muted">{{ t('show_email_hint') }}</span></span>
+              <span
+                >{{ t('show_email_label', { email: session?.user.email || '' }) }} <span class="text-muted">{{ t('show_email_hint') }}</span></span
+              >
             </label>
           </div>
           <div class="flex gap-2">

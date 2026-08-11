@@ -26,8 +26,11 @@ const { t } = useI18n()
             <h2 class="mb-3 text-xl font-semibold">我們收集的資料</h2>
             <p class="mb-3 leading-relaxed text-gray-700">平台透過以下方式收集資料：</p>
             <ul class="mb-3 list-disc pl-6 leading-relaxed text-gray-700">
-              <li><strong>OAuth 帳號資訊</strong>：當您以 Google 或 GitHub 登入時，平台取得您的 OAuth 顯示名稱（display name）與 email。顯示名稱用於標示提交行為（見下節），email 僅供帳號識別，不公開顯示。</li>
-              <li><strong>使用者生成內容</strong>：您建立的議題、提交的素材、發表的意見，以及對應的提交時間與作者記錄（author_name）。</li>
+              <li><strong>OAuth 帳號資訊</strong>：當您以 Google 或 GitHub 登入時，平台取得您的顯示名稱與 email，並由 Better Auth 建立平台內部使用的 user ID。</li>
+              <li>
+                <strong>使用者生成內容與作者快照</strong>：您建立的議題、提交的素材、發表的意見或志願者送出的彙整，以及提交時間、user ID、提交當下的顯示名稱與 email 快照、是否公開 email 的選擇。
+              </li>
+              <li><strong>條款同意記錄</strong>：建立議題、投稿素材或意見時所接受的條款版本與伺服器記錄的同意時間。</li>
               <li><strong>技術資料</strong>：IP 位址、瀏覽器類型、存取時間等伺服器日誌，用於安全與效能監控。</li>
             </ul>
           </section>
@@ -38,18 +41,15 @@ const { t } = useI18n()
               <p class="font-semibold text-red-800">重要：在本平台建立議題、提交素材、發表意見均為具名行為</p>
             </div>
             <p class="mb-3 leading-relaxed text-gray-700">
-              為確保內容品質與可追溯性，上述行為提交後，您的 OAuth 顯示名稱（即您在 Google 或 GitHub 上的帳號名稱）將公開附在對應的議題、素材或意見上，所有訪客均可查看。
+              為確保內容品質與可追溯性，上述行為提交後，您提交當下的 OAuth 顯示名稱將公開附在對應的議題、素材或意見上，所有訪客均可查看。日後修改帳號名稱不會追溯變更既有內容的署名。
             </p>
-            <p class="mb-3 leading-relaxed text-gray-700">
-              提交時，您可以選擇是否公開您的 email：
-            </p>
+            <p class="mb-3 leading-relaxed text-gray-700">若 OAuth 帳號沒有提供顯示名稱，平台會顯示固定的「未提供顯示名稱」提示，不會以 email 代替。</p>
+            <p class="mb-3 leading-relaxed text-gray-700">提交時，您可以選擇是否公開您的 email：</p>
             <ul class="mb-3 list-disc pl-6 leading-relaxed text-gray-700">
-              <li><strong>選擇公開 email</strong>：您的 email 將隨顯示名稱一同公開呈現在對應內容上，供其他訪客查看。</li>
-              <li><strong>不公開 email</strong>：您的 email 不會顯示於前台，僅供平台內部識別帳號及在必要時（見下方「資料分享」）配合調查使用。</li>
+              <li><strong>選擇公開 email</strong>：提交當下的 email 快照將隨顯示名稱一同公開呈現在該筆內容上，供其他訪客查看。</li>
+              <li><strong>不公開 email</strong>：email 快照仍會為濫用追溯而保存在業務資料庫，但公開 API、頁面與 SSR 原始碼不會回傳；僅限具管理權限者於必要時存取。</li>
             </ul>
-            <p class="leading-relaxed text-gray-700">
-              帳號 ID（來自 OAuth provider）一律不公開顯示，僅供內部使用。
-            </p>
+            <p class="leading-relaxed text-gray-700">user ID 是 Better Auth 產生的平台內部識別碼，不是 Google 或 GitHub 的公開帳號名稱；一律不公開顯示。志願者送出的彙整目前也不公開任何作者欄位。</p>
           </section>
 
           <section class="mb-8">
@@ -63,22 +63,20 @@ const { t } = useI18n()
 
           <section class="mb-8">
             <h2 class="mb-3 text-xl font-semibold">資料分享</h2>
-            <p class="mb-3 leading-relaxed text-gray-700">
-              除必要的基礎設施服務（Cloudflare Workers 平台）外，平台不會將您的個人資料出售、出租或分享給第三方用於商業目的。
-            </p>
+            <p class="mb-3 leading-relaxed text-gray-700">除必要的基礎設施服務（Cloudflare Workers 平台）外，平台不會將您的個人資料出售、出租或分享給第三方用於商業目的。</p>
             <div class="mb-3 border-l-4 border-amber-400 bg-amber-50 p-4">
               <p class="font-semibold text-amber-800">執法配合聲明</p>
               <p class="mt-1 text-amber-900">
-                若有使用者濫用平台（包含但不限於散布不實資訊、騷擾他人、非法內容等），平台保留依法配合主管機關（包含警察機關）調查、提供相關使用記錄的權利。<strong>上述記錄包括但不限於：帳號 ID、OAuth 顯示名稱、email（無論使用者是否選擇公開）、提交時間與 IP 位址等技術資料。</strong>
+                若有使用者濫用平台（包含但不限於散布不實資訊、騷擾他人、非法內容等），平台保留依法配合主管機關（包含警察機關）調查、提供相關使用記錄的權利。<strong
+                  >上述記錄包括但不限於：帳號 ID、OAuth 顯示名稱、email（無論使用者是否選擇公開）、提交時間與 IP 位址等技術資料。</strong
+                >
               </p>
             </div>
           </section>
 
           <section class="mb-8">
             <h2 class="mb-3 text-xl font-semibold">資料安全</h2>
-            <p class="leading-relaxed text-gray-700">
-              平台以 Cloudflare Workers 部署，並以 D1（SQLite）儲存資料。我們採取合理的技術措施保護資料安全，防止未經授權的存取。
-            </p>
+            <p class="leading-relaxed text-gray-700">平台以 Cloudflare Workers 部署，並以 D1（SQLite）儲存資料。我們採取合理的技術措施保護資料安全，防止未經授權的存取。</p>
           </section>
 
           <section class="mb-8">
@@ -87,7 +85,10 @@ const { t } = useI18n()
             <ul class="mb-3 list-disc pl-6 leading-relaxed text-gray-700">
               <li><strong>存取權</strong>：要求查看平台持有的您的個人資料</li>
               <li><strong>更正權</strong>：若您的 OAuth 顯示名稱已更新，下次登入後提交的內容將反映新名稱；歷史記錄中的顯示名稱為提交當下的快照，平台不提供追溯修改。</li>
-              <li><strong>刪除權</strong>：要求刪除您的帳號記錄，惟已公開的議題、素材與意見仍可能以匿名方式保留</li>
+              <li>
+                <strong>刪除與匿名化權</strong
+                >：要求刪除帳號或匿名化內容中的作者快照。由於內容資料與共用認證資料庫分開保存，刪除登入帳號不會自動刪除既有內容的作者快照；平台收到請求後會另行處理，惟依法或為處理爭議所需者可能在必要期間內保留。
+              </li>
             </ul>
             <p class="leading-relaxed text-gray-700">如需行使上述權利，請透過下方聯絡方式與我們聯絡。</p>
           </section>
