@@ -63,6 +63,7 @@ export const messages = {
   stance_unknown: '立場未知',
   vol_title: '志願者工具',
   vol_intro: '平台不直接呼叫 AI API。請用以下工具生成 prompt，貼到你自己的 Claude / ChatGPT / Gemini，再把輸出結果貼回平台。',
+  vol_login_desc: '使用志願者工具需要先登入，以確保 prompt 的使用與彙整內容異動都能追溯。',
   vol_step1: '生成彙整 prompt',
   vol_step2: '貼到你的 AI',
   vol_step3: '把結果貼回來',

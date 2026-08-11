@@ -62,6 +62,8 @@ const opinionInput = ref('')
 const { authState, ensureAuthSession } = useAuth()
 // 送出時才發現 session 過期：意見框留著（別吃掉使用者打的字），只在上方補一列重新登入
 const sessionExpired = ref(false)
+// 志願者工具同樣需要登入；若操作時 session 過期，保留已填內容並引導重新登入。
+const volunteerSessionExpired = ref(false)
 // 登入後導回這一頁的意見分頁
 const loginCallbackUrl = computed(() => `/issues/${props.issueId}`)
 
@@ -155,6 +157,11 @@ function renderPolis() {
 
 async function loadPrompt(type: 'summarize' | 'narrative' | 'synthesis') {
   const res = await fetch(`/api/issues/${props.issueId}/prompt?type=${type}`)
+  if (res.status === 401) {
+    volunteerSessionExpired.value = true
+    toast.value?.show(t('login_expired_toast'))
+    return
+  }
   if (!res.ok) {
     const e = await res.json().catch(() => ({}))
     toast.value?.show((e as { error?: string }).error || t('vol_toast_load_fail'))
@@ -191,6 +198,11 @@ async function submitSummarize() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
+  if (res.status === 401) {
+    volunteerSessionExpired.value = true
+    toast.value?.show(t('login_expired_toast'))
+    return
+  }
   if (res.ok) {
     toast.value?.show(t('vol_toast_summarize_ok'))
     await loadIssue()
@@ -214,6 +226,11 @@ async function submitNarrative() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
+  if (res.status === 401) {
+    volunteerSessionExpired.value = true
+    toast.value?.show(t('login_expired_toast'))
+    return
+  }
   if (res.ok) {
     toast.value?.show(t('vol_toast_narrative_ok'))
     await loadIssue()
@@ -426,73 +443,87 @@ async function submitOpinion() {
           <section v-show="activeTab === 'volunteer'">
             <h2 class="mt-0 mb-2 font-serif text-xl">{{ t('vol_title') }}</h2>
             <p class="mb-6 text-muted">{{ t('vol_intro') }}</p>
-            <p class="mb-6 text-sm text-muted">{{ t('vol_step1') }} → {{ t('vol_step2') }} → {{ t('vol_step3') }}</p>
+            <p v-if="authState === 'loading'" class="m-0 text-muted">{{ t('loading') }}</p>
 
-            <div class="card mb-4">
-              <h3 class="mt-0 mb-2 text-base">{{ t('vol_s1_title') }}</h3>
-              <p class="mb-3 text-sm text-muted">{{ t('vol_s1_desc') }}</p>
-              <div class="mb-3 flex flex-wrap gap-2">
-                <button type="button" class="btn btn-primary btn-sm" @click="loadPrompt('summarize')">
-                  {{ t('vol_gen_summarize') }}
-                </button>
-                <button v-if="promptVisible.summarize" type="button" class="btn btn-secondary btn-sm" @click="copyPrompt('summarize')">
-                  {{ t('vol_copy') }}
-                </button>
-              </div>
-              <div v-if="promptVisible.summarize" class="prompt-box mb-4">{{ promptText.summarize }}</div>
-              <p class="mb-2 text-sm font-medium">{{ t('vol_paste_title') }}</p>
-              <p class="mb-3 text-sm text-muted">{{ t('vol_paste_desc') }}</p>
-              <div class="form-group">
-                <label>{{ t('vol_label_consensus') }}</label>
-                <textarea v-model="consensus" rows="3" :placeholder="t('vol_ph_consensus')" />
-              </div>
-              <div class="form-group">
-                <label>{{ t('vol_label_disputes') }}</label>
-                <textarea v-model="disputes" rows="3" :placeholder="t('vol_ph_disputes')" />
-              </div>
-              <div class="form-group">
-                <label>{{ t('vol_label_positions') }}</label>
-                <textarea v-model="positions" rows="4" :placeholder="t('vol_ph_positions')" />
-              </div>
-              <button type="button" class="btn btn-primary" @click="submitSummarize">
-                {{ t('vol_submit_summarize') }}
-              </button>
-            </div>
+            <template v-else-if="authState === 'anonymous'">
+              <p class="mb-4 text-muted">{{ t('vol_login_desc') }}</p>
+              <SignInButtons :callback-url="loginCallbackUrl" />
+              <p class="mt-4 mb-0 text-sm text-muted">{{ t('login_shared_account_hint') }}</p>
+            </template>
 
-            <div class="card mb-4">
-              <h3 class="mt-0 mb-2 text-base">{{ t('vol_s2_title') }}</h3>
-              <p class="mb-3 text-sm text-muted">{{ t('vol_s2_desc') }}</p>
-              <div class="mb-3 flex flex-wrap gap-2">
-                <button type="button" class="btn btn-primary btn-sm" @click="loadPrompt('narrative')">
-                  {{ t('vol_gen_narrative') }}
-                </button>
-                <button v-if="promptVisible.narrative" type="button" class="btn btn-secondary btn-sm" @click="copyPrompt('narrative')">
-                  {{ t('vol_copy') }}
-                </button>
+            <template v-else>
+              <div v-if="volunteerSessionExpired" class="alert alert-warn mb-5">
+                <p class="mt-0 mb-3">{{ t('login_expired_hint') }}</p>
+                <SignInButtons :callback-url="loginCallbackUrl" />
               </div>
-              <div v-if="promptVisible.narrative" class="prompt-box mb-4">{{ promptText.narrative }}</div>
-              <div class="form-group">
-                <label>{{ t('vol_paste_narrative') }}</label>
-                <textarea v-model="narrative" rows="6" :placeholder="t('vol_ph_narrative')" />
-              </div>
-              <button type="button" class="btn btn-primary" @click="submitNarrative">
-                {{ t('vol_submit_narrative') }}
-              </button>
-            </div>
+              <p class="mb-6 text-sm text-muted">{{ t('vol_step1') }} → {{ t('vol_step2') }} → {{ t('vol_step3') }}</p>
 
-            <div class="card">
-              <h3 class="mt-0 mb-2 text-base">{{ t('vol_s3_title') }}</h3>
-              <p class="mb-3 text-sm text-muted">{{ t('vol_s3_desc') }}</p>
-              <div class="mb-3 flex flex-wrap gap-2">
-                <button type="button" class="btn btn-primary btn-sm" @click="loadPrompt('synthesis')">
-                  {{ t('vol_gen_synthesis') }}
-                </button>
-                <button v-if="promptVisible.synthesis" type="button" class="btn btn-secondary btn-sm" @click="copyPrompt('synthesis')">
-                  {{ t('vol_copy') }}
+              <div class="card mb-4">
+                <h3 class="mt-0 mb-2 text-base">{{ t('vol_s1_title') }}</h3>
+                <p class="mb-3 text-sm text-muted">{{ t('vol_s1_desc') }}</p>
+                <div class="mb-3 flex flex-wrap gap-2">
+                  <button type="button" class="btn btn-primary btn-sm" @click="loadPrompt('summarize')">
+                    {{ t('vol_gen_summarize') }}
+                  </button>
+                  <button v-if="promptVisible.summarize" type="button" class="btn btn-secondary btn-sm" @click="copyPrompt('summarize')">
+                    {{ t('vol_copy') }}
+                  </button>
+                </div>
+                <div v-if="promptVisible.summarize" class="prompt-box mb-4">{{ promptText.summarize }}</div>
+                <p class="mb-2 text-sm font-medium">{{ t('vol_paste_title') }}</p>
+                <p class="mb-3 text-sm text-muted">{{ t('vol_paste_desc') }}</p>
+                <div class="form-group">
+                  <label>{{ t('vol_label_consensus') }}</label>
+                  <textarea v-model="consensus" rows="3" :placeholder="t('vol_ph_consensus')" />
+                </div>
+                <div class="form-group">
+                  <label>{{ t('vol_label_disputes') }}</label>
+                  <textarea v-model="disputes" rows="3" :placeholder="t('vol_ph_disputes')" />
+                </div>
+                <div class="form-group">
+                  <label>{{ t('vol_label_positions') }}</label>
+                  <textarea v-model="positions" rows="4" :placeholder="t('vol_ph_positions')" />
+                </div>
+                <button type="button" class="btn btn-primary" @click="submitSummarize">
+                  {{ t('vol_submit_summarize') }}
                 </button>
               </div>
-              <div v-if="promptVisible.synthesis" class="prompt-box">{{ promptText.synthesis }}</div>
-            </div>
+
+              <div class="card mb-4">
+                <h3 class="mt-0 mb-2 text-base">{{ t('vol_s2_title') }}</h3>
+                <p class="mb-3 text-sm text-muted">{{ t('vol_s2_desc') }}</p>
+                <div class="mb-3 flex flex-wrap gap-2">
+                  <button type="button" class="btn btn-primary btn-sm" @click="loadPrompt('narrative')">
+                    {{ t('vol_gen_narrative') }}
+                  </button>
+                  <button v-if="promptVisible.narrative" type="button" class="btn btn-secondary btn-sm" @click="copyPrompt('narrative')">
+                    {{ t('vol_copy') }}
+                  </button>
+                </div>
+                <div v-if="promptVisible.narrative" class="prompt-box mb-4">{{ promptText.narrative }}</div>
+                <div class="form-group">
+                  <label>{{ t('vol_paste_narrative') }}</label>
+                  <textarea v-model="narrative" rows="6" :placeholder="t('vol_ph_narrative')" />
+                </div>
+                <button type="button" class="btn btn-primary" @click="submitNarrative">
+                  {{ t('vol_submit_narrative') }}
+                </button>
+              </div>
+
+              <div class="card">
+                <h3 class="mt-0 mb-2 text-base">{{ t('vol_s3_title') }}</h3>
+                <p class="mb-3 text-sm text-muted">{{ t('vol_s3_desc') }}</p>
+                <div class="mb-3 flex flex-wrap gap-2">
+                  <button type="button" class="btn btn-primary btn-sm" @click="loadPrompt('synthesis')">
+                    {{ t('vol_gen_synthesis') }}
+                  </button>
+                  <button v-if="promptVisible.synthesis" type="button" class="btn btn-secondary btn-sm" @click="copyPrompt('synthesis')">
+                    {{ t('vol_copy') }}
+                  </button>
+                </div>
+                <div v-if="promptVisible.synthesis" class="prompt-box">{{ promptText.synthesis }}</div>
+              </div>
+            </template>
           </section>
 
           <!-- Opinions -->

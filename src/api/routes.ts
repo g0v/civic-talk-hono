@@ -233,6 +233,10 @@ export function registerApiRoutes(app: App): void {
   })
 
   app.post('/api/issues/:id/briefing', async c => {
+    // 志願者工具會產生 prompt 並回寫彙整／說明頁；與其他投稿一樣要求登入，
+    // 才能確保工具使用與內容異動都有可追溯的帳號。
+    const auth = await requireUser(c.req.raw, c.env)
+    if ('denied' in auth) return auth.denied
     const id = parseId(c.req.param('id'))
     if (!id) return error('Invalid id')
     const issue = await db.getIssue(c.env.DB, id)
@@ -310,6 +314,9 @@ export function registerApiRoutes(app: App): void {
   })
 
   app.get('/api/issues/:id/prompt', async c => {
+    // Prompt 是志願者工具的一部分，不對匿名使用者提供。
+    const auth = await requireUser(c.req.raw, c.env)
+    if ('denied' in auth) return auth.denied
     const id = parseId(c.req.param('id'))
     if (!id) return error('Invalid id')
     const type = c.req.query('type') ?? 'summarize'
