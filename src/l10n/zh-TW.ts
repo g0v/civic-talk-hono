@@ -111,7 +111,7 @@ export const messages = {
   op_alert: '先下載 <strong>OPINION.md</strong>，貼到你慣用的 AI chatbot 對話，聊完後把 AI 幫你整理的摘要貼回這裡。你的原始對話不需要上傳，只需要摘要。',
   op_download_btn: '⬇️ 下載 OPINION.md',
   op_submit_title: '提交你的意見摘要',
-  op_login_desc: '提交意見需要先登入，以確保意見品質，並在有濫用時可以追溯。你的名字不會公開顯示在意見上。',
+  op_login_desc: '提交意見需要先登入，以確保意見品質，並在有濫用時可以追溯。提交後，你的顯示名稱將公開附在意見上。',
   op_label_summary: '請把 AI 幫你整理的意見摘要貼在這裡',
   op_hint_summary: '100~500 字為佳',
   op_ph_summary: '（AI 幫你整理的文字）我在這個議題上比較在乎的是……我的觀點是……',
@@ -273,7 +273,7 @@ export const messages = {
   contrib_back: '← 返回議題',
   contrib_login_title: '請先登入再提交素材',
   contrib_login_desc: '素材會成為議題說明的依據，因此需要登入才能提交：一方面確保素材品質，另一方面若有濫用也能追溯與究責。',
-  contrib_login_hint: '與 vTaiwan 共用同一組帳號；同一個 email 用哪種方式登入都是同一個帳號。你的名字不會公開顯示在素材上，只有管理員看得到。',
+  contrib_login_hint: '與 vTaiwan 共用同一組帳號；同一個 email 用哪種方式登入都是同一個帳號。提交後，你的 OAuth 顯示名稱將公開附在素材上，以示負責。',
   contrib_signed_in_as: '以 {name} 的身分提交',
   footer_desc: '公共政策的開放審議平台，讓每個人都能參與台灣的未來。',
   footer_copy: '© 2026 vTaiwan · CC-BY-SA 4.0',
@@ -304,6 +304,29 @@ export const messages = {
   nf_title: '找不到頁面',
   nf_desc: '這個網址可能已經移動、輸入錯誤，或內容已經被刪除。',
   nf_home_btn: '回首頁',
+  // 提交者顯示（#27）
+  author_system: '系統資料',
+  mat_author_label: '提交者',
+  op_author_label: '提交者',
+  issue_author_label: '建立者',
+  // 使用條款與隱私權政策同意 checkbox（#27）
+  tos_agree_prefix: '我已閱讀並同意 ',
+  tos_agree_mid: ' 與 ',
+  tos_agree_suffix: '，並了解建立議題、提交素材與意見均為具名行為，以示負責。',
+  tos_terms_link: '使用條款',
+  tos_privacy_link: '隱私權政策',
+  tos_required_toast: '請先閱讀並同意使用條款與隱私權政策',
+  // Footer 連結（#27）
+  footer_terms: '使用條款',
+  footer_privacy: '隱私權政策',
+  // 隱私權政策頁與使用條款頁（#27）
+  privacy_page_title: '隱私權政策',
+  terms_page_title: '使用條款',
+  policy_back_home: '回首頁',
+  // Email 公開選項（#27）
+  show_email_label: '公開我的 email：{email}',
+  show_email_hint: '（選填，讓閱覽者可以聯繫你，增加公信度）',
+  author_email_label: 'Email',
 } as const
 
 export type MessageKey = keyof typeof messages

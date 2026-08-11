@@ -96,7 +96,7 @@ export function registerApiRoutes(app: App): void {
   app.post('/api/issues', async c => {
     const auth = await requireUser(c.req.raw, c.env)
     if ('denied' in auth) return auth.denied
-    let body: { title?: string; description?: string; polis_id?: string | null }
+    let body: { title?: string; description?: string; polis_id?: string | null; show_email?: boolean }
     try {
       body = await c.req.json()
     } catch {
@@ -108,8 +108,8 @@ export function registerApiRoutes(app: App): void {
       description: body.description ?? '',
       polis_id: body.polis_id ?? null,
       author_id: auth.context.user.id,
-      // 顯示名稱可能是空字串（某些 provider 沒給 name），退回 email 才有辨識度
       author_name: auth.context.user.name || auth.context.user.email,
+      author_email: body.show_email ? auth.context.user.email : null,
     })
     return json({ id, title: body.title.trim() }, 201)
   })
@@ -206,6 +206,7 @@ export function registerApiRoutes(app: App): void {
       source_name?: string
       source_url?: string
       stance?: Stance
+      show_email?: boolean
     }
     try {
       body = await c.req.json()
@@ -219,8 +220,8 @@ export function registerApiRoutes(app: App): void {
       source_url: body.source_url ?? '',
       stance: body.stance ?? 'unknown',
       author_id: auth.context.user.id,
-      // 顯示名稱可能是空字串（某些 provider 沒給 name），退回 email 才有辨識度
       author_name: auth.context.user.name || auth.context.user.email,
+      author_email: body.show_email ? auth.context.user.email : null,
     })
     return json({ id: materialId }, 201)
   })
@@ -298,7 +299,7 @@ export function registerApiRoutes(app: App): void {
     if (!id) return error('Invalid id')
     const issue = await db.getIssue(c.env.DB, id)
     if (!issue) return error('Issue not found', 404)
-    let body: { summary?: string }
+    let body: { summary?: string; show_email?: boolean }
     try {
       body = await c.req.json()
     } catch {
@@ -309,6 +310,7 @@ export function registerApiRoutes(app: App): void {
       summary: body.summary.trim(),
       author_id: auth.context.user.id,
       author_name: auth.context.user.name || auth.context.user.email,
+      author_email: body.show_email ? auth.context.user.email : null,
     })
     return json({ id: opinionId }, 201)
   })

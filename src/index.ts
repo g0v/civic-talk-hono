@@ -4,7 +4,7 @@ import { registerAuthRoutes } from './api/auth'
 import type { AppBindings } from './api/types'
 import { listIssues, getIssue, getIssueDetail, getMaterialWithIssue, getOpinionWithIssue } from './db/queries'
 import { renderPage } from './ssr/render'
-import { headForAbout, headForAdmin, headForContribute, headForHome, headForIssue, headForMaterial, headForNotFound, headForOpinion } from './ssr/heads'
+import { headForAbout, headForAdmin, headForContribute, headForHome, headForIssue, headForMaterial, headForNotFound, headForOpinion, headForPrivacy, headForTerms } from './ssr/heads'
 import HomeView from './views/Home.vue'
 import AboutView from './views/About.vue'
 import IssueView from './views/Issue.vue'
@@ -13,6 +13,8 @@ import AdminView from './views/Admin.vue'
 import MaterialDetailView from './views/MaterialDetail.vue'
 import OpinionDetailView from './views/OpinionDetail.vue'
 import NotFoundView from './views/NotFound.vue'
+import PrivacyView from './views/Privacy.vue'
+import TermsView from './views/Terms.vue'
 
 const app = new Hono<{ Bindings: AppBindings }>()
 
@@ -123,6 +125,17 @@ app.get('/admin', async c => {
   const html = await renderPage(AdminView, {}, headForAdmin(origin), {
     hydrate: { page: 'admin', state: {} },
   })
+  return c.html(html)
+})
+app.get('/privacy', async c => {
+  const origin = new URL(c.req.url).origin
+  const html = await renderPage(PrivacyView, {}, headForPrivacy(origin))
+  return c.html(html)
+})
+
+app.get('/terms', async c => {
+  const origin = new URL(c.req.url).origin
+  const html = await renderPage(TermsView, {}, headForTerms(origin))
   return c.html(html)
 })
 

@@ -112,7 +112,7 @@ export const messages = {
   op_alert: "Download <strong>OPINION.md</strong>, paste it into your AI chatbot, then paste the AI-generated summary back here. You don't need to share your full conversation — just the summary.",
   op_download_btn: '⬇️ Download OPINION.md',
   op_submit_title: 'Submit Your Opinion Summary',
-  op_login_desc: 'Submitting an opinion requires signing in, to keep the quality up and make abuse traceable. Your name is not shown publicly on opinions.',
+  op_login_desc: 'Submitting an opinion requires signing in, to keep the quality up and make abuse traceable. Your display name will be publicly shown on submitted opinions.',
   op_label_summary: 'Paste your AI-generated opinion summary here',
   op_hint_summary: '100–500 words recommended',
   op_ph_summary: '(AI-generated text) What I care most about in this issue is… My view is…',
@@ -279,7 +279,7 @@ export const messages = {
   contrib_back: '← Back to issue',
   contrib_login_title: 'Sign in to submit material',
   contrib_login_desc: 'Materials become the basis of an issue briefing, so submitting requires signing in: it keeps the quality up, and makes abuse traceable and accountable.',
-  contrib_login_hint: 'Accounts are shared with vTaiwan; the same email is the same account whichever provider you use. Your name is not shown publicly on materials — only admins can see it.',
+  contrib_login_hint: 'Accounts are shared with vTaiwan; the same email is the same account whichever provider you use. Your OAuth display name will be publicly shown on submitted materials.',
   contrib_signed_in_as: 'Submitting as {name}',
   footer_desc: "An open deliberation platform for public policy — everyone can shape Taiwan's future.",
   footer_copy: '© 2026 vTaiwan · CC-BY-SA 4.0',
@@ -310,4 +310,27 @@ export const messages = {
   nf_title: 'Page Not Found',
   nf_desc: 'This page may have moved, the link might be mistyped, or the content may have been removed.',
   nf_home_btn: 'Back to Home',
+  // Submitter display (#27)
+  author_system: 'System Data',
+  mat_author_label: 'Submitted by',
+  op_author_label: 'Submitted by',
+  issue_author_label: 'Created by',
+  // Terms and Privacy checkbox (#27)
+  tos_agree_prefix: 'I have read and agree to the ',
+  tos_agree_mid: ' and ',
+  tos_agree_suffix: ', and understand that creating issues, submitting materials, and posting opinions are attributed actions.',
+  tos_terms_link: 'Terms of Service',
+  tos_privacy_link: 'Privacy Policy',
+  tos_required_toast: 'Please read and agree to the Terms of Service and Privacy Policy',
+  // Footer links (#27)
+  footer_terms: 'Terms',
+  footer_privacy: 'Privacy',
+  // Privacy policy and Terms of Service pages (#27)
+  privacy_page_title: 'Privacy Policy',
+  terms_page_title: 'Terms of Service',
+  policy_back_home: 'Back to Home',
+  // Email disclosure option (#27)
+  show_email_label: 'Make my email public: {email}',
+  show_email_hint: '(optional; lets readers contact you and adds credibility)',
+  author_email_label: 'Email',
 } as const

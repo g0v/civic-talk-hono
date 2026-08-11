@@ -20,10 +20,13 @@ const showForm = ref(false)
 const title = ref('')
 const description = ref('')
 const submitting = ref(false)
+const issueTosAgreed = ref(false)
+// Email 公開選項（#27）
+const issueShowEmail = ref(false)
 const toast = ref<{ show: (msg: string) => void } | null>(null)
 
 // 全站共用的登入狀態（與 AppHeader 共用同一次 /api/me）；SSR 期間永遠是 'loading'
-const { authState, ensureAuthSession } = useAuth()
+const { authState, session, ensureAuthSession } = useAuth()
 // 送出時才發現 session 過期：表單留著（別吃掉使用者打的字），只在上方補一列重新登入
 const sessionExpired = ref(false)
 
@@ -72,12 +75,16 @@ async function createIssue() {
     toast.value?.show(t('idx_toast_title_required'))
     return
   }
+  if (!issueTosAgreed.value) {
+    toast.value?.show(t('tos_required_toast'))
+    return
+  }
   submitting.value = true
   try {
     const res = await fetch('/api/issues', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: title.value.trim(), description: description.value }),
+      body: JSON.stringify({ title: title.value.trim(), description: description.value, show_email: issueShowEmail.value }),
     })
     // session 可能在填表期間過期——守門在伺服器端，前端接住 401 但保留已填內容
     if (res.status === 401) {
@@ -99,6 +106,8 @@ async function createIssue() {
     showForm.value = false
     title.value = ''
     description.value = ''
+    issueTosAgreed.value = false
+    issueShowEmail.value = false
     setTimeout(() => {
       window.location.href = `/issues/${data.id}`
     }, 800)
@@ -168,6 +177,18 @@ async function createIssue() {
                 <span class="label-hint">{{ t('idx_hint_desc') }}</span>
               </label>
               <textarea v-model="description" rows="3" :placeholder="t('idx_ph_desc')" />
+            </div>
+            <div class="form-group">
+              <label class="flex items-start gap-2 font-normal">
+                <input v-model="issueTosAgreed" type="checkbox" class="mt-1 w-auto" />
+                <span>{{ t('tos_agree_prefix') }}<a href="/terms" target="_blank" class="underline">{{ t('tos_terms_link') }}</a>{{ t('tos_agree_mid') }}<a href="/privacy" target="_blank" class="underline">{{ t('tos_privacy_link') }}</a>{{ t('tos_agree_suffix') }}</span>
+              </label>
+            </div>
+            <div class="form-group">
+              <label class="flex items-start gap-2 font-normal">
+                <input v-model="issueShowEmail" type="checkbox" class="mt-1 w-auto" />
+                <span>{{ t('show_email_label', { email: session?.user.email || '' }) }} <span class="text-muted">{{ t('show_email_hint') }}</span></span>
+              </label>
             </div>
             <div class="flex gap-2">
               <button type="button" class="btn btn-primary" :disabled="submitting" @click="createIssue">
