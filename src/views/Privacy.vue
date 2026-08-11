@@ -49,7 +49,7 @@ const { t } = useI18n()
               <li><strong>選擇公開 email</strong>：提交當下的 email 快照將隨顯示名稱一同公開呈現在該筆內容上，供其他訪客查看。</li>
               <li><strong>不公開 email</strong>：email 快照仍會為濫用追溯而保存在業務資料庫，但公開 API、頁面與 SSR 原始碼不會回傳；僅限具管理權限者於必要時存取。</li>
             </ul>
-            <p class="leading-relaxed text-gray-700">user ID 是 Better Auth 產生的平台內部識別碼，不是 Google 或 GitHub 的公開帳號名稱；一律不公開顯示。志願者送出的彙整目前也不公開任何作者欄位。</p>
+            <p class="leading-relaxed text-gray-700">user ID 是 Better Auth 產生的平台內部識別碼，不是 Google 或 GitHub 的公開帳號名稱；一律不公開顯示。議題、素材、意見與說明頁都會公開顯示提交當下的顯示名稱；email 僅在該筆內容勾選公開時才顯示。</p>
           </section>
 
           <section class="mb-8">

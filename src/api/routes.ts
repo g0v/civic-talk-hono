@@ -275,14 +275,16 @@ export function registerApiRoutes(app: App): void {
       positions?: string
       narrative?: string
       opinion_prompt?: string
+      show_email?: unknown
     }
     try {
       body = await c.req.json()
     } catch {
       return error('Invalid JSON')
     }
-    // briefing 作者目前不公開，仍保存完整快照供稽核；show_email 固定為 false。
-    const version = await db.createBriefing(c.env.DB, id, buildAuthorSnapshot(auth.context.user, false), body)
+    if (body.show_email !== undefined && typeof body.show_email !== 'boolean') return error('show_email must be a boolean')
+    // 說明頁公開顯示投稿當下名稱；email 僅在 show_email = true 時公開。
+    const version = await db.createBriefing(c.env.DB, id, buildAuthorSnapshot(auth.context.user, body.show_email === true), body)
     return json({ version }, 201)
   })
 

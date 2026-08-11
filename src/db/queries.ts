@@ -75,6 +75,10 @@ export interface MaterialWithAuthor extends Material {
   terms_accepted_at: string | null
 }
 
+/**
+ * 說明頁的**公開**形狀——含 author_name（#27），email 僅在 show_email = 1 時投影。
+ * author_id／show_email 不進公開回應或 SSR state。
+ */
 export interface Briefing {
   id: number
   issue_id: number
@@ -85,13 +89,13 @@ export interface Briefing {
   opinion_prompt: string | null
   version: number
   created_at: string
+  author_name: string | null
+  author_email: string | null
 }
 
 /** briefing + 完整作者快照（僅供管理端） */
 export interface BriefingWithAuthor extends Briefing {
   author_id: string | null
-  author_name: string | null
-  author_email: string | null
   show_email: AuthorVisibility
 }
 
@@ -236,8 +240,9 @@ export async function deleteMaterial(db: D1Database, id: number): Promise<void> 
   await db.prepare('DELETE FROM ct_materials WHERE id = ?').bind(id).run()
 }
 
-const BRIEFING_PUBLIC_COLUMNS = 'id, issue_id, consensus, disputes, positions, narrative, opinion_prompt, version, created_at'
-const BRIEFING_ADMIN_COLUMNS = `${BRIEFING_PUBLIC_COLUMNS}, ${PRIVATE_AUTHOR_COLUMNS}`
+const BRIEFING_BASE_COLUMNS = 'id, issue_id, consensus, disputes, positions, narrative, opinion_prompt, version, created_at'
+const BRIEFING_PUBLIC_COLUMNS = `${BRIEFING_BASE_COLUMNS}, ${PUBLIC_AUTHOR_COLUMNS}`
+const BRIEFING_ADMIN_COLUMNS = `${BRIEFING_BASE_COLUMNS}, ${PRIVATE_AUTHOR_COLUMNS}`
 
 export async function getLatestBriefing(db: D1Database, issueId: number): Promise<Briefing | null> {
   return db.prepare(`SELECT ${BRIEFING_PUBLIC_COLUMNS} FROM ct_briefings WHERE issue_id = ? ORDER BY version DESC LIMIT 1`).bind(issueId).first<Briefing>()

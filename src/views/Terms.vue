@@ -37,7 +37,7 @@ const { t } = useI18n()
               <p class="font-semibold text-red-800">重要：在本平台提交任何內容均為具名行為</p>
             </div>
             <p class="mb-3 leading-relaxed text-gray-700">
-              <strong>建立議題、提交素材、發表意見</strong>均為具名行為。提交後，您提交當下的 OAuth 顯示名稱快照將公開附在對應內容上，所有訪客均可查看；日後修改帳號名稱不會追溯變更既有內容的署名。
+              <strong>建立議題、提交素材、發表意見、送出說明頁／彙整</strong>均為具名行為。提交後，您提交當下的 OAuth 顯示名稱快照將公開附在對應內容上，所有訪客均可查看；日後修改帳號名稱不會追溯變更既有內容的署名。
             </p>
             <p class="mb-3 leading-relaxed text-gray-700">
               提交時，您可以勾選「公開我的 email」選項。平台會保存提交當下的 email 快照；若選擇公開，該快照將隨顯示名稱公開顯示，若未選擇則不會出現在公開 API、頁面或 SSR

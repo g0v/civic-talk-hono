@@ -61,8 +61,9 @@ describe('作者資料隱私守護', () => {
     await listIssues(db)
     await listMaterials(db, 1)
     await listOpinions(db, 1)
+    await getLatestBriefing(db, 1)
 
-    expect(sql).toHaveLength(3)
+    expect(sql).toHaveLength(4)
     for (const query of sql) {
       expect(query).toContain('CASE WHEN show_email = 1 THEN author_email ELSE NULL END AS author_email')
       expect(query).not.toContain('author_id')
@@ -79,12 +80,13 @@ describe('作者資料隱私守護', () => {
     expect(sql[0]).toContain('terms_version, terms_accepted_at')
   })
 
-  it('briefing 公開查詢遮蔽作者，管理端查詢才取得完整快照', async () => {
+  it('briefing 公開查詢只投影名稱與 opt-in email，管理端才取得完整快照', async () => {
     const { db, sql } = recordingDb()
 
     await getLatestBriefing(db, 1)
     await getLatestBriefingWithAuthor(db, 1)
 
+    expect(sql[0]).toContain('CASE WHEN show_email = 1 THEN author_email ELSE NULL END AS author_email')
     expect(sql[0]).not.toContain('author_id')
     expect(sql[1]).toContain('author_id, author_name, author_email, show_email')
   })

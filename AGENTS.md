@@ -56,7 +56,7 @@ Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑�
 - `migrations/0001_init.sql` — `ct_issues`／`ct_materials`／`ct_briefings`／`ct_opinions`（含 FK、索引、約束、示範資料）。
 - `migrations/0002_material_author.sql` — `ct_materials` 加上 `author_id`／`author_name`（#9 的投稿者記錄）。本機與遠端皆已套用；#27 起 name 公開、ID 仍只給管理端。
 - `migrations/0003_issue_opinion_author.sql` — `ct_issues` 與 `ct_opinions` 也加上 `author_id`／`author_name`。本機與遠端皆已套用；公開規則同上。
-- `migrations/0004_briefing_author.sql` — `ct_briefings` 加上 `author_id`（志願者送出 briefing 的帳號；不公開）。本機與遠端皆已套用。
+- `migrations/0004_briefing_author.sql` — `ct_briefings` 加上 `author_id`（志願者送出 briefing 的帳號）。本機與遠端皆已套用；公開顯示規則同其他內容。
 - `migrations/0005_author_email.sql` — 四種內容補齊投稿當下的作者快照；`author_email` 一律保存，`show_email`（0／1）只控制前台是否公開。本機與遠端皆已套用。遠端先前另有舊檔名 `0004_author_email.sql`（只加三表 `author_email`），因此遠端是補齊 `show_email` 與 briefing 快照後再標記 0005 已套用。
 - `migrations/0006_submission_consent.sql` — 議題、素材與意見保存伺服器端確認的 `terms_version`／`terms_accepted_at`。本機與遠端皆已套用。
 - `src/ssr/render.ts` — SSR + 注入 `window.__PAGE__`／`__SSR_STATE__` + `/js/civic.js`（dev 走 `/src/client/civic-entry.ts`）。
@@ -191,7 +191,7 @@ Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑�
 | `GET`    | `/api/issues/:id/materials` | 素材列表（公開顯示 `author_name`，email 僅依 opt-in 顯示；管理員另拿完整作者快照）     |
 | `POST`   | `/api/issues/:id/materials` | 投稿素材（**需登入**，#9；`collecting` → `summarizing` 狀態轉換）                      |
 | `DELETE` | `/api/materials/:id`        | 刪除素材（admin）                                                                      |
-| `GET`    | `/api/issues/:id/briefing`  | 取得說明頁（公開不含作者；管理員另拿完整作者快照）                                     |
+| `GET`    | `/api/issues/:id/briefing`  | 取得說明頁（公開顯示 `author_name`，email 僅依 opt-in；管理員另拿完整作者快照） |
 | `POST`   | `/api/issues/:id/briefing`  | 新增說明頁（**需登入**；版本遞增；→ `published`）                                      |
 | `PUT`    | `/api/issues/:id/briefing`  | 編輯說明頁（admin）                                                                    |
 | `GET`    | `/api/issues/:id/opinions`  | 意見列表                                                                               |
@@ -211,12 +211,12 @@ Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑�
 
 ### 投稿與志願者工具需登入（#9 與使用者裁示帶來的變更）
 
-✅ **已完成。** `POST /api/issues`、`POST /api/issues/:id/materials`、`POST /api/issues/:id/opinions`、`POST /api/issues/:id/briefing` 與 `GET /api/issues/:id/prompt` 都走 `src/api/routes.ts` 的 `requireUser()`：**只看有沒有登入，不看角色**（一般 `user` 就能使用）。未登入回 `401`；停權帳號回 `403`。四種寫入都保存投稿當下的完整作者快照；briefing 作者仍完全不公開。
+✅ **已完成。** `POST /api/issues`、`POST /api/issues/:id/materials`、`POST /api/issues/:id/opinions`、`POST /api/issues/:id/briefing` 與 `GET /api/issues/:id/prompt` 都走 `src/api/routes.ts` 的 `requireUser()`：**只看有沒有登入，不看角色**（一般 `user` 就能使用）。未登入回 `401`；停權帳號回 `403`。四種寫入都保存投稿當下的完整作者快照。
 
 - **完整作者快照**：`ct_issues`、`ct_materials`、`ct_opinions`、`ct_briefings` 最終都有 `author_id`、`author_name`、`author_email`、`show_email`。`author_id` 是 Better Auth `user.id`；name／email 是投稿當下快照，不隨帳號日後更新。`author_name` 缺漏時一律為 `NULL`，**禁止退回 email**，否則會繞過 email opt-in。
 - **儲存與公開分離**：`author_email` 無論使用者是否 opt-in 都保存，供管理端追溯；`show_email INTEGER NOT NULL DEFAULT 0 CHECK (show_email IN (0, 1))` 才是公開同意。建立議題、投稿素材與意見的 API 只接受 boolean `show_email`，並要求 `terms_accepted === true`；兩者都由伺服器端驗證，不能只靠 checkbox。驗證通過後由伺服器寫入 `TERMS_VERSION` 與 `CURRENT_TIMESTAMP`，不採信 client 自報的版本或時間。
 
-- **公開投影（#27 使用者已裁示）**：議題、素材與意見公開顯示 `author_name`；公開 SQL 只能用 `CASE WHEN show_email = 1 THEN author_email ELSE NULL END AS author_email`，且不得回傳 `author_id`／`show_email`。`getIssueDetail()` 與獨立詳情頁都會進 SSR state，因此一律列舉公開欄位、禁止 `SELECT *`。管理端 `list*WithAuthor()`／`getLatestBriefingWithAuthor()` 才可取得完整快照。briefing 的公開 API 不回任何作者欄位，管理員版本標示 `Vary: Cookie`。
+- **公開投影（#27 使用者已裁示）**：議題、素材、意見與說明頁公開顯示 `author_name`；公開 SQL 只能用 `CASE WHEN show_email = 1 THEN author_email ELSE NULL END AS author_email`，且不得回傳 `author_id`／`show_email`。`getIssueDetail()` 與獨立詳情頁都會進 SSR state，因此一律列舉公開欄位、禁止 `SELECT *`。管理端 `list*WithAuthor()`／`getLatestBriefingWithAuthor()` 才可取得完整快照；管理員版本標示 `Vary: Cookie`。
 - **需登入之前的舊資料** `author_*` 是 `NULL`，不回填；管理端顯示為「需登入之前的舊資料」。
 - 前端三處都是同一套三態（`loading`／`anonymous`／`signed-in`）：`/contribute/:id` 的素材表單、`/` 的建立議題表單、`/issues/:id` 意見分頁的投稿框。SSR 一律只出 `loading` 骨架，避免 hydration mismatch。
 - **送出時遇 `401` 不要把 `authState` 切回 `anonymous`**——那會把表單換成登入卡片、吃掉使用者剛打的內容。三處都改用獨立的 `sessionExpired` 旗標：表單留在原地，只在上方補一列重新登入與「先複製你打的內容」提示（共用 key `login_expired_toast`／`login_expired_hint`）。

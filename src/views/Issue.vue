@@ -61,6 +61,8 @@ const opinionInput = ref('')
 const opinionTosAgreed = ref(false)
 // Email 公開選項（#27）
 const opinionShowEmail = ref(false)
+// 志願者送出說明頁時的 email 公開選項
+const volunteerShowEmail = ref(false)
 
 // 全站共用的登入狀態（與 AppHeader 共用同一次 /api/me）；SSR 期間永遠是 'loading'
 const { authState, session, ensureAuthSession } = useAuth()
@@ -200,7 +202,7 @@ async function submitSummarize() {
   const res = await fetch(`/api/issues/${props.issueId}/briefing`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ ...body, show_email: volunteerShowEmail.value }),
   })
   if (res.status === 401) {
     volunteerSessionExpired.value = true
@@ -228,7 +230,7 @@ async function submitNarrative() {
   const res = await fetch(`/api/issues/${props.issueId}/briefing`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ ...body, show_email: volunteerShowEmail.value }),
   })
   if (res.status === 401) {
     volunteerSessionExpired.value = true
@@ -426,7 +428,8 @@ async function submitOpinion() {
               </div>
               <p class="text-sm text-muted">
                 {{ t('brief_version_prefix') }}{{ briefing.version }}，{{ t('brief_updated') }}
-                {{ formatDate(briefing.created_at, locale) }}
+                {{ formatDate(briefing.created_at, locale) }} · {{ t('brief_author_label') }}：{{ briefing.author_name || t('author_system') }}
+                <template v-if="briefing.author_email"> · {{ t('author_email_label') }}：{{ briefing.author_email }}</template>
               </p>
             </template>
             <div id="polis-section" class="my-8" style="display: none" />
@@ -478,6 +481,14 @@ async function submitOpinion() {
                 <SignInButtons :callback-url="loginCallbackUrl" />
               </div>
               <p class="mb-6 text-sm text-muted">{{ t('vol_step1') }} → {{ t('vol_step2') }} → {{ t('vol_step3') }}</p>
+              <div class="form-group mb-6">
+                <label class="flex items-start gap-2 font-normal">
+                  <input v-model="volunteerShowEmail" type="checkbox" class="mt-1 w-auto" />
+                  <span
+                    >{{ t('show_email_label', { email: session?.user.email || '' }) }} <span class="text-muted">{{ t('show_email_hint') }}</span></span
+                  >
+                </label>
+              </div>
 
               <div class="card mb-4">
                 <h3 class="mt-0 mb-2 text-base">{{ t('vol_s1_title') }}</h3>

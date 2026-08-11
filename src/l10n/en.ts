@@ -108,6 +108,7 @@ export const messages = {
   brief_go_opinion: 'Download OPINION.md',
   brief_version_prefix: 'Briefing v',
   brief_updated: 'last updated',
+  brief_author_label: 'Prepared by',
   op_title: 'Public Opinions',
   op_alert: "Download <strong>OPINION.md</strong>, paste it into your AI chatbot, then paste the AI-generated summary back here. You don't need to share your full conversation — just the summary.",
   op_download_btn: '⬇️ Download OPINION.md',

@@ -107,6 +107,7 @@ export const messages = {
   brief_go_opinion: '前往下載 OPINION.md',
   brief_version_prefix: '說明頁版本 v',
   brief_updated: '最後更新',
+  brief_author_label: '彙整者',
   op_title: '民眾意見',
   op_alert: '先下載 <strong>OPINION.md</strong>，貼到你慣用的 AI chatbot 對話，聊完後把 AI 幫你整理的摘要貼回這裡。你的原始對話不需要上傳，只需要摘要。',
   op_download_btn: '⬇️ 下載 OPINION.md',
