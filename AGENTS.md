@@ -35,7 +35,7 @@
 
 5. **API 相容契約不得片面變更。** 既有 endpoint 的路徑、方法與 JSON 形狀（見「API 契約」）只能擴充、不能改名或改語意。要破壞相容性，先問使用者。
    - **例外（已由 [#5](https://github.com/g0v/civic-talk-hono/issues/5) 授權）：管理端授權方式改為角色制。** 管理權限改看登入使用者的角色是不是 `admin`／`super-admin`（Better Auth session），**不再依賴 `ADMIN_PASSWORD` 環境變數與 `X-Admin-Token` 標頭**。這一項授權**只涵蓋授權機制**：業務 endpoint 的路徑、方法與成功回應形狀照舊，未經授權時回 `401`（未登入）／`403`（已登入但無權限）。
-   - **例外（已由 [#9](https://github.com/g0v/civic-talk-hono/issues/9) 與使用者裁示授權）：三支公開寫入端點需要登入。** `POST /api/issues`（建立議題）、`POST /api/issues/:id/materials`（投稿素材）、`POST /api/issues/:id/opinions`（投稿意見）未登入從 `201` 變成 `401`——這是既有 endpoint 的語意變更，目的為內容品質與濫用可追溯。**角色一律不看**，任何登入者都能寫。仍然開放的是 `POST`／`PUT /api/issues/:id/briefing` 的 `POST`（志願者彙整）——要一併收緊先問使用者。
+   - **例外（已由 [#9](https://github.com/g0v/civic-talk-hono/issues/9) 與使用者裁示授權）：投稿與志願者工具需要登入。** `POST /api/issues`（建立議題）、`POST /api/issues/:id/materials`（投稿素材）、`POST /api/issues/:id/opinions`（投稿意見）、`POST /api/issues/:id/briefing`（志願者送出彙整／說明頁）及 `GET /api/issues/:id/prompt`（產生志願者 prompt）未登入一律回 `401`——這是既有 endpoint 的語意變更，目的為內容品質與濫用可追溯。**角色一律不看**，任何未停權的登入者都能使用。
 6. **機密不進 git。** `.dev.vars` 等憑證只留本地；不寫進任何 tracked 檔案、commit 訊息或 log 輸出。目前涵蓋 `ADMIN_PASSWORD`（將隨 #5 淘汰）、`BETTER_AUTH_SECRET`、`GOOGLE_CLIENT_SECRET`、`GITHUB_CLIENT_SECRET` 等。新增設定值時同步更新 `.dev.vars.example`，但只放假值。
 7. **遠端 D1 需授權。** migration 預設只套用到本機（`--local`）。套用 `--remote`、建立或刪除資料庫、跑任何會寫入正式資料的指令前，**必須先問使用者**。本專案有兩個 D1 綁定：業務庫 `DB` → `vtaiwan-civic-talks`，共用認證庫 `DB_AUTH` → `vtaiwan-auth`。**本 repo 只對 `DB` 做 migration**；`DB_AUTH` 見不變量 11。
    - ⚠️ **`wrangler d1 migrations apply vtaiwan-auth` 是活陷阱**：`DB_AUTH` 沒寫 `migrations_dir`，但 wrangler 會自動填入預設的 `./migrations`，等於把本專案的 `ct_*` 建表 SQL 套進 vTaiwan 的正式認證庫。🚫 不要跑，詳見 [`deploy_notes.md`](./deploy_notes.md)。
@@ -189,12 +189,12 @@ Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑�
 | `POST`   | `/api/issues/:id/materials` | 投稿素材（**需登入**，#9；`collecting` → `summarizing` 狀態轉換）        |
 | `DELETE` | `/api/materials/:id`        | 刪除素材（admin）                                                        |
 | `GET`    | `/api/issues/:id/briefing`  | 取得說明頁                                                               |
-| `POST`   | `/api/issues/:id/briefing`  | 新增說明頁（版本遞增；→ `published`）                                    |
+| `POST`   | `/api/issues/:id/briefing`  | 新增說明頁（**需登入**；版本遞增；→ `published`）                        |
 | `PUT`    | `/api/issues/:id/briefing`  | 編輯說明頁（admin）                                                      |
 | `GET`    | `/api/issues/:id/opinions`  | 意見列表                                                                 |
 | `POST`   | `/api/issues/:id/opinions`  | 投稿意見（**需登入**，#9 延伸）                                          |
 | `DELETE` | `/api/opinions/:id`         | 刪除意見（admin）                                                        |
-| `GET`    | `/api/issues/:id/prompt`    | 產生 prompt，`?type=summarize\|narrative\|synthesis`（預設 `summarize`） |
+| `GET`    | `/api/issues/:id/prompt`    | 產生 prompt（**需登入**），`?type=summarize\|narrative\|synthesis`（預設 `summarize`） |
 | `GET`    | `/api/admin/stats`          | 管理統計                                                                 |
 
 > `POST /api/admin/login`（以 `ADMIN_PASSWORD` 換 token）**已於 #5 移除**——這是不變量 5 明列的授權例外。舊網址不必保留：它從來只是管理員自己用的登入端點，不是公開契約。
@@ -206,9 +206,9 @@ Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑�
 
 ✅ **已完成。** 管理端驗 **Better Auth session 的角色**：上表標示 `（admin）` 的 endpoint 與 `/api/admin/stats` 一律走 `src/api/routes.ts` 的 `requireAdmin()`，要求 `isAdminRole()`（`admin` 或 `super-admin`）。舊的 `X-Admin-Token`／`ADMIN_PASSWORD` 已完全移除。
 
-### 公開寫入端點需登入（#9 帶來的變更）
+### 投稿與志願者工具需登入（#9 與使用者裁示帶來的變更）
 
-✅ **已完成。** `POST /api/issues`、`POST /api/issues/:id/materials`、`POST /api/issues/:id/opinions` 三支都走 `src/api/routes.ts` 的 `requireUser()`：**只看有沒有登入，不看角色**（一般 `user` 就能寫）。未登入回 `401`；沒有 `403` 這一態——這幾支不是權限分級。
+✅ **已完成。** `POST /api/issues`、`POST /api/issues/:id/materials`、`POST /api/issues/:id/opinions`、`POST /api/issues/:id/briefing` 與 `GET /api/issues/:id/prompt` 都走 `src/api/routes.ts` 的 `requireUser()`：**只看有沒有登入，不看角色**（一般 `user` 就能使用）。未登入回 `401`；停權帳號回 `403`。
 
 - **三種內容都記錄作者**：`ct_materials`（0002）、`ct_issues` 與 `ct_opinions`（0003）都有 `author_id`／`author_name`。`author_id` 是共用 auth DB 的 `user.id`，`author_name` 是投稿當下的顯示名稱快照（name 為空時退回 email）；**一律不存 email 欄位**。
 
