@@ -221,6 +221,7 @@ async function submitNarrative() {
     toast.value?.show(t('vol_toast_no_content'))
     return
   }
+  if (typeof window !== 'undefined' && !window.confirm(t('vol_confirm_submit_narrative'))) return
   const body = {
     consensus: briefing.value?.consensus ?? '',
     disputes: briefing.value?.disputes ?? '',
@@ -238,6 +239,7 @@ async function submitNarrative() {
     return
   }
   if (res.ok) {
+    narrative.value = ''
     toast.value?.show(t('vol_toast_narrative_ok'))
     await loadIssue()
     activeTab.value = 'briefing'

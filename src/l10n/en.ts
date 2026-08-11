@@ -96,6 +96,7 @@ export const messages = {
   vol_toast_save_fail: 'Save failed. Please try again.',
   vol_toast_narrative_ok: '✅ Briefing published!',
   vol_toast_no_content: 'Please paste the briefing content',
+  vol_confirm_submit_narrative: 'Publish this briefing? This creates a new version and clears the input.',
   vol_toast_load_fail: 'Load failed',
   brief_no_briefing_alert: 'No briefing yet for this issue. Volunteers can generate one using the Volunteer Tools tab.',
   brief_go_volunteer: 'Once enough materials are collected, use Volunteer Tools to generate the briefing.',

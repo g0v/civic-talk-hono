@@ -95,6 +95,7 @@ export const messages = {
   vol_toast_save_fail: '儲存失敗，請再試一次',
   vol_toast_narrative_ok: '✅ 說明頁已發布！',
   vol_toast_no_content: '請貼上說明頁內容',
+  vol_confirm_submit_narrative: '確定要送出議題說明嗎？送出後會發布新版本，並清除輸入內容。',
   vol_toast_load_fail: '載入失敗',
   brief_no_briefing_alert: '這個議題還沒有說明頁。志願者可以前往「志願者工具」頁面生成說明。',
   brief_go_volunteer: '素材足夠後，請前往「志願者工具」生成彙整與說明頁',
