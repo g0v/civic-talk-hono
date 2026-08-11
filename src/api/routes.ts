@@ -253,7 +253,7 @@ export function registerApiRoutes(app: App): void {
     } catch {
       return error('Invalid JSON')
     }
-    const version = await db.createBriefing(c.env.DB, id, body)
+    const version = await db.createBriefing(c.env.DB, id, auth.context.user.id, body)
     return json({ version }, 201)
   })
 
