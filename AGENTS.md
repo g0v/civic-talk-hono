@@ -4,9 +4,11 @@
 
 > ✅ Vue SSR 複刻計畫的六項 todo 已完成。下列「現況」反映移植後的真實結構；「目標架構」中尚未做的項目（例如切換到 `vue-router` 全站 hydration、[#5](https://github.com/g0v/civic-talk-hono/issues/5) 的 Better Auth 登入／權限）仍須先與使用者確認再動工。
 >
-> 🚧 **進行中的工作線：[#9「讓使用者必須先登入才能張貼素材」](https://github.com/g0v/civic-talk-hono/issues/9)**（分支 `feat/require-login-for-materials`）。程式碼與 D1 migration（本機＋遠端）都已完成，**只剩需要 `dev:remote` 的端到端實測**——規格見「API 契約 → 素材投稿需登入」，逐項完成度以「移植進度」的 #9 表為準。
+> 🚀 **已部署於 <https://civic.vtaiwan.tw>**（Worker `civic-talk`，首次部署 2026-08-05）。**Google／GitHub 登入、`admin` 角色進後台、登入後投稿都已在正式站實測成功**（使用者確認 2026-08-11）；需要真人瀏覽器的驗證直接在正式站做，不必只靠 `dev:remote`。部署與環境設定見 [`deploy_notes.md`](./deploy_notes.md)。
 >
-> [#5「使用 Better-Auth 來實作登入和 Admin 功能」](https://github.com/g0v/civic-talk-hono/issues/5)（分支 `feat/better-auth`，已併回 `main`）的程式碼都在了，只剩需要 `dev:remote` 的端到端登入實測——「身分驗證與權限」一節是規格，完成度以 #5 表為準。
+> 🚧 **仍未實證的兩項**（不要因為「登入可用」就一起勾掉）：同一個 email 用 Google 與 GitHub 登入是否落到同一個 `user.id`（#5 的 5-5）、四種寫入是否都落下完整作者快照且管理端取得完整快照（#9 的 9-8）。逐項完成度一律以「移植進度」的表為準。
+>
+> [#9「讓使用者必須先登入才能張貼素材」](https://github.com/g0v/civic-talk-hono/issues/9)（分支 `feat/require-login-for-materials`）的程式碼與 D1 migration（本機＋遠端）都已完成——規格見「API 契約 → 投稿與志願者工具需登入」。[#5「使用 Better-Auth 來實作登入和 Admin 功能」](https://github.com/g0v/civic-talk-hono/issues/5)（分支 `feat/better-auth`，已併回 `main`）的程式碼也都在了——「身分驗證與權限」一節是規格。
 
 ## 專案目的
 
@@ -81,9 +83,10 @@ Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑�
 
 **尚不存在**：`vue-router`、`vue-i18n` 套件、CI。已有自動化測試（`src/tests/`，`vp test` 執行）。
 
-**待處理的身分問題**：
+**部署身分（已部署，別再當成未知）**：
 
-- `package.json` 與 `wrangler.jsonc` 的 `name` 為 `civic-talk`。⚠️ **首次 `wrangler deploy` 前要先確認**：Cloudflare 帳號內 Workers 與 Pages 共用同一份名稱清單，舊站若已有名為 `civic-talk` 的 Pages 專案就會撞名。撞到時**不要**逕自覆蓋舊站——先問使用者要改名還是要取代。
+- **已部署於 <https://civic.vtaiwan.tw>**（Worker 名稱 `civic-talk`，首次部署 2026-08-05）。`package.json` 與 `wrangler.jsonc` 的 `name` 就是 `civic-talk`，撞名疑慮已由實際部署解消——**不要**再把「首次部署前要確認撞名」當成待辦。要改名或改網域綁定前先問使用者（Cloudflare 帳號內 Workers 與 Pages 共用同一份名稱清單）。
+- **正式網域不在 `wrangler.jsonc` 裡**（沒有 `routes`／`custom_domain`），所以讀設定檔看不出正式網址；要動網域綁定先確認它現在是怎麼綁的，不要憑猜測改設定檔。詳見 [`deploy_notes.md`](./deploy_notes.md)。
 - 既然 `account_id` 不寫死，**部署與 D1 指令都吃 `wrangler` 當下登入的帳號**。動到遠端資源前先 `npx wrangler whoami` 確認帳號正確（civic-talk 與 vTaiwan 兩專案在同一個帳號下）。
 
 ## 目標架構（移植完成後長這樣）
@@ -421,13 +424,13 @@ npx wrangler d1 migrations apply vtaiwan-civic-talks --remote   # 🚫 需先取
 | 5-0 | `env-vars`         | ✅ 完成            | `.dev.vars.example` 已備妥 Better Auth／Google／GitHub 變數（commit `cfe56b4`）                                                                                                                               |
 | 5-1 | `better-auth-init` | ✅ 完成            | `better-auth` ^1.6.25、`src/auth/`、`/api/auth/*`＋`/api/me`、`nodejs_compat`、`dev:remote`。dev server 起得來，路由煙霧測試過                                                                                |
 | 5-2 | `shared-auth-db`   | ✅ 完成            | `DB_AUTH` → `vtaiwan-auth`（`remote: true`，無 `migrations_dir`）；**沿用既有 user table，本 repo 不建表**                                                                                                    |
-| 5-3 | `google-login`     | 🚧 code 進、待實測 | provider 已設定；端到端登入要 `dev:remote` 才測得到                                                                                                                                                           |
-| 5-4 | `github-login`     | 🚧 code 進、待實測 | 同上                                                                                                                                                                                                          |
-| 5-5 | `account-linking`  | 🚧 code 進、待實測 | `trustedProviders: ['google', 'github']` 已設；「同 email 是同一個 `user.id`」尚未實證                                                                                                                        |
+| 5-3 | `google-login`     | ✅ 完成            | provider 已設定；**正式站端到端登入已實測成功**（使用者確認 2026-08-11）                                                                                                                                      |
+| 5-4 | `github-login`     | ✅ 完成            | 同上，正式站已實測成功                                                                                                                                                                                        |
+| 5-5 | `account-linking`  | 🚧 code 進、待實測 | `trustedProviders: ['google', 'github']` 已設；兩個 provider 各自都能登入，但**「同一個 email 落到同一個 `user.id`」仍未實證**（要在正式站用同 email 兩種方式登入並比對帳號）                                 |
 | 5-6 | `role-based-admin` | ✅ 完成            | `requireAdmin()` 判角色（401／403）；`ADMIN_PASSWORD`／`X-Admin-Token`／`POST /api/admin/login` 全數移除；CORS 拿掉 `X-Admin-Token` 且不給 `Allow-Credentials`；Admin 頁改 Google／GitHub 登入；i18n 雙檔同步 |
-| 5-7 | `verify`           | 🚧 待遠端實測      | 本機已驗：未登入打管理端點 401、舊 token 失效、`/api/admin/login` 404、公開端點不受影響、`/admin` SSR 無 mismatch。**尚未驗**：真的登入、同 email 整合、admin 角色可進後台（都需要 `dev:remote`）             |
+| 5-7 | `verify`           | 🚧 幾乎完成        | 已驗：未登入打管理端點 401、`/api/admin/login` 404、公開端點不受影響、`/admin` SSR 無 mismatch；**正式站 Google／GitHub 登入成功、`admin` 角色進得了後台**（2026-08-11）。**尚未驗**：同 email 帳號整合（見 5-5） |
 
-> 已裁示的設定（不開 `admin` plugin、`account_id` 不寫死、`nodejs_compat` 非必要不加、`BETTER_AUTH_SECRET` 與 vTaiwan-hono 共用）與**仍待確認的兩項**（OAuth callback 網址、`BETTER_AUTH_URL`）見「身分驗證與權限」一節——**callback 網址沒加就不要開始寫 5-3／5-4，會卡在登不進去**。
+> 已裁示的設定（不開 `admin` plugin、`account_id` 不寫死、`nodejs_compat` 實測必要、`BETTER_AUTH_SECRET` 與 vTaiwan-hono 共用）見「身分驗證與權限」一節。OAuth callback 網址與 `BETTER_AUTH_URL` 在本機與正式站都已設好（登入實測通過即為證明）；**換網域或建新環境時這兩項要重設**，做法見 [`deploy_notes.md`](./deploy_notes.md)。
 
 ### 進行中：#9 素材投稿需登入
 
@@ -442,7 +445,7 @@ npx wrangler d1 migrations apply vtaiwan-civic-talks --remote   # 🚫 需先取
 | 9-5 | `issues-opinions-gate` | ✅ 完成       | 使用者裁示的延伸：`POST /api/issues` 與 `POST /api/issues/:id/opinions` 也走 `requireUser()`；`Home.vue` 建立議題表單與 `Issue.vue` 意見投稿框同樣三態登入牆；過期提示改用共用 key                                                                                                                 |
 | 9-6 | `author-everywhere`    | ✅ 完成       | `migrations/0003_issue_opinion_author.sql`：`ct_issues`／`ct_opinions` 也記錄作者；`listIssuesWithAuthor()`／`listOpinionsWithAuthor()` 只給管理員；`getIssue()` 一併改成列舉欄位（原本 `SELECT *` 會漏進 SSR state）；Admin 議題表格加「建立者」欄、意見卡顯示投稿者                              |
 | 9-7 | `header-auth-ui`       | ✅ 完成       | `src/composables/useAuth.ts` 全站共用登入狀態（一頁只打一次 `/api/me`）；`AppHeader` 顯示「已登入：{name}」／登出／登入面板；`Home`／`Issue`／`Contribute`／`Admin` 四頁改用同一個 composable，Admin 的 `forbidden` 從共用 session 推導                                                            |
-| 9-8 | `verify`               | 🚧 待遠端實測 | 遠端 migration `0002`–`0006` 皆已套用。本機已驗未登入守門；#27 後公開回應改為顯示 `author_name` 與 opt-in email，但仍不得含 `author_id`／`show_email` 或未同意公開的 email。**尚未驗**：登入後四種寫入的完整作者快照真的落庫、管理端取得完整快照（需 `dev:remote` 實測）。 |
+| 9-8 | `verify`               | 🚧 幾乎完成   | 遠端 migration `0002`–`0006` 皆已套用。已驗未登入守門；#27 後公開回應改為顯示 `author_name` 與 opt-in email，但仍不得含 `author_id`／`show_email` 或未同意公開的 email。**正式站已實測：登入後投稿成功且顯示投稿者**（2026-08-11）。**尚未逐項驗**：四種寫入（含說明頁）都落下完整快照、管理端取得完整快照。 |
 
 > **migration 與程式碼是綁在一起的**：`createMaterial()`／`createIssue()`／`createOpinion()` 都會寫 `author_id`，所以遠端 migration 必須先於部署，否則每次寫入都會 runtime error（`no such column: author_id`）。`0002` 與 `0003` 都已於 2026-08-04 套用到遠端（經使用者授權，套用後查過 `sqlite_master` 沒有新增任何表）。日後若有人重建遠端資料庫，記得這條順序仍然成立。
 
