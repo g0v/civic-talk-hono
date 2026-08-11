@@ -202,13 +202,16 @@ export async function deleteMaterial(db: D1Database, id: number): Promise<void> 
   await db.prepare('DELETE FROM ct_materials WHERE id = ?').bind(id).run()
 }
 
+const BRIEFING_PUBLIC_COLUMNS = 'id, issue_id, consensus, disputes, positions, narrative, opinion_prompt, version, created_at'
+
 export async function getLatestBriefing(db: D1Database, issueId: number): Promise<Briefing | null> {
-  return db.prepare('SELECT * FROM ct_briefings WHERE issue_id = ? ORDER BY version DESC LIMIT 1').bind(issueId).first<Briefing>()
+  return db.prepare(`SELECT ${BRIEFING_PUBLIC_COLUMNS} FROM ct_briefings WHERE issue_id = ? ORDER BY version DESC LIMIT 1`).bind(issueId).first<Briefing>()
 }
 
 export async function createBriefing(
   db: D1Database,
   issueId: number,
+  authorId: string,
   input: {
     consensus?: string
     disputes?: string
@@ -220,8 +223,8 @@ export async function createBriefing(
   const existing = await db.prepare('SELECT MAX(version) as maxv FROM ct_briefings WHERE issue_id = ?').bind(issueId).first<{ maxv: number | null }>()
   const nextVersion = (existing?.maxv ?? 0) + 1
   await db
-    .prepare('INSERT INTO ct_briefings (issue_id, consensus, disputes, positions, narrative, opinion_prompt, version) VALUES (?, ?, ?, ?, ?, ?, ?)')
-    .bind(issueId, input.consensus ?? '', input.disputes ?? '', input.positions ?? '', input.narrative ?? '', input.opinion_prompt ?? '', nextVersion)
+    .prepare('INSERT INTO ct_briefings (issue_id, consensus, disputes, positions, narrative, opinion_prompt, version, author_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+    .bind(issueId, input.consensus ?? '', input.disputes ?? '', input.positions ?? '', input.narrative ?? '', input.opinion_prompt ?? '', nextVersion, authorId)
     .run()
   await db.prepare("UPDATE ct_issues SET status = 'published' WHERE id = ? AND status IN ('collecting', 'summarizing')").bind(issueId).run()
   return nextVersion
