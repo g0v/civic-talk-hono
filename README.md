@@ -1,6 +1,6 @@
 # Civic Talk（Hono + Vue SSR）
 
-公共議題審議平台。由舊版靜態站 [`civic-talk`](../civic-talk) 移植而來：**Hono + Vue 3 SSR/hydration + Tailwind v4 + Cloudflare Workers / D1**。
+公共議題審議平台，**受原始版 [Civic Talk](https://github.com/vTaiwan/civic-talk) 啟發**，由該版靜態站移植而來：**Hono + Vue 3 SSR/hydration + Tailwind v4 + Cloudflare Workers / D1**。
 
 平台**不呼叫任何 AI API**——志願者用自己的 AI token 跑彙整，平台只產生 prompt 並收回結果。
 
