@@ -87,6 +87,8 @@ app.get('/issues/:id/source/:materialId', async c => {
   const data = await getMaterialWithIssue(c.env.DB, materialId)
   // 素材不存在，或 URL 裡的 issueId 與素材實際所屬不符 → 404
   if (!data || data.material.issue_id !== issueId) return c.html(await notFoundHtml(origin), 404)
+  // 已確認違規（abuse_flagged = 2）→ 410 Gone，不渲染任何內容
+  if (data.material.abuse_flagged === 2) return c.html(await notFoundHtml(origin), 410)
   const { material, issue } = data
   const html = await renderPage(MaterialDetailView, { issueId, materialId, initialData: { material, issue } }, headForMaterial(material.source_name, issue.title, issueId, materialId, origin), {
     hydrate: { page: 'material', state: { issueId, materialId, initialData: { material, issue } } },
@@ -102,6 +104,8 @@ app.get('/issues/:id/comment/:opinionId', async c => {
   const data = await getOpinionWithIssue(c.env.DB, opinionId)
   // 意見不存在，或 URL 裡的 issueId 與意見實際所屬不符 → 404
   if (!data || data.opinion.issue_id !== issueId) return c.html(await notFoundHtml(origin), 404)
+  // 已確認違規（abuse_flagged = 2）→ 410 Gone，不渲染任何內容
+  if (data.opinion.abuse_flagged === 2) return c.html(await notFoundHtml(origin), 410)
   const { opinion, issue } = data
   const html = await renderPage(OpinionDetailView, { issueId, opinionId, initialData: { opinion, issue } }, headForOpinion(opinion.summary, issue.title, issueId, opinionId, origin), {
     hydrate: { page: 'opinion', state: { issueId, opinionId, initialData: { opinion, issue } } },
