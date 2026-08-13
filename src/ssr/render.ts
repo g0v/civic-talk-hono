@@ -4,7 +4,7 @@ import { provideI18n } from '../l10n'
 import { renderHeadTags, type HeadConfig } from './heads'
 import { serializeState } from './serialize'
 
-export type PageName = 'home' | 'about' | 'issue' | 'contribute' | 'admin' | 'material' | 'opinion' | 'not-found'
+export type PageName = 'home' | 'about' | 'issue' | 'contribute' | 'admin' | 'material' | 'opinion' | 'not-found' | 'terms' | 'privacy'
 
 export interface RenderPageOptions {
   hydrate?: {

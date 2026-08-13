@@ -133,13 +133,17 @@ app.get('/admin', async c => {
 })
 app.get('/privacy', async c => {
   const origin = new URL(c.req.url).origin
-  const html = await renderPage(PrivacyView, {}, headForPrivacy(origin))
+  const html = await renderPage(PrivacyView, {}, headForPrivacy(origin), {
+    hydrate: { page: 'privacy', state: {} },
+  })
   return c.html(html)
 })
 
 app.get('/terms', async c => {
   const origin = new URL(c.req.url).origin
-  const html = await renderPage(TermsView, {}, headForTerms(origin))
+  const html = await renderPage(TermsView, {}, headForTerms(origin), {
+    hydrate: { page: 'terms', state: {} },
+  })
   return c.html(html)
 })
 
