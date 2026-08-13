@@ -439,8 +439,9 @@ export function registerApiRoutes(app: App): void {
   //
   // ban 先做，成功後才寫 DB——確保失敗時 review_status 保持 pending，
   // 前端拿到真實錯誤碼而非假的 { ok: true }。
-  // 只有 super-admin（adminAc）的 session 帶入 headers 才能通過 Better Auth 的 banUser
-  // hasPermission 檢查；admin role（userAc）會得到 FORBIDDEN，這是刻意行為。
+  // ban 操作只有 super-admin（adminAc）的 session 才能通過 Better Auth hasPermission 檢查；
+  // admin role（userAc）會得到 FORBIDDEN（403）。APIError 在此 catch 後直接轉譯 status + message，
+  // 避免錯誤被 Hono 攔截成 500（例如「You cannot ban yourself」原本就是 400）。
   app.patch('/api/admin/abuse-reports/:id/resolve', async c => {
     const denied = await requireAdmin(c.req.raw, c.env)
     if (denied) return denied
@@ -461,12 +462,21 @@ export function registerApiRoutes(app: App): void {
     const targetUserId = body.action === 'false_report' ? report.reporter_id : report.target_author_id
     const banReason = body.action === 'false_report' ? '濫用回報：誤報，已停權' : '發布違規內容：已確認濫用'
 
-    // ban 先做——失敗時直接拋出（FORBIDDEN、user-not-found 等），DB 不更新
+    // ban 先做——Better Auth 的 APIError 會帶 statusCode 與 body.message，
+    // catch 後直接轉譯回前端（FORBIDDEN 403、BAD_REQUEST 400 等），DB 不更新。
     if (targetUserId) {
-      await createAuth(c.env).api.banUser({
-        body: { userId: targetUserId, banReason },
-        headers: c.req.raw.headers,
-      })
+      try {
+        await createAuth(c.env).api.banUser({
+          body: { userId: targetUserId, banReason },
+          headers: c.req.raw.headers,
+        })
+      } catch (banErr) {
+        const apiErr = banErr as { statusCode?: number; body?: { message?: string } }
+        const status = typeof apiErr.statusCode === 'number' ? apiErr.statusCode : 500
+        const message = apiErr.body?.message ?? 'Ban failed'
+        console.error('banUser failed', { reportId: id, action: body.action, caught: banErr })
+        return error(message, status)
+      }
     }
 
     // ban 成功（或無 userId 需要 ban）才更新業務 DB

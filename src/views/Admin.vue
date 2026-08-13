@@ -115,7 +115,12 @@ async function resolveReport(id: number, action: 'false_report' | 'confirmed_abu
     toast.value?.show(t('adm_rpt_toast_resolved'))
     await loadAbuseReports()
   } else {
-    toast.value?.show(t('adm_rpt_toast_fail'))
+    let msg = t('adm_rpt_toast_fail')
+    try {
+      const data = (await res.json()) as { error?: string }
+      if (data.error) msg = data.error
+    } catch { /* 忽略 */ }
+    toast.value?.show(msg)
   }
 }
 
@@ -534,10 +539,22 @@ async function onTabChange(id: AdminTab) {
                     <td class="px-3 py-2">
                       <template v-if="r.review_status === 'pending'">
                         <div class="flex flex-col gap-1">
-                          <button type="button" class="btn btn-ghost btn-sm text-amber-700" @click="resolveReport(r.id, 'false_report')">
+                          <button
+                            type="button"
+                            class="btn btn-ghost btn-sm text-amber-700"
+                            :disabled="session?.role !== 'super-admin' || r.reporter_id === session?.user?.id"
+                            :title="session?.role !== 'super-admin' ? t('adm_rpt_need_super_admin') : r.reporter_id === session?.user?.id ? t('adm_rpt_cannot_ban_self') : undefined"
+                            @click="resolveReport(r.id, 'false_report')"
+                          >
                             {{ t('adm_rpt_btn_false') }}
                           </button>
-                          <button type="button" class="btn btn-ghost btn-sm text-red" @click="resolveReport(r.id, 'confirmed_abuse')">
+                          <button
+                            type="button"
+                            class="btn btn-ghost btn-sm text-red"
+                            :disabled="session?.role !== 'super-admin' || r.target_author_id === session?.user?.id"
+                            :title="session?.role !== 'super-admin' ? t('adm_rpt_need_super_admin') : r.target_author_id === session?.user?.id ? t('adm_rpt_cannot_ban_self') : undefined"
+                            @click="resolveReport(r.id, 'confirmed_abuse')"
+                          >
                             {{ t('adm_rpt_btn_abuse') }}
                           </button>
                           <span v-if="!r.target_author_id && r.review_status === 'pending'" class="text-xs text-muted">{{ t('adm_rpt_no_author') }}</span>

@@ -463,6 +463,8 @@ export const messages = {
   adm_rpt_confirm_false: 'Mark as false report and ban the reporter? This action cannot be undone.',
   adm_rpt_confirm_abuse: 'Confirm abuse and ban the content author? This action cannot be undone.',
   adm_rpt_no_author: '(no author record — cannot ban)',
+  adm_rpt_cannot_ban_self: 'Cannot ban yourself',
+  adm_rpt_need_super_admin: 'Ban actions require super-admin privileges',
   adm_rpt_toast_resolved: 'Review completed',
   adm_rpt_toast_fail: 'Review action failed. Please try again.',
 } as const

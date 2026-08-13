@@ -1,20 +1,19 @@
 import { betterAuth } from 'better-auth'
 import { admin } from 'better-auth/plugins'
-import { adminAc, defaultAc, userAc } from 'better-auth/plugins/admin/access'
+import { adminAc, userAc } from 'better-auth/plugins/admin/access'
 import type { AppBindings } from '../api/types'
 
 /**
  * admin plugin 的角色存取控制表：
  * - `user`        → userAc（空：無任何 admin 操作權限）
- * - `admin`       → 自訂 role，只給 user:['ban']——可停權一般用戶，無法升降角色
- * - `super-admin` → adminAc（完整存取）
+ * - `admin`       → userAc（同上：可進管理後台、看資料，但無 ban 權限）
+ * - `super-admin` → adminAc（完整存取，含 ban/unban）
  *
- * userAc = newRole({ user: [], session: [] }) ——內建的「空」角色，
- * 不能用來代表「有 ban 權限的管理員」（banUser 要求 user:['ban']，空 role 會 FORBIDDEN）。
+ * 對齊 vTaiwan-hono：ban 權限保留給 super-admin，admin 只有讀取能力。
  */
 const adminRoleAccess = {
   user: userAc,
-  admin: defaultAc.newRole({ user: ['ban'] }),
+  admin: userAc,
   'super-admin': adminAc,
 }
 

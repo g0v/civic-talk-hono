@@ -457,6 +457,8 @@ export const messages = {
   adm_rpt_confirm_false: '確認標記為誤報並停權回報者嗎？此動作不可還原。',
   adm_rpt_confirm_abuse: '確認為違規內容並停權張貼者嗎？此動作不可還原。',
   adm_rpt_no_author: '（無作者記錄，無法停權）',
+  adm_rpt_cannot_ban_self: '無法停權自己',
+  adm_rpt_need_super_admin: '停權操作需要 super-admin 權限',
   adm_rpt_toast_resolved: '審核完成',
   adm_rpt_toast_fail: '審核操作失敗，請稍後再試',
 } as const
