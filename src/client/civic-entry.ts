@@ -8,6 +8,8 @@ import AdminView from '../views/Admin.vue'
 import MaterialDetailView from '../views/MaterialDetail.vue'
 import OpinionDetailView from '../views/OpinionDetail.vue'
 import NotFoundView from '../views/NotFound.vue'
+import TermsView from '../views/Terms.vue'
+import PrivacyView from '../views/Privacy.vue'
 import type { PageName } from '../ssr/render'
 
 declare global {
@@ -26,6 +28,8 @@ const pages: Record<PageName, Component> = {
   material: MaterialDetailView,
   opinion: OpinionDetailView,
   'not-found': NotFoundView,
+  terms: TermsView,
+  privacy: PrivacyView,
 }
 
 const page = window.__PAGE__
