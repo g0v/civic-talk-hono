@@ -464,6 +464,7 @@ export async function listForRss(db: D1Database, limit = 20): Promise<RssFeedIte
          UNION ALL
          SELECT 'material' AS type, id, source_name AS title, content AS description, issue_id, created_at
          FROM ct_materials
+         WHERE abuse_flagged < 2
          ORDER BY created_at DESC
          LIMIT ?`
       )
