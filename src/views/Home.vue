@@ -122,6 +122,16 @@ async function createIssue() {
     submitting.value = false
   }
 }
+
+async function copyRssUrl() {
+  const url = `${window.location.origin}/rss.xml`
+  try {
+    await navigator.clipboard.writeText(url)
+    toast.value?.show(t('rss_copy_ok'))
+  } catch {
+    toast.value?.show(t('rss_copy_fail', { url }))
+  }
+}
 </script>
 
 <template>
@@ -135,6 +145,7 @@ async function createIssue() {
         <p class="hero-desc">{{ t('idx_page_subtitle') }}</p>
         <div class="hero-btns">
           <a href="/about" class="btn btn-outline-white">{{ t('nav_about') }}</a>
+          <button type="button" class="btn btn-outline-white" @click="copyRssUrl">{{ t('rss_subscribe_btn') }}</button>
         </div>
       </div>
     </div>
