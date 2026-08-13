@@ -519,9 +519,9 @@ async function onTabChange(id: AdminTab) {
                     </td>
                     <td class="px-3 py-2">
                       <template v-if="r.target_issue_id">
-                        <a v-if="r.material_id" :href="`/issues/${r.target_issue_id}/source/${r.material_id}`" class="underline">{{ t('adm_rpt_target_material') }}{{ r.material_id }}</a>
-                        <a v-else-if="r.opinion_id" :href="`/issues/${r.target_issue_id}/comment/${r.opinion_id}`" class="underline">{{ t('adm_rpt_target_opinion') }}{{ r.opinion_id }}</a>
-                        <a v-else-if="r.briefing_id" :href="`/issues/${r.target_issue_id}`" class="underline">{{ t('adm_rpt_target_briefing') }}{{ r.briefing_id }}（議題 {{ r.target_issue_id }}）</a>
+                        <a v-if="r.material_id" :href="`/issues/${r.target_issue_id}/source/${r.material_id}`" class="underline" target="_blank" rel="noopener">{{ t('adm_rpt_target_material') }}{{ r.material_id }}</a>
+                        <a v-else-if="r.opinion_id" :href="`/issues/${r.target_issue_id}/comment/${r.opinion_id}`" class="underline" target="_blank" rel="noopener">{{ t('adm_rpt_target_opinion') }}{{ r.opinion_id }}</a>
+                        <a v-else-if="r.briefing_id" :href="`/issues/${r.target_issue_id}`" class="underline" target="_blank" rel="noopener">{{ t('adm_rpt_target_briefing') }}{{ r.briefing_id }}（議題 {{ r.target_issue_id }}）</a>
                       </template>
                       <span v-else class="text-muted text-xs">（目標已刪除）</span>
                     </td>
