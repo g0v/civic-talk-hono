@@ -58,6 +58,7 @@ export async function generateRssFeed(db: D1Database, origin: string): Promise<s
       <title>${xmlEscape(titleRaw)}</title>
       <link>${link}</link>
       <description>${xmlEscape(descRaw)}</description>
+      <category>${item.type === 'issue' ? '議題' : '素材'}</category>
       <pubDate>${toRfc822(item.created_at)}</pubDate>
       <guid isPermaLink="true">${link}</guid>
     </item>`
