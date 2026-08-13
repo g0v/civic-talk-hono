@@ -103,6 +103,22 @@ async function loadAbuseReports() {
   if (res.ok) abuseReports.value = await res.json()
 }
 
+async function resolveReport(id: number, action: 'false_report' | 'confirmed_abuse') {
+  const confirmKey = action === 'false_report' ? 'adm_rpt_confirm_false' : 'adm_rpt_confirm_abuse'
+  if (!confirm(t(confirmKey))) return
+  const res = await fetch(`/api/admin/abuse-reports/${id}/resolve`, {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: JSON.stringify({ action }),
+  })
+  if (res.ok) {
+    toast.value?.show(t('adm_rpt_toast_resolved'))
+    await loadAbuseReports()
+  } else {
+    toast.value?.show(t('adm_rpt_toast_fail'))
+  }
+}
+
 function openNew() {
   formTitle.value = ''
   formDesc.value = ''
@@ -486,6 +502,7 @@ async function onTabChange(id: AdminTab) {
                     <th class="px-3 py-2 text-left">{{ t('adm_rpt_th_desc') }}</th>
                     <th class="px-3 py-2 text-left">{{ t('adm_rpt_th_status') }}</th>
                     <th class="px-3 py-2 text-left">{{ t('adm_rpt_th_created') }}</th>
+                    <th class="px-3 py-2 text-left">{{ t('adm_th_actions') }}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -514,6 +531,20 @@ async function onTabChange(id: AdminTab) {
                       </span>
                     </td>
                     <td class="px-3 py-2 text-xs text-muted">{{ formatDate(r.created_at, locale) }}</td>
+                    <td class="px-3 py-2">
+                      <template v-if="r.review_status === 'pending'">
+                        <div class="flex flex-col gap-1">
+                          <button type="button" class="btn btn-ghost btn-sm text-amber-700" @click="resolveReport(r.id, 'false_report')">
+                            {{ t('adm_rpt_btn_false') }}
+                          </button>
+                          <button type="button" class="btn btn-ghost btn-sm text-red" @click="resolveReport(r.id, 'confirmed_abuse')">
+                            {{ t('adm_rpt_btn_abuse') }}
+                          </button>
+                          <span v-if="!r.target_author_id && r.review_status === 'pending'" class="text-xs text-muted">{{ t('adm_rpt_no_author') }}</span>
+                        </div>
+                      </template>
+                      <span v-else class="text-xs text-muted">—</span>
+                    </td>
                   </tr>
                 </tbody>
               </table>

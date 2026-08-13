@@ -1,16 +1,28 @@
 import { betterAuth } from 'better-auth'
+import { admin } from 'better-auth/plugins'
+import { adminAc, defaultAc, userAc } from 'better-auth/plugins/admin/access'
 import type { AppBindings } from '../api/types'
+
+/**
+ * admin plugin 的角色存取控制表：
+ * - `user`        → userAc（空：無任何 admin 操作權限）
+ * - `admin`       → 自訂 role，只給 user:['ban']——可停權一般用戶，無法升降角色
+ * - `super-admin` → adminAc（完整存取）
+ *
+ * userAc = newRole({ user: [], session: [] }) ——內建的「空」角色，
+ * 不能用來代表「有 ban 權限的管理員」（banUser 要求 user:['ban']，空 role 會 FORBIDDEN）。
+ */
+const adminRoleAccess = {
+  user: userAc,
+  admin: defaultAc.newRole({ user: ['ban'] }),
+  'super-admin': adminAc,
+}
 
 /**
  * 每請求新建一個 Better Auth 實例（Workers 不能跨請求共用可變狀態）。
  *
- * 🚫 **刻意不開 admin plugin。** vTaiwan-hono 開了它是為了做成員管理；開了就會在
- * `/api/auth/admin/*` 長出 set-role／list-users／remove-user 等**會寫入共用 auth DB
- * （vtaiwan-auth）**的端點，而本站不做二次驗證（step-up），保護強度不如 vTaiwan-hono。
- * 角色管理一律留在 vTaiwan-hono——見 AGENTS.md 不變量 11 與 issue #5。
- *
- * 因此這裡改用 `user.additionalFields` 把**既有的** role 欄位唯讀讀出來：
- * 該欄位是 vTaiwan-hono 的 admin plugin 建立並維護的，本站只讀不寫。
+ * admin plugin 開放 ban/unban 供濫用回報審核使用（#21，AGENTS.md 不變量 5／11）。
+ * 危險端點（set-role、remove-user、impersonate）在 src/api/auth.ts 以路由前攔截。
  */
 export function createAuth(env: AppBindings) {
   return betterAuth({
@@ -20,9 +32,8 @@ export function createAuth(env: AppBindings) {
     secret: env.BETTER_AUTH_SECRET,
     user: {
       additionalFields: {
-        // input: false —— 不接受任何請求端寫入，本站只讀不寫（AGENTS.md 不變量 11）。
+        // input: false —— 不接受任何請求端直接寫入；寫入走 admin plugin API（不變量 11）。
         role: { type: 'string', required: false, input: false },
-        // 停權相關欄位由 vTaiwan-hono 的 admin plugin 管理；本站只讀取以決定是否放行。
         banned: { type: 'boolean', required: false, input: false },
         banReason: { type: 'string', required: false, input: false },
         banExpires: { type: 'date', required: false, input: false },
@@ -30,8 +41,6 @@ export function createAuth(env: AppBindings) {
     },
     account: {
       accountLinking: {
-        // 與 vTaiwan-hono 一致：同一個 email 不論用 Google 或 GitHub 登入，
-        // 都連到同一個 user，不會各自開一個帳號。
         trustedProviders: ['google', 'github'],
       },
     },
@@ -45,5 +54,11 @@ export function createAuth(env: AppBindings) {
         clientSecret: env.GITHUB_CLIENT_SECRET,
       },
     },
+    plugins: [
+      admin({
+        adminRoles: ['super-admin', 'admin'],
+        roles: adminRoleAccess,
+      }),
+    ],
   })
 }

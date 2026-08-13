@@ -1,6 +1,7 @@
 import type { AbuseReportReason, AuthorSnapshotInput, Briefing, BriefingWithAuthor, Issue, IssueListItem, IssueListItemWithAuthor, IssueStatus, Material, MaterialWithAuthor, Opinion, OpinionWithAuthor, Stance } from '../db/queries'
 import * as db from '../db/queries'
 import { isAdminRole, tryGetAuthContext, type AuthContext } from '../auth/authorization'
+import { createAuth } from '../auth/createAuth'
 import { TERMS_VERSION } from '../legal/terms'
 import type { App, AppBindings } from './types'
 
@@ -430,5 +431,52 @@ export function registerApiRoutes(app: App): void {
     if (denied) return denied
     const reports = await db.listAbuseReports(c.env.DB)
     return json(reports)
+  })
+
+  // PATCH /api/admin/abuse-reports/:id/resolve — 審核濫用回報：誤報或確認濫用
+  // 誤報   → 停權回報者（ban）→ 清除旗標 → resolved_false
+  // 確認濫用 → 停權張貼者（ban）→ resolved_abuse（旗標維持）
+  //
+  // ban 先做，成功後才寫 DB——確保失敗時 review_status 保持 pending，
+  // 前端拿到真實錯誤碼而非假的 { ok: true }。
+  // 只有 super-admin（adminAc）的 session 帶入 headers 才能通過 Better Auth 的 banUser
+  // hasPermission 檢查；admin role（userAc）會得到 FORBIDDEN，這是刻意行為。
+  app.patch('/api/admin/abuse-reports/:id/resolve', async c => {
+    const denied = await requireAdmin(c.req.raw, c.env)
+    if (denied) return denied
+
+    const id = parseId(c.req.param('id'))
+    if (!id) return error('Invalid ID', 400)
+
+    let body: { action?: unknown }
+    try { body = await c.req.json() } catch { return error('Invalid JSON') }
+    if (body.action !== 'false_report' && body.action !== 'confirmed_abuse') {
+      return error('action must be "false_report" or "confirmed_abuse"')
+    }
+
+    const report = await db.getAbuseReport(c.env.DB, id)
+    if (!report) return error('Report not found', 404)
+    if (report.review_status !== 'pending') return error('Report already resolved', 409)
+
+    const targetUserId = body.action === 'false_report' ? report.reporter_id : report.target_author_id
+    const banReason = body.action === 'false_report' ? '濫用回報：誤報，已停權' : '發布違規內容：已確認濫用'
+
+    // ban 先做——失敗時直接拋出（FORBIDDEN、user-not-found 等），DB 不更新
+    if (targetUserId) {
+      await createAuth(c.env).api.banUser({
+        body: { userId: targetUserId, banReason },
+        headers: c.req.raw.headers,
+      })
+    }
+
+    // ban 成功（或無 userId 需要 ban）才更新業務 DB
+    if (body.action === 'false_report') {
+      await db.resolveAbuseReport(c.env.DB, id, 'resolved_false')
+      await db.unflagContent(c.env.DB, report)
+    } else {
+      await db.resolveAbuseReport(c.env.DB, id, 'resolved_abuse')
+    }
+
+    return json({ ok: true })
   })
 }

@@ -145,6 +145,8 @@ export interface AbuseReport {
   created_at: string
   /** JOIN 取回的所屬議題 ID；若目標已被級聯刪除則為 null */
   target_issue_id: number | null
+  /** JOIN 取回的內容作者 ID（停權張貼者用）；舊資料或已刪除則為 null */
+  target_author_id: string | null
 }
 
 export interface CreateAbuseReportInput {
@@ -492,7 +494,7 @@ export async function createAbuseReport(db: D1Database, input: CreateAbuseReport
   return meta.last_row_id
 }
 
-/** 管理端：列出所有濫用回報（按建立時間降冪），LEFT JOIN 取回目標所屬議題 ID。
+/** 管理端：列出所有濫用回報（按建立時間降冪），LEFT JOIN 取回目標所屬議題與作者 ID。
  *  呼叫端必須先過 requireAdmin()。 */
 export async function listAbuseReports(db: D1Database): Promise<AbuseReport[]> {
   const { results } = await db
@@ -501,7 +503,8 @@ export async function listAbuseReports(db: D1Database): Promise<AbuseReport[]> {
               r.reason, r.description,
               r.material_id, r.briefing_id, r.opinion_id,
               r.review_status, r.created_at,
-              COALESCE(m.issue_id, b.issue_id, o.issue_id) AS target_issue_id
+              COALESCE(m.issue_id, b.issue_id, o.issue_id)   AS target_issue_id,
+              COALESCE(m.author_id, b.author_id, o.author_id) AS target_author_id
        FROM ct_abuse_reports r
        LEFT JOIN ct_materials m ON r.material_id = m.id
        LEFT JOIN ct_briefings b ON r.briefing_id = b.id
@@ -510,4 +513,40 @@ export async function listAbuseReports(db: D1Database): Promise<AbuseReport[]> {
     )
     .all<AbuseReport>()
   return results ?? []
+}
+
+/** 取單筆濫用回報（含 JOIN 欄位）；管理端審核前先確認 report 存在且 pending。 */
+export async function getAbuseReport(db: D1Database, id: number): Promise<AbuseReport | null> {
+  return db
+    .prepare(
+      `SELECT r.id, r.reporter_id, r.reporter_name, r.reporter_email,
+              r.reason, r.description,
+              r.material_id, r.briefing_id, r.opinion_id,
+              r.review_status, r.created_at,
+              COALESCE(m.issue_id, b.issue_id, o.issue_id)   AS target_issue_id,
+              COALESCE(m.author_id, b.author_id, o.author_id) AS target_author_id
+       FROM ct_abuse_reports r
+       LEFT JOIN ct_materials m ON r.material_id = m.id
+       LEFT JOIN ct_briefings b ON r.briefing_id = b.id
+       LEFT JOIN ct_opinions  o ON r.opinion_id  = o.id
+       WHERE r.id = ?`,
+    )
+    .bind(id)
+    .first<AbuseReport>()
+}
+
+/** 更新回報審核狀態。 */
+export async function resolveAbuseReport(db: D1Database, id: number, status: 'resolved_false' | 'resolved_abuse'): Promise<void> {
+  await db.prepare('UPDATE ct_abuse_reports SET review_status = ? WHERE id = ?').bind(status, id).run()
+}
+
+/** 誤報時將目標內容的 abuse_flagged 清回 0。 */
+export async function unflagContent(db: D1Database, report: Pick<AbuseReport, 'material_id' | 'briefing_id' | 'opinion_id'>): Promise<void> {
+  if (report.material_id != null) {
+    await db.prepare('UPDATE ct_materials SET abuse_flagged = 0 WHERE id = ?').bind(report.material_id).run()
+  } else if (report.briefing_id != null) {
+    await db.prepare('UPDATE ct_briefings SET abuse_flagged = 0 WHERE id = ?').bind(report.briefing_id).run()
+  } else if (report.opinion_id != null) {
+    await db.prepare('UPDATE ct_opinions SET abuse_flagged = 0 WHERE id = ?').bind(report.opinion_id).run()
+  }
 }
