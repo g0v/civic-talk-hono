@@ -1,4 +1,4 @@
-import type { AuthorSnapshotInput, Briefing, BriefingWithAuthor, Issue, IssueListItem, IssueListItemWithAuthor, IssueStatus, Material, MaterialWithAuthor, Opinion, OpinionWithAuthor, Stance } from '../db/queries'
+import type { AbuseReportReason, AuthorSnapshotInput, Briefing, BriefingWithAuthor, Issue, IssueListItem, IssueListItemWithAuthor, IssueStatus, Material, MaterialWithAuthor, Opinion, OpinionWithAuthor, Stance } from '../db/queries'
 import * as db from '../db/queries'
 import { isAdminRole, tryGetAuthContext, type AuthContext } from '../auth/authorization'
 import { TERMS_VERSION } from '../legal/terms'
@@ -377,5 +377,58 @@ export function registerApiRoutes(app: App): void {
     }
 
     return json({ prompt, type, material_count: materials.length })
+  })
+
+  // POST /api/abuse-reports — 登入者回報濫用（需登入，不看角色）
+  app.post('/api/abuse-reports', async c => {
+    const auth = await requireUser(c.req.raw, c.env)
+    if ('denied' in auth) return auth.denied
+
+    let body: {
+      material_id?: unknown
+      briefing_id?: unknown
+      opinion_id?: unknown
+      reason?: unknown
+      description?: unknown
+    }
+    try {
+      body = await c.req.json()
+    } catch {
+      return error('Invalid JSON')
+    }
+
+    const materialId = typeof body.material_id === 'number' && body.material_id > 0 ? body.material_id : null
+    const briefingId = typeof body.briefing_id === 'number' && body.briefing_id > 0 ? body.briefing_id : null
+    const opinionId = typeof body.opinion_id === 'number' && body.opinion_id > 0 ? body.opinion_id : null
+    const nonNullCount = [materialId, briefingId, opinionId].filter(v => v !== null).length
+    if (nonNullCount !== 1) return error('Exactly one of material_id, briefing_id, opinion_id must be a positive number')
+
+    const validReasons: AbuseReportReason[] = ['spam', 'hate_speech', 'defamation', 'misinformation', 'other']
+    if (!body.reason || !validReasons.includes(body.reason as AbuseReportReason)) {
+      return error('reason must be one of: ' + validReasons.join(', '))
+    }
+
+    const descriptionRaw = typeof body.description === 'string' ? body.description.trim() : null
+    const user = auth.context.user
+    await db.createAbuseReport(c.env.DB, {
+      reporter_id: user.id,
+      reporter_name: user.name?.trim() || null,
+      reporter_email: user.email,
+      reason: body.reason as AbuseReportReason,
+      description: descriptionRaw || null,
+      material_id: materialId,
+      briefing_id: briefingId,
+      opinion_id: opinionId,
+    })
+
+    return json({ ok: true }, 201)
+  })
+
+  // GET /api/admin/abuse-reports — 管理端查看所有濫用回報
+  app.get('/api/admin/abuse-reports', async c => {
+    const denied = await requireAdmin(c.req.raw, c.env)
+    if (denied) return denied
+    const reports = await db.listAbuseReports(c.env.DB)
+    return json(reports)
   })
 }

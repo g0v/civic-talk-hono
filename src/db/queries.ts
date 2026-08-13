@@ -3,6 +3,8 @@
 export type IssueStatus = 'collecting' | 'summarizing' | 'published'
 export type Stance = 'pro' | 'con' | 'neutral' | 'unknown'
 export type AuthorVisibility = 0 | 1
+export type AbuseReportReason = 'spam' | 'hate_speech' | 'defamation' | 'misinformation' | 'other'
+export type AbuseReviewStatus = 'pending' | 'resolved_false' | 'resolved_abuse'
 
 export interface AuthorSnapshotInput {
   author_id: string
@@ -65,6 +67,8 @@ export interface Material {
   author_name: string | null
   /** 投稿者投稿當下的 email 快照；公開查詢只在 show_email = 1 時回傳 */
   author_email: string | null
+  /** 是否有用戶回報濫用（0 正常，1 審核中）；公開欄位，前台用來折疊顯示 */
+  abuse_flagged: 0 | 1
 }
 
 /** 素材 + 完整作者快照（僅供管理端） */
@@ -91,6 +95,8 @@ export interface Briefing {
   created_at: string
   author_name: string | null
   author_email: string | null
+  /** 是否有用戶回報濫用；公開欄位 */
+  abuse_flagged: 0 | 1
 }
 
 /** briefing + 完整作者快照（僅供管理端） */
@@ -112,6 +118,8 @@ export interface Opinion {
   author_name: string | null
   /** 投稿者投稿當下的 email 快照；公開查詢只在 show_email = 1 時回傳 */
   author_email: string | null
+  /** 是否有用戶回報濫用；公開欄位 */
+  abuse_flagged: 0 | 1
 }
 
 /** 意見 + 完整作者快照（僅供管理端） */
@@ -120,6 +128,34 @@ export interface OpinionWithAuthor extends Opinion {
   show_email: AuthorVisibility
   terms_version: string | null
   terms_accepted_at: string | null
+}
+
+/** 濫用回報記錄（管理端查看用） */
+export interface AbuseReport {
+  id: number
+  reporter_id: string
+  reporter_name: string | null
+  reporter_email: string
+  reason: AbuseReportReason
+  description: string | null
+  material_id: number | null
+  briefing_id: number | null
+  opinion_id: number | null
+  review_status: AbuseReviewStatus
+  created_at: string
+  /** JOIN 取回的所屬議題 ID；若目標已被級聯刪除則為 null */
+  target_issue_id: number | null
+}
+
+export interface CreateAbuseReportInput {
+  reporter_id: string
+  reporter_name: string | null
+  reporter_email: string
+  reason: AbuseReportReason
+  description: string | null
+  material_id: number | null
+  briefing_id: number | null
+  opinion_id: number | null
 }
 
 export interface AdminStats {
@@ -200,7 +236,7 @@ export async function deleteIssueCascade(db: D1Database, id: number): Promise<vo
   await db.prepare('DELETE FROM ct_issues WHERE id = ?').bind(id).run()
 }
 
-const MATERIAL_BASE_COLUMNS = 'id, issue_id, source_name, source_url, stance, content, verified_count, created_at'
+const MATERIAL_BASE_COLUMNS = 'id, issue_id, source_name, source_url, stance, content, verified_count, created_at, abuse_flagged'
 const MATERIAL_PUBLIC_COLUMNS = `${MATERIAL_BASE_COLUMNS}, ${PUBLIC_AUTHOR_COLUMNS}`
 const MATERIAL_ADMIN_COLUMNS = `${MATERIAL_BASE_COLUMNS}, ${PRIVATE_AUTHOR_COLUMNS}, ${SUBMISSION_CONSENT_COLUMNS}`
 
@@ -240,7 +276,7 @@ export async function deleteMaterial(db: D1Database, id: number): Promise<void> 
   await db.prepare('DELETE FROM ct_materials WHERE id = ?').bind(id).run()
 }
 
-const BRIEFING_BASE_COLUMNS = 'id, issue_id, consensus, disputes, positions, narrative, opinion_prompt, version, created_at'
+const BRIEFING_BASE_COLUMNS = 'id, issue_id, consensus, disputes, positions, narrative, opinion_prompt, version, created_at, abuse_flagged'
 const BRIEFING_PUBLIC_COLUMNS = `${BRIEFING_BASE_COLUMNS}, ${PUBLIC_AUTHOR_COLUMNS}`
 const BRIEFING_ADMIN_COLUMNS = `${BRIEFING_BASE_COLUMNS}, ${PRIVATE_AUTHOR_COLUMNS}`
 
@@ -307,7 +343,7 @@ export async function updateLatestBriefing(
   return true
 }
 
-const OPINION_BASE_COLUMNS = 'id, issue_id, summary, created_at'
+const OPINION_BASE_COLUMNS = 'id, issue_id, summary, created_at, abuse_flagged'
 const OPINION_PUBLIC_COLUMNS = `${OPINION_BASE_COLUMNS}, ${PUBLIC_AUTHOR_COLUMNS}`
 const OPINION_ADMIN_COLUMNS = `${OPINION_BASE_COLUMNS}, ${PRIVATE_AUTHOR_COLUMNS}, ${SUBMISSION_CONSENT_COLUMNS}`
 
@@ -432,4 +468,46 @@ export async function listForRss(db: D1Database, limit = 20): Promise<RssFeedIte
       .bind(limit)
       .all<RssFeedItem>()
   ).results
+}
+
+/**
+ * 建立一筆濫用回報，並立即將目標內容的 abuse_flagged 設為 1（第 1 次回報即打標）。
+ * 呼叫端必須先過 requireUser()。
+ */
+export async function createAbuseReport(db: D1Database, input: CreateAbuseReportInput): Promise<number> {
+  const { meta } = await db
+    .prepare(
+      'INSERT INTO ct_abuse_reports (reporter_id, reporter_name, reporter_email, reason, description, material_id, briefing_id, opinion_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    )
+    .bind(input.reporter_id, input.reporter_name, input.reporter_email, input.reason, input.description ?? null, input.material_id ?? null, input.briefing_id ?? null, input.opinion_id ?? null)
+    .run()
+  // 第 1 次回報即打標——後續回報是冪等的 UPDATE（已是 1 就 no-op）
+  if (input.material_id != null) {
+    await db.prepare('UPDATE ct_materials SET abuse_flagged = 1 WHERE id = ?').bind(input.material_id).run()
+  } else if (input.briefing_id != null) {
+    await db.prepare('UPDATE ct_briefings SET abuse_flagged = 1 WHERE id = ?').bind(input.briefing_id).run()
+  } else if (input.opinion_id != null) {
+    await db.prepare('UPDATE ct_opinions SET abuse_flagged = 1 WHERE id = ?').bind(input.opinion_id).run()
+  }
+  return meta.last_row_id
+}
+
+/** 管理端：列出所有濫用回報（按建立時間降冪），LEFT JOIN 取回目標所屬議題 ID。
+ *  呼叫端必須先過 requireAdmin()。 */
+export async function listAbuseReports(db: D1Database): Promise<AbuseReport[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT r.id, r.reporter_id, r.reporter_name, r.reporter_email,
+              r.reason, r.description,
+              r.material_id, r.briefing_id, r.opinion_id,
+              r.review_status, r.created_at,
+              COALESCE(m.issue_id, b.issue_id, o.issue_id) AS target_issue_id
+       FROM ct_abuse_reports r
+       LEFT JOIN ct_materials m ON r.material_id = m.id
+       LEFT JOIN ct_briefings b ON r.briefing_id = b.id
+       LEFT JOIN ct_opinions  o ON r.opinion_id  = o.id
+       ORDER BY r.created_at DESC`,
+    )
+    .all<AbuseReport>()
+  return results ?? []
 }
