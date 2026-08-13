@@ -442,6 +442,7 @@ export const messages = {
   flagged_warning: '⚠️ This content has been reported for abuse and is under review',
   flagged_expand_btn: 'Show content',
   flagged_collapse_btn: 'Collapse',
+  flagged_confirmed: '🚫 This content has been confirmed as abusive by an admin and is not shown',
   adm_tab_reports: '⚑ Abuse Reports',
   adm_rpt_title: 'Abuse Reports',
   adm_rpt_empty: 'No abuse reports at this time',

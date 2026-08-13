@@ -436,6 +436,7 @@ export const messages = {
   flagged_warning: '⚠️ 此內容有用戶回報濫用，審核中',
   flagged_expand_btn: '展開內容',
   flagged_collapse_btn: '收合',
+  flagged_confirmed: '🚫 此內容已被管理員確認為違規，不予顯示',
   adm_tab_reports: '⚑ 濫用回報',
   adm_rpt_title: '濫用回報',
   adm_rpt_empty: '目前沒有濫用回報',

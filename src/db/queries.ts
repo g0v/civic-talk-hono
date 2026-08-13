@@ -67,8 +67,8 @@ export interface Material {
   author_name: string | null
   /** 投稿者投稿當下的 email 快照；公開查詢只在 show_email = 1 時回傳 */
   author_email: string | null
-  /** 是否有用戶回報濫用（0 正常，1 審核中）；公開欄位，前台用來折疊顯示 */
-  abuse_flagged: 0 | 1
+  /** 是否有用戶回報濫用（0 正常，1 待審核，2 已確認違規）；公開欄位，前台用來折疊或完全隱藏 */
+  abuse_flagged: 0 | 1 | 2
 }
 
 /** 素材 + 完整作者快照（僅供管理端） */
@@ -95,8 +95,8 @@ export interface Briefing {
   created_at: string
   author_name: string | null
   author_email: string | null
-  /** 是否有用戶回報濫用；公開欄位 */
-  abuse_flagged: 0 | 1
+  /** 是否有用戶回報濫用（0 正常，1 待審核，2 已確認違規）；公開欄位 */
+  abuse_flagged: 0 | 1 | 2
 }
 
 /** briefing + 完整作者快照（僅供管理端） */
@@ -118,8 +118,8 @@ export interface Opinion {
   author_name: string | null
   /** 投稿者投稿當下的 email 快照；公開查詢只在 show_email = 1 時回傳 */
   author_email: string | null
-  /** 是否有用戶回報濫用；公開欄位 */
-  abuse_flagged: 0 | 1
+  /** 是否有用戶回報濫用（0 正常，1 待審核，2 已確認違規）；公開欄位 */
+  abuse_flagged: 0 | 1 | 2
 }
 
 /** 意見 + 完整作者快照（僅供管理端） */
@@ -548,5 +548,16 @@ export async function unflagContent(db: D1Database, report: Pick<AbuseReport, 'm
     await db.prepare('UPDATE ct_briefings SET abuse_flagged = 0 WHERE id = ?').bind(report.briefing_id).run()
   } else if (report.opinion_id != null) {
     await db.prepare('UPDATE ct_opinions SET abuse_flagged = 0 WHERE id = ?').bind(report.opinion_id).run()
+  }
+}
+
+/** 確認濫用時將目標內容的 abuse_flagged 設為 2（完全隱藏，不可展開）。 */
+export async function confirmFlagContent(db: D1Database, report: Pick<AbuseReport, 'material_id' | 'briefing_id' | 'opinion_id'>): Promise<void> {
+  if (report.material_id != null) {
+    await db.prepare('UPDATE ct_materials SET abuse_flagged = 2 WHERE id = ?').bind(report.material_id).run()
+  } else if (report.briefing_id != null) {
+    await db.prepare('UPDATE ct_briefings SET abuse_flagged = 2 WHERE id = ?').bind(report.briefing_id).run()
+  } else if (report.opinion_id != null) {
+    await db.prepare('UPDATE ct_opinions SET abuse_flagged = 2 WHERE id = ?').bind(report.opinion_id).run()
   }
 }

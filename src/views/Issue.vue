@@ -451,6 +451,11 @@ async function submitOpinion() {
                 </button>
               </div>
             </template>
+            <!-- 已確認違規：隱藏 briefing 內容 -->
+            <template v-else-if="briefing.abuse_flagged === 2">
+              <div class="alert alert-error">{{ t('flagged_confirmed') }}</div>
+            </template>
+            <!-- 正常或待審核：顯示 briefing -->
             <template v-else>
               <h2 class="mt-0 mb-3 font-serif text-xl">{{ t('brief_overview') }}</h2>
               <div class="mb-6 whitespace-pre-wrap leading-relaxed">{{ briefing.narrative }}</div>
@@ -483,7 +488,7 @@ async function submitOpinion() {
                   {{ t('report_btn') }}
                 </button>
               </p>
-              <div v-if="briefing.abuse_flagged" class="mt-2 text-sm text-amber-600">{{ t('flagged_warning') }}</div>
+              <div v-if="briefing.abuse_flagged === 1" class="mt-2 text-sm text-amber-600">{{ t('flagged_warning') }}</div>
             </template>
             <div id="polis-section" class="my-8" style="display: none" />
           </section>
@@ -500,8 +505,10 @@ async function submitOpinion() {
               {{ t('mat_empty') }}
             </div>
             <div v-for="m in materials" :key="m.id" class="card mb-4">
-              <!-- 濫用回報標記：折疊並附展開選項 -->
-              <div v-if="m.abuse_flagged && !expandedFlagged.has(`material-${m.id}`)" class="mb-2">
+              <!-- 已確認違規（2）：完全隱藏，無展開選項 -->
+              <p v-if="m.abuse_flagged === 2" class="m-0 py-1 text-sm text-red">{{ t('flagged_confirmed') }}</p>
+              <!-- 待審核（1）：折疊 + 可展開 -->
+              <div v-else-if="m.abuse_flagged === 1 && !expandedFlagged.has(`material-${m.id}`)" class="mb-2">
                 <div class="alert alert-warn mb-2 flex items-center justify-between gap-2 py-2">
                   <span class="text-sm">{{ t('flagged_warning') }}</span>
                   <button type="button" class="btn btn-ghost btn-sm shrink-0" @click="toggleFlagged('material', m.id)">
@@ -509,8 +516,9 @@ async function submitOpinion() {
                   </button>
                 </div>
               </div>
-              <template v-if="!m.abuse_flagged || expandedFlagged.has(`material-${m.id}`)">
-                <div v-if="m.abuse_flagged" class="mb-2 flex items-center justify-between gap-2">
+              <!-- 正常或待審核已展開：顯示內容 -->
+              <template v-if="m.abuse_flagged !== 2 && (!m.abuse_flagged || expandedFlagged.has(`material-${m.id}`))">
+                <div v-if="m.abuse_flagged === 1" class="mb-2 flex items-center justify-between gap-2">
                   <span class="text-xs text-amber-600">{{ t('flagged_warning') }}</span>
                   <button type="button" class="btn btn-ghost btn-sm shrink-0 text-xs" @click="toggleFlagged('material', m.id)">
                     {{ t('flagged_collapse_btn') }}
@@ -523,7 +531,8 @@ async function submitOpinion() {
                 </div>
                 <div class="whitespace-pre-wrap text-sm leading-relaxed">{{ m.content }}</div>
               </template>
-              <p class="mt-2 mb-0 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
+              <!-- metadata（已確認違規時不顯示） -->
+              <p v-if="m.abuse_flagged !== 2" class="mt-2 mb-0 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
                 <span>{{ formatDate(m.created_at, locale) }} · {{ m.verified_count }} {{ t('mat_contributor') }}</span>
                 <span
                   >{{ t('mat_author_label') }}：{{ m.author_name || t('author_system') }}<template v-if="m.author_email"> · {{ t('author_email_label') }}：{{ m.author_email }}</template></span
@@ -694,8 +703,10 @@ async function submitOpinion() {
             <template v-else>
               <h3 class="mb-4 font-medium">{{ t('op_count_prefix') }}{{ opinions.length }}{{ t('op_count_suffix') }}</h3>
               <div v-for="o in opinions" :key="o.id" class="card mb-4">
-                <!-- 濫用回報標記：折疊並附展開選項 -->
-                <div v-if="o.abuse_flagged && !expandedFlagged.has(`opinion-${o.id}`)" class="mb-2">
+                <!-- 已確認違規（2）：完全隱藏，無展開選項 -->
+                <p v-if="o.abuse_flagged === 2" class="m-0 py-1 text-sm text-red">{{ t('flagged_confirmed') }}</p>
+                <!-- 待審核（1）：折疊 + 可展開 -->
+                <div v-else-if="o.abuse_flagged === 1 && !expandedFlagged.has(`opinion-${o.id}`)" class="mb-2">
                   <div class="alert alert-warn flex items-center justify-between gap-2 py-2">
                     <span class="text-sm">{{ t('flagged_warning') }}</span>
                     <button type="button" class="btn btn-ghost btn-sm shrink-0" @click="toggleFlagged('opinion', o.id)">
@@ -703,8 +714,9 @@ async function submitOpinion() {
                     </button>
                   </div>
                 </div>
-                <template v-if="!o.abuse_flagged || expandedFlagged.has(`opinion-${o.id}`)">
-                  <div v-if="o.abuse_flagged" class="mb-1 flex items-center justify-between gap-2">
+                <!-- 正常或待審核已展開：顯示內容 -->
+                <template v-if="o.abuse_flagged !== 2 && (!o.abuse_flagged || expandedFlagged.has(`opinion-${o.id}`))">
+                  <div v-if="o.abuse_flagged === 1" class="mb-1 flex items-center justify-between gap-2">
                     <span class="text-xs text-amber-600">{{ t('flagged_warning') }}</span>
                     <button type="button" class="btn btn-ghost btn-sm shrink-0 text-xs" @click="toggleFlagged('opinion', o.id)">
                       {{ t('flagged_collapse_btn') }}

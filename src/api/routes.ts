@@ -485,6 +485,7 @@ export function registerApiRoutes(app: App): void {
       await db.unflagContent(c.env.DB, report)
     } else {
       await db.resolveAbuseReport(c.env.DB, id, 'resolved_abuse')
+      await db.confirmFlagContent(c.env.DB, report)
     }
 
     return json({ ok: true })
