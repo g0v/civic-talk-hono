@@ -335,6 +335,10 @@ export const messages = {
   show_email_label: '公開我的 email：{email}',
   show_email_hint: '（選填；email 快照會保存，勾選後才會公開）',
   author_email_label: 'Email',
+  // RSS 訂閱（#45）
+  rss_subscribe_btn: '📡 訂閱 RSS',
+  rss_copy_ok: 'RSS 連結已複製到剪貼簿！貼入你的 RSS 閱讀器即可訂閱。',
+  rss_copy_fail: '無法複製連結，請手動開啟：{url}',
 } as const
 
 export type MessageKey = keyof typeof messages

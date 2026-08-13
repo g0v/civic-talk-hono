@@ -3,6 +3,7 @@ import { registerApiRoutes } from './api/routes'
 import { registerAuthRoutes } from './api/auth'
 import type { AppBindings } from './api/types'
 import { listIssues, getIssue, getIssueDetail, getMaterialWithIssue, getOpinionWithIssue } from './db/queries'
+import { handleRss } from './rss'
 import { renderPage } from './ssr/render'
 import { headForAbout, headForAdmin, headForContribute, headForHome, headForIssue, headForMaterial, headForNotFound, headForOpinion, headForPrivacy, headForTerms } from './ssr/heads'
 import HomeView from './views/Home.vue'
@@ -42,6 +43,9 @@ app.get('/contribute.html', c => {
   if (id && /^\d+$/.test(id)) return c.redirect(`/contribute/${id}`, 302)
   return c.redirect('/', 302)
 })
+
+// ── RSS feed ──────────────────────────────────────────────────
+app.get('/rss.xml', c => handleRss(c.env.DB, c.req.raw, c.executionCtx))
 
 app.get('/', async c => {
   const origin = new URL(c.req.url).origin

@@ -341,4 +341,8 @@ export const messages = {
   show_email_label: 'Make my email public: {email}',
   show_email_hint: '(optional; an email snapshot is stored and only published when checked)',
   author_email_label: 'Email',
+  // RSS subscription (#45)
+  rss_subscribe_btn: '📡 Subscribe via RSS',
+  rss_copy_ok: 'RSS link copied to clipboard! Paste it into your RSS reader to subscribe.',
+  rss_copy_fail: 'Could not copy link. Please open manually: {url}',
 } as const

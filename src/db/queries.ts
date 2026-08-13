@@ -403,3 +403,33 @@ export async function getOpinionWithIssue(db: D1Database, opinionId: number): Pr
   if (!issue) return null
   return { opinion, issue }
 }
+
+/** RSS feed 用：議題與素材的最新 N 筆（混合，按 created_at DESC） */
+export interface RssFeedItem {
+  type: 'issue' | 'material'
+  id: number
+  title: string | null
+  /** 議題的 description 或素材的 content（前 300 字） */
+  description: string | null
+  /** 素材所屬議題 ID；type === 'issue' 時為 NULL */
+  issue_id: number | null
+  created_at: string
+}
+
+/** RSS 用：取最新 `limit` 筆（議題＋素材混合，按 created_at DESC） */
+export async function listForRss(db: D1Database, limit = 20): Promise<RssFeedItem[]> {
+  return (
+    await db
+      .prepare(
+        `SELECT 'issue' AS type, id, title, description, NULL AS issue_id, created_at
+         FROM ct_issues
+         UNION ALL
+         SELECT 'material' AS type, id, source_name AS title, content AS description, issue_id, created_at
+         FROM ct_materials
+         ORDER BY created_at DESC
+         LIMIT ?`
+      )
+      .bind(limit)
+      .all<RssFeedItem>()
+  ).results
+}
