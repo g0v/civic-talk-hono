@@ -13,19 +13,23 @@ import { listForRss } from './db/queries'
 const RSS_CACHE_TTL = 3600
 
 /**
- * RSS 描述欄位的三層淨化：
- * 1. Strip HTML tags — 部分 RSS reader 把 <description> 當 HTML 渲染。
- *    HTML5 tag-open state 只在 `<` 直後接 ASCII letter 或 `/` 時才開 tag；
- *    所以只 strip `<[/]letter...>` 與 `<!-- comment -->` 即可精確覆蓋所有
- *    reader 會執行的結構，同時保留 `a < b > c` 這類數學比較式。
- * 2. 清除 XML 1.0 禁止的控制字元（U+0000–U+0008、U+000B–U+000C、U+000E–U+001F、U+FFFE、U+FFFF）
- * 3. 轉義 XML 特殊字元（&、<、>、"、'）
+ * 步驟 1+2：strip HTML tags 與 XML 1.0 禁用控制字元。
+ * 必須在 truncate 之前呼叫，避免 slice 切到半開 tag（如 `<img src=x onerror=...`
+ * 無 `>` 結尾）導致後續 strip regex 無法匹配而讓危險內容流進 feed。
+ *
+ * HTML5 tag-open state 只在 `<` 直後接 ASCII letter 或 `/` 時才開 tag；
+ * 所以只 strip `<[/]letter...>` 與 `<!-- comment -->` 即可精確覆蓋，
+ * 同時保留 `a < b > c` 這類數學比較式。
  */
-function xmlEscape(str: string): string {
+function sanitize(str: string): string {
   const noTags = str.replace(/<\/?[a-zA-Z][^>]*>|<!--[\s\S]*?-->/g, '')
   // eslint-disable-next-line no-control-regex
-  const noCtrl = noTags.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\uFFFE\uFFFF]/g, '')
-  return noCtrl
+  return noTags.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\uFFFE\uFFFF]/g, '')
+}
+
+/** 步驟 3：XML 特殊字元轉義（&、<、>、"、'）。呼叫前必須先 sanitize。 */
+function xmlEscape(str: string): string {
+  return str
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
@@ -48,14 +52,15 @@ export async function generateRssFeed(db: D1Database, origin: string): Promise<s
     .map(item => {
       const titleRaw =
         item.title ?? (item.type === 'issue' ? '（無標題議題）' : '素材投稿')
-      // 素材 content 可能很長；描述截 300 字元避免 feed 過重
-      const descRaw = (item.description ?? '').slice(0, 300)
+      // 先 sanitize（strip tags + control chars）再 slice(300)，
+      // 避免截到半開 tag 導致 strip regex 失效
+      const descRaw = sanitize(item.description ?? '').slice(0, 300)
       const link =
         item.type === 'issue'
           ? `${origin}/issues/${item.id}`
           : `${origin}/issues/${item.issue_id}/source/${item.id}`
       return `    <item>
-      <title>${xmlEscape(titleRaw)}</title>
+      <title>${xmlEscape(sanitize(titleRaw))}</title>
       <link>${link}</link>
       <description>${xmlEscape(descRaw)}</description>
       <category>${item.type === 'issue' ? '議題' : '素材'}</category>
