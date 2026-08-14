@@ -120,6 +120,24 @@ async function submitReport() {
   }
 }
 
+async function submitBrokenLinkReport(materialId: number) {
+  if (authState.value !== 'signed-in') {
+    toast.value?.show(t('report_toast_no_login'))
+    return
+  }
+  const res = await fetch('/api/abuse-reports', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ material_id: materialId, reason: 'broken_link' }),
+  })
+  if (res.ok) {
+    toast.value?.show(t('report_broken_toast_ok'))
+    await loadIssue()
+  } else {
+    toast.value?.show(t('report_toast_fail'))
+  }
+}
+
 const tabs = computed(() => [
   { id: 'briefing' as const, label: t('tab_briefing') },
   { id: 'materials' as const, label: t('tab_materials') },
@@ -487,7 +505,7 @@ async function submitOpinion() {
                   }}
                   <template v-if="briefing.author_email"> · {{ t('author_email_label') }}：{{ briefing.author_email }}</template></span
                 >
-                <button v-if="authState === 'signed-in'" type="button" class="ml-auto text-xs text-muted hover:text-red" @click="openReport('briefing', briefing.id)">
+                <button v-if="authState === 'signed-in' && !briefing.abuse_flagged" type="button" class="ml-auto text-xs text-muted hover:text-red" @click="openReport('briefing', briefing.id)">
                   {{ t('report_btn') }}
                 </button>
               </p>
@@ -541,7 +559,15 @@ async function submitOpinion() {
                   >{{ t('mat_author_label') }}：{{ m.author_name || t('author_system') }}<template v-if="m.author_email"> · {{ t('author_email_label') }}：{{ m.author_email }}</template></span
                 >
                 <a :href="`/issues/${issueId}/source/${m.id}`" class="text-xs text-muted hover:underline"> 🔗 {{ t('card_permalink') }} </a>
-                <button v-if="authState === 'signed-in'" type="button" class="ml-auto text-xs text-muted hover:text-red" @click="openReport('material', m.id)">
+                <button
+                  v-if="authState === 'signed-in' && m.source_url && !m.abuse_flagged"
+                  type="button"
+                  class="text-xs text-muted hover:text-amber-600"
+                  @click="submitBrokenLinkReport(m.id)"
+                >
+                  {{ t('report_broken_btn') }}
+                </button>
+                <button v-if="authState === 'signed-in' && !m.abuse_flagged" type="button" class="ml-auto text-xs text-muted hover:text-red" @click="openReport('material', m.id)">
                   {{ t('report_btn') }}
                 </button>
               </p>
@@ -731,7 +757,7 @@ async function submitOpinion() {
                       >{{ t('op_author_label') }}：{{ o.author_name || t('author_system') }}<template v-if="o.author_email"> · {{ t('author_email_label') }}：{{ o.author_email }}</template></span
                     >
                     <a :href="`/issues/${issueId}/comment/${o.id}`" class="text-xs text-muted hover:underline"> 🔗 {{ t('card_permalink') }} </a>
-                    <button v-if="authState === 'signed-in'" type="button" class="ml-auto text-xs text-muted hover:text-red" @click="openReport('opinion', o.id)">
+                    <button v-if="authState === 'signed-in' && !o.abuse_flagged" type="button" class="ml-auto text-xs text-muted hover:text-red" @click="openReport('opinion', o.id)">
                       {{ t('report_btn') }}
                     </button>
                   </p>

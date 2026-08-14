@@ -747,6 +747,9 @@
   .py-20 {
     padding-block: calc(var(--spacing) * 20);
   }
+  .pt-1 {
+    padding-top: var(--spacing);
+  }
   .pt-3 {
     padding-top: calc(var(--spacing) * 3);
   }
@@ -939,6 +942,9 @@
       .hover\:bg-black\/5:hover {
         background-color: color-mix(in oklab, var(--color-black) 5%, transparent);
       }
+    }
+    .hover\:text-amber-600:hover {
+      color: var(--color-amber-600);
     }
     .hover\:text-red:hover {
       color: var(--color-red);
