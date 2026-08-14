@@ -102,8 +102,14 @@ async function loadOpinions() {
   if (res.ok) opinions.value = await res.json()
 }
 
-async function onMatIssueChange() { materialSearch.value = ''; await loadMaterials() }
-async function onOpIssueChange() { opinionSearch.value = ''; await loadOpinions() }
+async function onMatIssueChange() {
+  materialSearch.value = ''
+  await loadMaterials()
+}
+async function onOpIssueChange() {
+  opinionSearch.value = ''
+  await loadOpinions()
+}
 
 async function loadAbuseReports() {
   const res = await fetch('/api/admin/abuse-reports', { headers: authHeaders() })
@@ -126,7 +132,9 @@ async function resolveReport(id: number, action: 'false_report' | 'confirmed_abu
     try {
       const data = (await res.json()) as { error?: string }
       if (data.error) msg = data.error
-    } catch { /* 忽略 */ }
+    } catch {
+      /* 忽略 */
+    }
     toast.value?.show(msg)
   }
 }
@@ -291,42 +299,39 @@ async function onTabChange(id: AdminTab) {
 const filteredIssues = computed(() => {
   if (!issueSearch.value.trim()) return issues.value
   const q = issueSearch.value.toLowerCase()
-  return issues.value.filter(i =>
-    i.title.toLowerCase().includes(q) ||
-    (i.description?.toLowerCase().includes(q) ?? false) ||
-    (i.author_name?.toLowerCase().includes(q) ?? false)
-  )
+  return issues.value.filter(i => i.title.toLowerCase().includes(q) || (i.description?.toLowerCase().includes(q) ?? false) || (i.author_name?.toLowerCase().includes(q) ?? false))
 })
 
 const filteredMaterials = computed(() => {
   if (!materialSearch.value.trim()) return materials.value
   const q = materialSearch.value.toLowerCase()
-  return materials.value.filter(m =>
-    (m.source_name?.toLowerCase().includes(q) ?? false) ||
-    (m.source_url?.toLowerCase().includes(q) ?? false) ||
-    m.content.toLowerCase().includes(q) ||
-    (m.author_name?.toLowerCase().includes(q) ?? false)
+  return materials.value.filter(
+    m =>
+      (m.source_name?.toLowerCase().includes(q) ?? false) ||
+      (m.source_url?.toLowerCase().includes(q) ?? false) ||
+      m.content.toLowerCase().includes(q) ||
+      (m.author_name?.toLowerCase().includes(q) ?? false)
   )
 })
 
 const filteredOpinions = computed(() => {
   if (!opinionSearch.value.trim()) return opinions.value
   const q = opinionSearch.value.toLowerCase()
-  return opinions.value.filter(o =>
-    o.summary.toLowerCase().includes(q) ||
-    (o.author_name?.toLowerCase().includes(q) ?? false)
-  )
+  return opinions.value.filter(o => o.summary.toLowerCase().includes(q) || (o.author_name?.toLowerCase().includes(q) ?? false))
 })
 
 const filteredReports = computed(() => {
   if (!reportSearch.value.trim()) return abuseReports.value
   const q = reportSearch.value.toLowerCase()
-  return abuseReports.value.filter(r =>
-    (r.reporter_name?.toLowerCase().includes(q) ?? false) ||
-    r.reporter_email.toLowerCase().includes(q) ||
-    r.reason.toLowerCase().includes(q) ||
-    t(ABUSE_REASON_LABELS[r.reason] ?? 'report_reason_other').toLowerCase().includes(q) ||
-    (r.description?.toLowerCase().includes(q) ?? false)
+  return abuseReports.value.filter(
+    r =>
+      (r.reporter_name?.toLowerCase().includes(q) ?? false) ||
+      r.reporter_email.toLowerCase().includes(q) ||
+      r.reason.toLowerCase().includes(q) ||
+      t(ABUSE_REASON_LABELS[r.reason] ?? 'report_reason_other')
+        .toLowerCase()
+        .includes(q) ||
+      (r.description?.toLowerCase().includes(q) ?? false)
   )
 })
 </script>
@@ -502,12 +507,7 @@ const filteredReports = computed(() => {
                   {{ t('adm_mat_count_prefix') }}{{ filteredMaterials.length }}{{ t('adm_mat_count_suffix') }}
                   <span v-if="materialSearch && filteredMaterials.length !== materials.length" class="text-xs">{{ t('adm_search_total', { total: materials.length }) }}</span>
                 </p>
-                <input
-                  v-model="materialSearch"
-                  type="search"
-                  class="rounded border border-border px-3 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-red"
-                  :placeholder="t('adm_search_ph')"
-                />
+                <input v-model="materialSearch" type="search" class="rounded border border-border px-3 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-red" :placeholder="t('adm_search_ph')" />
               </div>
               <div v-for="m in filteredMaterials" :key="m.id" class="card mb-3">
                 <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -551,12 +551,7 @@ const filteredReports = computed(() => {
                   {{ t('adm_op_count_prefix') }}{{ filteredOpinions.length }}{{ t('adm_op_count_suffix') }}
                   <span v-if="opinionSearch && filteredOpinions.length !== opinions.length" class="text-xs">{{ t('adm_search_total', { total: opinions.length }) }}</span>
                 </p>
-                <input
-                  v-model="opinionSearch"
-                  type="search"
-                  class="rounded border border-border px-3 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-red"
-                  :placeholder="t('adm_search_ph')"
-                />
+                <input v-model="opinionSearch" type="search" class="rounded border border-border px-3 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-red" :placeholder="t('adm_search_ph')" />
               </div>
               <div v-for="o in filteredOpinions" :key="o.id" class="card mb-3">
                 <div class="mb-2 flex items-center justify-between gap-2">
@@ -617,9 +612,15 @@ const filteredReports = computed(() => {
                     </td>
                     <td class="px-3 py-2">
                       <template v-if="r.target_issue_id">
-                        <a v-if="r.material_id" :href="`/issues/${r.target_issue_id}/source/${r.material_id}`" class="underline" target="_blank" rel="noopener">{{ t('adm_rpt_target_material') }}{{ r.material_id }}</a>
-                        <a v-else-if="r.opinion_id" :href="`/issues/${r.target_issue_id}/comment/${r.opinion_id}`" class="underline" target="_blank" rel="noopener">{{ t('adm_rpt_target_opinion') }}{{ r.opinion_id }}</a>
-                        <a v-else-if="r.briefing_id" :href="`/issues/${r.target_issue_id}`" class="underline" target="_blank" rel="noopener">{{ t('adm_rpt_target_briefing') }}{{ r.briefing_id }}（議題 {{ r.target_issue_id }}）</a>
+                        <a v-if="r.material_id" :href="`/issues/${r.target_issue_id}/source/${r.material_id}`" class="underline" target="_blank" rel="noopener"
+                          >{{ t('adm_rpt_target_material') }}{{ r.material_id }}</a
+                        >
+                        <a v-else-if="r.opinion_id" :href="`/issues/${r.target_issue_id}/comment/${r.opinion_id}`" class="underline" target="_blank" rel="noopener"
+                          >{{ t('adm_rpt_target_opinion') }}{{ r.opinion_id }}</a
+                        >
+                        <a v-else-if="r.briefing_id" :href="`/issues/${r.target_issue_id}`" class="underline" target="_blank" rel="noopener"
+                          >{{ t('adm_rpt_target_briefing') }}{{ r.briefing_id }}（議題 {{ r.target_issue_id }}）</a
+                        >
                       </template>
                       <span v-else class="text-muted text-xs">（目標已刪除）</span>
                     </td>

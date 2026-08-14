@@ -481,9 +481,12 @@ async function submitOpinion() {
                 </button>
               </div>
               <p class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
-                <span>{{ t('brief_version_prefix') }}{{ briefing.version }}，{{ t('brief_updated') }}
-                {{ formatDate(briefing.created_at, locale) }} · {{ t('brief_author_label') }}：{{ briefing.author_name || t('author_system') }}
-                <template v-if="briefing.author_email"> · {{ t('author_email_label') }}：{{ briefing.author_email }}</template></span>
+                <span
+                  >{{ t('brief_version_prefix') }}{{ briefing.version }}，{{ t('brief_updated') }} {{ formatDate(briefing.created_at, locale) }} · {{ t('brief_author_label') }}：{{
+                    briefing.author_name || t('author_system')
+                  }}
+                  <template v-if="briefing.author_email"> · {{ t('author_email_label') }}：{{ briefing.author_email }}</template></span
+                >
                 <button v-if="authState === 'signed-in'" type="button" class="ml-auto text-xs text-muted hover:text-red" @click="openReport('briefing', briefing.id)">
                   {{ t('report_btn') }}
                 </button>

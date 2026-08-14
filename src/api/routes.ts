@@ -1,4 +1,18 @@
-import type { AbuseReportReason, AuthorSnapshotInput, Briefing, BriefingWithAuthor, Issue, IssueListItem, IssueListItemWithAuthor, IssueStatus, Material, MaterialWithAuthor, Opinion, OpinionWithAuthor, Stance } from '../db/queries'
+import type {
+  AbuseReportReason,
+  AuthorSnapshotInput,
+  Briefing,
+  BriefingWithAuthor,
+  Issue,
+  IssueListItem,
+  IssueListItemWithAuthor,
+  IssueStatus,
+  Material,
+  MaterialWithAuthor,
+  Opinion,
+  OpinionWithAuthor,
+  Stance,
+} from '../db/queries'
 import * as db from '../db/queries'
 import { isAdminRole, tryGetAuthContext, type AuthContext } from '../auth/authorization'
 import { createAuth } from '../auth/createAuth'
@@ -254,8 +268,7 @@ export function registerApiRoutes(app: App): void {
     const id = parseId(c.req.param('id'))
     if (!id) return error('Invalid id')
     const context = await tryGetAuthContext(c.env, c.req.raw.headers)
-    const briefing: Briefing | BriefingWithAuthor | null =
-      context && isAdminRole(context.role) ? await db.getLatestBriefingWithAuthor(c.env.DB, id) : await db.getLatestBriefing(c.env.DB, id)
+    const briefing: Briefing | BriefingWithAuthor | null = context && isAdminRole(context.role) ? await db.getLatestBriefingWithAuthor(c.env.DB, id) : await db.getLatestBriefing(c.env.DB, id)
     const res = json(briefing)
     res.headers.set('Vary', 'Cookie')
     return res
@@ -450,7 +463,11 @@ export function registerApiRoutes(app: App): void {
     if (!id) return error('Invalid ID', 400)
 
     let body: { action?: unknown }
-    try { body = await c.req.json() } catch { return error('Invalid JSON') }
+    try {
+      body = await c.req.json()
+    } catch {
+      return error('Invalid JSON')
+    }
     if (body.action !== 'false_report' && body.action !== 'confirmed_abuse') {
       return error('action must be "false_report" or "confirmed_abuse"')
     }

@@ -37,13 +37,13 @@ https://civic.vtaiwan.tw/api/auth/callback/github
 
 `.dev.vars` **只有本機吃得到**，不會隨 deploy 上傳。以下六個值必須另外設進 Worker（正式站已設好，這裡是輪替金鑰或建新環境時的清單）：
 
-| 名稱                   | 說明                                                                                     | 建議設法              |
-| ---------------------- | ---------------------------------------------------------------------------------------- | --------------------- |
-| `BETTER_AUTH_SECRET`   | 簽章密鑰，**與 vTaiwan-hono 用同一個值**                                                 | `wrangler secret put` |
-| `GOOGLE_CLIENT_ID`     | 與 vTaiwan-hono 共用                                                                     | `wrangler secret put` |
-| `GOOGLE_CLIENT_SECRET` | 與 vTaiwan-hono 共用                                                                     | `wrangler secret put` |
-| `GITHUB_CLIENT_ID`     | 與 vTaiwan-hono 共用                                                                     | `wrangler secret put` |
-| `GITHUB_CLIENT_SECRET` | 與 vTaiwan-hono 共用                                                                     | `wrangler secret put` |
+| 名稱                   | 說明                                                                                   | 建議設法              |
+| ---------------------- | -------------------------------------------------------------------------------------- | --------------------- |
+| `BETTER_AUTH_SECRET`   | 簽章密鑰，**與 vTaiwan-hono 用同一個值**                                               | `wrangler secret put` |
+| `GOOGLE_CLIENT_ID`     | 與 vTaiwan-hono 共用                                                                   | `wrangler secret put` |
+| `GOOGLE_CLIENT_SECRET` | 與 vTaiwan-hono 共用                                                                   | `wrangler secret put` |
+| `GITHUB_CLIENT_ID`     | 與 vTaiwan-hono 共用                                                                   | `wrangler secret put` |
+| `GITHUB_CLIENT_SECRET` | 與 vTaiwan-hono 共用                                                                   | `wrangler secret put` |
 | `BETTER_AUTH_URL`      | **本站自己的 origin**（正式站是 `https://civic.vtaiwan.tw`），不要從 vTaiwan-hono 複製 | 見下方說明            |
 
 ```bash
@@ -124,24 +124,24 @@ vp run deploy    # = vp run build + wrangler deploy
 
 正式站 origin 是 `https://civic.vtaiwan.tw`。「已驗」欄記的是最近一次確認的日期；每次 deploy 後至少重跑前段那幾條。
 
-| 檢查                               | 預期                                                                            | 已驗       |
-| ---------------------------------- | ------------------------------------------------------------------------------- | ---------- |
-| `GET /`                            | 200，議題列表正常渲染                                                           | 2026-08-11 |
-| `GET /api/issues`                  | 200                                                                             | 2026-08-11 |
-| `GET /api/me`（未登入）            | 401                                                                             | 2026-08-11 |
-| `GET /api/auth/get-session`        | 200                                                                             | 2026-08-11 |
-| `GET /api/auth/admin/list-users`   | **404**（本站刻意不開成員管理端點）                                             | 2026-08-11 |
-| `GET /api/admin/stats`（未登入）   | 401                                                                             | 2026-08-11 |
-| `GET /index.html`                  | 301 → `/`                                                                       | 2026-08-11 |
-| `GET /privacy`、`GET /terms`       | 200                                                                             | 2026-08-11 |
-| `GET /issue.html?id=1`             | 302 → `/issues/1`                                                               | —          |
-| 瀏覽器開 `/admin`                  | 顯示 Google／GitHub 登入卡片                                                    | 2026-08-11 |
-| 用 Google 登入                     | 導回 `/admin`；角色是 `admin`／`super-admin` 就進後台，否則顯示「沒有管理權限」 | 2026-08-11 |
-| 用 GitHub 登入                     | 同樣能登入並導回原頁                                                            | 2026-08-11 |
-| 用同一個 email 換 provider 登入    | 同一個帳號、同樣權限，**不會變成新帳號**                                        | —          |
-| 登入後投稿素材／意見／議題         | 寫入成功，且該筆內容顯示投稿者名稱（email 只在勾選公開時才出現）                | 2026-08-11 |
-| 登入後送出說明頁                   | 寫入成功且記錄 `author_id`；管理端看得到完整作者快照                            | —          |
-| 登出後 `GET /api/me`               | 401                                                                             | —          |
+| 檢查                             | 預期                                                                            | 已驗       |
+| -------------------------------- | ------------------------------------------------------------------------------- | ---------- |
+| `GET /`                          | 200，議題列表正常渲染                                                           | 2026-08-11 |
+| `GET /api/issues`                | 200                                                                             | 2026-08-11 |
+| `GET /api/me`（未登入）          | 401                                                                             | 2026-08-11 |
+| `GET /api/auth/get-session`      | 200                                                                             | 2026-08-11 |
+| `GET /api/auth/admin/list-users` | **404**（本站刻意不開成員管理端點）                                             | 2026-08-11 |
+| `GET /api/admin/stats`（未登入） | 401                                                                             | 2026-08-11 |
+| `GET /index.html`                | 301 → `/`                                                                       | 2026-08-11 |
+| `GET /privacy`、`GET /terms`     | 200                                                                             | 2026-08-11 |
+| `GET /issue.html?id=1`           | 302 → `/issues/1`                                                               | —          |
+| 瀏覽器開 `/admin`                | 顯示 Google／GitHub 登入卡片                                                    | 2026-08-11 |
+| 用 Google 登入                   | 導回 `/admin`；角色是 `admin`／`super-admin` 就進後台，否則顯示「沒有管理權限」 | 2026-08-11 |
+| 用 GitHub 登入                   | 同樣能登入並導回原頁                                                            | 2026-08-11 |
+| 用同一個 email 換 provider 登入  | 同一個帳號、同樣權限，**不會變成新帳號**                                        | —          |
+| 登入後投稿素材／意見／議題       | 寫入成功，且該筆內容顯示投稿者名稱（email 只在勾選公開時才出現）                | 2026-08-11 |
+| 登入後送出說明頁                 | 寫入成功且記錄 `author_id`；管理端看得到完整作者快照                            | —          |
+| 登出後 `GET /api/me`             | 401                                                                             | —          |
 
 > ⚠️ **`/api/auth/get-session` 回 200 不代表登入設定正確**——沒有 cookie 時它跟 callback 網址設錯或 `BETTER_AUTH_URL` 設錯的情況長得一樣。登入相關的列只能靠人工在瀏覽器實測；改網域或換金鑰後要重跑。
 

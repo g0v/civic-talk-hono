@@ -83,7 +83,9 @@ const { t } = useI18n()
           <section class="mb-8">
             <h2 class="mb-3 text-xl font-semibold">{{ t('privacy_s8_h') }}</h2>
             <div class="rounded-lg bg-gray-50 p-4">
-              <p class="mb-2"><strong>{{ t('privacy_s8_email_label') }}</strong> info@vtaiwan.tw</p>
+              <p class="mb-2">
+                <strong>{{ t('privacy_s8_email_label') }}</strong> info@vtaiwan.tw
+              </p>
               <p class="mb-0">
                 <strong>{{ t('privacy_s8_github_label') }}</strong>
                 <a href="https://github.com/g0v/civic-talk-hono" class="text-red underline hover:opacity-80" target="_blank" rel="noopener noreferrer">github.com/g0v/civic-talk-hono</a>

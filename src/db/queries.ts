@@ -208,7 +208,7 @@ export async function createIssue(
 ): Promise<number> {
   const { meta } = await db
     .prepare(
-      'INSERT INTO ct_issues (title, description, polis_id, author_id, author_name, author_email, show_email, terms_version, terms_accepted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)',
+      'INSERT INTO ct_issues (title, description, polis_id, author_id, author_name, author_email, show_email, terms_version, terms_accepted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)'
     )
     .bind(input.title, input.description ?? '', input.polis_id ?? null, input.author_id, input.author_name, input.author_email, input.show_email ? 1 : 0, input.terms_version)
     .run()
@@ -266,9 +266,20 @@ export async function createMaterial(
 ): Promise<number> {
   const { meta } = await db
     .prepare(
-      'INSERT INTO ct_materials (issue_id, source_name, source_url, stance, content, author_id, author_name, author_email, show_email, terms_version, terms_accepted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)',
+      'INSERT INTO ct_materials (issue_id, source_name, source_url, stance, content, author_id, author_name, author_email, show_email, terms_version, terms_accepted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)'
     )
-    .bind(issueId, input.source_name ?? '', input.source_url ?? '', input.stance ?? 'unknown', input.content, input.author_id, input.author_name, input.author_email, input.show_email ? 1 : 0, input.terms_version)
+    .bind(
+      issueId,
+      input.source_name ?? '',
+      input.source_url ?? '',
+      input.stance ?? 'unknown',
+      input.content,
+      input.author_id,
+      input.author_name,
+      input.author_email,
+      input.show_email ? 1 : 0,
+      input.terms_version
+    )
     .run()
   await db.prepare("UPDATE ct_issues SET status = 'summarizing' WHERE id = ? AND status = 'collecting'").bind(issueId).run()
   return meta.last_row_id
@@ -369,9 +380,7 @@ export async function createOpinion(
     SubmissionConsentInput
 ): Promise<number> {
   const { meta } = await db
-    .prepare(
-      'INSERT INTO ct_opinions (issue_id, summary, author_id, author_name, author_email, show_email, terms_version, terms_accepted_at) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)',
-    )
+    .prepare('INSERT INTO ct_opinions (issue_id, summary, author_id, author_name, author_email, show_email, terms_version, terms_accepted_at) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)')
     .bind(issueId, input.summary, input.author_id, input.author_name, input.author_email, input.show_email ? 1 : 0, input.terms_version)
     .run()
   return meta.last_row_id
@@ -479,9 +488,7 @@ export async function listForRss(db: D1Database, limit = 20): Promise<RssFeedIte
  */
 export async function createAbuseReport(db: D1Database, input: CreateAbuseReportInput): Promise<number> {
   const { meta } = await db
-    .prepare(
-      'INSERT INTO ct_abuse_reports (reporter_id, reporter_name, reporter_email, reason, description, material_id, briefing_id, opinion_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-    )
+    .prepare('INSERT INTO ct_abuse_reports (reporter_id, reporter_name, reporter_email, reason, description, material_id, briefing_id, opinion_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
     .bind(input.reporter_id, input.reporter_name, input.reporter_email, input.reason, input.description ?? null, input.material_id ?? null, input.briefing_id ?? null, input.opinion_id ?? null)
     .run()
   // 第 1 次回報即打標——後續回報是冪等的 UPDATE（已是 1 就 no-op）
@@ -510,7 +517,7 @@ export async function listAbuseReports(db: D1Database): Promise<AbuseReport[]> {
        LEFT JOIN ct_materials m ON r.material_id = m.id
        LEFT JOIN ct_briefings b ON r.briefing_id = b.id
        LEFT JOIN ct_opinions  o ON r.opinion_id  = o.id
-       ORDER BY r.created_at DESC`,
+       ORDER BY r.created_at DESC`
     )
     .all<AbuseReport>()
   return results ?? []
@@ -530,7 +537,7 @@ export async function getAbuseReport(db: D1Database, id: number): Promise<AbuseR
        LEFT JOIN ct_materials m ON r.material_id = m.id
        LEFT JOIN ct_briefings b ON r.briefing_id = b.id
        LEFT JOIN ct_opinions  o ON r.opinion_id  = o.id
-       WHERE r.id = ?`,
+       WHERE r.id = ?`
     )
     .bind(id)
     .first<AbuseReport>()

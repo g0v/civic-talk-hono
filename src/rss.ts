@@ -29,12 +29,7 @@ function sanitize(str: string): string {
 
 /** 步驟 3：XML 特殊字元轉義（&、<、>、"、'）。呼叫前必須先 sanitize。 */
 function xmlEscape(str: string): string {
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;')
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;')
 }
 
 /** ISO 8601 → RFC 822（RSS 2.0 的 pubDate 格式） */
@@ -45,20 +40,15 @@ function toRfc822(iso: string): string {
 /** 生成 RSS 2.0 XML 字串 */
 export async function generateRssFeed(db: D1Database, origin: string): Promise<string> {
   const items = await listForRss(db, 20)
-  const lastBuildDate =
-    items.length > 0 ? toRfc822(items[0].created_at) : new Date().toUTCString()
+  const lastBuildDate = items.length > 0 ? toRfc822(items[0].created_at) : new Date().toUTCString()
 
   const itemXml = items
     .map(item => {
-      const titleRaw =
-        item.title ?? (item.type === 'issue' ? '（無標題議題）' : '素材投稿')
+      const titleRaw = item.title ?? (item.type === 'issue' ? '（無標題議題）' : '素材投稿')
       // 先 sanitize（strip tags + control chars）再 slice(300)，
       // 避免截到半開 tag 導致 strip regex 失效
       const descRaw = sanitize(item.description ?? '').slice(0, 300)
-      const link =
-        item.type === 'issue'
-          ? `${origin}/issues/${item.id}`
-          : `${origin}/issues/${item.issue_id}/source/${item.id}`
+      const link = item.type === 'issue' ? `${origin}/issues/${item.id}` : `${origin}/issues/${item.issue_id}/source/${item.id}`
       return `    <item>
       <title>${xmlEscape(sanitize(titleRaw))}</title>
       <link>${link}</link>
@@ -98,11 +88,7 @@ type CFCaches = typeof caches & { readonly default: Cache }
  * 注意：本機 wrangler dev 的 Cache API 可能與正式行為不同；
  * caches.default 的存取與使用都在 try/catch 內，dev 環境失敗時安靜跳過。
  */
-export async function handleRss(
-  db: D1Database,
-  request: Request,
-  executionCtx: { waitUntil(promise: Promise<unknown>): void }
-): Promise<Response> {
+export async function handleRss(db: D1Database, request: Request, executionCtx: { waitUntil(promise: Promise<unknown>): void }): Promise<Response> {
   // 1. 惰性取 caches.default（每次請求內存取，避免模組頂層初始化失敗）
   const cacheKey = new Request(request.url)
   try {

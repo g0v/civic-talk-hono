@@ -82,9 +82,7 @@ describe('renderSafeMarkdown', () => {
   })
 
   it('does not create links with unsafe protocols', () => {
-    const html = renderSafeMarkdown(
-      '[JavaScript](javascript:alert(1)) [資料](data:text/html;base64,PHNjcmlwdD4=)',
-    )
+    const html = renderSafeMarkdown('[JavaScript](javascript:alert(1)) [資料](data:text/html;base64,PHNjcmlwdD4=)')
 
     expect(html).not.toContain('href="javascript:')
     expect(html).not.toContain('href="data:')
