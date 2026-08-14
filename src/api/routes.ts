@@ -443,6 +443,36 @@ export function registerApiRoutes(app: App): void {
     return json({ ok: true }, 201)
   })
 
+  // GET /api/admin/users/:userId — 管理端查詢指定使用者的現值資料（on-demand，單筆）
+  // 使用 Better Auth admin plugin getUser，不對 DB_AUTH 下自訂 SQL（不變量 11）。
+  // 用途：確認某投稿者提交後是否改名換 email，或目前是否已被停權。
+  app.get('/api/admin/users/:userId', async c => {
+    const denied = await requireAdmin(c.req.raw, c.env)
+    if (denied) return denied
+
+    const userId = c.req.param('userId')
+    if (!userId) return error('userId is required', 400)
+
+    try {
+      const result = await createAuth(c.env).api.getUser({
+        query: { id: userId },
+        headers: c.req.raw.headers,
+      })
+      if (!result) return error('User not found', 404)
+      // 只回傳管理端需要的欄位，不把整個 session 物件洩漏出去
+      return json({
+        id: result.id,
+        name: result.name,
+        email: result.email,
+        role: result.role ?? null,
+        banned: result.banned ?? false,
+        banReason: result.banReason ?? null,
+      })
+    } catch {
+      return error('User not found', 404)
+    }
+  })
+
   // GET /api/admin/abuse-reports — 管理端查看所有濫用回報
   app.get('/api/admin/abuse-reports', async c => {
     const denied = await requireAdmin(c.req.raw, c.env)

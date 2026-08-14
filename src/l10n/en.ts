@@ -517,4 +517,8 @@ export const messages = {
   adm_rpt_need_super_admin: 'Ban actions require super-admin privileges',
   adm_rpt_toast_resolved: 'Review completed',
   adm_rpt_toast_fail: 'Review action failed. Please try again.',
+  adm_live_user_btn: 'Check current info',
+  adm_live_user_label: 'Current: ',
+  adm_live_user_not_found: '(Account deleted or not found)',
+  adm_live_user_banned: '⛔ Banned: ',
 } as const

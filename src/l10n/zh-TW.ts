@@ -493,6 +493,10 @@ export const messages = {
   adm_rpt_need_super_admin: '停權操作需要 super-admin 權限',
   adm_rpt_toast_resolved: '審核完成',
   adm_rpt_toast_fail: '審核操作失敗，請稍後再試',
+  adm_live_user_btn: '查現值',
+  adm_live_user_label: '現值：',
+  adm_live_user_not_found: '（帳號已刪除或不存在）',
+  adm_live_user_banned: '⛔ 已停權：',
 } as const
 
 export type MessageKey = keyof typeof messages

@@ -116,6 +116,28 @@ async function loadAbuseReports() {
   if (res.ok) abuseReports.value = await res.json()
 }
 
+type LiveUserEntry = { name: string | null; email: string; role: string | null; banned: boolean; banReason: string | null }
+// 現值查詢快取（避免同一個 userId 重複打 API）
+const liveUserCache = ref<Record<string, LiveUserEntry | 'loading' | 'not_found'>>({})
+
+async function fetchLiveUser(userId: string) {
+  if (liveUserCache.value[userId]) return
+  liveUserCache.value = { ...liveUserCache.value, [userId]: 'loading' }
+  const res = await fetch(`/api/admin/users/${encodeURIComponent(userId)}`, { headers: authHeaders() })
+  if (res.ok) {
+    const data = await res.json() as LiveUserEntry
+    liveUserCache.value = { ...liveUserCache.value, [userId]: data }
+  } else {
+    liveUserCache.value = { ...liveUserCache.value, [userId]: 'not_found' }
+  }
+}
+
+/** 從快取中取回已確認的 LiveUserEntry；若仍在 loading / not_found / 未查詢，回 null。 */
+function liveUser(userId: string): LiveUserEntry | null {
+  const v = liveUserCache.value[userId]
+  return v && typeof v === 'object' ? v : null
+}
+
 async function resolveReport(id: number, action: 'false_report' | 'confirmed_abuse' | 'confirmed_broken') {
   const confirmKey = action === 'false_report' ? 'adm_rpt_confirm_false'
     : action === 'confirmed_abuse' ? 'adm_rpt_confirm_abuse'
@@ -613,6 +635,22 @@ const filteredReports = computed(() => {
                     <td class="px-3 py-2">
                       <div>{{ r.reporter_name || t('adm_author_unknown') }}</div>
                       <div class="text-xs text-muted">{{ r.reporter_email }}</div>
+                      <!-- 現值查詢（snapshot 之外） -->
+                      <div class="mt-1">
+                        <button
+                          v-if="!liveUserCache[r.reporter_id]"
+                          type="button"
+                          class="text-xs text-muted hover:underline"
+                          @click="fetchLiveUser(r.reporter_id)"
+                        >{{ t('adm_live_user_btn') }}</button>
+                        <span v-else-if="liveUserCache[r.reporter_id] === 'loading'" class="text-xs text-muted">{{ t('loading') }}</span>
+                        <div v-else-if="liveUserCache[r.reporter_id] === 'not_found'" class="text-xs text-muted">{{ t('adm_live_user_not_found') }}</div>
+                        <div v-else class="text-xs text-muted border-t border-border mt-1 pt-1">
+                          <div>{{ t('adm_live_user_label') }}{{ liveUser(r.reporter_id)?.name || t('author_system') }}</div>
+                          <div>{{ liveUser(r.reporter_id)?.email }}</div>
+                          <div v-if="liveUser(r.reporter_id)?.banned" class="text-red">{{ t('adm_live_user_banned') }}{{ liveUser(r.reporter_id)?.banReason }}</div>
+                        </div>
+                      </div>
                     </td>
                     <td class="px-3 py-2">
                       <template v-if="r.target_issue_id">
@@ -627,6 +665,22 @@ const filteredReports = computed(() => {
                         >
                       </template>
                       <span v-else class="text-muted text-xs">（目標已刪除）</span>
+                      <!-- 被回報者現值查詢（有 target_author_id 時才顯示） -->
+                      <div v-if="r.target_author_id" class="mt-1">
+                        <button
+                          v-if="!liveUserCache[r.target_author_id]"
+                          type="button"
+                          class="text-xs text-muted hover:underline"
+                          @click="fetchLiveUser(r.target_author_id)"
+                        >{{ t('adm_live_user_btn') }}</button>
+                        <span v-else-if="liveUserCache[r.target_author_id] === 'loading'" class="text-xs text-muted">{{ t('loading') }}</span>
+                        <div v-else-if="liveUserCache[r.target_author_id] === 'not_found'" class="text-xs text-muted">{{ t('adm_live_user_not_found') }}</div>
+                        <div v-else class="text-xs text-muted border-t border-border mt-1 pt-1">
+                          <div>{{ t('adm_live_user_label') }}{{ liveUser(r.target_author_id)?.name || t('author_system') }}</div>
+                          <div>{{ liveUser(r.target_author_id)?.email }}</div>
+                          <div v-if="liveUser(r.target_author_id)?.banned" class="text-red">{{ t('adm_live_user_banned') }}{{ liveUser(r.target_author_id)?.banReason }}</div>
+                        </div>
+                      </div>
                     </td>
                     <td class="px-3 py-2">{{ t(ABUSE_REASON_LABELS[r.reason] ?? 'report_reason_other') }}</td>
                     <td class="px-3 py-2 max-w-xs">
