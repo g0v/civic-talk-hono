@@ -3,21 +3,19 @@ import { getAuthContext } from '../auth/authorization'
 import type { App } from './types'
 
 export function registerAuthRoutes(app: App): void {
-  // 🚫 /api/auth/admin/* 一律擋掉——這是「/api/auth/* 整段轉交給 auth.handler()」的唯一例外。
+  // 🚫 /api/auth/admin/* 一律 404——整段封鎖，不維護黑名單（不變量 5）。
   //
-  // 本站沒開 admin plugin，所以這些端點目前根本不存在；這條擋在前面是**防禦縱深**：
-  // 日後若有人為了別的功能開了 plugin，也不會在保護較弱的本站長出
-  // set-role／remove-user 這類寫入共用 auth DB 的入口（見 AGENTS.md 不變量 11）。
-  // 必須註冊在下面的 /api/auth/* 之前，Hono 才會讓它先命中。
+  // admin plugin 的停權操作走 server 端 createAuth(c.env).api.banUser()，
+  // 那是程式呼叫，不經 Hono 路由，整段 404 擋不到它，停權照常運作。
+  // 若直接打 HTTP 端點則一律拒絕，包含 create-user、set-user-password、
+  // update-user、list-users、list-user-sessions 等 admin plugin 全部端點。
+  // 日後若要開放任何端點，必須先問使用者，不得自行移除這條規則。
   app.all('/api/auth/admin/*', c => c.json({ error: 'Not found' }, 404))
 
   // Better Auth 內建端點（登入、OAuth callback、登出、session）
   app.on(['GET', 'POST'], '/api/auth/*', c => createAuth(c.env).handler(c.req.raw))
 
   // 前端登入狀態的單一來源。
-  //
-  // 這裡刻意用會 throw 的 getAuthContext：讀不到 session 是「壞掉」而不是「未登入」，
-  // 壓成 401 會讓系統故障被前端誤判成登出。
   app.get('/api/me', async c => {
     const context = await getAuthContext(c.env, c.req.raw.headers)
     if (!context) return c.json({ error: 'Unauthorized' }, 401)

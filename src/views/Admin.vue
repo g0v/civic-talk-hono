@@ -6,11 +6,12 @@ import SignInButtons from '../components/SignInButtons.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import Toast from '../components/Toast.vue'
 import { formatDate, useI18n } from '../l10n'
+import type { MessageKey } from '../l10n/zh-TW'
 import { useAuth } from '../composables/useAuth'
 import { isAdminSession } from '../client/auth-session'
-import type { BriefingWithAuthor, IssueListItemWithAuthor, IssueStatus, MaterialWithAuthor, OpinionWithAuthor } from '../db/queries'
+import type { AbuseReport, BriefingWithAuthor, IssueListItemWithAuthor, IssueStatus, MaterialWithAuthor, OpinionWithAuthor } from '../db/queries'
 
-type AdminTab = 'issues' | 'materials' | 'opinions'
+type AdminTab = 'issues' | 'materials' | 'opinions' | 'reports'
 
 const { t, locale } = useI18n()
 const toast = ref<{ show: (msg: string) => void } | null>(null)
@@ -35,6 +36,7 @@ const stats = ref({ issues: 0, materials: 0, opinions: 0, briefings: 0 })
 const issues = ref<IssueListItemWithAuthor[]>([])
 const materials = ref<MaterialWithAuthor[]>([])
 const opinions = ref<OpinionWithAuthor[]>([])
+const abuseReports = ref<AbuseReport[]>([])
 const matIssueId = ref<number | ''>('')
 const opIssueId = ref<number | ''>('')
 
@@ -94,6 +96,32 @@ async function loadOpinions() {
   }
   const res = await fetch(`/api/issues/${opIssueId.value}/opinions`)
   if (res.ok) opinions.value = await res.json()
+}
+
+async function loadAbuseReports() {
+  const res = await fetch('/api/admin/abuse-reports', { headers: authHeaders() })
+  if (res.ok) abuseReports.value = await res.json()
+}
+
+async function resolveReport(id: number, action: 'false_report' | 'confirmed_abuse') {
+  const confirmKey = action === 'false_report' ? 'adm_rpt_confirm_false' : 'adm_rpt_confirm_abuse'
+  if (!confirm(t(confirmKey))) return
+  const res = await fetch(`/api/admin/abuse-reports/${id}/resolve`, {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: JSON.stringify({ action }),
+  })
+  if (res.ok) {
+    toast.value?.show(t('adm_rpt_toast_resolved'))
+    await loadAbuseReports()
+  } else {
+    let msg = t('adm_rpt_toast_fail')
+    try {
+      const data = (await res.json()) as { error?: string }
+      if (data.error) msg = data.error
+    } catch { /* 忽略 */ }
+    toast.value?.show(msg)
+  }
 }
 
 function openNew() {
@@ -229,11 +257,29 @@ async function deleteOpinion(id: number) {
   await loadStats()
 }
 
+const ABUSE_REASON_LABELS: Record<string, MessageKey> = {
+  spam: 'report_reason_spam',
+  hate_speech: 'report_reason_hate_speech',
+  defamation: 'report_reason_defamation',
+  misinformation: 'report_reason_misinformation',
+  other: 'report_reason_other',
+}
+const REVIEW_STATUS_LABELS: Record<string, MessageKey> = {
+  pending: 'adm_rpt_status_pending',
+  resolved_false: 'adm_rpt_status_resolved_false',
+  resolved_abuse: 'adm_rpt_status_resolved_abuse',
+}
 const tabs = computed(() => [
   { id: 'issues' as const, label: t('adm_tab_issues') },
   { id: 'materials' as const, label: t('adm_tab_materials') },
   { id: 'opinions' as const, label: t('adm_tab_opinions') },
+  { id: 'reports' as const, label: t('adm_tab_reports') },
 ])
+
+async function onTabChange(id: AdminTab) {
+  activeTab.value = id
+  if (id === 'reports' && abuseReports.value.length === 0) await loadAbuseReports()
+}
 </script>
 
 <template>
@@ -312,7 +358,7 @@ const tabs = computed(() => [
           </div>
 
           <div class="tabs">
-            <button v-for="tab in tabs" :key="tab.id" type="button" class="tab" :class="{ active: activeTab === tab.id }" @click="activeTab = tab.id">
+            <button v-for="tab in tabs" :key="tab.id" type="button" class="tab" :class="{ active: activeTab === tab.id }" @click="onTabChange(tab.id)">
               {{ tab.label }}
             </button>
           </div>
@@ -441,6 +487,85 @@ const tabs = computed(() => [
                 </div>
               </div>
             </template>
+          </section>
+
+          <!-- Abuse Reports -->
+          <section v-show="activeTab === 'reports'">
+            <h2 class="mt-0 mb-4 font-serif text-xl">{{ t('adm_rpt_title') }}</h2>
+            <div v-if="!abuseReports.length" class="empty">
+              <div class="empty-icon">✅</div>
+              {{ t('adm_rpt_empty') }}
+            </div>
+            <div v-else class="overflow-x-auto rounded-lg border border-border">
+              <table class="w-full border-collapse text-sm">
+                <thead class="bg-gray-100">
+                  <tr>
+                    <th class="px-3 py-2 text-left">{{ t('adm_rpt_th_id') }}</th>
+                    <th class="px-3 py-2 text-left">{{ t('adm_rpt_th_reporter') }}</th>
+                    <th class="px-3 py-2 text-left">{{ t('adm_rpt_th_target') }}</th>
+                    <th class="px-3 py-2 text-left">{{ t('adm_rpt_th_reason') }}</th>
+                    <th class="px-3 py-2 text-left">{{ t('adm_rpt_th_desc') }}</th>
+                    <th class="px-3 py-2 text-left">{{ t('adm_rpt_th_status') }}</th>
+                    <th class="px-3 py-2 text-left">{{ t('adm_rpt_th_created') }}</th>
+                    <th class="px-3 py-2 text-left">{{ t('adm_th_actions') }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="r in abuseReports" :key="r.id" class="border-t border-border">
+                    <td class="px-3 py-2">{{ r.id }}</td>
+                    <td class="px-3 py-2">
+                      <div>{{ r.reporter_name || t('adm_author_unknown') }}</div>
+                      <div class="text-xs text-muted">{{ r.reporter_email }}</div>
+                    </td>
+                    <td class="px-3 py-2">
+                      <template v-if="r.target_issue_id">
+                        <a v-if="r.material_id" :href="`/issues/${r.target_issue_id}/source/${r.material_id}`" class="underline" target="_blank" rel="noopener">{{ t('adm_rpt_target_material') }}{{ r.material_id }}</a>
+                        <a v-else-if="r.opinion_id" :href="`/issues/${r.target_issue_id}/comment/${r.opinion_id}`" class="underline" target="_blank" rel="noopener">{{ t('adm_rpt_target_opinion') }}{{ r.opinion_id }}</a>
+                        <a v-else-if="r.briefing_id" :href="`/issues/${r.target_issue_id}`" class="underline" target="_blank" rel="noopener">{{ t('adm_rpt_target_briefing') }}{{ r.briefing_id }}（議題 {{ r.target_issue_id }}）</a>
+                      </template>
+                      <span v-else class="text-muted text-xs">（目標已刪除）</span>
+                    </td>
+                    <td class="px-3 py-2">{{ t(ABUSE_REASON_LABELS[r.reason] ?? 'report_reason_other') }}</td>
+                    <td class="px-3 py-2 max-w-xs">
+                      <span v-if="r.description" class="whitespace-pre-wrap text-xs">{{ r.description }}</span>
+                      <span v-else class="text-muted">—</span>
+                    </td>
+                    <td class="px-3 py-2">
+                      <span :class="r.review_status === 'pending' ? 'text-amber' : r.review_status === 'resolved_abuse' ? 'text-red' : 'text-muted'">
+                        {{ t(REVIEW_STATUS_LABELS[r.review_status] ?? 'adm_rpt_status_pending') }}
+                      </span>
+                    </td>
+                    <td class="px-3 py-2 text-xs text-muted">{{ formatDate(r.created_at, locale) }}</td>
+                    <td class="px-3 py-2">
+                      <template v-if="r.review_status === 'pending'">
+                        <div class="flex flex-col gap-1">
+                          <button
+                            type="button"
+                            class="btn btn-ghost btn-sm text-amber-700"
+                            :disabled="session?.role !== 'super-admin' || r.reporter_id === session?.user?.id"
+                            :title="session?.role !== 'super-admin' ? t('adm_rpt_need_super_admin') : r.reporter_id === session?.user?.id ? t('adm_rpt_cannot_ban_self') : undefined"
+                            @click="resolveReport(r.id, 'false_report')"
+                          >
+                            {{ t('adm_rpt_btn_false') }}
+                          </button>
+                          <button
+                            type="button"
+                            class="btn btn-ghost btn-sm text-red"
+                            :disabled="session?.role !== 'super-admin' || r.target_author_id === session?.user?.id"
+                            :title="session?.role !== 'super-admin' ? t('adm_rpt_need_super_admin') : r.target_author_id === session?.user?.id ? t('adm_rpt_cannot_ban_self') : undefined"
+                            @click="resolveReport(r.id, 'confirmed_abuse')"
+                          >
+                            {{ t('adm_rpt_btn_abuse') }}
+                          </button>
+                          <span v-if="!r.target_author_id && r.review_status === 'pending'" class="text-xs text-muted">{{ t('adm_rpt_no_author') }}</span>
+                        </div>
+                      </template>
+                      <span v-else class="text-xs text-muted">—</span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </section>
         </template>
       </div>

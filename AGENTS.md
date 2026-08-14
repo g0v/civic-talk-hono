@@ -44,10 +44,11 @@
 8. **生成物不手改。** `dist/`、`public/js/*.js`（client bundle）、`worker-configuration.d.ts` 皆為建置產物——改源頭重新生成。Tailwind 導入後 `public/styles.css` 也會變成生成物（見「樣式」）。
 9. **完成 = 全部綠燈。** `vp check --no-fmt --no-lint` 與 `vp run build` 都過、`vp test` 全部通過，才算改完。紅燈狀態不 commit。
 10. **不擅自 commit／push／deploy。** 界線與長程任務例外見「Git / Commit 慣例」。
-11. **共用認證資料庫只讀不改，角色由 vTaiwan-hono 管。** D1 `vtaiwan-auth`（Better Auth 的 `user`／`session`／`account`／`verification`）是 **`../vTaiwan-hono` 的正式資料庫**，本專案只是**消費端**。不變量 1 的 `ct_` 前綴保護的是業務庫，保護不到這裡——所以另立一條：
-    - 🚫 **不在本 repo 建立 `migrations/auth/`，不對 auth 資料表下任何 DDL**（`CREATE`／`ALTER`／`DROP`／加欄位／加索引）。schema 的唯一來源是 `../vTaiwan-hono/migrations/auth/`。要動 schema，去那邊動並先問使用者。
-    - 🚫 **不寫 `user.role`，不做權限管理後台。** 這是 #5 明確的要求（「不要做額外的權限管理後台，後台留給 vtaiwan-hono 實作即可」）——升降權、停權、成員列表、變更日誌全部留在 vTaiwan-hono。本專案只「讀 session → 判角色 → 放行或擋下」。
-    - ✅ 允許的寫入只有 **Better Auth 自己在登入流程中做的那些**（建 session、建／連結 account）。除此之外不要用 `DB_AUTH` 執行自訂 SQL。
+11. **共用認證資料庫的寫入限於 Better Auth admin plugin 的 ban/unban。** D1 `vtaiwan-auth` 是 `../vTaiwan-hono` 的正式資料庫，本專案是消費端。以下規則更新如下（#21 使用者授權）：
+    - 🚫 **不在本 repo 建立 `migrations/auth/`，不對 auth 資料表下任何 DDL**——schema 唯一來源是 `../vTaiwan-hono/migrations/auth/`。
+    - ✅ **允許透過 Better Auth admin plugin API（`auth.api.banUser` / `auth.api.unbanUser`）寫入 DB_AUTH**，用於濫用回報審核。**不走原始 SQL**——所有寫入必須經過 Better Auth 的授權檢查（呼叫端必須帶管理員 session headers）。
+    - 🚫 **不寫 `user.role`**——升降權、成員列表、變更日誌仍全部留在 vTaiwan-hono。
+    - 🚫 **不執行其他自訂 SQL 操作 DB_AUTH**（INSERT、UPDATE、DELETE 以外 ban/unban 的一切都不行）。
 
 ## 現況（今天 repo 裡真的有什麼）
 
@@ -129,9 +130,9 @@ Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑�
 - **GitHub 登入**：沿用**同一組** `GITHUB_CLIENT_ID`／`GITHUB_CLIENT_SECRET`。
 - **同 email 帳號整合**：照抄 vTaiwan-hono 的 `account.accountLinking.trustedProviders: ['google', 'github']`——同一個 email 用 Google 或 GitHub 登入都落到同一個 `user`。
 - **角色制 Admin**：角色沿用 vTaiwan 的 `user`／`admin`／`super-admin`（欄位就是 `user.role`）。Admin 頁與管理 API 一律用 `isAdminRole()`（`admin` 或 `super-admin`）把關。**本站只讀角色、不寫角色**。
-  - 🚫 **不開 `admin` plugin（使用者已裁示，不要自行改）。** vTaiwan-hono 開了 `admin({ adminRoles: ['super-admin'], roles: adminRoleAccess })`，因為它要做成員管理；**開了就會在 `/api/auth/admin/*` 長出 `set-role`／`list-users`／`remove-user` 等會寫入共用 auth DB 的端點**。vTaiwan-hono 用 `requiresStepUp()` 把它們擋在二次驗證之後，而本站**明確不做 step-up**——照抄等於在保護更弱的地方開一扇寫入正式 auth DB 的門，直接違反不變量 11 與 #5 的「不要做額外的權限管理後台」。
-  - **改用唯讀方式取 `role`**：以 `user.additionalFields`（`input: false`）之類的設定把既有的 `role` 欄位讀出來，完全不長出任何管理端點。**注意 `role` 欄位是 vTaiwan-hono 的 admin plugin 建的、已經在 `user` 表裡**——本站只是讀它，不要因為「本站沒開 plugin」就去補欄位（違反不變量 11）。實作前先確認 better-auth 該版本讀既有欄位的正確寫法，並實測 `GET /api/me` 真的拿得到值。
-  - 若日後有人開了 plugin：**必須在 `auth.handler()` 之前攔掉整段 `/api/auth/admin/*`**，這是「`/api/auth/*` 整段轉交」的唯一例外。
+  - ✅ **開 `admin` plugin 用於濫用審核（#21，使用者裁示）。** `createAuth.ts` 以 `adminRoles: ['super-admin', 'admin']` 與 vTaiwan-hono 一致的 `adminRoleAccess` 啟用 plugin。停權操作走 **server 端 `createAuth(env).api.banUser()`**（程式呼叫），**不經 HTTP 路由**。
+  - ⚠️ **`/api/auth/admin/*` HTTP 端點整段封鎖（不維護黑名單）。** `auth.ts` 以一條 `app.all('/api/auth/admin/*', 404)` 擋掉全部——包含 `create-user`、`set-user-password`、`update-user`、`list-users`、`list-user-sessions` 等現有及未來新增的端點。server 端程式呼叫不走 Hono 路由，照常運作。**不得改為選擇性黑名單**——better-auth 每次改版都可能新增端點，黑名單必然落後。日後若要開放任何 HTTP 端點，必須先問使用者。
+  - **改用唯讀方式取 `role`** 這段仍有效：`additionalFields` 讀 `role`、`banned`、`banReason`、`banExpires`，本站只讀不直接寫這些欄位——寫入走 admin plugin API，不走自訂 SQL。
 - ✅ **淘汰密碼制（已完成）**：`checkAdmin()`／`X-Admin-Token`／`ADMIN_PASSWORD`（含 `'admin'` fallback）與 `POST /api/admin/login` 都已移除，`src/views/Admin.vue` 的密碼輸入換成 Google／GitHub 登入。
 
 **明確不做的：**

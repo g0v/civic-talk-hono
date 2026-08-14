@@ -1,6 +1,7 @@
-import type { AuthorSnapshotInput, Briefing, BriefingWithAuthor, Issue, IssueListItem, IssueListItemWithAuthor, IssueStatus, Material, MaterialWithAuthor, Opinion, OpinionWithAuthor, Stance } from '../db/queries'
+import type { AbuseReportReason, AuthorSnapshotInput, Briefing, BriefingWithAuthor, Issue, IssueListItem, IssueListItemWithAuthor, IssueStatus, Material, MaterialWithAuthor, Opinion, OpinionWithAuthor, Stance } from '../db/queries'
 import * as db from '../db/queries'
 import { isAdminRole, tryGetAuthContext, type AuthContext } from '../auth/authorization'
+import { createAuth } from '../auth/createAuth'
 import { TERMS_VERSION } from '../legal/terms'
 import type { App, AppBindings } from './types'
 
@@ -377,5 +378,116 @@ export function registerApiRoutes(app: App): void {
     }
 
     return json({ prompt, type, material_count: materials.length })
+  })
+
+  // POST /api/abuse-reports — 登入者回報濫用（需登入，不看角色）
+  app.post('/api/abuse-reports', async c => {
+    const auth = await requireUser(c.req.raw, c.env)
+    if ('denied' in auth) return auth.denied
+
+    let body: {
+      material_id?: unknown
+      briefing_id?: unknown
+      opinion_id?: unknown
+      reason?: unknown
+      description?: unknown
+    }
+    try {
+      body = await c.req.json()
+    } catch {
+      return error('Invalid JSON')
+    }
+
+    const materialId = typeof body.material_id === 'number' && body.material_id > 0 ? body.material_id : null
+    const briefingId = typeof body.briefing_id === 'number' && body.briefing_id > 0 ? body.briefing_id : null
+    const opinionId = typeof body.opinion_id === 'number' && body.opinion_id > 0 ? body.opinion_id : null
+    const nonNullCount = [materialId, briefingId, opinionId].filter(v => v !== null).length
+    if (nonNullCount !== 1) return error('Exactly one of material_id, briefing_id, opinion_id must be a positive number')
+
+    const validReasons: AbuseReportReason[] = ['spam', 'hate_speech', 'defamation', 'misinformation', 'other']
+    if (!body.reason || !validReasons.includes(body.reason as AbuseReportReason)) {
+      return error('reason must be one of: ' + validReasons.join(', '))
+    }
+
+    const descriptionRaw = typeof body.description === 'string' ? body.description.trim() : null
+    const user = auth.context.user
+    await db.createAbuseReport(c.env.DB, {
+      reporter_id: user.id,
+      reporter_name: user.name?.trim() || null,
+      reporter_email: user.email,
+      reason: body.reason as AbuseReportReason,
+      description: descriptionRaw || null,
+      material_id: materialId,
+      briefing_id: briefingId,
+      opinion_id: opinionId,
+    })
+
+    return json({ ok: true }, 201)
+  })
+
+  // GET /api/admin/abuse-reports — 管理端查看所有濫用回報
+  app.get('/api/admin/abuse-reports', async c => {
+    const denied = await requireAdmin(c.req.raw, c.env)
+    if (denied) return denied
+    const reports = await db.listAbuseReports(c.env.DB)
+    return json(reports)
+  })
+
+  // PATCH /api/admin/abuse-reports/:id/resolve — 審核濫用回報：誤報或確認濫用
+  // 誤報   → 停權回報者（ban）→ 清除旗標 → resolved_false
+  // 確認濫用 → 停權張貼者（ban）→ resolved_abuse（旗標維持）
+  //
+  // ban 先做，成功後才寫 DB——確保失敗時 review_status 保持 pending，
+  // 前端拿到真實錯誤碼而非假的 { ok: true }。
+  // ban 操作只有 super-admin（adminAc）的 session 才能通過 Better Auth hasPermission 檢查；
+  // admin role（userAc）會得到 FORBIDDEN（403）。APIError 在此 catch 後直接轉譯 status + message，
+  // 避免錯誤被 Hono 攔截成 500（例如「You cannot ban yourself」原本就是 400）。
+  app.patch('/api/admin/abuse-reports/:id/resolve', async c => {
+    const denied = await requireAdmin(c.req.raw, c.env)
+    if (denied) return denied
+
+    const id = parseId(c.req.param('id'))
+    if (!id) return error('Invalid ID', 400)
+
+    let body: { action?: unknown }
+    try { body = await c.req.json() } catch { return error('Invalid JSON') }
+    if (body.action !== 'false_report' && body.action !== 'confirmed_abuse') {
+      return error('action must be "false_report" or "confirmed_abuse"')
+    }
+
+    const report = await db.getAbuseReport(c.env.DB, id)
+    if (!report) return error('Report not found', 404)
+    if (report.review_status !== 'pending') return error('Report already resolved', 409)
+
+    const targetUserId = body.action === 'false_report' ? report.reporter_id : report.target_author_id
+    const banReason = body.action === 'false_report' ? '濫用回報：誤報，已停權' : '發布違規內容：已確認濫用'
+
+    // ban 先做——Better Auth 的 APIError 會帶 statusCode 與 body.message，
+    // catch 後直接轉譯回前端（FORBIDDEN 403、BAD_REQUEST 400 等），DB 不更新。
+    if (targetUserId) {
+      try {
+        await createAuth(c.env).api.banUser({
+          body: { userId: targetUserId, banReason },
+          headers: c.req.raw.headers,
+        })
+      } catch (banErr) {
+        const apiErr = banErr as { statusCode?: number; body?: { message?: string } }
+        const status = typeof apiErr.statusCode === 'number' ? apiErr.statusCode : 500
+        const message = apiErr.body?.message ?? 'Ban failed'
+        console.error('banUser failed', { reportId: id, action: body.action, caught: banErr })
+        return error(message, status)
+      }
+    }
+
+    // ban 成功（或無 userId 需要 ban）才更新業務 DB
+    if (body.action === 'false_report') {
+      await db.resolveAbuseReport(c.env.DB, id, 'resolved_false')
+      await db.unflagContent(c.env.DB, report)
+    } else {
+      await db.resolveAbuseReport(c.env.DB, id, 'resolved_abuse')
+      await db.confirmFlagContent(c.env.DB, report)
+    }
+
+    return json({ ok: true })
   })
 }

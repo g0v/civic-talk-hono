@@ -73,6 +73,53 @@ const volunteerSessionExpired = ref(false)
 // 登入後導回這一頁的意見分頁
 const loginCallbackUrl = computed(() => `/issues/${props.issueId}`)
 
+// 回報濫用 modal 狀態
+const reportTarget = ref<{ type: 'material' | 'briefing' | 'opinion'; id: number } | null>(null)
+const reportReason = ref<string>('spam')
+const reportDesc = ref<string>('')
+// 已展開的「折疊中」項目：key = `${type}-${id}`
+const expandedFlagged = ref<Set<string>>(new Set())
+
+function toggleFlagged(type: string, id: number) {
+  const key = `${type}-${id}`
+  const next = new Set(expandedFlagged.value)
+  if (next.has(key)) next.delete(key)
+  else next.add(key)
+  expandedFlagged.value = next
+}
+
+function openReport(type: 'material' | 'briefing' | 'opinion', id: number) {
+  reportTarget.value = { type, id }
+  reportReason.value = 'spam'
+  reportDesc.value = ''
+}
+
+async function submitReport() {
+  const target = reportTarget.value
+  if (!target) return
+  if (authState.value !== 'signed-in') {
+    toast.value?.show(t('report_toast_no_login'))
+    return
+  }
+  const body: Record<string, unknown> = {
+    reason: reportReason.value,
+    description: reportDesc.value.trim() || undefined,
+  }
+  body[`${target.type}_id`] = target.id
+  const res = await fetch('/api/abuse-reports', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  reportTarget.value = null
+  if (res.ok) {
+    toast.value?.show(t('report_toast_ok'))
+    await loadIssue()
+  } else {
+    toast.value?.show(t('report_toast_fail'))
+  }
+}
+
 const tabs = computed(() => [
   { id: 'briefing' as const, label: t('tab_briefing') },
   { id: 'materials' as const, label: t('tab_materials') },
@@ -404,6 +451,11 @@ async function submitOpinion() {
                 </button>
               </div>
             </template>
+            <!-- 已確認違規：隱藏 briefing 內容 -->
+            <template v-else-if="briefing.abuse_flagged === 2">
+              <div class="alert alert-error">{{ t('flagged_confirmed') }}</div>
+            </template>
+            <!-- 正常或待審核：顯示 briefing -->
             <template v-else>
               <h2 class="mt-0 mb-3 font-serif text-xl">{{ t('brief_overview') }}</h2>
               <div class="mb-6 whitespace-pre-wrap leading-relaxed">{{ briefing.narrative }}</div>
@@ -428,11 +480,15 @@ async function submitOpinion() {
                   {{ t('brief_go_opinion') }}
                 </button>
               </div>
-              <p class="text-sm text-muted">
-                {{ t('brief_version_prefix') }}{{ briefing.version }}，{{ t('brief_updated') }}
+              <p class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
+                <span>{{ t('brief_version_prefix') }}{{ briefing.version }}，{{ t('brief_updated') }}
                 {{ formatDate(briefing.created_at, locale) }} · {{ t('brief_author_label') }}：{{ briefing.author_name || t('author_system') }}
-                <template v-if="briefing.author_email"> · {{ t('author_email_label') }}：{{ briefing.author_email }}</template>
+                <template v-if="briefing.author_email"> · {{ t('author_email_label') }}：{{ briefing.author_email }}</template></span>
+                <button v-if="authState === 'signed-in'" type="button" class="ml-auto text-xs text-muted hover:text-red" @click="openReport('briefing', briefing.id)">
+                  {{ t('report_btn') }}
+                </button>
               </p>
+              <div v-if="briefing.abuse_flagged === 1" class="mt-2 text-sm text-amber-600">{{ t('flagged_warning') }}</div>
             </template>
             <div id="polis-section" class="my-8" style="display: none" />
           </section>
@@ -449,18 +505,42 @@ async function submitOpinion() {
               {{ t('mat_empty') }}
             </div>
             <div v-for="m in materials" :key="m.id" class="card mb-4">
-              <div class="mb-2 flex flex-wrap items-center gap-3">
-                <span class="font-medium">{{ m.source_name || t('mat_source_unknown') }}</span>
-                <span class="text-sm" :class="stanceClass(m.stance)">{{ stanceLabel(m.stance) }}</span>
-                <a v-if="m.source_url" :href="m.source_url" target="_blank" rel="noopener noreferrer" class="text-sm">{{ t('mat_link') }}</a>
+              <!-- 已確認違規（2）：完全隱藏，無展開選項 -->
+              <p v-if="m.abuse_flagged === 2" class="m-0 py-1 text-sm text-red">{{ t('flagged_confirmed') }}</p>
+              <!-- 待審核（1）：折疊 + 可展開 -->
+              <div v-else-if="m.abuse_flagged === 1 && !expandedFlagged.has(`material-${m.id}`)" class="mb-2">
+                <div class="alert alert-warn mb-2 flex items-center justify-between gap-2 py-2">
+                  <span class="text-sm">{{ t('flagged_warning') }}</span>
+                  <button type="button" class="btn btn-ghost btn-sm shrink-0" @click="toggleFlagged('material', m.id)">
+                    {{ t('flagged_expand_btn') }}
+                  </button>
+                </div>
               </div>
-              <div class="whitespace-pre-wrap text-sm leading-relaxed">{{ m.content }}</div>
-              <p class="mt-2 mb-0 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
+              <!-- 正常或待審核已展開：顯示內容 -->
+              <template v-if="m.abuse_flagged !== 2 && (!m.abuse_flagged || expandedFlagged.has(`material-${m.id}`))">
+                <div v-if="m.abuse_flagged === 1" class="mb-2 flex items-center justify-between gap-2">
+                  <span class="text-xs text-amber-600">{{ t('flagged_warning') }}</span>
+                  <button type="button" class="btn btn-ghost btn-sm shrink-0 text-xs" @click="toggleFlagged('material', m.id)">
+                    {{ t('flagged_collapse_btn') }}
+                  </button>
+                </div>
+                <div class="mb-2 flex flex-wrap items-center gap-3">
+                  <span class="font-medium">{{ m.source_name || t('mat_source_unknown') }}</span>
+                  <span class="text-sm" :class="stanceClass(m.stance)">{{ stanceLabel(m.stance) }}</span>
+                  <a v-if="m.source_url" :href="m.source_url" target="_blank" rel="noopener noreferrer" class="text-sm">{{ t('mat_link') }}</a>
+                </div>
+                <div class="whitespace-pre-wrap text-sm leading-relaxed">{{ m.content }}</div>
+              </template>
+              <!-- metadata（已確認違規時不顯示） -->
+              <p v-if="m.abuse_flagged !== 2" class="mt-2 mb-0 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
                 <span>{{ formatDate(m.created_at, locale) }} · {{ m.verified_count }} {{ t('mat_contributor') }}</span>
                 <span
                   >{{ t('mat_author_label') }}：{{ m.author_name || t('author_system') }}<template v-if="m.author_email"> · {{ t('author_email_label') }}：{{ m.author_email }}</template></span
                 >
-                <a :href="`/issues/${issueId}/source/${m.id}`" class="ml-auto text-xs text-muted hover:underline"> 🔗 {{ t('card_permalink') }} </a>
+                <a :href="`/issues/${issueId}/source/${m.id}`" class="text-xs text-muted hover:underline"> 🔗 {{ t('card_permalink') }} </a>
+                <button v-if="authState === 'signed-in'" type="button" class="ml-auto text-xs text-muted hover:text-red" @click="openReport('material', m.id)">
+                  {{ t('report_btn') }}
+                </button>
               </p>
             </div>
           </section>
@@ -623,14 +703,37 @@ async function submitOpinion() {
             <template v-else>
               <h3 class="mb-4 font-medium">{{ t('op_count_prefix') }}{{ opinions.length }}{{ t('op_count_suffix') }}</h3>
               <div v-for="o in opinions" :key="o.id" class="card mb-4">
-                <p class="mt-0 mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
-                  <span>{{ formatDate(o.created_at, locale) }}</span>
-                  <span
-                    >{{ t('op_author_label') }}：{{ o.author_name || t('author_system') }}<template v-if="o.author_email"> · {{ t('author_email_label') }}：{{ o.author_email }}</template></span
-                  >
-                  <a :href="`/issues/${issueId}/comment/${o.id}`" class="ml-auto text-xs text-muted hover:underline"> 🔗 {{ t('card_permalink') }} </a>
-                </p>
-                <div class="whitespace-pre-wrap text-sm leading-relaxed">{{ o.summary }}</div>
+                <!-- 已確認違規（2）：完全隱藏，無展開選項 -->
+                <p v-if="o.abuse_flagged === 2" class="m-0 py-1 text-sm text-red">{{ t('flagged_confirmed') }}</p>
+                <!-- 待審核（1）：折疊 + 可展開 -->
+                <div v-else-if="o.abuse_flagged === 1 && !expandedFlagged.has(`opinion-${o.id}`)" class="mb-2">
+                  <div class="alert alert-warn flex items-center justify-between gap-2 py-2">
+                    <span class="text-sm">{{ t('flagged_warning') }}</span>
+                    <button type="button" class="btn btn-ghost btn-sm shrink-0" @click="toggleFlagged('opinion', o.id)">
+                      {{ t('flagged_expand_btn') }}
+                    </button>
+                  </div>
+                </div>
+                <!-- 正常或待審核已展開：顯示內容 -->
+                <template v-if="o.abuse_flagged !== 2 && (!o.abuse_flagged || expandedFlagged.has(`opinion-${o.id}`))">
+                  <div v-if="o.abuse_flagged === 1" class="mb-1 flex items-center justify-between gap-2">
+                    <span class="text-xs text-amber-600">{{ t('flagged_warning') }}</span>
+                    <button type="button" class="btn btn-ghost btn-sm shrink-0 text-xs" @click="toggleFlagged('opinion', o.id)">
+                      {{ t('flagged_collapse_btn') }}
+                    </button>
+                  </div>
+                  <p class="mt-0 mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
+                    <span>{{ formatDate(o.created_at, locale) }}</span>
+                    <span
+                      >{{ t('op_author_label') }}：{{ o.author_name || t('author_system') }}<template v-if="o.author_email"> · {{ t('author_email_label') }}：{{ o.author_email }}</template></span
+                    >
+                    <a :href="`/issues/${issueId}/comment/${o.id}`" class="text-xs text-muted hover:underline"> 🔗 {{ t('card_permalink') }} </a>
+                    <button v-if="authState === 'signed-in'" type="button" class="ml-auto text-xs text-muted hover:text-red" @click="openReport('opinion', o.id)">
+                      {{ t('report_btn') }}
+                    </button>
+                  </p>
+                  <div class="whitespace-pre-wrap text-sm leading-relaxed">{{ o.summary }}</div>
+                </template>
               </div>
             </template>
           </section>
@@ -640,5 +743,30 @@ async function submitOpinion() {
 
     <AppFooter />
     <Toast ref="toast" />
+
+    <!-- 回報濫用 Modal -->
+    <div v-if="reportTarget" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" @click.self="reportTarget = null">
+      <div class="card w-full max-w-md">
+        <h2 class="mt-0 mb-4 font-serif text-lg">{{ t('report_modal_title') }}</h2>
+        <div class="form-group">
+          <label>{{ t('report_reason_label') }}</label>
+          <select v-model="reportReason">
+            <option value="spam">{{ t('report_reason_spam') }}</option>
+            <option value="hate_speech">{{ t('report_reason_hate_speech') }}</option>
+            <option value="defamation">{{ t('report_reason_defamation') }}</option>
+            <option value="misinformation">{{ t('report_reason_misinformation') }}</option>
+            <option value="other">{{ t('report_reason_other') }}</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>{{ t('report_desc_label') }}</label>
+          <textarea v-model="reportDesc" rows="3" :placeholder="t('report_desc_ph')" />
+        </div>
+        <div class="flex gap-2">
+          <button type="button" class="btn btn-primary" @click="submitReport">{{ t('report_submit_btn') }}</button>
+          <button type="button" class="btn btn-secondary" @click="reportTarget = null">{{ t('report_cancel_btn') }}</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
