@@ -487,6 +487,7 @@ export const messages = {
   adm_rpt_btn_abuse: '確認濫用（停權張貼者）',
   adm_rpt_btn_broken: '確認失效（藏住素材）',
   adm_rpt_confirm_false: '確認標記為誤報並停權回報者嗎？此動作不可還原。',
+  adm_rpt_confirm_false_no_ban: '確認標記為誤報嗎？此動作不可還原。',
   adm_rpt_confirm_abuse: '確認為違規內容並停權張貼者嗎？此動作不可還原。',
   adm_rpt_confirm_broken: '確認標記為失效連結並藏住素材嗎？此動作不可還原。',
   adm_rpt_no_author: '（無作者記錄，無法停權）',

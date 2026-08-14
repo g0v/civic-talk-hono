@@ -511,6 +511,7 @@ export const messages = {
   adm_rpt_btn_abuse: 'Confirmed Abuse (ban author)',
   adm_rpt_btn_broken: 'Confirm broken (hide material)',
   adm_rpt_confirm_false: 'Mark as false report and ban the reporter? This action cannot be undone.',
+  adm_rpt_confirm_false_no_ban: 'Mark this as a false report? This cannot be undone.',
   adm_rpt_confirm_abuse: 'Confirm abuse and ban the content author? This action cannot be undone.',
   adm_rpt_confirm_broken: 'Confirm this as a broken link and hide the material? This cannot be undone.',
   adm_rpt_no_author: '(no author record — cannot ban)',

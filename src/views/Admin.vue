@@ -138,9 +138,13 @@ function liveUser(userId: string): LiveUserEntry | null {
   return v && typeof v === 'object' ? v : null
 }
 
-async function resolveReport(id: number, action: 'false_report' | 'confirmed_abuse' | 'confirmed_broken') {
-  const confirmKey = action === 'false_report' ? 'adm_rpt_confirm_false'
-    : action === 'confirmed_abuse' ? 'adm_rpt_confirm_abuse'
+async function resolveReport(id: number, action: 'false_report' | 'confirmed_abuse' | 'confirmed_broken', reason?: string) {
+  const confirmKey = action === 'false_report' && reason === 'broken_link'
+    ? 'adm_rpt_confirm_false_no_ban'
+    : action === 'false_report'
+    ? 'adm_rpt_confirm_false'
+    : action === 'confirmed_abuse'
+    ? 'adm_rpt_confirm_abuse'
     : 'adm_rpt_confirm_broken'
   if (!confirm(t(confirmKey))) return
   const res = await fetch(`/api/admin/abuse-reports/${id}/resolve`, {
@@ -698,11 +702,10 @@ const filteredReports = computed(() => {
                         <div class="flex flex-col gap-1">
                           <!-- 誤報（broken_link 不 ban，其餘停權回報者 → super-admin only） -->
                           <button
-                            type="button"
+                            @click="resolveReport(r.id, 'false_report', r.reason)"
                             class="btn btn-ghost btn-sm text-amber-700"
                             :disabled="(r.reason !== 'broken_link' && session?.role !== 'super-admin') || r.reporter_id === session?.user?.id"
                             :title="(r.reason !== 'broken_link' && session?.role !== 'super-admin') ? t('adm_rpt_need_super_admin') : r.reporter_id === session?.user?.id ? t('adm_rpt_cannot_ban_self') : undefined"
-                            @click="resolveReport(r.id, 'false_report')"
                           >
                             {{ r.reason === 'broken_link' ? t('adm_rpt_btn_false_no_ban') : t('adm_rpt_btn_false') }}
                           </button>
