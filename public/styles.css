@@ -940,6 +940,9 @@
         background-color: color-mix(in oklab, var(--color-black) 5%, transparent);
       }
     }
+    .hover\:text-amber-600:hover {
+      color: var(--color-amber-600);
+    }
     .hover\:text-red:hover {
       color: var(--color-red);
     }

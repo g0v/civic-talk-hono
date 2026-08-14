@@ -3,8 +3,8 @@
 export type IssueStatus = 'collecting' | 'summarizing' | 'published'
 export type Stance = 'pro' | 'con' | 'neutral' | 'unknown'
 export type AuthorVisibility = 0 | 1
-export type AbuseReportReason = 'spam' | 'hate_speech' | 'defamation' | 'misinformation' | 'other'
-export type AbuseReviewStatus = 'pending' | 'resolved_false' | 'resolved_abuse'
+export type AbuseReportReason = 'spam' | 'hate_speech' | 'defamation' | 'misinformation' | 'other' | 'broken_link'
+export type AbuseReviewStatus = 'pending' | 'resolved_false' | 'resolved_abuse' | 'resolved_broken'
 
 export interface AuthorSnapshotInput {
   author_id: string
@@ -544,7 +544,7 @@ export async function getAbuseReport(db: D1Database, id: number): Promise<AbuseR
 }
 
 /** 更新回報審核狀態。 */
-export async function resolveAbuseReport(db: D1Database, id: number, status: 'resolved_false' | 'resolved_abuse'): Promise<void> {
+export async function resolveAbuseReport(db: D1Database, id: number, status: 'resolved_false' | 'resolved_abuse' | 'resolved_broken'): Promise<void> {
   await db.prepare('UPDATE ct_abuse_reports SET review_status = ? WHERE id = ?').bind(status, id).run()
 }
 

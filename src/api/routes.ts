@@ -417,9 +417,14 @@ export function registerApiRoutes(app: App): void {
     const nonNullCount = [materialId, briefingId, opinionId].filter(v => v !== null).length
     if (nonNullCount !== 1) return error('Exactly one of material_id, briefing_id, opinion_id must be a positive number')
 
-    const validReasons: AbuseReportReason[] = ['spam', 'hate_speech', 'defamation', 'misinformation', 'other']
+    const validReasons: AbuseReportReason[] = ['spam', 'hate_speech', 'defamation', 'misinformation', 'other', 'broken_link']
     if (!body.reason || !validReasons.includes(body.reason as AbuseReportReason)) {
       return error('reason must be one of: ' + validReasons.join(', '))
+    }
+
+    // broken_link 回報只允許 material_id（素材才有 source_url）
+    if (body.reason === 'broken_link' && (briefingId !== null || opinionId !== null)) {
+      return error('broken_link reports only support material_id')
     }
 
     const descriptionRaw = typeof body.description === 'string' ? body.description.trim() : null
@@ -468,38 +473,48 @@ export function registerApiRoutes(app: App): void {
     } catch {
       return error('Invalid JSON')
     }
-    if (body.action !== 'false_report' && body.action !== 'confirmed_abuse') {
-      return error('action must be "false_report" or "confirmed_abuse"')
+    if (body.action !== 'false_report' && body.action !== 'confirmed_abuse' && body.action !== 'confirmed_broken') {
+      return error('action must be "false_report", "confirmed_abuse", or "confirmed_broken"')
     }
 
     const report = await db.getAbuseReport(c.env.DB, id)
     if (!report) return error('Report not found', 404)
     if (report.review_status !== 'pending') return error('Report already resolved', 409)
 
-    const targetUserId = body.action === 'false_report' ? report.reporter_id : report.target_author_id
-    const banReason = body.action === 'false_report' ? '濫用回報：誤報，已停權' : '發布違規內容：已確認濫用'
+    // broken_link 的 false_report 不 ban 回報者（回報個失效連結誤判，懲罰太重）
+    // confirmed_broken 也不 ban 任何人（非惡意內容）
+    const shouldBan =
+      body.action !== 'confirmed_broken' &&
+      !(body.action === 'false_report' && report.reason === 'broken_link')
 
-    // ban 先做——Better Auth 的 APIError 會帶 statusCode 與 body.message，
-    // catch 後直接轉譯回前端（FORBIDDEN 403、BAD_REQUEST 400 等），DB 不更新。
-    if (targetUserId) {
-      try {
-        await createAuth(c.env).api.banUser({
-          body: { userId: targetUserId, banReason },
-          headers: c.req.raw.headers,
-        })
-      } catch (banErr) {
-        const apiErr = banErr as { statusCode?: number; body?: { message?: string } }
-        const status = typeof apiErr.statusCode === 'number' ? apiErr.statusCode : 500
-        const message = apiErr.body?.message ?? 'Ban failed'
-        console.error('banUser failed', { reportId: id, action: body.action, caught: banErr })
-        return error(message, status)
+    if (shouldBan) {
+      const targetUserId = body.action === 'false_report' ? report.reporter_id : report.target_author_id
+      const banReason = body.action === 'false_report' ? '濫用回報：誤報，已停權' : '發布違規內容：已確認濫用'
+      // ban 先做——Better Auth 的 APIError 會帶 statusCode 與 body.message，
+      // catch 後直接轉譯回前端（FORBIDDEN 403、BAD_REQUEST 400 等），DB 不更新。
+      if (targetUserId) {
+        try {
+          await createAuth(c.env).api.banUser({
+            body: { userId: targetUserId, banReason },
+            headers: c.req.raw.headers,
+          })
+        } catch (banErr) {
+          const apiErr = banErr as { statusCode?: number; body?: { message?: string } }
+          const status = typeof apiErr.statusCode === 'number' ? apiErr.statusCode : 500
+          const message = apiErr.body?.message ?? 'Ban failed'
+          console.error('banUser failed', { reportId: id, action: body.action, caught: banErr })
+          return error(message, status)
+        }
       }
     }
 
-    // ban 成功（或無 userId 需要 ban）才更新業務 DB
+    // ban 成功（或不需要 ban）才更新業務 DB
     if (body.action === 'false_report') {
       await db.resolveAbuseReport(c.env.DB, id, 'resolved_false')
       await db.unflagContent(c.env.DB, report)
+    } else if (body.action === 'confirmed_broken') {
+      await db.resolveAbuseReport(c.env.DB, id, 'resolved_broken')
+      await db.confirmFlagContent(c.env.DB, report)
     } else {
       await db.resolveAbuseReport(c.env.DB, id, 'resolved_abuse')
       await db.confirmFlagContent(c.env.DB, report)
