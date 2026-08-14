@@ -505,7 +505,7 @@ async function submitOpinion() {
                   }}
                   <template v-if="briefing.author_email"> · {{ t('author_email_label') }}：{{ briefing.author_email }}</template></span
                 >
-                <button v-if="authState === 'signed-in'" type="button" class="ml-auto text-xs text-muted hover:text-red" @click="openReport('briefing', briefing.id)">
+                <button v-if="authState === 'signed-in' && !briefing.abuse_flagged" type="button" class="ml-auto text-xs text-muted hover:text-red" @click="openReport('briefing', briefing.id)">
                   {{ t('report_btn') }}
                 </button>
               </p>
@@ -560,14 +560,14 @@ async function submitOpinion() {
                 >
                 <a :href="`/issues/${issueId}/source/${m.id}`" class="text-xs text-muted hover:underline"> 🔗 {{ t('card_permalink') }} </a>
                 <button
-                  v-if="authState === 'signed-in' && m.source_url"
+                  v-if="authState === 'signed-in' && m.source_url && !m.abuse_flagged"
                   type="button"
                   class="text-xs text-muted hover:text-amber-600"
                   @click="submitBrokenLinkReport(m.id)"
                 >
                   {{ t('report_broken_btn') }}
                 </button>
-                <button v-if="authState === 'signed-in'" type="button" class="ml-auto text-xs text-muted hover:text-red" @click="openReport('material', m.id)">
+                <button v-if="authState === 'signed-in' && !m.abuse_flagged" type="button" class="ml-auto text-xs text-muted hover:text-red" @click="openReport('material', m.id)">
                   {{ t('report_btn') }}
                 </button>
               </p>
@@ -757,7 +757,7 @@ async function submitOpinion() {
                       >{{ t('op_author_label') }}：{{ o.author_name || t('author_system') }}<template v-if="o.author_email"> · {{ t('author_email_label') }}：{{ o.author_email }}</template></span
                     >
                     <a :href="`/issues/${issueId}/comment/${o.id}`" class="text-xs text-muted hover:underline"> 🔗 {{ t('card_permalink') }} </a>
-                    <button v-if="authState === 'signed-in'" type="button" class="ml-auto text-xs text-muted hover:text-red" @click="openReport('opinion', o.id)">
+                    <button v-if="authState === 'signed-in' && !o.abuse_flagged" type="button" class="ml-auto text-xs text-muted hover:text-red" @click="openReport('opinion', o.id)">
                       {{ t('report_btn') }}
                     </button>
                   </p>

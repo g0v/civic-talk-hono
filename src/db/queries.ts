@@ -502,6 +502,23 @@ export async function createAbuseReport(db: D1Database, input: CreateAbuseReport
   return meta.last_row_id
 }
 
+/** 查詢目標內容是否已有 pending 中的回報（防重複送出）。*/
+export async function findPendingReportForTarget(
+  db: D1Database,
+  target: { material_id: number | null; briefing_id: number | null; opinion_id: number | null }
+): Promise<boolean> {
+  const { material_id, briefing_id, opinion_id } = target
+  let row: { cnt: number } | null = null
+  if (material_id !== null) {
+    row = await db.prepare("SELECT COUNT(*) AS cnt FROM ct_abuse_reports WHERE material_id = ? AND review_status = 'pending'").bind(material_id).first<{ cnt: number }>()
+  } else if (briefing_id !== null) {
+    row = await db.prepare("SELECT COUNT(*) AS cnt FROM ct_abuse_reports WHERE briefing_id = ? AND review_status = 'pending'").bind(briefing_id).first<{ cnt: number }>()
+  } else if (opinion_id !== null) {
+    row = await db.prepare("SELECT COUNT(*) AS cnt FROM ct_abuse_reports WHERE opinion_id = ? AND review_status = 'pending'").bind(opinion_id).first<{ cnt: number }>()
+  }
+  return (row?.cnt ?? 0) > 0
+}
+
 /** 管理端：列出所有濫用回報（按建立時間降冪），LEFT JOIN 取回目標所屬議題與作者 ID。
  *  呼叫端必須先過 requireAdmin()。 */
 export async function listAbuseReports(db: D1Database): Promise<AbuseReport[]> {

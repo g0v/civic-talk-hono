@@ -485,7 +485,7 @@ export const messages = {
   report_broken_btn: '🔗 Report Broken Link',
   report_broken_toast_ok: 'Thank you for reporting. We will verify the link.',
   report_reason_broken_link: 'Broken link',
-  flagged_warning: '⚠️ This content has been reported for abuse and is under review',
+  flagged_warning: '⚠️ This content has been reported and is under review',
   flagged_expand_btn: 'Show content',
   flagged_collapse_btn: 'Collapse',
   flagged_confirmed: '🚫 This content has been confirmed as abusive by an admin and is not shown',

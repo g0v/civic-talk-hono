@@ -461,7 +461,7 @@ export const messages = {
   report_broken_btn: '🔗 回報連結失效',
   report_broken_toast_ok: '感謝回報，我們將確認連結是否失效',
   report_reason_broken_link: '失效連結',
-  flagged_warning: '⚠️ 此內容有用戶回報濫用，審核中',
+  flagged_warning: '⚠️ 此內容有用戶回報，審核中',
   flagged_expand_btn: '展開內容',
   flagged_collapse_btn: '收合',
   flagged_confirmed: '🚫 此內容已被管理員確認為違規，不予顯示',
