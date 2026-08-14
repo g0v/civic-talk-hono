@@ -17,6 +17,21 @@ const adminRoleAccess = {
   'super-admin': adminAc,
 }
 
+// 每次第三方登入仍同步最新頭像，但保留使用者自行設定的名稱與 email。
+export const socialProviderProfileSync = { overrideUserInfoOnSignIn: true } as const
+
+export function limitOAuthProfileSyncToAvatar(data: Record<string, unknown>, path?: string) {
+  if (!path?.startsWith('/callback/') || !('image' in data)) return
+
+  return {
+    data: {
+      name: undefined,
+      email: undefined,
+      emailVerified: undefined,
+    },
+  }
+}
+
 /**
  * 每請求新建一個 Better Auth 實例（Workers 不能跨請求共用可變狀態）。
  *
@@ -47,10 +62,19 @@ export function createAuth(env: AppBindings) {
       google: {
         clientId: env.GOOGLE_CLIENT_ID,
         clientSecret: env.GOOGLE_CLIENT_SECRET,
+        ...socialProviderProfileSync,
       },
       github: {
         clientId: env.GITHUB_CLIENT_ID,
         clientSecret: env.GITHUB_CLIENT_SECRET,
+        ...socialProviderProfileSync,
+      },
+    },
+    databaseHooks: {
+      user: {
+        update: {
+          before: async (data, context) => limitOAuthProfileSyncToAvatar(data, context?.path),
+        },
       },
     },
     plugins: [

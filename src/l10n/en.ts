@@ -6,6 +6,20 @@ export const messages = {
   save: 'Save',
   delete: 'Delete',
   edit: 'Edit',
+  profile_eyebrow: 'Account settings',
+  profile_title: 'Profile',
+  profile_login_required: 'Please sign in to view and edit your profile.',
+  profile_name_label: 'Public display name',
+  profile_email_label: 'Email',
+  profile_name_not_set: 'Display name unavailable',
+  profile_name_hint: 'This name will be used on future submissions; existing attributions will not change.',
+  profile_edit_name: 'Change name',
+  profile_saving: 'Saving…',
+  profile_name_invalid: 'Enter a public display name of no more than 100 characters.',
+  profile_update_failed: 'Failed to update your profile. Please try again.',
+  profile_name_cooldown: 'Your name can only be changed once every 30 days.',
+  profile_name_cooldown_remaining: 'You can change your name again in {days} days.',
+  profile_name_confirm: 'After changing your name, you cannot change it again for {days} days. Continue?',
   // 登入相關的共用文案（/admin 與 /contribute 都用得到，見 components/SignInButtons.vue）
   login_google: 'Sign in with Google',
   login_github: 'Sign in with GitHub',
@@ -290,7 +304,7 @@ export const messages = {
   contrib_back: '← Back to issue',
   contrib_login_title: 'Sign in to submit material',
   contrib_login_desc: 'Materials become the basis of an issue briefing, so submitting requires signing in: it keeps the quality up, and makes abuse traceable and accountable.',
-  contrib_login_hint: 'Accounts are shared with vTaiwan; the same email is the same account whichever provider you use. Your OAuth display name will be publicly shown on submitted materials.',
+  contrib_login_hint: 'Accounts are shared with vTaiwan; the same email is the same account whichever provider you use. Your current public display name will be shown on submitted materials.',
   contrib_signed_in_as: 'Submitting as {name}',
   footer_desc: "An open deliberation platform for public policy — everyone can shape Taiwan's future.",
   footer_copy: '© 2026 vTaiwan · CC-BY-SA 4.0',
@@ -350,21 +364,29 @@ export const messages = {
   rss_copy_fail: 'Could not copy link. Please open manually: {url}',
   // Terms of Service page content (#46)
   terms_s1_h: 'Introduction',
-  terms_s1_p: 'Welcome to Civic Talk, a public deliberation platform. These Terms of Service govern your use of the platform. The platform is maintained by the vTaiwan civic tech community with the goal of lowering the barrier to public participation in civic issues. By using the platform you agree to these terms.',
+  terms_s1_p:
+    'Welcome to Civic Talk, a public deliberation platform. These Terms of Service govern your use of the platform. The platform is maintained by the vTaiwan civic tech community with the goal of lowering the barrier to public participation in civic issues. By using the platform you agree to these terms.',
   terms_s2_h: 'Acceptance of Terms',
-  terms_s2_p: 'By using the platform you confirm that you have read, understood, and agreed to these Terms of Service and the <a href="/privacy" class="text-red underline hover:opacity-80">Privacy Policy</a>. If you do not agree, please do not use the platform.',
+  terms_s2_p:
+    'By using the platform you confirm that you have read, understood, and agreed to these Terms of Service and the <a href="/privacy" class="text-red underline hover:opacity-80">Privacy Policy</a>. If you do not agree, please do not use the platform.',
   terms_s3_h: 'Named Attribution and Responsibility',
   terms_s3_alert: 'Important: All submissions on this platform are attributed actions',
-  terms_s3_p1: '<strong>Creating issues, submitting materials, posting opinions, and submitting briefings / summaries</strong> are all attributed actions. After submission, a snapshot of your OAuth display name at the time of submission will be publicly attached to the content and visible to all visitors; changing your account name later will not retroactively update the attribution on existing content.',
-  terms_s3_p2: "At submission time you may check \"Make my email public\". The platform stores a snapshot of your email at submission; if you choose to make it public the snapshot is shown alongside your display name, otherwise it will not appear in any public API, page, or SSR source code — it is only accessible to platform admins for tracing abuse and, when necessary, cooperating with investigations (see \"Law Enforcement Cooperation\").",
-  terms_s3_p3: 'The purpose of named attribution is to ensure content quality and accountability, so that each issue, material, and opinion has a clearly identified submitter who accepts responsibility. Please confirm before submitting that you are willing to put your name to the content.',
+  terms_s3_p1:
+    '<strong>Creating issues, submitting materials, posting opinions, and submitting briefings / summaries</strong> are all attributed actions. After submission, a snapshot of your public display name at the time of submission will be publicly attached to the content and visible to all visitors; changing your name later will not retroactively update the attribution on existing content.',
+  terms_s3_p2:
+    'At submission time you may check "Make my email public". The platform stores a snapshot of your email at submission; if you choose to make it public the snapshot is shown alongside your display name, otherwise it will not appear in any public API, page, or SSR source code — it is only accessible to platform admins for tracing abuse and, when necessary, cooperating with investigations (see "Law Enforcement Cooperation").',
+  terms_s3_p3:
+    'The purpose of named attribution is to ensure content quality and accountability, so that each issue, material, and opinion has a clearly identified submitter who accepts responsibility. Please confirm before submitting that you are willing to put your name to the content.',
   terms_s4_h: 'Account Requirements',
-  terms_s4_p1: 'Creating issues, submitting materials, and posting opinions all require signing in with a Google or GitHub account. Login accounts are shared with the vTaiwan platform. You are responsible for keeping your account secure and must not let others use your account to submit content.',
-  terms_s4_p2: 'Each time you submit, the platform will ask you to explicitly confirm that you accept the current version of these Terms of Service and the Privacy Policy; requests that have not been confirmed will not be accepted.',
+  terms_s4_p1:
+    'Creating issues, submitting materials, and posting opinions all require signing in with a Google or GitHub account. Login accounts are shared with the vTaiwan platform. You are responsible for keeping your account secure and must not let others use your account to submit content.',
+  terms_s4_p2:
+    'Each time you submit, the platform will ask you to explicitly confirm that you accept the current version of these Terms of Service and the Privacy Policy; requests that have not been confirmed will not be accepted.',
   terms_s5_h: 'Material Licensing',
   terms_s5_alert: 'Before submitting a material, please verify the license or fair-use scope of the source',
   terms_s5_li1: 'If the source license permits republication (e.g. CC license, official open data), you may submit the full text — but please note the source in the source field.',
-  terms_s5_li2: 'If the license is unclear, we recommend summarizing no more than <strong>one third</strong> of the original text and including a source link, in accordance with fair-use principles, to reduce the risk of infringement.',
+  terms_s5_li2:
+    'If the license is unclear, we recommend summarizing no more than <strong>one third</strong> of the original text and including a source link, in accordance with fair-use principles, to reduce the risk of infringement.',
   terms_s5_li3: 'Do not submit complete copyrighted content that you have no right to republish.',
   terms_s5_footer: 'Licensing responsibility for submitted materials rests with the submitter. The platform reserves the right to remove content that may infringe on copyright.',
   terms_s6_h: 'Code of Conduct',
@@ -375,13 +397,17 @@ export const messages = {
   terms_s6_li4: 'Comply with applicable laws in the Republic of China (Taiwan) and in your own jurisdiction',
   terms_s7_h: 'Law Enforcement Cooperation',
   terms_s7_alert_h: 'The platform reserves the right to cooperate with investigations as required by law',
-  terms_s7_alert_body: 'If a user abuses the platform (including but not limited to spreading false information, harassment, or illegal content), the platform reserves the right to cooperate with competent authorities (including law enforcement) and provide relevant usage records and account data as required by law. <strong>Such data includes but is not limited to: account ID, OAuth display name, email (regardless of whether the user chose to make it public), submission time, and technical data such as IP addresses.</strong> Where necessary, the platform will provide the foregoing data in accordance with legal process.',
+  terms_s7_alert_body:
+    'If a user abuses the platform (including but not limited to spreading false information, harassment, or illegal content), the platform reserves the right to cooperate with competent authorities (including law enforcement) and provide relevant usage records and account data as required by law. <strong>Such data includes but is not limited to: account ID, public display name, email (regardless of whether the user chose to make it public), submission time, and technical data such as IP addresses.</strong> Where necessary, the platform will provide the foregoing data in accordance with legal process.',
   terms_s8_h: 'Content License',
-  terms_s8_p: 'Opinion summaries you publish on this platform are licensed under <strong>CC-BY-SA 4.0</strong>. The license for materials follows the license terms of the respective source; submitters are responsible for confirming the applicable license (see "Material Licensing").',
+  terms_s8_p:
+    'Opinion summaries you publish on this platform are licensed under <strong>CC-BY-SA 4.0</strong>. The license for materials follows the license terms of the respective source; submitters are responsible for confirming the applicable license (see "Material Licensing").',
   terms_s9_h: 'Disclaimer',
-  terms_s9_p: 'The platform is provided "as is" without any express or implied warranties. The platform accepts no liability for any direct or indirect losses arising from use of the service (including material content or opinion viewpoints). Materials and opinions on the platform represent the personal views of the submitter only and do not represent the official position of vTaiwan or the platform.',
+  terms_s9_p:
+    'The platform is provided "as is" without any express or implied warranties. The platform accepts no liability for any direct or indirect losses arising from use of the service (including material content or opinion viewpoints). Materials and opinions on the platform represent the personal views of the submitter only and do not represent the official position of vTaiwan or the platform.',
   terms_s10_h: 'Terms Amendment',
-  terms_s10_p: 'We reserve the right to amend these Terms of Service at any time. Amended terms will be announced on the platform; continued use of the platform constitutes acceptance of the amended terms.',
+  terms_s10_p:
+    'We reserve the right to amend these Terms of Service at any time. Amended terms will be announced on the platform; continued use of the platform constitutes acceptance of the amended terms.',
   terms_s11_h: 'Contact Us',
   terms_s11_email_label: 'Email:',
   terms_s11_github_label: 'GitHub:',
@@ -389,36 +415,49 @@ export const messages = {
   terms_s12_p: 'These Terms of Service are effective from the date of publication. Version: ',
   // Privacy Policy page content (#46)
   privacy_s1_h: 'Introduction',
-  privacy_s1_p: 'Civic Talk (hereinafter "the Platform") is committed to protecting user privacy. This Privacy Policy explains how the Platform collects, uses, stores, and protects your personal data. The Platform is maintained by the vTaiwan civic tech community as an open-source public deliberation tool.',
+  privacy_s1_p:
+    'Civic Talk (hereinafter "the Platform") is committed to protecting user privacy. This Privacy Policy explains how the Platform collects, uses, stores, and protects your personal data. The Platform is maintained by the vTaiwan civic tech community as an open-source public deliberation tool.',
   privacy_s2_h: 'Data We Collect',
   privacy_s2_intro: 'The Platform collects data through the following means:',
-  privacy_s2_li1: '<strong>OAuth account information</strong>: When you sign in with Google or GitHub, the Platform obtains your display name and email, and Better Auth creates a platform-internal user ID.',
-  privacy_s2_li2: '<strong>User-generated content and author snapshots</strong>: Issues you create, materials you submit, opinions you post, or briefings submitted by volunteers, together with the submission time, user ID, a snapshot of your display name and email at the time of submission, and your email disclosure preference.',
-  privacy_s2_li3: '<strong>Terms consent records</strong>: The version of the Terms accepted and the server-recorded consent time when creating an issue, submitting a material, or posting an opinion.',
+  privacy_s2_li1:
+    '<strong>OAuth account information</strong>: When you sign in with Google or GitHub, the Platform obtains your display name and email, and Better Auth creates a platform-internal user ID.',
+  privacy_s2_li2:
+    '<strong>User-generated content and author snapshots</strong>: Issues you create, materials you submit, opinions you post, or briefings submitted by volunteers, together with the submission time, user ID, a snapshot of your display name and email at the time of submission, and your email disclosure preference.',
+  privacy_s2_li3:
+    '<strong>Terms consent records</strong>: The version of the Terms accepted and the server-recorded consent time when creating an issue, submitting a material, or posting an opinion.',
   privacy_s2_li4: '<strong>Technical data</strong>: Server logs including IP addresses, browser types, and access times, used for security and performance monitoring.',
   privacy_s3_h: 'Named Attribution Explained',
   privacy_s3_alert: 'Important: Creating issues, submitting materials, and posting opinions on this platform are attributed actions',
-  privacy_s3_p1: 'To ensure content quality and accountability, after any of the above actions, a snapshot of your OAuth display name at the time of submission will be publicly attached to the corresponding issue, material, or opinion and visible to all visitors. Changing your account name later will not retroactively update the attribution on existing content.',
-  privacy_s3_p2: 'If your OAuth account does not provide a display name, the Platform will show a fixed "Display name unavailable" placeholder instead — it will never substitute your email.',
+  privacy_s3_p1:
+    'To ensure content quality and accountability, after any of the above actions, a snapshot of your public display name at the time of submission will be publicly attached to the corresponding issue, material, or opinion and visible to all visitors. Changing your name later will not retroactively update the attribution on existing content.',
+  privacy_s3_p2:
+    'If your account does not provide or has not yet set a display name, the Platform will show a fixed "Display name unavailable" placeholder instead — it will never substitute your email.',
   privacy_s3_p3: 'At submission time you may choose whether to make your email public:',
-  privacy_s3_li1: '<strong>Choose to make email public</strong>: The email snapshot at the time of submission will be publicly displayed alongside your display name on that content for other visitors to see.',
-  privacy_s3_li2: '<strong>Keep email private</strong>: The email snapshot is still stored in the business database for abuse tracing, but will not be returned by public APIs, pages, or SSR source code; it is only accessible to platform admins when necessary.',
-  privacy_s3_p4: 'The user ID is a platform-internal identifier generated by Better Auth, not a public Google or GitHub account name; it is never displayed publicly. Issues, materials, opinions, and briefings all publicly display the display name snapshot taken at submission time; email is only shown when that specific content item has opted in to public disclosure.',
+  privacy_s3_li1:
+    '<strong>Choose to make email public</strong>: The email snapshot at the time of submission will be publicly displayed alongside your display name on that content for other visitors to see.',
+  privacy_s3_li2:
+    '<strong>Keep email private</strong>: The email snapshot is still stored in the business database for abuse tracing, but will not be returned by public APIs, pages, or SSR source code; it is only accessible to platform admins when necessary.',
+  privacy_s3_p4:
+    'The user ID is a platform-internal identifier generated by Better Auth, not a public Google or GitHub account name; it is never displayed publicly. Issues, materials, opinions, and briefings all publicly display the display name snapshot taken at submission time; email is only shown when that specific content item has opted in to public disclosure.',
   privacy_s4_h: 'How We Use Data',
   privacy_s4_li1: 'Providing and maintaining the platform service (issue creation, material collection, opinion aggregation)',
   privacy_s4_li2: 'Ensuring content quality: named attribution reduces the risk of malicious submissions',
   privacy_s4_li3: 'Tracing and investigating abuse when it occurs',
   privacy_s5_h: 'Data Sharing',
-  privacy_s5_p: 'Except for necessary infrastructure services (the Cloudflare Workers platform), the Platform will not sell, rent, or share your personal data with third parties for commercial purposes.',
+  privacy_s5_p:
+    'Except for necessary infrastructure services (the Cloudflare Workers platform), the Platform will not sell, rent, or share your personal data with third parties for commercial purposes.',
   privacy_s5_alert_h: 'Law Enforcement Disclosure',
-  privacy_s5_alert_body: 'If a user abuses the Platform (including but not limited to spreading false information, harassment, or illegal content), the Platform reserves the right to cooperate with competent authorities (including law enforcement) and provide relevant usage records as required by law. <strong>Such records include but are not limited to: account ID, OAuth display name, email (regardless of whether the user chose to make it public), submission time, and technical data such as IP addresses.</strong>',
+  privacy_s5_alert_body:
+    'If a user abuses the Platform (including but not limited to spreading false information, harassment, or illegal content), the Platform reserves the right to cooperate with competent authorities (including law enforcement) and provide relevant usage records as required by law. <strong>Such records include but are not limited to: account ID, public display name, email (regardless of whether the user chose to make it public), submission time, and technical data such as IP addresses.</strong>',
   privacy_s6_h: 'Data Security',
   privacy_s6_p: 'The Platform is deployed on Cloudflare Workers and stores data in D1 (SQLite). We take reasonable technical measures to protect data security and prevent unauthorized access.',
   privacy_s7_h: 'Your Rights',
   privacy_s7_intro: 'You have the following rights with respect to your personal data held by the Platform:',
   privacy_s7_li1: '<strong>Right of access</strong>: Request to view the personal data the Platform holds about you.',
-  privacy_s7_li2: '<strong>Right of rectification</strong>: If your OAuth display name has been updated, content submitted after your next login will reflect the new name; display names in historical records are snapshots taken at the time of submission and the Platform does not provide retroactive corrections.',
-  privacy_s7_li3: '<strong>Right to erasure and anonymisation</strong>: Request deletion of your account or anonymisation of the author snapshots in your content. Because content data and the shared authentication database are stored separately, deleting your login account will not automatically delete the author snapshots in existing content; the Platform will handle such requests separately, although data required by law or needed for dispute resolution may be retained for the necessary period.',
+  privacy_s7_li2:
+    '<strong>Right of rectification</strong>: You can change your public display name on the Profile page; display names in historical records are snapshots taken at the time of submission and the Platform does not provide retroactive corrections.',
+  privacy_s7_li3:
+    '<strong>Right to erasure and anonymisation</strong>: Request deletion of your account or anonymisation of the author snapshots in your content. Because content data and the shared authentication database are stored separately, deleting your login account will not automatically delete the author snapshots in existing content; the Platform will handle such requests separately, although data required by law or needed for dispute resolution may be retained for the necessary period.',
   privacy_s7_footer: 'To exercise any of the above rights, please contact us using the details below.',
   privacy_s8_h: 'Contact Us',
   privacy_s8_email_label: 'Email:',

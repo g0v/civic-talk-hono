@@ -7,7 +7,7 @@ import SignInButtons from './SignInButtons.vue'
 
 const props = withDefaults(
   defineProps<{
-    current?: 'home' | 'about' | 'admin' | 'issue' | 'contribute' | 'other'
+    current?: 'home' | 'about' | 'admin' | 'issue' | 'contribute' | 'profile' | 'other'
     showNewIssue?: boolean
     backHref?: string
     backLabel?: string
@@ -118,13 +118,13 @@ function handleNewIssue() {
         -->
         <template v-if="authState === 'signed-in'">
           <span class="mx-1 h-4 w-px bg-gray-200" aria-hidden="true" />
-          <div class="avatar" :title="session?.user.email ?? displayName" aria-hidden="true">
-            <img v-if="avatarImage" :src="avatarImage" :alt="displayName" referrerpolicy="no-referrer" />
-            <span v-else>{{ avatarInitial }}</span>
-          </div>
-          <span class="max-w-[10rem] truncate text-[14px] text-vt-fg-2" :title="session?.user.email ?? ''">
-            {{ displayName }}
-          </span>
+          <a href="/profile" class="flex min-w-0 items-center gap-2 rounded-pill no-underline hover:bg-black/5" :title="t('profile_title')">
+            <div class="avatar" aria-hidden="true">
+              <img v-if="avatarImage" :src="avatarImage" :alt="displayName" referrerpolicy="no-referrer" />
+              <span v-else>{{ avatarInitial }}</span>
+            </div>
+            <span class="max-w-[10rem] truncate text-[14px] text-vt-fg-2">{{ displayName }}</span>
+          </a>
           <button type="button" class="btn btn-ghost btn-sm" @click="signOutAndReload">
             {{ t('logout') }}
           </button>
@@ -140,10 +140,12 @@ function handleNewIssue() {
       <!-- ── 手機右側：avatar（已登入時）＋ 漢堡按鈕 ── -->
       <div class="flex items-center gap-2 md:hidden">
         <!-- 已登入時在 bar 右側露出小 avatar，讓使用者知道自己有登入 -->
-        <div v-if="authState === 'signed-in'" class="avatar" :title="session?.user.email ?? displayName" aria-hidden="true">
-          <img v-if="avatarImage" :src="avatarImage" :alt="displayName" referrerpolicy="no-referrer" />
-          <span v-else>{{ avatarInitial }}</span>
-        </div>
+        <a v-if="authState === 'signed-in'" href="/profile" class="rounded-full" :title="t('profile_title')">
+          <div class="avatar" aria-hidden="true">
+            <img v-if="avatarImage" :src="avatarImage" :alt="displayName" referrerpolicy="no-referrer" />
+            <span v-else>{{ avatarInitial }}</span>
+          </div>
+        </a>
 
         <!-- 漢堡按鈕 -->
         <button type="button" class="flex h-9 w-9 items-center justify-center rounded-lg hover:bg-black/5" :aria-expanded="showMenu" aria-label="選單" @click="showMenu = !showMenu">
@@ -231,7 +233,7 @@ function handleNewIssue() {
 
       <!-- 登入狀態：SSR 與 hydration 首幀不畫（authState === 'loading'），避免 mismatch -->
       <template v-if="authState === 'signed-in'">
-        <div class="mb-3 flex items-center gap-3">
+        <a href="/profile" class="mb-3 flex items-center gap-3 rounded-lg p-1 text-inherit no-underline hover:bg-black/5" :title="t('profile_title')">
           <div class="avatar avatar-lg shrink-0" aria-hidden="true">
             <img v-if="avatarImage" :src="avatarImage" :alt="displayName" referrerpolicy="no-referrer" />
             <span v-else>{{ avatarInitial }}</span>
@@ -240,7 +242,7 @@ function handleNewIssue() {
             <div class="truncate text-[14px] font-medium text-vt-fg-1">{{ displayName }}</div>
             <div class="truncate text-[13px] text-vt-fg-3">{{ session?.user.email }}</div>
           </div>
-        </div>
+        </a>
         <button type="button" class="btn btn-secondary btn-sm" @click="signOutAndReload">
           {{ t('logout') }}
         </button>

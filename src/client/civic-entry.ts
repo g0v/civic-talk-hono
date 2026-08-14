@@ -10,6 +10,7 @@ import OpinionDetailView from '../views/OpinionDetail.vue'
 import NotFoundView from '../views/NotFound.vue'
 import TermsView from '../views/Terms.vue'
 import PrivacyView from '../views/Privacy.vue'
+import ProfileView from '../views/Profile.vue'
 import type { PageName } from '../ssr/render'
 
 declare global {
@@ -30,6 +31,7 @@ const pages: Record<PageName, Component> = {
   'not-found': NotFoundView,
   terms: TermsView,
   privacy: PrivacyView,
+  profile: ProfileView,
 }
 
 const page = window.__PAGE__

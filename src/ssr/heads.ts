@@ -79,6 +79,16 @@ export function headForAdmin(origin: string): HeadConfig {
   }
 }
 
+export function headForProfile(origin: string): HeadConfig {
+  const title = `個人資料 — ${SITE_NAME}`
+  const description = '管理 Civic Talk 個人資料與公開顯示名稱。'
+  return {
+    title,
+    description,
+    meta: [...buildOg(title, description, DEFAULT_OG_IMAGE(origin), `${origin}/profile`), { name: 'robots', content: 'noindex,nofollow' }],
+  }
+}
+
 export function headForMaterial(sourceName: string | null, issueTitle: string, issueId: number, materialId: number, origin: string): HeadConfig {
   const label = sourceName || '素材'
   const pageTitle = `${label}｜${issueTitle} — ${SITE_NAME}`
@@ -129,7 +139,6 @@ export function headForTerms(origin: string): HeadConfig {
     meta: buildOg(title, description, DEFAULT_OG_IMAGE(origin), `${origin}/terms`),
   }
 }
-
 
 export function renderHeadTags(head: HeadConfig): string {
   const parts: string[] = ['<meta charset="UTF-8" />', '<meta name="viewport" content="width=device-width, initial-scale=1.0" />', `<title>${escapeHtml(head.title)}</title>`]

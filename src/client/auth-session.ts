@@ -32,6 +32,8 @@ export interface AuthSession {
   role: AppRole
   /** 帳號是否已被停權（vTaiwan-hono admin 管理）。停權者伺服器端寫入一律 403。 */
   banned: boolean
+  /** 名稱修改冷卻期剩餘天數；未在冷卻期時為 null。 */
+  nameChangeCooldownDays: number | null
 }
 
 /**
@@ -55,4 +57,8 @@ export async function signInWith(provider: 'google' | 'github', callbackURL: str
 
 export async function signOut(): Promise<void> {
   await getAuthClient().signOut()
+}
+
+export function updateProfileName(name: string) {
+  return getAuthClient().updateUser({ name })
 }

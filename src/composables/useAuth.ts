@@ -55,6 +55,11 @@ export function useAuth() {
       return inflight
     },
 
+    /** 個人資料剛更新時同步名稱，避免標頭仍顯示舊值。 */
+    updateSessionName(name: string): void {
+      if (session.value) session.value = { ...session.value, user: { ...session.value.user, name } }
+    },
+
     /** 登出後整頁重載：最省事也最不會漏掉任何頁面狀態的作法。 */
     async signOutAndReload(): Promise<void> {
       await signOut()

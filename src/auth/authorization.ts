@@ -1,5 +1,6 @@
 import { createAuth } from './createAuth'
 import type { AppBindings } from '../api/types'
+import { nameChangeCooldownRemainingDays } from '../lib/profile-name'
 
 /** 角色沿用 vTaiwan 的三級制；欄位就是共用 auth DB 的 user.role */
 export type AppRole = 'user' | 'admin' | 'super-admin'
@@ -17,6 +18,12 @@ export interface AuthContext {
    * 本站只讀取。被停權的使用者不得執行任何寫入動作（見 requireUser()）。
    */
   banned: boolean
+  /** 名稱修改冷卻期剩餘天數；未在冷卻期時為 null。 */
+  nameChangeCooldownDays: number | null
+}
+
+type UserNameChangeRow = {
+  nameChangedAt: string | null
 }
 
 /**
@@ -47,6 +54,8 @@ export async function getAuthContext(env: AppBindings, headers: Headers): Promis
   const auth = createAuth(env)
   const session = await auth.api.getSession({ headers })
   if (!session) return null
+  // 共用認證庫僅讀取冷卻期；名稱寫入一律透過 Better Auth 的 update-user API。
+  const user = await env.DB_AUTH.prepare('SELECT "nameChangedAt" FROM "user" WHERE "id" = ?').bind(session.user.id).first<UserNameChangeRow>()
 
   return {
     user: {
@@ -59,6 +68,7 @@ export async function getAuthContext(env: AppBindings, headers: Headers): Promis
     // Better Auth admin plugin 在 banExpires 到期後會自動把 banned 改回 false，
     // 所以直接信任 session.user.banned，不需要額外對照 banExpires。
     banned: session.user.banned === true,
+    nameChangeCooldownDays: nameChangeCooldownRemainingDays(user?.nameChangedAt ?? null),
   }
 }
 
