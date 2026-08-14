@@ -39,6 +39,10 @@ const opinions = ref<OpinionWithAuthor[]>([])
 const abuseReports = ref<AbuseReport[]>([])
 const matIssueId = ref<number | ''>('')
 const opIssueId = ref<number | ''>('')
+const issueSearch = ref('')
+const materialSearch = ref('')
+const opinionSearch = ref('')
+const reportSearch = ref('')
 
 const modalEdit = ref(false)
 const modalNew = ref(false)
@@ -97,6 +101,9 @@ async function loadOpinions() {
   const res = await fetch(`/api/issues/${opIssueId.value}/opinions`)
   if (res.ok) opinions.value = await res.json()
 }
+
+async function onMatIssueChange() { materialSearch.value = ''; await loadMaterials() }
+async function onOpIssueChange() { opinionSearch.value = ''; await loadOpinions() }
 
 async function loadAbuseReports() {
   const res = await fetch('/api/admin/abuse-reports', { headers: authHeaders() })
@@ -280,6 +287,48 @@ async function onTabChange(id: AdminTab) {
   activeTab.value = id
   if (id === 'reports' && abuseReports.value.length === 0) await loadAbuseReports()
 }
+
+const filteredIssues = computed(() => {
+  if (!issueSearch.value.trim()) return issues.value
+  const q = issueSearch.value.toLowerCase()
+  return issues.value.filter(i =>
+    i.title.toLowerCase().includes(q) ||
+    (i.description?.toLowerCase().includes(q) ?? false) ||
+    (i.author_name?.toLowerCase().includes(q) ?? false)
+  )
+})
+
+const filteredMaterials = computed(() => {
+  if (!materialSearch.value.trim()) return materials.value
+  const q = materialSearch.value.toLowerCase()
+  return materials.value.filter(m =>
+    (m.source_name?.toLowerCase().includes(q) ?? false) ||
+    (m.source_url?.toLowerCase().includes(q) ?? false) ||
+    m.content.toLowerCase().includes(q) ||
+    (m.author_name?.toLowerCase().includes(q) ?? false)
+  )
+})
+
+const filteredOpinions = computed(() => {
+  if (!opinionSearch.value.trim()) return opinions.value
+  const q = opinionSearch.value.toLowerCase()
+  return opinions.value.filter(o =>
+    o.summary.toLowerCase().includes(q) ||
+    (o.author_name?.toLowerCase().includes(q) ?? false)
+  )
+})
+
+const filteredReports = computed(() => {
+  if (!reportSearch.value.trim()) return abuseReports.value
+  const q = reportSearch.value.toLowerCase()
+  return abuseReports.value.filter(r =>
+    (r.reporter_name?.toLowerCase().includes(q) ?? false) ||
+    r.reporter_email.toLowerCase().includes(q) ||
+    r.reason.toLowerCase().includes(q) ||
+    t(ABUSE_REASON_LABELS[r.reason] ?? 'report_reason_other').toLowerCase().includes(q) ||
+    (r.description?.toLowerCase().includes(q) ?? false)
+  )
+})
 </script>
 
 <template>
@@ -371,6 +420,14 @@ async function onTabChange(id: AdminTab) {
                 {{ t('adm_new_issue_btn') }}
               </button>
             </div>
+            <div class="mb-3">
+              <input
+                v-model="issueSearch"
+                type="search"
+                class="w-full max-w-sm rounded border border-border px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-red"
+                :placeholder="t('adm_search_ph')"
+              />
+            </div>
             <div class="overflow-x-auto rounded-lg border border-border">
               <table class="w-full border-collapse text-sm">
                 <thead class="bg-gray-100">
@@ -385,7 +442,7 @@ async function onTabChange(id: AdminTab) {
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="issue in issues" :key="issue.id" class="border-t border-border">
+                  <tr v-for="issue in filteredIssues" :key="issue.id" class="border-t border-border">
                     <td class="px-3 py-2">{{ issue.id }}</td>
                     <td class="px-3 py-2">
                       <a :href="`/issues/${issue.id}`">{{ issue.title }}</a>
@@ -415,6 +472,11 @@ async function onTabChange(id: AdminTab) {
                       </div>
                     </td>
                   </tr>
+                  <tr v-if="filteredIssues.length === 0">
+                    <td colspan="7" class="px-3 py-4 text-center text-sm text-muted">
+                      {{ issueSearch ? t('adm_search_no_result', { keyword: issueSearch }) : '' }}
+                    </td>
+                  </tr>
                 </tbody>
               </table>
             </div>
@@ -425,7 +487,7 @@ async function onTabChange(id: AdminTab) {
             <h2 class="mt-0 mb-4 font-serif text-xl">{{ t('adm_mat_section_title') }}</h2>
             <div class="form-group max-w-md">
               <label>{{ t('adm_select_issue_label') }}</label>
-              <select v-model="matIssueId" @change="loadMaterials">
+              <select v-model="matIssueId" @change="onMatIssueChange">
                 <option value="">{{ t('adm_select_placeholder') }}</option>
                 <option v-for="issue in issues" :key="issue.id" :value="issue.id">
                   {{ issue.title }}
@@ -435,8 +497,19 @@ async function onTabChange(id: AdminTab) {
             <div v-if="!matIssueId" class="empty">{{ t('adm_empty_select') }}</div>
             <div v-else-if="!materials.length" class="empty">{{ t('adm_empty_materials') }}</div>
             <template v-else>
-              <p class="mb-3 text-sm text-muted">{{ t('adm_mat_count_prefix') }}{{ materials.length }}{{ t('adm_mat_count_suffix') }}</p>
-              <div v-for="m in materials" :key="m.id" class="card mb-3">
+              <div class="mb-3 flex flex-wrap items-center gap-3">
+                <p class="m-0 text-sm text-muted">
+                  {{ t('adm_mat_count_prefix') }}{{ filteredMaterials.length }}{{ t('adm_mat_count_suffix') }}
+                  <span v-if="materialSearch && filteredMaterials.length !== materials.length" class="text-xs">{{ t('adm_search_total', { total: materials.length }) }}</span>
+                </p>
+                <input
+                  v-model="materialSearch"
+                  type="search"
+                  class="rounded border border-border px-3 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-red"
+                  :placeholder="t('adm_search_ph')"
+                />
+              </div>
+              <div v-for="m in filteredMaterials" :key="m.id" class="card mb-3">
                 <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
                   <strong>{{ m.source_name || t('adm_mat_source_unknown') }}</strong>
                   <button type="button" class="btn btn-ghost btn-sm text-red" @click="deleteMaterial(m.id)">
@@ -452,6 +525,9 @@ async function onTabChange(id: AdminTab) {
                   <p v-if="m.terms_version" class="m-0 text-xs">{{ t('adm_terms_record') }}{{ m.terms_version }} · {{ m.terms_accepted_at }}</p>
                 </div>
               </div>
+              <div v-if="filteredMaterials.length === 0 && materialSearch" class="empty">
+                {{ t('adm_search_no_result', { keyword: materialSearch }) }}
+              </div>
             </template>
           </section>
 
@@ -460,7 +536,7 @@ async function onTabChange(id: AdminTab) {
             <h2 class="mt-0 mb-4 font-serif text-xl">{{ t('adm_op_section_title') }}</h2>
             <div class="form-group max-w-md">
               <label>{{ t('adm_select_issue_label') }}</label>
-              <select v-model="opIssueId" @change="loadOpinions">
+              <select v-model="opIssueId" @change="onOpIssueChange">
                 <option value="">{{ t('adm_select_placeholder') }}</option>
                 <option v-for="issue in issues" :key="issue.id" :value="issue.id">
                   {{ issue.title }}
@@ -470,8 +546,19 @@ async function onTabChange(id: AdminTab) {
             <div v-if="!opIssueId" class="empty">{{ t('adm_empty_select') }}</div>
             <div v-else-if="!opinions.length" class="empty">{{ t('adm_empty_opinions') }}</div>
             <template v-else>
-              <p class="mb-3 text-sm text-muted">{{ t('adm_op_count_prefix') }}{{ opinions.length }}{{ t('adm_op_count_suffix') }}</p>
-              <div v-for="o in opinions" :key="o.id" class="card mb-3">
+              <div class="mb-3 flex flex-wrap items-center gap-3">
+                <p class="m-0 text-sm text-muted">
+                  {{ t('adm_op_count_prefix') }}{{ filteredOpinions.length }}{{ t('adm_op_count_suffix') }}
+                  <span v-if="opinionSearch && filteredOpinions.length !== opinions.length" class="text-xs">{{ t('adm_search_total', { total: opinions.length }) }}</span>
+                </p>
+                <input
+                  v-model="opinionSearch"
+                  type="search"
+                  class="rounded border border-border px-3 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-red"
+                  :placeholder="t('adm_search_ph')"
+                />
+              </div>
+              <div v-for="o in filteredOpinions" :key="o.id" class="card mb-3">
                 <div class="mb-2 flex items-center justify-between gap-2">
                   <span class="text-sm text-muted">{{ formatDate(o.created_at, locale) }}</span>
                   <button type="button" class="btn btn-ghost btn-sm text-red" @click="deleteOpinion(o.id)">
@@ -486,12 +573,23 @@ async function onTabChange(id: AdminTab) {
                   <p v-if="o.terms_version" class="m-0 text-xs">{{ t('adm_terms_record') }}{{ o.terms_version }} · {{ o.terms_accepted_at }}</p>
                 </div>
               </div>
+              <div v-if="filteredOpinions.length === 0 && opinionSearch" class="empty">
+                {{ t('adm_search_no_result', { keyword: opinionSearch }) }}
+              </div>
             </template>
           </section>
 
           <!-- Abuse Reports -->
           <section v-show="activeTab === 'reports'">
             <h2 class="mt-0 mb-4 font-serif text-xl">{{ t('adm_rpt_title') }}</h2>
+            <div class="mb-3">
+              <input
+                v-model="reportSearch"
+                type="search"
+                class="w-full max-w-sm rounded border border-border px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-red"
+                :placeholder="t('adm_search_ph')"
+              />
+            </div>
             <div v-if="!abuseReports.length" class="empty">
               <div class="empty-icon">✅</div>
               {{ t('adm_rpt_empty') }}
@@ -511,7 +609,7 @@ async function onTabChange(id: AdminTab) {
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="r in abuseReports" :key="r.id" class="border-t border-border">
+                  <tr v-for="r in filteredReports" :key="r.id" class="border-t border-border">
                     <td class="px-3 py-2">{{ r.id }}</td>
                     <td class="px-3 py-2">
                       <div>{{ r.reporter_name || t('adm_author_unknown') }}</div>
@@ -561,6 +659,11 @@ async function onTabChange(id: AdminTab) {
                         </div>
                       </template>
                       <span v-else class="text-xs text-muted">—</span>
+                    </td>
+                  </tr>
+                  <tr v-if="filteredReports.length === 0">
+                    <td colspan="8" class="px-3 py-4 text-center text-sm text-muted">
+                      {{ reportSearch ? t('adm_search_no_result', { keyword: reportSearch }) : t('adm_rpt_empty') }}
                     </td>
                   </tr>
                 </tbody>
