@@ -704,7 +704,7 @@ const filteredReports = computed(() => {
                             :title="(r.reason !== 'broken_link' && session?.role !== 'super-admin') ? t('adm_rpt_need_super_admin') : r.reporter_id === session?.user?.id ? t('adm_rpt_cannot_ban_self') : undefined"
                             @click="resolveReport(r.id, 'false_report')"
                           >
-                            {{ t('adm_rpt_btn_false') }}
+                            {{ r.reason === 'broken_link' ? t('adm_rpt_btn_false_no_ban') : t('adm_rpt_btn_false') }}
                           </button>
                           <!-- 確認失效（藏住素材，不停權）→ 所有 admin 都可以；僅 broken_link 顯示 -->
                           <button

@@ -507,6 +507,7 @@ export const messages = {
   adm_rpt_target_briefing: 'Briefing #',
   adm_rpt_target_opinion: 'Opinion #',
   adm_rpt_btn_false: 'False Report (ban reporter)',
+  adm_rpt_btn_false_no_ban: 'Mark as false report',
   adm_rpt_btn_abuse: 'Confirmed Abuse (ban author)',
   adm_rpt_btn_broken: 'Confirm broken (hide material)',
   adm_rpt_confirm_false: 'Mark as false report and ban the reporter? This action cannot be undone.',

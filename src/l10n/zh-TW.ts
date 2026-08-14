@@ -483,6 +483,7 @@ export const messages = {
   adm_rpt_target_briefing: '說明頁 #',
   adm_rpt_target_opinion: '意見 #',
   adm_rpt_btn_false: '誤報（停權回報者）',
+  adm_rpt_btn_false_no_ban: '確認誤報',
   adm_rpt_btn_abuse: '確認濫用（停權張貼者）',
   adm_rpt_btn_broken: '確認失效（藏住素材）',
   adm_rpt_confirm_false: '確認標記為誤報並停權回報者嗎？此動作不可還原。',
