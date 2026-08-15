@@ -30,7 +30,7 @@ const adminView = computed<'loading' | 'anonymous' | 'forbidden' | 'admin'>(() =
   if (authState.value === 'anonymous' || !session.value) return 'anonymous'
   return isAdminSession(session.value) ? 'admin' : 'forbidden'
 })
-const activeTab = ref<AdminTab>('issues')
+const activeTab = ref<AdminTab>('reports')
 const stats = ref({ issues: 0, materials: 0, opinions: 0, briefings: 0 })
 // 管理端讀到的議題／素材／意見都含建立者或投稿者（#9）；一般讀取者拿到的是公開形狀
 const issues = ref<IssueListItemWithAuthor[]>([])
@@ -71,7 +71,7 @@ onMounted(async () => {
 })
 
 async function bootstrap() {
-  await Promise.all([loadStats(), loadIssues()])
+  await Promise.all([loadStats(), loadIssues(), loadAbuseReports()])
 }
 
 async function loadStats() {
@@ -315,10 +315,10 @@ const REVIEW_STATUS_LABELS: Record<string, MessageKey> = {
   resolved_broken: 'adm_rpt_status_resolved_broken',
 }
 const tabs = computed(() => [
+  { id: 'reports' as const, label: t('adm_tab_reports') },
   { id: 'issues' as const, label: t('adm_tab_issues') },
   { id: 'materials' as const, label: t('adm_tab_materials') },
   { id: 'opinions' as const, label: t('adm_tab_opinions') },
-  { id: 'reports' as const, label: t('adm_tab_reports') },
 ])
 
 async function onTabChange(id: AdminTab) {
