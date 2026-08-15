@@ -559,12 +559,7 @@ async function submitOpinion() {
                   >{{ t('mat_author_label') }}：{{ m.author_name || t('author_system') }}<template v-if="m.author_email"> · {{ t('author_email_label') }}：{{ m.author_email }}</template></span
                 >
                 <a :href="`/issues/${issueId}/source/${m.id}`" class="text-xs text-muted hover:underline"> 🔗 {{ t('card_permalink') }} </a>
-                <button
-                  v-if="authState === 'signed-in' && m.source_url && !m.abuse_flagged"
-                  type="button"
-                  class="text-xs text-muted hover:text-amber-600"
-                  @click="submitBrokenLinkReport(m.id)"
-                >
+                <button v-if="authState === 'signed-in' && m.source_url && !m.abuse_flagged" type="button" class="text-xs text-muted hover:text-amber-600" @click="submitBrokenLinkReport(m.id)">
                   {{ t('report_broken_btn') }}
                 </button>
                 <button v-if="authState === 'signed-in' && !m.abuse_flagged" type="button" class="ml-auto text-xs text-muted hover:text-red" @click="openReport('material', m.id)">

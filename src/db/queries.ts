@@ -503,10 +503,7 @@ export async function createAbuseReport(db: D1Database, input: CreateAbuseReport
 }
 
 /** 查詢目標內容是否已有 pending 中的回報（防重複送出）。*/
-export async function findPendingReportForTarget(
-  db: D1Database,
-  target: { material_id: number | null; briefing_id: number | null; opinion_id: number | null }
-): Promise<boolean> {
+export async function findPendingReportForTarget(db: D1Database, target: { material_id: number | null; briefing_id: number | null; opinion_id: number | null }): Promise<boolean> {
   const { material_id, briefing_id, opinion_id } = target
   let row: { cnt: number } | null = null
   if (material_id !== null) {

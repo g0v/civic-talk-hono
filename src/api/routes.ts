@@ -521,9 +521,7 @@ export function registerApiRoutes(app: App): void {
 
     // broken_link 的 false_report 不 ban 回報者（回報個失效連結誤判，懲罰太重）
     // confirmed_broken 也不 ban 任何人（非惡意內容）
-    const shouldBan =
-      body.action !== 'confirmed_broken' &&
-      !(body.action === 'false_report' && report.reason === 'broken_link')
+    const shouldBan = body.action !== 'confirmed_broken' && !(body.action === 'false_report' && report.reason === 'broken_link')
 
     if (shouldBan) {
       const targetUserId = body.action === 'false_report' ? report.reporter_id : report.target_author_id

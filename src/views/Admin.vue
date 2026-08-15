@@ -125,7 +125,7 @@ async function fetchLiveUser(userId: string) {
   liveUserCache.value = { ...liveUserCache.value, [userId]: 'loading' }
   const res = await fetch(`/api/admin/users/${encodeURIComponent(userId)}`, { headers: authHeaders() })
   if (res.ok) {
-    const data = await res.json() as LiveUserEntry
+    const data = (await res.json()) as LiveUserEntry
     liveUserCache.value = { ...liveUserCache.value, [userId]: data }
   } else {
     liveUserCache.value = { ...liveUserCache.value, [userId]: 'not_found' }
@@ -139,13 +139,14 @@ function liveUser(userId: string): LiveUserEntry | null {
 }
 
 async function resolveReport(id: number, action: 'false_report' | 'confirmed_abuse' | 'confirmed_broken', reason?: string) {
-  const confirmKey = action === 'false_report' && reason === 'broken_link'
-    ? 'adm_rpt_confirm_false_no_ban'
-    : action === 'false_report'
-    ? 'adm_rpt_confirm_false'
-    : action === 'confirmed_abuse'
-    ? 'adm_rpt_confirm_abuse'
-    : 'adm_rpt_confirm_broken'
+  const confirmKey =
+    action === 'false_report' && reason === 'broken_link'
+      ? 'adm_rpt_confirm_false_no_ban'
+      : action === 'false_report'
+        ? 'adm_rpt_confirm_false'
+        : action === 'confirmed_abuse'
+          ? 'adm_rpt_confirm_abuse'
+          : 'adm_rpt_confirm_broken'
   if (!confirm(t(confirmKey))) return
   const res = await fetch(`/api/admin/abuse-reports/${id}/resolve`, {
     method: 'PATCH',
@@ -641,12 +642,9 @@ const filteredReports = computed(() => {
                       <div class="text-xs text-muted">{{ r.reporter_email }}</div>
                       <!-- 現值查詢（snapshot 之外） -->
                       <div class="mt-1">
-                        <button
-                          v-if="!liveUserCache[r.reporter_id]"
-                          type="button"
-                          class="text-xs text-muted hover:underline"
-                          @click="fetchLiveUser(r.reporter_id)"
-                        >{{ t('adm_live_user_btn') }}</button>
+                        <button v-if="!liveUserCache[r.reporter_id]" type="button" class="text-xs text-muted hover:underline" @click="fetchLiveUser(r.reporter_id)">
+                          {{ t('adm_live_user_btn') }}
+                        </button>
                         <span v-else-if="liveUserCache[r.reporter_id] === 'loading'" class="text-xs text-muted">{{ t('loading') }}</span>
                         <div v-else-if="liveUserCache[r.reporter_id] === 'not_found'" class="text-xs text-muted">{{ t('adm_live_user_not_found') }}</div>
                         <div v-else class="text-xs text-muted border-t border-border mt-1 pt-1">
@@ -671,12 +669,9 @@ const filteredReports = computed(() => {
                       <span v-else class="text-muted text-xs">（目標已刪除）</span>
                       <!-- 被回報者現值查詢（有 target_author_id 時才顯示） -->
                       <div v-if="r.target_author_id" class="mt-1">
-                        <button
-                          v-if="!liveUserCache[r.target_author_id]"
-                          type="button"
-                          class="text-xs text-muted hover:underline"
-                          @click="fetchLiveUser(r.target_author_id)"
-                        >{{ t('adm_live_user_btn') }}</button>
+                        <button v-if="!liveUserCache[r.target_author_id]" type="button" class="text-xs text-muted hover:underline" @click="fetchLiveUser(r.target_author_id)">
+                          {{ t('adm_live_user_btn') }}
+                        </button>
                         <span v-else-if="liveUserCache[r.target_author_id] === 'loading'" class="text-xs text-muted">{{ t('loading') }}</span>
                         <div v-else-if="liveUserCache[r.target_author_id] === 'not_found'" class="text-xs text-muted">{{ t('adm_live_user_not_found') }}</div>
                         <div v-else class="text-xs text-muted border-t border-border mt-1 pt-1">
@@ -692,7 +687,11 @@ const filteredReports = computed(() => {
                       <span v-else class="text-muted">—</span>
                     </td>
                     <td class="px-3 py-2">
-                      <span :class="r.review_status === 'pending' ? 'text-amber' : r.review_status === 'resolved_abuse' ? 'text-red' : r.review_status === 'resolved_broken' ? 'text-amber-600' : 'text-muted'">
+                      <span
+                        :class="
+                          r.review_status === 'pending' ? 'text-amber' : r.review_status === 'resolved_abuse' ? 'text-red' : r.review_status === 'resolved_broken' ? 'text-amber-600' : 'text-muted'
+                        "
+                      >
                         {{ t(REVIEW_STATUS_LABELS[r.review_status] ?? 'adm_rpt_status_pending') }}
                       </span>
                     </td>
@@ -705,17 +704,18 @@ const filteredReports = computed(() => {
                             @click="resolveReport(r.id, 'false_report', r.reason)"
                             class="btn btn-ghost btn-sm text-amber-700"
                             :disabled="(r.reason !== 'broken_link' && session?.role !== 'super-admin') || r.reporter_id === session?.user?.id"
-                            :title="(r.reason !== 'broken_link' && session?.role !== 'super-admin') ? t('adm_rpt_need_super_admin') : r.reporter_id === session?.user?.id ? t('adm_rpt_cannot_ban_self') : undefined"
+                            :title="
+                              r.reason !== 'broken_link' && session?.role !== 'super-admin'
+                                ? t('adm_rpt_need_super_admin')
+                                : r.reporter_id === session?.user?.id
+                                  ? t('adm_rpt_cannot_ban_self')
+                                  : undefined
+                            "
                           >
                             {{ r.reason === 'broken_link' ? t('adm_rpt_btn_false_no_ban') : t('adm_rpt_btn_false') }}
                           </button>
                           <!-- 確認失效（藏住素材，不停權）→ 所有 admin 都可以；僅 broken_link 顯示 -->
-                          <button
-                            v-if="r.reason === 'broken_link'"
-                            type="button"
-                            class="btn btn-ghost btn-sm text-amber-600"
-                            @click="resolveReport(r.id, 'confirmed_broken')"
-                          >
+                          <button v-if="r.reason === 'broken_link'" type="button" class="btn btn-ghost btn-sm text-amber-600" @click="resolveReport(r.id, 'confirmed_broken')">
                             {{ t('adm_rpt_btn_broken') }}
                           </button>
                           <!-- 確認濫用（停權張貼者）→ super-admin only；非 broken_link 才顯示 -->
