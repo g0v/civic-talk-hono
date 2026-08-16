@@ -152,7 +152,7 @@ async function copyLink() {
           <div class="card mb-6">
             <p class="mt-0 mb-2 text-sm text-muted">{{ t('src_share_hint') }}</p>
             <div class="flex flex-wrap items-center gap-2">
-              <code class="flex-1 truncate rounded bg-gray-100 px-3 py-1.5 text-xs text-muted">
+              <code class="flex-1 truncate rounded bg-gray-100 dark:bg-gray-800 px-3 py-1.5 text-xs text-muted">
                 {{ typeof window !== 'undefined' ? window.location.href : '' }}
               </code>
               <button type="button" class="btn btn-secondary btn-sm shrink-0" @click="copyLink">

@@ -30,6 +30,9 @@ export async function renderPage(component: Component, props: Record<string, unk
   return `<!doctype html>
 <html lang="zh-Hant">
   <head>
+    <script>
+(function(){try{var s=localStorage.getItem('civic_dark');if(s==='dark'||(s===null&&matchMedia('(prefers-color-scheme: dark)').matches)){document.documentElement.classList.add('dark')}}catch(e){}})();
+</script>
     ${headTags}
     <link rel="apple-touch-icon" sizes="180x180" href="/img/apple-touch-icon.png" />
     <link rel="icon" type="image/png" sizes="32x32" href="/img/favicon-32x32.png" />

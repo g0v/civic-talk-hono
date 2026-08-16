@@ -74,7 +74,7 @@ async function saveName() {
         <!-- SSR 與 hydration 首幀都不猜登入狀態，避免 cookie 導致 mismatch。 -->
         <section v-if="authState === 'loading'" class="card" aria-busy="true">
           <div class="h-8 w-32 animate-pulse rounded bg-gray-200" />
-          <div class="mt-8 h-20 animate-pulse rounded-lg bg-gray-100" />
+          <div class="mt-8 h-20 animate-pulse rounded-lg bg-gray-100 dark:bg-gray-800" />
         </section>
 
         <section v-else-if="authState === 'anonymous'" class="card">
@@ -99,11 +99,11 @@ async function saveName() {
 
           <div v-if="!editing" class="space-y-6">
             <dl class="grid gap-4 sm:grid-cols-2">
-              <div class="rounded-lg border border-border bg-gray-50 p-4">
+              <div class="rounded-lg border border-border bg-gray-50 dark:bg-gray-800 p-4">
                 <dt class="mb-1 text-sm font-medium text-muted">{{ t('profile_name_label') }}</dt>
                 <dd class="m-0 break-words font-medium">{{ displayName }}</dd>
               </div>
-              <div class="rounded-lg border border-border bg-gray-50 p-4">
+              <div class="rounded-lg border border-border bg-gray-50 dark:bg-gray-800 p-4">
                 <dt class="mb-1 text-sm font-medium text-muted">{{ t('profile_email_label') }}</dt>
                 <dd class="m-0 break-all">{{ session?.user.email }}</dd>
               </div>
@@ -135,7 +135,7 @@ async function saveName() {
 
             <div>
               <p class="mb-2 text-sm font-medium">{{ t('profile_email_label') }}</p>
-              <p class="m-0 rounded-lg border border-border bg-gray-50 px-3 py-2 text-muted">{{ session?.user.email }}</p>
+              <p class="m-0 rounded-lg border border-border bg-gray-50 dark:bg-gray-800 px-3 py-2 text-muted">{{ session?.user.email }}</p>
             </div>
 
             <p v-if="errorMessage" class="alert alert-warn mb-0" role="alert">{{ errorMessage }}</p>
