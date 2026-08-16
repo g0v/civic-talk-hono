@@ -4,7 +4,12 @@ export type IssueStatus = 'collecting' | 'summarizing' | 'published'
 export type Stance = 'pro' | 'con' | 'neutral' | 'unknown'
 export type AuthorVisibility = 0 | 1
 export type AbuseReportReason = 'spam' | 'hate_speech' | 'defamation' | 'misinformation' | 'other' | 'broken_link'
+export type AbuseReportSource = 'user' | 'ai'
+export type ModerationPolicyCode = 'spam' | 'sexual_content' | 'hate_speech' | 'defamation' | 'misinformation' | 'illegal'
+export type ModerationSubmissionType = 'issue' | 'material' | 'opinion' | 'briefing'
 export type AbuseReviewStatus = 'pending' | 'resolved_false' | 'resolved_abuse' | 'resolved_broken'
+export type ModerationAppealType = 'rejected_submission' | 'automatic_ban'
+export type ModerationAppealStatus = 'pending' | 'upheld' | 'overturned'
 
 export interface AuthorSnapshotInput {
   author_id: string
@@ -129,7 +134,6 @@ export interface OpinionWithAuthor extends Opinion {
   terms_version: string | null
   terms_accepted_at: string | null
 }
-
 /** 濫用回報記錄（管理端查看用） */
 export interface AbuseReport {
   id: number
@@ -143,6 +147,11 @@ export interface AbuseReport {
   opinion_id: number | null
   review_status: AbuseReviewStatus
   created_at: string
+  source: AbuseReportSource
+  policy_code: ModerationPolicyCode | null
+  submission_type: ModerationSubmissionType | null
+  content_snapshot: string | null
+  target_user_id: string | null
   /** JOIN 取回的所屬議題 ID；若目標已被級聯刪除則為 null */
   target_issue_id: number | null
   /** JOIN 取回的內容作者 ID（停權張貼者用）；舊資料或已刪除則為 null */
@@ -158,6 +167,49 @@ export interface CreateAbuseReportInput {
   material_id: number | null
   briefing_id: number | null
   opinion_id: number | null
+  source?: AbuseReportSource
+  policy_code?: ModerationPolicyCode | null
+  submission_type?: ModerationSubmissionType | null
+  content_snapshot?: string | null
+  target_user_id?: string | null
+}
+
+export interface CreateAiModerationReportInput {
+  user_id: string
+  user_name: string | null
+  user_email: string
+  policy_code: ModerationPolicyCode
+  reason: AbuseReportReason
+  submission_type: ModerationSubmissionType
+  content_snapshot: string
+  description: string
+}
+
+export interface ModerationAppeal {
+  id: number
+  user_id: string
+  user_name: string | null
+  user_email: string
+  abuse_report_id: number | null
+  appeal_type: ModerationAppealType
+  content_snapshot: string | null
+  message: string
+  status: ModerationAppealStatus
+  admin_id: string | null
+  admin_name: string | null
+  review_note: string | null
+  created_at: string
+  reviewed_at: string | null
+}
+
+export interface CreateModerationAppealInput {
+  user_id: string
+  user_name: string | null
+  user_email: string
+  abuse_report_id: number | null
+  appeal_type: ModerationAppealType
+  content_snapshot: string | null
+  message: string
 }
 
 export interface AdminStats {
@@ -484,12 +536,29 @@ export async function listForRss(db: D1Database, limit = 20): Promise<RssFeedIte
 
 /**
  * 建立一筆濫用回報，並立即將目標內容的 abuse_flagged 設為 1（第 1 次回報即打標）。
- * 呼叫端必須先過 requireUser()。
+ * 呼叫端必須先過 requireUser()。AI 審查回報沒有公開內容列，會以 source='ai'
+ * 搭配 target_user_id 與 content_snapshot 保存供管理員複核。
  */
 export async function createAbuseReport(db: D1Database, input: CreateAbuseReportInput): Promise<number> {
   const { meta } = await db
-    .prepare('INSERT INTO ct_abuse_reports (reporter_id, reporter_name, reporter_email, reason, description, material_id, briefing_id, opinion_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-    .bind(input.reporter_id, input.reporter_name, input.reporter_email, input.reason, input.description ?? null, input.material_id ?? null, input.briefing_id ?? null, input.opinion_id ?? null)
+    .prepare(
+      'INSERT INTO ct_abuse_reports (reporter_id, reporter_name, reporter_email, reason, description, material_id, briefing_id, opinion_id, source, policy_code, submission_type, content_snapshot, target_user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    )
+    .bind(
+      input.reporter_id,
+      input.reporter_name,
+      input.reporter_email,
+      input.reason,
+      input.description ?? null,
+      input.material_id ?? null,
+      input.briefing_id ?? null,
+      input.opinion_id ?? null,
+      input.source ?? 'user',
+      input.policy_code ?? null,
+      input.submission_type ?? null,
+      input.content_snapshot ?? null,
+      input.target_user_id ?? null
+    )
     .run()
   // 第 1 次回報即打標——後續回報是冪等的 UPDATE（已是 1 就 no-op）
   if (input.material_id != null) {
@@ -500,6 +569,25 @@ export async function createAbuseReport(db: D1Database, input: CreateAbuseReport
     await db.prepare('UPDATE ct_opinions SET abuse_flagged = 1 WHERE id = ?').bind(input.opinion_id).run()
   }
   return meta.last_row_id
+}
+
+/** 建立 AI 審查判定違規的私有回報快照；內容不會寫入公開投稿表。 */
+export async function createAiModerationReport(db: D1Database, input: CreateAiModerationReportInput): Promise<number> {
+  return createAbuseReport(db, {
+    reporter_id: input.user_id,
+    reporter_name: input.user_name,
+    reporter_email: input.user_email,
+    reason: input.reason,
+    description: input.description,
+    material_id: null,
+    briefing_id: null,
+    opinion_id: null,
+    source: 'ai',
+    policy_code: input.policy_code,
+    submission_type: input.submission_type,
+    content_snapshot: input.content_snapshot,
+    target_user_id: input.user_id,
+  })
 }
 
 /** 查詢目標內容是否已有 pending 中的回報（防重複送出）。*/
@@ -517,16 +605,17 @@ export async function findPendingReportForTarget(db: D1Database, target: { mater
 }
 
 /** 管理端：列出所有濫用回報（按建立時間降冪），LEFT JOIN 取回目標所屬議題與作者 ID。
- *  呼叫端必須先過 requireAdmin()。 */
+ *  呼叫端必須先過 requireAdmin()。AI 回報也包含私有投稿快照，供申訴複核。 */
 export async function listAbuseReports(db: D1Database): Promise<AbuseReport[]> {
   const { results } = await db
     .prepare(
       `SELECT r.id, r.reporter_id, r.reporter_name, r.reporter_email,
               r.reason, r.description,
               r.material_id, r.briefing_id, r.opinion_id,
-              r.review_status, r.created_at,
+              r.review_status, r.created_at, r.source, r.policy_code,
+              r.submission_type, r.content_snapshot, r.target_user_id,
               COALESCE(m.issue_id, b.issue_id, o.issue_id)   AS target_issue_id,
-              COALESCE(m.author_id, b.author_id, o.author_id) AS target_author_id
+              COALESCE(r.target_user_id, m.author_id, b.author_id, o.author_id) AS target_author_id
        FROM ct_abuse_reports r
        LEFT JOIN ct_materials m ON r.material_id = m.id
        LEFT JOIN ct_briefings b ON r.briefing_id = b.id
@@ -544,9 +633,10 @@ export async function getAbuseReport(db: D1Database, id: number): Promise<AbuseR
       `SELECT r.id, r.reporter_id, r.reporter_name, r.reporter_email,
               r.reason, r.description,
               r.material_id, r.briefing_id, r.opinion_id,
-              r.review_status, r.created_at,
+              r.review_status, r.created_at, r.source, r.policy_code,
+              r.submission_type, r.content_snapshot, r.target_user_id,
               COALESCE(m.issue_id, b.issue_id, o.issue_id)   AS target_issue_id,
-              COALESCE(m.author_id, b.author_id, o.author_id) AS target_author_id
+              COALESCE(r.target_user_id, m.author_id, b.author_id, o.author_id) AS target_author_id
        FROM ct_abuse_reports r
        LEFT JOIN ct_materials m ON r.material_id = m.id
        LEFT JOIN ct_briefings b ON r.briefing_id = b.id
@@ -556,6 +646,96 @@ export async function getAbuseReport(db: D1Database, id: number): Promise<AbuseR
     .bind(id)
     .first<AbuseReport>()
 }
+/** 計算帳號在指定時間窗內被 AI 判定違規的投稿數；邊界時間包含在內。 */
+export async function countRecentAiViolations(db: D1Database, userId: string, now?: string): Promise<number> {
+  const row = now
+    ? await db
+        .prepare(
+          "SELECT COUNT(*) AS cnt FROM ct_abuse_reports WHERE source = 'ai' AND target_user_id = ? AND created_at >= datetime(?, '-1 hour') AND created_at <= datetime(?)"
+        )
+        .bind(userId, now, now)
+        .first<{ cnt: number }>()
+    : await db
+        .prepare("SELECT COUNT(*) AS cnt FROM ct_abuse_reports WHERE source = 'ai' AND target_user_id = ? AND created_at >= datetime('now', '-1 hour') AND created_at <= CURRENT_TIMESTAMP")
+        .bind(userId)
+        .first<{ cnt: number }>()
+  return row?.cnt ?? 0
+}
+
+/** 取指定使用者自己的 AI 回報，避免把別人的申訴目標暴露給前端。 */
+export async function getAiAbuseReportForUser(db: D1Database, reportId: number, userId: string): Promise<AbuseReport | null> {
+  const report = await getAbuseReport(db, reportId)
+  return report?.source === 'ai' && report.target_user_id === userId ? report : null
+}
+
+/** 建立一筆自動審查申訴；呼叫端必須先驗證 report 所屬使用者。 */
+export async function createModerationAppeal(db: D1Database, input: CreateModerationAppealInput): Promise<number> {
+  const { meta } = await db
+    .prepare(
+      'INSERT INTO ct_moderation_appeals (user_id, user_name, user_email, abuse_report_id, appeal_type, content_snapshot, message) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    )
+    .bind(input.user_id, input.user_name, input.user_email, input.abuse_report_id, input.appeal_type, input.content_snapshot ?? null, input.message)
+    .run()
+  return meta.last_row_id
+}
+
+/** 同一回報／帳號不可重複建立待處理申訴。 */
+export async function findPendingModerationAppeal(db: D1Database, userId: string, reportId: number | null, appealType: ModerationAppealType): Promise<boolean> {
+  const row =
+    reportId !== null
+      ? await db
+          .prepare("SELECT COUNT(*) AS cnt FROM ct_moderation_appeals WHERE user_id = ? AND abuse_report_id = ? AND status = 'pending'")
+          .bind(userId, reportId)
+          .first<{ cnt: number }>()
+      : await db
+          .prepare("SELECT COUNT(*) AS cnt FROM ct_moderation_appeals WHERE user_id = ? AND appeal_type = ? AND status = 'pending'")
+          .bind(userId, appealType)
+          .first<{ cnt: number }>()
+  return (row?.cnt ?? 0) > 0
+}
+
+/** 管理端列出申訴（包含被拒內容快照；僅供管理員 API 使用）。 */
+export async function listModerationAppeals(db: D1Database): Promise<ModerationAppeal[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT id, user_id, user_name, user_email, abuse_report_id, appeal_type,
+              content_snapshot, message, status, admin_id, admin_name,
+              review_note, created_at, reviewed_at
+       FROM ct_moderation_appeals
+       ORDER BY created_at DESC`
+    )
+    .all<ModerationAppeal>()
+  return results ?? []
+}
+
+/** 管理端取單筆申訴，供處理前確認狀態與停權目標。 */
+export async function getModerationAppeal(db: D1Database, id: number): Promise<ModerationAppeal | null> {
+  return db
+    .prepare(
+      `SELECT id, user_id, user_name, user_email, abuse_report_id, appeal_type,
+              content_snapshot, message, status, admin_id, admin_name,
+              review_note, created_at, reviewed_at
+       FROM ct_moderation_appeals
+       WHERE id = ?`
+    )
+    .bind(id)
+    .first<ModerationAppeal>()
+}
+
+/** 更新申訴結果；呼叫端需先完成必要的 Better Auth ban/unban。 */
+export async function resolveModerationAppeal(
+  db: D1Database,
+  id: number,
+  status: Exclude<ModerationAppealStatus, 'pending'>,
+  admin: { id: string; name: string | null },
+  reviewNote: string | null
+): Promise<void> {
+  await db
+    .prepare('UPDATE ct_moderation_appeals SET status = ?, admin_id = ?, admin_name = ?, review_note = ?, reviewed_at = CURRENT_TIMESTAMP WHERE id = ?')
+    .bind(status, admin.id, admin.name, reviewNote, id)
+    .run()
+}
+
 
 /** 更新回報審核狀態。 */
 export async function resolveAbuseReport(db: D1Database, id: number, status: 'resolved_false' | 'resolved_abuse' | 'resolved_broken'): Promise<void> {
