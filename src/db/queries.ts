@@ -10,6 +10,7 @@ export type ModerationSubmissionType = 'issue' | 'material' | 'opinion' | 'brief
 export type AbuseReviewStatus = 'pending' | 'resolved_false' | 'resolved_abuse' | 'resolved_broken'
 export type ModerationAppealType = 'rejected_submission' | 'automatic_ban'
 export type ModerationAppealStatus = 'pending' | 'upheld' | 'overturned'
+export type SuspensionRecommendationStatus = 'pending' | 'confirmed' | 'dismissed'
 
 export interface AuthorSnapshotInput {
   author_id: string
@@ -210,6 +211,20 @@ export interface CreateModerationAppealInput {
   appeal_type: ModerationAppealType
   content_snapshot: string | null
   message: string
+}
+export interface SuspensionRecommendation {
+  id: number
+  user_id: string
+  user_name: string | null
+  user_email: string
+  violation_count: number
+  window_started_at: string
+  status: SuspensionRecommendationStatus
+  admin_id: string | null
+  admin_name: string | null
+  resolution_note: string | null
+  created_at: string
+  resolved_at: string | null
 }
 
 export interface AdminStats {
@@ -735,6 +750,89 @@ export async function resolveModerationAppeal(
     .bind(status, admin.id, admin.name, reviewNote, id)
     .run()
 }
+/** 查詢帳號是否有待管理員確認的停權建議；投稿守門會使用這個結果凍結新投稿。 */
+export async function hasPendingSuspensionRecommendation(db: D1Database, userId: string): Promise<boolean> {
+  const row = await db
+    .prepare("SELECT 1 AS found FROM ct_moderation_suspension_recommendations WHERE user_id = ? AND status = 'pending' LIMIT 1")
+    .bind(userId)
+    .first<{ found: number }>()
+  return row?.found === 1
+}
+
+/** 取帳號待處理的唯一停權建議。 */
+export async function getPendingSuspensionRecommendation(db: D1Database, userId: string): Promise<SuspensionRecommendation | null> {
+  return db
+    .prepare(
+      "SELECT id, user_id, user_name, user_email, violation_count, window_started_at, status, admin_id, admin_name, resolution_note, created_at, resolved_at FROM ct_moderation_suspension_recommendations WHERE user_id = ? AND status = 'pending' LIMIT 1"
+    )
+    .bind(userId)
+    .first<SuspensionRecommendation>()
+}
+
+/** 建立或更新帳號的待停權建議，避免同一帳號重複產生多筆 pending 工作。 */
+export async function createSuspensionRecommendation(
+  db: D1Database,
+  input: { user_id: string; user_name: string | null; user_email: string; violation_count: number; window_started_at: string }
+): Promise<number> {
+  const existing = await getPendingSuspensionRecommendation(db, input.user_id)
+  if (existing) {
+    await db
+      .prepare('UPDATE ct_moderation_suspension_recommendations SET violation_count = MAX(violation_count, ?) WHERE id = ?')
+      .bind(input.violation_count, existing.id)
+      .run()
+    return existing.id
+  }
+  const { meta } = await db
+    .prepare(
+      'INSERT INTO ct_moderation_suspension_recommendations (user_id, user_name, user_email, violation_count, window_started_at) VALUES (?, ?, ?, ?, ?)'
+    )
+    .bind(input.user_id, input.user_name, input.user_email, input.violation_count, input.window_started_at)
+    .run()
+  return meta.last_row_id
+}
+
+/** 管理端列出待停權建議（高優先工作項目）。 */
+export async function listSuspensionRecommendations(db: D1Database): Promise<SuspensionRecommendation[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT id, user_id, user_name, user_email, violation_count, window_started_at,
+              status, admin_id, admin_name, resolution_note, created_at, resolved_at
+       FROM ct_moderation_suspension_recommendations
+       ORDER BY CASE WHEN status = 'pending' THEN 0 ELSE 1 END, created_at DESC`
+    )
+    .all<SuspensionRecommendation>()
+  return results ?? []
+}
+
+/** 管理端取單筆停權建議。 */
+export async function getSuspensionRecommendation(db: D1Database, id: number): Promise<SuspensionRecommendation | null> {
+  return db
+    .prepare(
+      `SELECT id, user_id, user_name, user_email, violation_count, window_started_at,
+              status, admin_id, admin_name, resolution_note, created_at, resolved_at
+       FROM ct_moderation_suspension_recommendations
+       WHERE id = ?`
+    )
+    .bind(id)
+    .first<SuspensionRecommendation>()
+}
+
+/** 管理端完成停權建議處理；Better Auth ban/unban 必須先由呼叫端完成。 */
+export async function resolveSuspensionRecommendation(
+  db: D1Database,
+  id: number,
+  status: Exclude<SuspensionRecommendationStatus, 'pending'>,
+  admin: { id: string; name: string | null },
+  resolutionNote: string | null
+): Promise<void> {
+  await db
+    .prepare(
+      'UPDATE ct_moderation_suspension_recommendations SET status = ?, admin_id = ?, admin_name = ?, resolution_note = ?, resolved_at = CURRENT_TIMESTAMP WHERE id = ?'
+    )
+    .bind(status, admin.id, admin.name, resolutionNote, id)
+    .run()
+}
+
 
 
 /** 更新回報審核狀態。 */

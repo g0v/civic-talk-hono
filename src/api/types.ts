@@ -19,6 +19,9 @@ export type AppBindings = {
   /** GitHub OAuth 憑證，與 vTaiwan-hono 共用同一組應用程式 */
   GITHUB_CLIENT_ID: string
   GITHUB_CLIENT_SECRET: string
+  /** OpenRouter API key；只供 issue #29 投稿安全審查使用，內容生成不得呼叫模型。 */
+  OPEN_ROUTER_API_KEY?: string
+  /** 用於執行時讀取 public/rules/community-guidelines.md */
   ASSETS?: {
     fetch: (request: RequestInfo | URL, init?: RequestInit) => Promise<Response>
   }
