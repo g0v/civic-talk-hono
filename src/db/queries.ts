@@ -782,13 +782,30 @@ export async function createSuspensionRecommendation(
       .run()
     return existing.id
   }
-  const { meta } = await db
-    .prepare(
-      'INSERT INTO ct_moderation_suspension_recommendations (user_id, user_name, user_email, violation_count, window_started_at) VALUES (?, ?, ?, ?, ?)'
-    )
-    .bind(input.user_id, input.user_name, input.user_email, input.violation_count, input.window_started_at)
-    .run()
-  return meta.last_row_id
+  try {
+    const { meta } = await db
+      .prepare(
+        'INSERT INTO ct_moderation_suspension_recommendations (user_id, user_name, user_email, violation_count, window_started_at) VALUES (?, ?, ?, ?, ?)'
+      )
+      .bind(input.user_id, input.user_name, input.user_email, input.violation_count, input.window_started_at)
+      .run()
+    return meta.last_row_id
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : typeof error === 'object' && error !== null && 'message' in error && typeof error.message === 'string'
+          ? error.message
+          : ''
+    if (!/unique constraint|constraint failed/i.test(message)) throw error
+    const concurrent = await getPendingSuspensionRecommendation(db, input.user_id)
+    if (!concurrent) throw error
+    await db
+      .prepare('UPDATE ct_moderation_suspension_recommendations SET violation_count = MAX(violation_count, ?) WHERE id = ?')
+      .bind(input.violation_count, concurrent.id)
+      .run()
+    return concurrent.id
+  }
 }
 
 /** 管理端列出待停權建議（高優先工作項目）。 */

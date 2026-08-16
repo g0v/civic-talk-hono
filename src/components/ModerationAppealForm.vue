@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useI18n } from '../l10n'
+import type { MessageKey } from '../l10n/zh-TW'
 
 const props = defineProps<{
   appealType: 'rejected_submission' | 'automatic_ban'
@@ -9,11 +10,39 @@ const props = defineProps<{
   rationale?: string
 }>()
 
+const POLICY_LABELS: Record<string, MessageKey> = {
+  spam: 'moderation_policy_spam',
+  sexual_content: 'moderation_policy_sexual_content',
+  hate_speech: 'moderation_policy_hate_speech',
+  defamation: 'moderation_policy_defamation',
+  misinformation: 'moderation_policy_misinformation',
+  illegal: 'moderation_policy_illegal',
+}
+const APPEAL_ERROR_KEYS: Record<string, MessageKey> = {
+  Unauthorized: 'login_expired_toast',
+  'An appeal is already pending': 'moderation_appeal_already_pending',
+  'Moderation report not found': 'moderation_appeal_report_not_found',
+  'Moderation report already resolved': 'moderation_appeal_report_resolved',
+  'No active suspension to appeal': 'moderation_appeal_no_active_suspension',
+}
+
 const { t } = useI18n()
 const message = ref('')
 const submitting = ref(false)
 const submitted = ref(false)
 const errorMessage = ref('')
+const policyLabel = computed(() => {
+  const code = props.policyCode
+  if (!code) return ''
+  const key = POLICY_LABELS[code]
+  return key ? t(key) : code
+})
+
+function translateAppealError(error: unknown): string {
+  if (typeof error !== 'string') return t('moderation_appeal_failed')
+  const key = APPEAL_ERROR_KEYS[error]
+  return key ? t(key) : t('moderation_appeal_failed')
+}
 
 async function submitAppeal() {
   if (!message.value.trim()) {
@@ -34,7 +63,7 @@ async function submitAppeal() {
     })
     if (!res.ok) {
       const data = (await res.json().catch(() => ({}))) as { error?: string }
-      errorMessage.value = data.error || t('moderation_appeal_failed')
+      errorMessage.value = translateAppealError(data.error)
       return
     }
     submitted.value = true
@@ -52,7 +81,7 @@ async function submitAppeal() {
       {{ appealType === 'rejected_submission' ? t('moderation_rejected_title') : t('moderation_frozen_title') }}
     </h3>
     <p class="mb-2">{{ appealType === 'rejected_submission' ? t('moderation_rejected_body') : t('moderation_frozen_body') }}</p>
-    <p v-if="policyCode" class="mb-1 text-sm"><strong>{{ t('moderation_policy_label') }}</strong>{{ policyCode }}</p>
+    <p v-if="policyCode" class="mb-1 text-sm"><strong>{{ t('moderation_policy_label') }}</strong>{{ policyLabel }}</p>
     <p v-if="rationale" class="mb-3 whitespace-pre-wrap text-sm"><strong>{{ t('moderation_rationale_label') }}</strong>{{ rationale }}</p>
     <div v-if="submitted" class="font-semibold text-teal">{{ t('moderation_appeal_submitted') }}</div>
     <template v-else>

@@ -164,32 +164,55 @@ type RecordedModerationDecision = ModerationDecision extends infer Decision
     : Decision
   : never
 
+function logModerationAuditFailure(kind: string, error: unknown): void {
+  console.error('ai_moderation_audit_failure', {
+    kind,
+    error: error instanceof Error ? error.name : 'unknown',
+  })
+}
+
 async function moderateAndRecord(env: AppBindings, context: AuthContext, submission: ModerationSubmission): Promise<RecordedModerationDecision> {
   const decision = await moderateSubmission(env.OPEN_ROUTER_API_KEY, env.ASSETS, submission)
   if (decision.outcome !== 'violation') return decision
 
   const user = context.user
-  const reportId = await db.createAiModerationReport(env.DB, {
-    user_id: user.id,
-    user_name: user.name?.trim() || null,
-    user_email: user.email,
-    policy_code: decision.policy_code,
-    reason: moderationReasonForPolicy(decision.policy_code),
-    submission_type: submission.type,
-    content_snapshot: JSON.stringify(submission.fields),
-    description: decision.rationale,
-  })
-  const violationCount = await db.countRecentAiViolations(env.DB, user.id)
-  if (violationCount < 3) return { ...decision, report_id: reportId, violation_count: violationCount }
+  let reportId: number | undefined
+  try {
+    reportId = await db.createAiModerationReport(env.DB, {
+      user_id: user.id,
+      user_name: user.name?.trim() || null,
+      user_email: user.email,
+      policy_code: decision.policy_code,
+      reason: moderationReasonForPolicy(decision.policy_code),
+      submission_type: submission.type,
+      content_snapshot: JSON.stringify(submission.fields),
+      description: decision.rationale,
+    })
+  } catch (error) {
+    logModerationAuditFailure('create_ai_moderation_report', error)
+  }
 
-  const now = new Date()
-  const recommendationId = await db.createSuspensionRecommendation(env.DB, {
-    user_id: user.id,
-    user_name: user.name?.trim() || null,
-    user_email: user.email,
-    violation_count: violationCount,
-    window_started_at: new Date(now.getTime() - 60 * 60 * 1000).toISOString(),
-  })
+  let violationCount: number | undefined
+  try {
+    violationCount = await db.countRecentAiViolations(env.DB, user.id)
+  } catch (error) {
+    logModerationAuditFailure('count_recent_ai_violations', error)
+  }
+  if (violationCount === undefined || violationCount < 3) return { ...decision, report_id: reportId, violation_count: violationCount }
+
+  let recommendationId: number | undefined
+  try {
+    const now = new Date()
+    recommendationId = await db.createSuspensionRecommendation(env.DB, {
+      user_id: user.id,
+      user_name: user.name?.trim() || null,
+      user_email: user.email,
+      violation_count: violationCount,
+      window_started_at: new Date(now.getTime() - 60 * 60 * 1000).toISOString(),
+    })
+  } catch (error) {
+    logModerationAuditFailure('create_suspension_recommendation', error)
+  }
   return { ...decision, report_id: reportId, violation_count: violationCount, suspension_recommendation_id: recommendationId }
 }
 

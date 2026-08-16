@@ -103,8 +103,10 @@ async function submitMaterial() {
     }
     // 帳號被停權或投稿凍結：提示並保留表單內容，另提供申訴入口。
     if (res.status === 403) {
+      const data = (await res.json().catch(() => ({}))) as { error?: string }
       moderationNotice.value = { appealType: 'automatic_ban' }
-      toast.value?.show(t('banned_toast'))
+      const isSubmissionFreeze = data.error?.includes('submissions are suspended') === true
+      toast.value?.show(isSubmissionFreeze ? t('moderation_frozen_toast') : t('banned_toast'))
       return
     }
     if (res.status === 422) {
