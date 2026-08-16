@@ -5,7 +5,7 @@ import AppFooter from '../components/AppFooter.vue'
 import SignInButtons from '../components/SignInButtons.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import Toast from '../components/Toast.vue'
-import { formatDate, useI18n } from '../l10n'
+import ModerationAppealForm from '../components/ModerationAppealForm.vue'
 import { useAuth } from '../composables/useAuth'
 import type { Briefing, Issue, Material, Opinion } from '../db/queries'
 import { renderSafeMarkdown } from '../markdown/renderSafeMarkdown'
@@ -72,6 +72,27 @@ const sessionExpired = ref(false)
 const volunteerSessionExpired = ref(false)
 // 登入後導回這一頁的意見分頁
 const loginCallbackUrl = computed(() => `/issues/${props.issueId}`)
+const moderationNotice = ref<{ appealType: 'rejected_submission' | 'automatic_ban'; reportId?: number; policyCode?: string; rationale?: string } | null>(null)
+
+async function handleModerationFailure(res: Response): Promise<boolean> {
+  if (res.status === 403) {
+    moderationNotice.value = { appealType: 'automatic_ban' }
+    toast.value?.show(t('banned_toast'))
+    return true
+  }
+  if (res.status === 422) {
+    const data = (await res.json().catch(() => ({}))) as { report_id?: number; moderation?: { policy_code?: string; rationale?: string } }
+    moderationNotice.value = {
+      appealType: 'rejected_submission',
+      reportId: data.report_id,
+      policyCode: data.moderation?.policy_code,
+      rationale: data.moderation?.rationale,
+    }
+    toast.value?.show(t('moderation_rejected_title'))
+    return true
+  }
+  return false
+}
 
 // 回報濫用 modal 狀態
 const reportTarget = ref<{ type: 'material' | 'briefing' | 'opinion'; id: number } | null>(null)
@@ -274,6 +295,7 @@ async function submitSummarize() {
     toast.value?.show(t('login_expired_toast'))
     return
   }
+  if (await handleModerationFailure(res)) return
   if (res.ok) {
     toast.value?.show(t('vol_toast_summarize_ok'))
     await loadIssue()
@@ -303,6 +325,7 @@ async function submitNarrative() {
     toast.value?.show(t('login_expired_toast'))
     return
   }
+  if (await handleModerationFailure(res)) return
   if (res.ok) {
     narrative.value = ''
     toast.value?.show(t('vol_toast_narrative_ok'))
@@ -410,11 +433,7 @@ async function submitOpinion() {
     toast.value?.show(t('login_expired_toast'))
     return
   }
-  // 帳號被停權（#11）：提示並保留意見內容
-  if (res.status === 403) {
-    toast.value?.show(t('banned_toast'))
-    return
-  }
+  if (await handleModerationFailure(res)) return
   if (res.ok) {
     toast.value?.show(t('op_toast_submit_ok'))
     opinionInput.value = ''
@@ -586,6 +605,13 @@ async function submitOpinion() {
                 <p class="mt-0 mb-3">{{ t('login_expired_hint') }}</p>
                 <SignInButtons :callback-url="loginCallbackUrl" />
               </div>
+              <ModerationAppealForm
+                v-if="moderationNotice"
+                :appeal-type="moderationNotice.appealType"
+                :report-id="moderationNotice.reportId"
+                :policy-code="moderationNotice.policyCode"
+                :rationale="moderationNotice.rationale"
+              />
               <p class="mb-6 text-sm text-muted">{{ t('vol_step1') }} → {{ t('vol_step2') }} → {{ t('vol_step3') }}</p>
               <div class="form-group mb-6">
                 <label class="flex items-start gap-2 font-normal">
@@ -690,6 +716,13 @@ async function submitOpinion() {
                   <p class="mt-0 mb-3">{{ t('login_expired_hint') }}</p>
                   <SignInButtons :callback-url="loginCallbackUrl" />
                 </div>
+                <ModerationAppealForm
+                  v-if="moderationNotice"
+                  :appeal-type="moderationNotice.appealType"
+                  :report-id="moderationNotice.reportId"
+                  :policy-code="moderationNotice.policyCode"
+                  :rationale="moderationNotice.rationale"
+                />
                 <div class="form-group">
                   <label>
                     <span>{{ t('op_label_summary') }}</span>

@@ -5,6 +5,7 @@ import AppFooter from '../components/AppFooter.vue'
 import IssueCard from '../components/IssueCard.vue'
 import SignInButtons from '../components/SignInButtons.vue'
 import Toast from '../components/Toast.vue'
+import ModerationAppealForm from '../components/ModerationAppealForm.vue'
 import { useI18n } from '../l10n'
 import { useAuth } from '../composables/useAuth'
 import type { IssueListItem } from '../db/queries'
@@ -29,6 +30,7 @@ const toast = ref<{ show: (msg: string) => void } | null>(null)
 const { authState, session, ensureAuthSession } = useAuth()
 // 送出時才發現 session 過期：表單留著（別吃掉使用者打的字），只在上方補一列重新登入
 const sessionExpired = ref(false)
+const moderationNotice = ref<{ appealType: 'rejected_submission' | 'automatic_ban'; reportId?: number; policyCode?: string; rationale?: string } | null>(null)
 
 const searchQuery = ref('')
 type SortOrder = 'newest' | 'most' | 'least'
@@ -97,9 +99,21 @@ async function createIssue() {
       toast.value?.show(t('login_expired_toast'))
       return
     }
-    // 帳號被停權：提示並保留表單內容（不清表單、不切登入狀態，守門在伺服器端）
+    // 帳號被停權或投稿凍結：提示並保留表單內容，另提供申訴入口。
     if (res.status === 403) {
+      moderationNotice.value = { appealType: 'automatic_ban' }
       toast.value?.show(t('banned_toast'))
+      return
+    }
+    if (res.status === 422) {
+      const data = (await res.json().catch(() => ({}))) as { report_id?: number; moderation?: { policy_code?: string; rationale?: string } }
+      moderationNotice.value = {
+        appealType: 'rejected_submission',
+        reportId: data.report_id,
+        policyCode: data.moderation?.policy_code,
+        rationale: data.moderation?.rationale,
+      }
+      toast.value?.show(t('moderation_rejected_title'))
       return
     }
     if (!res.ok) {
@@ -174,6 +188,13 @@ async function copyRssUrl() {
               <p class="mt-0 mb-3">{{ t('login_expired_hint') }}</p>
               <SignInButtons callback-url="/" />
             </div>
+            <ModerationAppealForm
+              v-if="moderationNotice"
+              :appeal-type="moderationNotice.appealType"
+              :report-id="moderationNotice.reportId"
+              :policy-code="moderationNotice.policyCode"
+              :rationale="moderationNotice.rationale"
+            />
             <div class="form-group">
               <label>
                 <span>{{ t('idx_label_title') }}</span>

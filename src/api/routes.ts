@@ -66,6 +66,37 @@ async function requireAdmin(request: Request, env: AppBindings): Promise<Respons
   if (!isAdminRole(context.role)) return error('Forbidden', 403)
   return null
 }
+async function adminBanUser(request: Request, env: AppBindings, userId: string, banReason: string): Promise<Response | null> {
+  try {
+    await createAuth(env).api.banUser({
+      body: { userId, banReason },
+      headers: request.headers,
+    })
+    return null
+  } catch (banErr) {
+    const apiErr = banErr as { statusCode?: number; body?: { message?: string } }
+    const status = typeof apiErr.statusCode === 'number' ? apiErr.statusCode : 500
+    const message = apiErr.body?.message ?? 'Ban failed'
+    console.error('banUser failed', { userId, caught: banErr })
+    return error(message, status)
+  }
+}
+
+async function adminUnbanUser(request: Request, env: AppBindings, userId: string): Promise<Response | null> {
+  try {
+    await createAuth(env).api.unbanUser({
+      body: { userId },
+      headers: request.headers,
+    })
+    return null
+  } catch (unbanErr) {
+    const apiErr = unbanErr as { statusCode?: number; body?: { message?: string } }
+    const status = typeof apiErr.statusCode === 'number' ? apiErr.statusCode : 500
+    const message = apiErr.body?.message ?? 'Unban failed'
+    console.error('unbanUser failed', { userId, caught: unbanErr })
+    return error(message, status)
+  }
+}
 
 /**
  * 登入守衛（不看角色，任何登入者都通過）：通過回 AuthContext，否則回 401 Response。
@@ -78,6 +109,16 @@ async function requireUser(request: Request, env: AppBindings): Promise<{ contex
   if (!context) return { denied: error('Unauthorized', 401) }
   // 停權帳號不得執行任何寫入動作（#11）
   if (context.banned) return { denied: error('Forbidden: account is suspended', 403) }
+  return { context }
+}
+
+/**
+ * 申訴守衛只要求仍有有效 session，不檢查 banned 或本地停權建議；
+ * 被凍結／停權的人必須仍能送出申訴。這支只用在申訴端點，不可拿來寫投稿。
+ */
+async function requireAppealUser(request: Request, env: AppBindings): Promise<{ context: AuthContext } | { denied: Response }> {
+  const context = await tryGetAuthContext(env, request.headers)
+  if (!context) return { denied: error('Unauthorized', 401) }
   return { context }
 }
 
@@ -547,7 +588,141 @@ export function registerApiRoutes(app: App): void {
     return json({ ok: true }, 201)
   })
 
-  // GET /api/admin/users/:userId — 管理端查詢指定使用者的現值資料（on-demand，單筆）
+  // POST /api/appeals — 被拒投稿／投稿凍結的申訴；停權或凍結者仍可使用。
+  app.post('/api/appeals', async c => {
+    const auth = await requireAppealUser(c.req.raw, c.env)
+    if ('denied' in auth) return auth.denied
+
+    let body: { abuse_report_id?: unknown; appeal_type?: unknown; content_snapshot?: unknown; message?: unknown }
+    try {
+      body = await c.req.json()
+    } catch {
+      return error('Invalid JSON')
+    }
+    if (body.appeal_type !== 'rejected_submission' && body.appeal_type !== 'automatic_ban') {
+      return error('appeal_type must be "rejected_submission" or "automatic_ban"')
+    }
+    const reportId = typeof body.abuse_report_id === 'number' && body.abuse_report_id > 0 ? body.abuse_report_id : null
+    if (body.appeal_type === 'rejected_submission' && reportId === null) return error('abuse_report_id is required for rejected submission appeals')
+
+    const report = reportId === null ? null : await db.getAiAbuseReportForUser(c.env.DB, reportId, auth.context.user.id)
+    if (reportId !== null && !report) return error('Moderation report not found', 404)
+    const pendingRecommendation = await db.getPendingSuspensionRecommendation(c.env.DB, auth.context.user.id)
+    if (body.appeal_type === 'automatic_ban' && !pendingRecommendation && !auth.context.banned && !report) {
+      return error('No active suspension to appeal', 409)
+    }
+    if (report && report.review_status !== 'pending' && body.appeal_type === 'rejected_submission') {
+      return error('Moderation report already resolved', 409)
+    }
+
+    const message = typeof body.message === 'string' ? body.message.trim() : ''
+    if (!message) return error('message is required')
+    if (message.length > 10_000) return error('message is too long')
+    if (await db.findPendingModerationAppeal(c.env.DB, auth.context.user.id, reportId, body.appeal_type)) {
+      return error('An appeal is already pending', 409)
+    }
+
+    const submittedSnapshot = typeof body.content_snapshot === 'string' ? body.content_snapshot.trim() : null
+    const appealId = await db.createModerationAppeal(c.env.DB, {
+      user_id: auth.context.user.id,
+      user_name: auth.context.user.name?.trim() || null,
+      user_email: auth.context.user.email,
+      abuse_report_id: reportId,
+      appeal_type: body.appeal_type,
+      content_snapshot: report?.content_snapshot ?? submittedSnapshot,
+      message,
+    })
+    return json({ id: appealId, status: 'pending' }, 201)
+  })
+
+  // GET /api/admin/moderation/suspensions — 管理端查看達門檻的停權建議。
+  app.get('/api/admin/moderation/suspensions', async c => {
+    const denied = await requireAdmin(c.req.raw, c.env)
+    if (denied) return denied
+    return json(await db.listSuspensionRecommendations(c.env.DB))
+  })
+
+  // PATCH /api/admin/moderation/suspensions/:id/resolve — 管理員確認或駁回停權建議。
+  // confirm 先經 Better Auth banUser，再寫本地狀態；dismiss 解除本地投稿凍結。
+  app.patch('/api/admin/moderation/suspensions/:id/resolve', async c => {
+    const denied = await requireAdmin(c.req.raw, c.env)
+    if (denied) return denied
+    const id = parseId(c.req.param('id'))
+    if (!id) return error('Invalid ID', 400)
+    let body: { action?: unknown; resolution_note?: unknown }
+    try {
+      body = await c.req.json()
+    } catch {
+      return error('Invalid JSON')
+    }
+    if (body.action !== 'confirm' && body.action !== 'dismiss') return error('action must be "confirm" or "dismiss"')
+    const recommendation = await db.getSuspensionRecommendation(c.env.DB, id)
+    if (!recommendation) return error('Suspension recommendation not found', 404)
+    if (recommendation.status !== 'pending') return error('Suspension recommendation already resolved', 409)
+    const admin = await tryGetAuthContext(c.env, c.req.raw.headers)
+    if (!admin) return error('Unauthorized', 401)
+    if (body.action === 'confirm') {
+      const banError = await adminBanUser(c.req.raw, c.env, recommendation.user_id, 'AI 審查達門檻：管理員複核確認停權')
+      if (banError) return banError
+    }
+    await db.resolveSuspensionRecommendation(c.env.DB, id, body.action === 'confirm' ? 'confirmed' : 'dismissed', { id: admin.user.id, name: admin.user.name?.trim() || null }, typeof body.resolution_note === 'string' ? body.resolution_note.trim() || null : null)
+    return json({ ok: true })
+  })
+
+  // GET /api/admin/moderation/appeals — 管理端查看拒絕／停權申訴。
+  app.get('/api/admin/moderation/appeals', async c => {
+    const denied = await requireAdmin(c.req.raw, c.env)
+    if (denied) return denied
+    return json(await db.listModerationAppeals(c.env.DB))
+  })
+
+  // PATCH /api/admin/moderation/appeals/:id/resolve — 維持或推翻申訴。
+  // 自動停權的 uphold/overturn 會先透過 Better Auth ban/unban，再更新本地記錄。
+  app.patch('/api/admin/moderation/appeals/:id/resolve', async c => {
+    const denied = await requireAdmin(c.req.raw, c.env)
+    if (denied) return denied
+    const id = parseId(c.req.param('id'))
+    if (!id) return error('Invalid ID', 400)
+    let body: { action?: unknown; review_note?: unknown }
+    try {
+      body = await c.req.json()
+    } catch {
+      return error('Invalid JSON')
+    }
+    if (body.action !== 'uphold' && body.action !== 'overturn') return error('action must be "uphold" or "overturn"')
+    const appeal = await db.getModerationAppeal(c.env.DB, id)
+    if (!appeal) return error('Appeal not found', 404)
+    if (appeal.status !== 'pending') return error('Appeal already resolved', 409)
+    const admin = await tryGetAuthContext(c.env, c.req.raw.headers)
+    if (!admin) return error('Unauthorized', 401)
+
+    const recommendation = await db.getPendingSuspensionRecommendation(c.env.DB, appeal.user_id)
+    if (appeal.appeal_type === 'automatic_ban') {
+      let targetBanned = false
+      try {
+        const target = await createAuth(c.env).api.getUser({ query: { id: appeal.user_id }, headers: c.req.raw.headers })
+        targetBanned = target?.banned === true
+      } catch {
+        return error('User not found', 404)
+      }
+      if (body.action === 'uphold' && !targetBanned) {
+        const banError = await adminBanUser(c.req.raw, c.env, appeal.user_id, 'AI 審查申訴維持：管理員確認停權')
+        if (banError) return banError
+      } else if (body.action === 'overturn' && targetBanned) {
+        const unbanError = await adminUnbanUser(c.req.raw, c.env, appeal.user_id)
+        if (unbanError) return unbanError
+      }
+      if (recommendation) {
+        await db.resolveSuspensionRecommendation(c.env.DB, recommendation.id, body.action === 'uphold' ? 'confirmed' : 'dismissed', { id: admin.user.id, name: admin.user.name?.trim() || null }, typeof body.review_note === 'string' ? body.review_note.trim() || null : null)
+      }
+    }
+
+    if (appeal.abuse_report_id !== null) {
+      await db.resolveAbuseReport(c.env.DB, appeal.abuse_report_id, body.action === 'uphold' ? 'resolved_abuse' : 'resolved_false')
+    }
+    await db.resolveModerationAppeal(c.env.DB, id, body.action === 'uphold' ? 'upheld' : 'overturned', { id: admin.user.id, name: admin.user.name?.trim() || null }, typeof body.review_note === 'string' ? body.review_note.trim() || null : null)
+    return json({ ok: true })
+  })
   // 使用 Better Auth admin plugin getUser，不對 DB_AUTH 下自訂 SQL（不變量 11）。
   // 用途：確認某投稿者提交後是否改名換 email，或目前是否已被停權。
   app.get('/api/admin/users/:userId', async c => {

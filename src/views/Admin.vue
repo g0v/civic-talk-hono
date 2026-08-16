@@ -9,9 +9,9 @@ import { formatDate, useI18n } from '../l10n'
 import type { MessageKey } from '../l10n/zh-TW'
 import { useAuth } from '../composables/useAuth'
 import { isAdminSession } from '../client/auth-session'
-import type { AbuseReport, BriefingWithAuthor, IssueListItemWithAuthor, IssueStatus, MaterialWithAuthor, OpinionWithAuthor } from '../db/queries'
+import type { AbuseReport, BriefingWithAuthor, IssueListItemWithAuthor, IssueStatus, MaterialWithAuthor, ModerationAppeal, OpinionWithAuthor, SuspensionRecommendation } from '../db/queries'
 
-type AdminTab = 'issues' | 'materials' | 'opinions' | 'reports'
+type AdminTab = 'issues' | 'materials' | 'opinions' | 'reports' | 'moderation'
 
 const { t, locale } = useI18n()
 const toast = ref<{ show: (msg: string) => void } | null>(null)
@@ -37,6 +37,8 @@ const issues = ref<IssueListItemWithAuthor[]>([])
 const materials = ref<MaterialWithAuthor[]>([])
 const opinions = ref<OpinionWithAuthor[]>([])
 const abuseReports = ref<AbuseReport[]>([])
+const suspensionRecommendations = ref<SuspensionRecommendation[]>([])
+const moderationAppeals = ref<ModerationAppeal[]>([])
 const matIssueId = ref<number | ''>('')
 const opIssueId = ref<number | ''>('')
 const issueSearch = ref('')
@@ -71,7 +73,7 @@ onMounted(async () => {
 })
 
 async function bootstrap() {
-  await Promise.all([loadStats(), loadIssues(), loadAbuseReports()])
+  await Promise.all([loadStats(), loadIssues(), loadAbuseReports(), loadModeration()])
 }
 
 async function loadStats() {
@@ -114,6 +116,14 @@ async function onOpIssueChange() {
 async function loadAbuseReports() {
   const res = await fetch('/api/admin/abuse-reports', { headers: authHeaders() })
   if (res.ok) abuseReports.value = await res.json()
+}
+async function loadModeration() {
+  const [suspensionsRes, appealsRes] = await Promise.all([
+    fetch('/api/admin/moderation/suspensions', { headers: authHeaders() }),
+    fetch('/api/admin/moderation/appeals', { headers: authHeaders() }),
+  ])
+  if (suspensionsRes.ok) suspensionRecommendations.value = await suspensionsRes.json()
+  if (appealsRes.ok) moderationAppeals.value = await appealsRes.json()
 }
 
 type LiveUserEntry = { name: string | null; email: string; role: string | null; banned: boolean; banReason: string | null }
@@ -158,6 +168,51 @@ async function resolveReport(id: number, action: 'false_report' | 'confirmed_abu
     await loadAbuseReports()
   } else {
     let msg = t('adm_rpt_toast_fail')
+    try {
+      const data = (await res.json()) as { error?: string }
+      if (data.error) msg = data.error
+    } catch {
+      /* 忽略 */
+    }
+    toast.value?.show(msg)
+  }
+}
+async function resolveSuspension(id: number, action: 'confirm' | 'dismiss') {
+  const confirmKey = action === 'confirm' ? 'adm_mod_confirm_ban' : 'adm_mod_confirm_dismiss'
+  if (!confirm(t(confirmKey))) return
+  const res = await fetch(`/api/admin/moderation/suspensions/${id}/resolve`, {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: JSON.stringify({ action }),
+  })
+  if (res.ok) {
+    toast.value?.show(t('adm_mod_toast_done'))
+    await loadModeration()
+  } else {
+    let msg = t('adm_mod_toast_fail')
+    try {
+      const data = (await res.json()) as { error?: string }
+      if (data.error) msg = data.error
+    } catch {
+      /* 忽略 */
+    }
+    toast.value?.show(msg)
+  }
+}
+
+async function resolveAppeal(id: number, action: 'uphold' | 'overturn') {
+  const confirmKey = action === 'uphold' ? 'adm_mod_confirm_uphold' : 'adm_mod_confirm_overturn'
+  if (!confirm(t(confirmKey))) return
+  const res = await fetch(`/api/admin/moderation/appeals/${id}/resolve`, {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: JSON.stringify({ action }),
+  })
+  if (res.ok) {
+    toast.value?.show(t('adm_mod_toast_done'))
+    await loadModeration()
+  } else {
+    let msg = t('adm_mod_toast_fail')
     try {
       const data = (await res.json()) as { error?: string }
       if (data.error) msg = data.error
@@ -315,8 +370,27 @@ const REVIEW_STATUS_LABELS: Record<string, MessageKey> = {
   resolved_abuse: 'adm_rpt_status_resolved_abuse',
   resolved_broken: 'adm_rpt_status_resolved_broken',
 }
+const MODERATION_POLICY_LABELS: Record<string, MessageKey> = {
+  spam: 'adm_mod_policy_spam',
+  sexual_content: 'adm_mod_policy_sexual_content',
+  hate_speech: 'adm_mod_policy_hate_speech',
+  defamation: 'adm_mod_policy_defamation',
+  misinformation: 'adm_mod_policy_misinformation',
+  illegal: 'adm_mod_policy_illegal',
+}
+const SUSPENSION_STATUS_LABELS: Record<string, MessageKey> = {
+  pending: 'adm_mod_status_pending',
+  confirmed: 'adm_mod_status_confirmed',
+  dismissed: 'adm_mod_status_dismissed',
+}
+const APPEAL_STATUS_LABELS: Record<string, MessageKey> = {
+  pending: 'adm_mod_appeal_pending',
+  upheld: 'adm_mod_appeal_upheld',
+  overturned: 'adm_mod_appeal_overturned',
+}
 const tabs = computed(() => [
   { id: 'reports' as const, label: t('adm_tab_reports') },
+  { id: 'moderation' as const, label: t('adm_tab_moderation') },
   { id: 'issues' as const, label: t('adm_tab_issues') },
   { id: 'materials' as const, label: t('adm_tab_materials') },
   { id: 'opinions' as const, label: t('adm_tab_opinions') },
@@ -325,6 +399,7 @@ const tabs = computed(() => [
 async function onTabChange(id: AdminTab) {
   activeTab.value = id
   if (id === 'reports' && abuseReports.value.length === 0) await loadAbuseReports()
+  if (id === 'moderation' && suspensionRecommendations.value.length === 0 && moderationAppeals.value.length === 0) await loadModeration()
 }
 
 const filteredIssues = computed(() => {
@@ -448,7 +523,106 @@ const filteredReports = computed(() => {
             </button>
           </div>
 
-          <!-- Issues -->
+          <!-- AI moderation and appeals -->
+          <section v-show="activeTab === 'moderation'">
+            <h2 class="mt-0 mb-4 font-serif text-xl">{{ t('adm_mod_title') }}</h2>
+
+            <div class="mb-8">
+              <h3 class="mb-3 font-serif text-lg">{{ t('adm_mod_suspensions_title') }}</h3>
+              <div v-if="!suspensionRecommendations.length" class="empty">{{ t('adm_mod_empty_suspensions') }}</div>
+              <div v-else class="overflow-x-auto rounded-lg border border-border">
+                <table class="w-full border-collapse text-sm">
+                  <thead class="bg-gray-100 dark:bg-gray-800">
+                    <tr>
+                      <th class="px-3 py-2 text-left">{{ t('adm_mod_th_user') }}</th>
+                      <th class="px-3 py-2 text-left">{{ t('adm_mod_th_count') }}</th>
+                      <th class="px-3 py-2 text-left">{{ t('adm_mod_th_window') }}</th>
+                      <th class="px-3 py-2 text-left">{{ t('adm_mod_th_status') }}</th>
+                      <th class="px-3 py-2 text-left">{{ t('adm_mod_th_actions') }}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="recommendation in suspensionRecommendations" :key="recommendation.id" class="border-t border-border">
+                      <td class="px-3 py-2">
+                        <div>{{ recommendation.user_name || t('adm_author_unknown') }}</div>
+                        <div class="text-xs text-muted">{{ recommendation.user_email }}</div>
+                        <div class="text-xs text-muted">{{ recommendation.user_id }}</div>
+                      </td>
+                      <td class="px-3 py-2 font-semibold text-red">{{ recommendation.violation_count }}</td>
+                      <td class="px-3 py-2 text-xs text-muted">{{ formatDate(recommendation.window_started_at, locale) }}</td>
+                      <td class="px-3 py-2">
+                        <span :class="recommendation.status === 'pending' ? 'text-amber' : recommendation.status === 'confirmed' ? 'text-red' : 'text-muted'">
+                          {{ t(SUSPENSION_STATUS_LABELS[recommendation.status] ?? 'adm_mod_status_pending') }}
+                        </span>
+                      </td>
+                      <td class="px-3 py-2">
+                        <div v-if="recommendation.status === 'pending'" class="flex flex-wrap gap-1">
+                          <button
+                            type="button"
+                            class="btn btn-ghost btn-sm text-red"
+                            :disabled="session?.role !== 'super-admin'"
+                            :title="session?.role !== 'super-admin' ? t('adm_mod_need_super_admin') : undefined"
+                            @click="resolveSuspension(recommendation.id, 'confirm')"
+                          >
+                            {{ t('adm_mod_btn_confirm') }}
+                          </button>
+                          <button type="button" class="btn btn-ghost btn-sm text-amber-700" @click="resolveSuspension(recommendation.id, 'dismiss')">
+                            {{ t('adm_mod_btn_dismiss') }}
+                          </button>
+                        </div>
+                        <span v-else class="text-xs text-muted">—</span>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div>
+              <h3 class="mb-3 font-serif text-lg">{{ t('adm_mod_appeals_title') }}</h3>
+              <div v-if="!moderationAppeals.length" class="empty">{{ t('adm_mod_empty_appeals') }}</div>
+              <div v-else class="space-y-3">
+                <article v-for="appeal in moderationAppeals" :key="appeal.id" class="card">
+                  <div class="mb-2 flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <strong>{{ appeal.user_name || t('adm_author_unknown') }}</strong>
+                      <span class="ml-2 text-sm text-muted">{{ appeal.user_email }}</span>
+                    </div>
+                    <span class="text-sm" :class="appeal.status === 'pending' ? 'text-amber' : appeal.status === 'overturned' ? 'text-teal' : 'text-muted'">
+                      {{ t(APPEAL_STATUS_LABELS[appeal.status] ?? 'adm_mod_appeal_pending') }}
+                    </span>
+                  </div>
+                  <p class="mb-2 text-sm text-muted">
+                    {{ appeal.appeal_type === 'automatic_ban' ? t('adm_mod_type_ban') : t('adm_mod_type_rejected') }}
+                    · {{ formatDate(appeal.created_at, locale) }}
+                  </p>
+                  <div v-if="appeal.content_snapshot" class="mb-2">
+                    <strong class="text-sm">{{ t('adm_mod_th_content') }}</strong>
+                    <pre class="mt-1 max-h-48 overflow-auto whitespace-pre-wrap rounded bg-gray-50 p-2 text-xs">{{ appeal.content_snapshot }}</pre>
+                  </div>
+                  <div class="mb-2">
+                    <strong class="text-sm">{{ t('adm_mod_th_message') }}</strong>
+                    <p class="mt-1 whitespace-pre-wrap text-sm">{{ appeal.message }}</p>
+                  </div>
+                  <div v-if="appeal.status === 'pending'" class="flex flex-wrap gap-2">
+                    <button type="button" class="btn btn-ghost btn-sm" @click="resolveAppeal(appeal.id, 'uphold')">
+                      {{ t('adm_mod_btn_uphold') }}
+                    </button>
+                    <button
+                      type="button"
+                      class="btn btn-ghost btn-sm text-teal"
+                      :disabled="appeal.appeal_type === 'automatic_ban' && session?.role !== 'super-admin'"
+                      :title="appeal.appeal_type === 'automatic_ban' && session?.role !== 'super-admin' ? t('adm_mod_need_super_admin') : undefined"
+                      @click="resolveAppeal(appeal.id, 'overturn')"
+                    >
+                      {{ t('adm_mod_btn_overturn') }}
+                    </button>
+                  </div>
+                </article>
+              </div>
+            </div>
+          </section>
+
           <section v-show="activeTab === 'issues'">
             <div class="mb-4 flex items-center justify-between">
               <h2 class="m-0 font-serif text-xl">{{ t('adm_issues_title') }}</h2>
