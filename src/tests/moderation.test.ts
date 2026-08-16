@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vite-plus/test'
+import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
 import { moderateSubmission } from '../moderation/service'
 
 const assets = {
@@ -25,6 +25,24 @@ describe('moderateSubmission', () => {
 
     expect(result).toEqual({ outcome: 'violation', policy_code: 'spam', rationale: '明顯洗版', confidence: 0.98 })
   })
+  it('fails open and logs truncation when the model reaches the token limit', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    globalThis.fetch = async () =>
+      new Response(
+        JSON.stringify({
+          choices: [{ finish_reason: 'length', message: { role: 'assistant', content: '{"verdict":"' } }],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      )
+
+    try {
+      const result = await moderateSubmission('test-key', assets, { type: 'opinion', fields: { summary: '內容' } })
+      expect(result).toEqual({ outcome: 'fail-open' })
+      expect(errorSpy).toHaveBeenCalledWith('ai_moderation_fail_open', { kind: 'openrouter_truncated', finishReason: 'length' })
+    } finally {
+      errorSpy.mockRestore()
+    }
+  })
 
   it('fails open for a model policy code outside the schema enum', async () => {
     globalThis.fetch = async () =>
@@ -41,7 +59,14 @@ describe('moderateSubmission', () => {
   })
 
   it('wraps untrusted submission text and neutralizes delimiter injection', async () => {
-    let requestBody: { messages: Array<{ role: string; content: string }> } | undefined
+    let requestBody:
+      | {
+          messages: Array<{ role: string; content: string }>
+          max_tokens?: number
+          reasoning?: { effort?: string }
+          temperature?: number
+        }
+      | undefined
     globalThis.fetch = async (_input, init) => {
       if (typeof init?.body !== 'string') throw new Error('expected JSON request body')
       requestBody = JSON.parse(init.body) as typeof requestBody
@@ -63,6 +88,9 @@ describe('moderateSubmission', () => {
     expect(userMessage).toContain('<submission>')
     expect(userMessage).toContain('[已移除投稿分隔符]')
     expect((userMessage.match(/<\/submission>/g) ?? []).length).toBe(1)
+    expect(requestBody?.max_tokens).toBe(1600)
+    expect(requestBody?.reasoning).toEqual({ effort: 'low' })
+    expect(requestBody?.temperature).toBe(0)
   })
 
   it('fails open when OpenRouter is unavailable', async () => {

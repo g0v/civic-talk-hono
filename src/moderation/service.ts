@@ -174,7 +174,9 @@ export async function moderateSubmission(
             schema: MODERATION_RESPONSE_SCHEMA,
           },
         },
-        max_tokens: 300,
+        // 真實 `gpt-oss-safeguard-20b` 實測後決定這些值；推理 token 會計入 `max_tokens`。
+        max_tokens: 1600,
+        reasoning: { effort: 'low' },
         temperature: 0,
       }),
       signal: controller,
@@ -201,7 +203,15 @@ export async function moderateSubmission(
       return { outcome: 'fail-open' }
     }
     const choiceRecord = choice as { finish_reason?: unknown; error?: unknown; message?: unknown }
-    if (choiceRecord.error || (choiceRecord.finish_reason !== 'stop' && choiceRecord.finish_reason !== 'length')) {
+    if (choiceRecord.error) {
+      logModerationFailure('openrouter_choice_error', { finishReason: choiceRecord.finish_reason })
+      return { outcome: 'fail-open' }
+    }
+    if (choiceRecord.finish_reason === 'length') {
+      logModerationFailure('openrouter_truncated', { finishReason: choiceRecord.finish_reason })
+      return { outcome: 'fail-open' }
+    }
+    if (choiceRecord.finish_reason !== 'stop') {
       logModerationFailure('openrouter_choice_error', { finishReason: choiceRecord.finish_reason })
       return { outcome: 'fail-open' }
     }
