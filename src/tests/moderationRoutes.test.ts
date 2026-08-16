@@ -29,7 +29,7 @@ const env = {
 describe('moderation API authorization', () => {
   it('returns 401 for an anonymous appeal submission', async () => {
     authContext.current = null
-    const response = await testApp().request('/api/appeals', { method: 'POST', body: JSON.stringify({ appeal_type: 'automatic_ban', message: '請複核' }) }, env)
+    const response = await testApp().request('/api/appeals', { method: 'POST', body: JSON.stringify({ appeal_type: 'account_ban', message: '請複核' }) }, env)
 
     expect(response.status).toBe(401)
     expect(await response.json()).toEqual({ error: 'Unauthorized' })

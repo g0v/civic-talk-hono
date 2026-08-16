@@ -111,8 +111,8 @@ async function copyLink() {
               <template v-if="opinion.author_email"> · {{ t('author_email_label') }}：{{ opinion.author_email }}</template>
             </p>
 
-            <h2 class="mt-0 mb-2 text-base font-medium">{{ t('op_detail_summary_label') }}</h2>
-            <div class="whitespace-pre-wrap leading-relaxed">{{ opinion.summary }}</div>
+            <div v-if="opinion.abuse_flagged === 3" class="whitespace-pre-wrap leading-relaxed text-muted">{{ t('moderation_hidden_placeholder') }}</div>
+            <div v-else class="whitespace-pre-wrap leading-relaxed">{{ opinion.summary }}</div>
           </div>
 
           <!-- 分享區塊 -->

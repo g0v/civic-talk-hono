@@ -3,28 +3,41 @@ import { computed, onMounted, ref } from 'vue'
 import AppFooter from '../components/AppFooter.vue'
 import AppHeader from '../components/AppHeader.vue'
 import SignInButtons from '../components/SignInButtons.vue'
+import ModerationAppealForm from '../components/ModerationAppealForm.vue'
 import { updateProfileName } from '../client/auth-session'
 import { useAuth } from '../composables/useAuth'
 import { DISPLAY_NAME_MAX_LENGTH, isNameChangeCooldownPayload, NAME_CHANGE_COOLDOWN_DAYS, normalizeDisplayName } from '../lib/profile-name'
-import { useI18n } from '../l10n'
-
-const { t } = useI18n()
+import { formatDate, useI18n } from '../l10n'
+import type { MyModerationReport } from '../db/queries'
+const { t, locale } = useI18n()
 const { authState, session, ensureAuthSession, signOutAndReload, updateSessionName } = useAuth()
 const editing = ref(false)
 const saving = ref(false)
 const draftName = ref('')
 const errorMessage = ref('')
 const localCooldownDays = ref<number | null>(null)
-
+const moderationReports = ref<MyModerationReport[]>([])
+const moderationReportsLoading = ref(false)
 const cooldownDays = computed(() => localCooldownDays.value ?? session.value?.nameChangeCooldownDays ?? null)
 const displayName = computed(() => session.value?.user.name || session.value?.user.email || t('profile_name_not_set'))
 const avatarImage = computed(() => session.value?.user.image ?? null)
 const avatarInitial = computed(() => displayName.value.charAt(0).toUpperCase())
 const hasChanges = computed(() => !!session.value && draftName.value !== session.value.user.name)
 
-onMounted(() => {
-  void ensureAuthSession()
+onMounted(async () => {
+  await ensureAuthSession()
+  if (authState.value === 'signed-in') await loadModerationReports()
 })
+
+async function loadModerationReports() {
+  moderationReportsLoading.value = true
+  try {
+    const response = await fetch('/api/me/moderation-reports')
+    if (response.ok) moderationReports.value = await response.json()
+  } finally {
+    moderationReportsLoading.value = false
+  }
+}
 
 function startEditing() {
   draftName.value = session.value?.user.name ?? ''
@@ -149,6 +162,29 @@ async function saveName() {
               </button>
             </div>
           </form>
+          <section class="mt-10 border-t border-border pt-8">
+            <h2 class="mt-0 mb-2 font-serif text-xl">{{ t('profile_moderation_title') }}</h2>
+            <p v-if="moderationReportsLoading" class="text-muted">{{ t('loading') }}</p>
+            <p v-else-if="moderationReports.length === 0" class="text-muted">{{ t('profile_moderation_empty') }}</p>
+            <div v-else class="space-y-4">
+              <article v-for="report in moderationReports" :key="report.id" class="rounded-lg border border-border p-4">
+                <div class="flex flex-wrap justify-between gap-2 text-sm text-muted">
+                  <span>{{ t('profile_moderation_policy') }}{{ report.policy_code }}</span>
+                  <time :datetime="report.created_at">{{ t('profile_moderation_time') }}{{ formatDate(report.created_at, locale) }}</time>
+                </div>
+                <p class="mt-3 mb-1 text-sm font-semibold">{{ t('profile_moderation_rationale') }}</p>
+                <p class="m-0 whitespace-pre-wrap text-sm">{{ report.description || '—' }}</p>
+                <p class="mt-3 mb-1 text-sm font-semibold">{{ t('profile_moderation_snapshot') }}</p>
+                <pre class="m-0 max-h-64 overflow-auto whitespace-pre-wrap rounded bg-gray-50 p-3 text-xs">{{ report.content_snapshot }}</pre>
+                <ModerationAppealForm
+                  :appeal-type="'rejected_submission'"
+                  :report-id="report.id"
+                  :policy-code="report.policy_code"
+                  :rationale="report.description ?? undefined"
+                />
+              </article>
+            </div>
+          </section>
         </section>
       </div>
     </main>

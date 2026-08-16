@@ -38,7 +38,7 @@ const { authState, session, authFailed, ensureAuthSession } = useAuth()
  * 這裡改成表單留在原地，只在上方多出一列重新登入的提示。
  */
 const sessionExpired = ref(false)
-const moderationNotice = ref<{ appealType: 'rejected_submission' | 'automatic_ban'; reportId?: number; policyCode?: string; rationale?: string } | null>(null)
+const moderationNotice = ref<{ appealType: 'rejected_submission' | 'account_ban'; reportId?: number; policyCode?: string; rationale?: string } | null>(null)
 
 const charLabel = computed(() => `${content.value.length}${t('contrib_chars_suffix')}`)
 const backHref = computed(() => `/issues/${props.issueId}`)
@@ -101,27 +101,25 @@ async function submitMaterial() {
       toast.value?.show(t('login_expired_toast'))
       return
     }
-    // 帳號被停權或投稿凍結：提示並保留表單內容，另提供申訴入口。
+    // 帳號被管理員停權：保留表單內容，另提供帳號申訴入口。
     if (res.status === 403) {
-      const data = (await res.json().catch(() => ({}))) as { error?: string }
-      moderationNotice.value = { appealType: 'automatic_ban' }
-      const isSubmissionFreeze = data.error?.includes('submissions are suspended') === true
-      toast.value?.show(isSubmissionFreeze ? t('moderation_frozen_toast') : t('banned_toast'))
-      return
-    }
-    if (res.status === 422) {
-      const data = (await res.json().catch(() => ({}))) as { report_id?: number; moderation?: { policy_code?: string; rationale?: string } }
-      moderationNotice.value = {
-        appealType: 'rejected_submission',
-        reportId: data.report_id,
-        policyCode: data.moderation?.policy_code,
-        rationale: data.moderation?.rationale,
-      }
-      toast.value?.show(t('moderation_rejected_title'))
+      moderationNotice.value = { appealType: 'account_ban' }
+      toast.value?.show(t('banned_toast'))
       return
     }
     if (!res.ok) {
       toast.value?.show(t('contrib_toast_fail'))
+      return
+    }
+    const data = (await res.json().catch(() => ({}))) as { moderation?: { hidden?: boolean; policy_code?: string; rationale?: string; report_id?: number | null } }
+    if (data.moderation?.hidden) {
+      moderationNotice.value = {
+        appealType: 'rejected_submission',
+        reportId: data.moderation.report_id ?? undefined,
+        policyCode: data.moderation.policy_code,
+        rationale: data.moderation.rationale,
+      }
+      toast.value?.show(t('moderation_hidden_title'))
       return
     }
     toast.value?.show(t('contrib_toast_ok'))

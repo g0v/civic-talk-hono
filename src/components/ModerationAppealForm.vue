@@ -4,7 +4,7 @@ import { useI18n } from '../l10n'
 import type { MessageKey } from '../l10n/zh-TW'
 
 const props = defineProps<{
-  appealType: 'rejected_submission' | 'automatic_ban'
+  appealType: 'rejected_submission' | 'account_ban'
   reportId?: number
   policyCode?: string
   rationale?: string
@@ -23,7 +23,7 @@ const APPEAL_ERROR_KEYS: Record<string, MessageKey> = {
   'An appeal is already pending': 'moderation_appeal_already_pending',
   'Moderation report not found': 'moderation_appeal_report_not_found',
   'Moderation report already resolved': 'moderation_appeal_report_resolved',
-  'No active suspension to appeal': 'moderation_appeal_no_active_suspension',
+  'No active account ban to appeal': 'moderation_appeal_no_active_ban',
 }
 
 const { t } = useI18n()
@@ -78,9 +78,9 @@ async function submitAppeal() {
 <template>
   <div class="alert alert-warn mt-4">
     <h3 class="mt-0 mb-2 font-semibold">
-      {{ appealType === 'rejected_submission' ? t('moderation_rejected_title') : t('moderation_frozen_title') }}
+      {{ appealType === 'rejected_submission' ? t('moderation_hidden_title') : t('moderation_account_ban_title') }}
     </h3>
-    <p class="mb-2">{{ appealType === 'rejected_submission' ? t('moderation_rejected_body') : t('moderation_frozen_body') }}</p>
+    <p class="mb-2">{{ appealType === 'rejected_submission' ? t('moderation_hidden_body') : t('moderation_account_ban_body') }}</p>
     <p v-if="policyCode" class="mb-1 text-sm"><strong>{{ t('moderation_policy_label') }}</strong>{{ policyLabel }}</p>
     <p v-if="rationale" class="mb-3 whitespace-pre-wrap text-sm"><strong>{{ t('moderation_rationale_label') }}</strong>{{ rationale }}</p>
     <div v-if="submitted" class="font-semibold text-teal">{{ t('moderation_appeal_submitted') }}</div>
