@@ -25,6 +25,7 @@ export const messages = {
   login_github: '使用 GitHub 登入',
   login_err: '登入失敗，請再試一次',
   logout: '登出',
+  dark_mode_toggle: '切換暗黑模式',
   login: '登入',
   signed_in_as: '已登入：{name}',
   login_panel_desc: '登入後才能建立議題、提交素材與意見。',

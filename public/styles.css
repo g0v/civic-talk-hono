@@ -7,15 +7,8 @@
     --font-serif: var(--font-vt-serif);
     --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
       "Courier New", monospace;
-    --color-red-50: oklch(97.1% 0.013 17.38);
-    --color-red-400: oklch(70.4% 0.191 22.216);
-    --color-red-800: oklch(44.4% 0.177 26.899);
-    --color-amber-50: oklch(98.7% 0.022 95.277);
-    --color-amber-400: oklch(82.8% 0.189 84.429);
     --color-amber-600: oklch(66.6% 0.179 58.318);
     --color-amber-700: oklch(55.5% 0.163 48.998);
-    --color-amber-800: oklch(47.3% 0.137 46.201);
-    --color-amber-900: oklch(41.4% 0.112 45.904);
     --color-gray-50: #fafaf8;
     --color-gray-100: #f5f5f3;
     --color-gray-200: #e8e8e5;
@@ -23,6 +16,7 @@
     --color-gray-400: #a8a8a3;
     --color-gray-600: #6b6b66;
     --color-gray-700: var(--color-vt-gray-700);
+    --color-gray-800: oklch(27.8% 0.033 256.848);
     --color-gray-900: var(--color-vt-gray-800);
     --color-black: #000;
     --color-white: #fff;
@@ -614,21 +608,11 @@
     border-bottom-style: var(--tw-border-style);
     border-bottom-width: 1px;
   }
-  .border-l-4 {
-    border-left-style: var(--tw-border-style);
-    border-left-width: 4px;
-  }
-  .border-amber-400 {
-    border-color: var(--color-amber-400);
-  }
   .border-border {
     border-color: var(--color-border);
   }
   .border-gray-300 {
     border-color: var(--color-gray-300);
-  }
-  .border-red-400 {
-    border-color: var(--color-red-400);
   }
   .border-teal\/20 {
     border-color: color-mix(in srgb, #008888 20%, transparent);
@@ -636,14 +620,11 @@
       border-color: color-mix(in oklab, var(--color-teal) 20%, transparent);
     }
   }
-  .border-white\/75 {
-    border-color: color-mix(in srgb, #fff 75%, transparent);
+  .border-vt-border\/75 {
+    border-color: color-mix(in srgb, #e0e0e0 75%, transparent);
     @supports (color: color-mix(in lab, red, red)) {
-      border-color: color-mix(in oklab, var(--color-white) 75%, transparent);
+      border-color: color-mix(in oklab, var(--color-vt-border) 75%, transparent);
     }
-  }
-  .bg-amber-50 {
-    background-color: var(--color-amber-50);
   }
   .bg-black\/50 {
     background-color: color-mix(in srgb, #000 50%, transparent);
@@ -663,9 +644,6 @@
   .bg-gray-200 {
     background-color: var(--color-gray-200);
   }
-  .bg-red-50 {
-    background-color: var(--color-red-50);
-  }
   .bg-teal\/5 {
     background-color: color-mix(in srgb, #008888 5%, transparent);
     @supports (color: color-mix(in lab, red, red)) {
@@ -675,26 +653,23 @@
   .bg-transparent {
     background-color: transparent;
   }
-  .bg-white {
-    background-color: var(--color-white);
+  .bg-vt-bg-1 {
+    background-color: var(--color-vt-bg-1);
   }
-  .bg-white\/88 {
-    background-color: color-mix(in srgb, #fff 88%, transparent);
+  .bg-vt-bg-1\/88 {
+    background-color: color-mix(in srgb, #ffffff 88%, transparent);
     @supports (color: color-mix(in lab, red, red)) {
-      background-color: color-mix(in oklab, var(--color-white) 88%, transparent);
+      background-color: color-mix(in oklab, var(--color-vt-bg-1) 88%, transparent);
     }
   }
-  .bg-white\/95 {
-    background-color: color-mix(in srgb, #fff 95%, transparent);
+  .bg-vt-bg-1\/95 {
+    background-color: color-mix(in srgb, #ffffff 95%, transparent);
     @supports (color: color-mix(in lab, red, red)) {
-      background-color: color-mix(in oklab, var(--color-white) 95%, transparent);
+      background-color: color-mix(in oklab, var(--color-vt-bg-1) 95%, transparent);
     }
   }
-  .bg-white\/97 {
-    background-color: color-mix(in srgb, #fff 97%, transparent);
-    @supports (color: color-mix(in lab, red, red)) {
-      background-color: color-mix(in oklab, var(--color-white) 97%, transparent);
-    }
+  .bg-vt-border {
+    background-color: var(--color-vt-border);
   }
   .p-0 {
     padding: 0px;
@@ -863,12 +838,6 @@
   .text-amber-700 {
     color: var(--color-amber-700);
   }
-  .text-amber-800 {
-    color: var(--color-amber-800);
-  }
-  .text-amber-900 {
-    color: var(--color-amber-900);
-  }
   .text-gray-700 {
     color: var(--color-gray-700);
   }
@@ -883,9 +852,6 @@
   }
   .text-red {
     color: var(--color-red);
-  }
-  .text-red-800 {
-    color: var(--color-red-800);
   }
   .text-teal {
     color: var(--color-teal);
@@ -1003,6 +969,28 @@
       grid-template-columns: repeat(4, minmax(0, 1fr));
     }
   }
+  .dark\:block:where(.dark, .dark *) {
+    display: block;
+  }
+  .dark\:hidden:where(.dark, .dark *) {
+    display: none;
+  }
+  .dark\:bg-gray-100:where(.dark, .dark *) {
+    background-color: var(--color-gray-100);
+  }
+  .dark\:bg-gray-800:where(.dark, .dark *) {
+    background-color: var(--color-gray-800);
+  }
+  @media (hover: hover) {
+    .dark\:hover\:bg-white\/10:where(.dark, .dark *):hover {
+      background-color: color-mix(in srgb, #fff 10%, transparent);
+    }
+    @supports (color: color-mix(in lab, red, red)) {
+      .dark\:hover\:bg-white\/10:where(.dark, .dark *):hover {
+        background-color: color-mix(in oklab, var(--color-white) 10%, transparent);
+      }
+    }
+  }
 }
 @layer base {
   *, *::before, *::after {
@@ -1011,6 +999,28 @@
   html {
     font-size: 16px;
     scroll-behavior: smooth;
+  }
+  html.dark {
+    color-scheme: dark;
+    --color-vt-fg-1: #f0f0ee;
+    --color-vt-fg-2: #b0b0ae;
+    --color-vt-fg-3: #707070;
+    --color-vt-bg-1: #111114;
+    --color-vt-bg-2: #1c1c1f;
+    --color-vt-border: #2e2e32;
+    --color-vt-border-strong: #f0f0ee;
+    --color-bg: #111114;
+    --color-border: #2e2e32;
+    --color-muted: #909090;
+    --color-ink: #f0f0ee;
+    --color-gray-50: #111114;
+    --color-gray-100: #1c1c1f;
+    --color-gray-200: #2e2e32;
+    --color-gray-300: #3e3e42;
+    --color-gray-400: #606060;
+    --color-gray-600: #909090;
+    --color-gray-700: #b0b0ae;
+    --color-gray-900: #e0e0de;
   }
   body {
     margin: 0;
@@ -1106,7 +1116,7 @@
     background: #b80000;
   }
   .btn-secondary {
-    background: white;
+    background: var(--color-vt-bg-1);
     color: var(--color-ink);
     border-color: var(--color-border);
   }
@@ -1115,7 +1125,7 @@
   }
   .btn-ghost {
     background: transparent;
-    color: #2a2a30;
+    color: var(--color-vt-fg-1);
   }
   .btn-ghost:hover:not(:disabled) {
     background: rgba(0, 0, 0, 0.05);
@@ -1133,7 +1143,7 @@
     font-size: 0.875rem;
   }
   .card {
-    background: white;
+    background: var(--color-vt-bg-1);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-lg);
     padding: 1.25rem 1.35rem;
@@ -1157,7 +1167,7 @@
     border: 1px solid var(--color-border);
     border-radius: var(--radius-md);
     padding: 0.65rem 0.8rem;
-    background: white;
+    background: var(--color-vt-bg-1);
     color: var(--color-ink);
   }
   .form-group input:focus-visible, .form-group textarea:focus-visible, .form-group select:focus-visible {
@@ -1360,7 +1370,7 @@
     z-index: 150;
   }
   .modal {
-    background: white;
+    background: var(--color-vt-bg-1);
     border-radius: var(--radius-lg);
     width: min(560px, 100%);
     max-height: 90vh;
@@ -1445,6 +1455,44 @@
     background: transparent;
     color: inherit;
     padding: 0;
+  }
+}
+html.dark .status-collecting {
+  background: color-mix(in srgb, #db7700 20%, #1c1c1f);
+  @supports (color: color-mix(in lab, red, red)) {
+    background: color-mix(in srgb, var(--color-amber) 20%, #1c1c1f);
+  }
+}
+html.dark .status-summarizing {
+  background: color-mix(in srgb, #008888 18%, #1c1c1f);
+  @supports (color: color-mix(in lab, red, red)) {
+    background: color-mix(in srgb, var(--color-teal) 18%, #1c1c1f);
+  }
+}
+html.dark .status-published {
+  background: color-mix(in srgb, #d80000 18%, #1c1c1f);
+  @supports (color: color-mix(in lab, red, red)) {
+    background: color-mix(in srgb, var(--color-red) 18%, #1c1c1f);
+  }
+}
+html.dark .alert-info {
+  background: color-mix(in srgb, #008888 15%, #1c1c1f);
+  @supports (color: color-mix(in lab, red, red)) {
+    background: color-mix(in srgb, var(--color-teal) 15%, #1c1c1f);
+  }
+  border-color: color-mix(in srgb, #008888 35%, #1c1c1f);
+  @supports (color: color-mix(in lab, red, red)) {
+    border-color: color-mix(in srgb, var(--color-teal) 35%, #1c1c1f);
+  }
+}
+html.dark .alert-warn {
+  background: color-mix(in srgb, #db7700 15%, #1c1c1f);
+  @supports (color: color-mix(in lab, red, red)) {
+    background: color-mix(in srgb, var(--color-amber) 15%, #1c1c1f);
+  }
+  border-color: color-mix(in srgb, #db7700 35%, #1c1c1f);
+  @supports (color: color-mix(in lab, red, red)) {
+    border-color: color-mix(in srgb, var(--color-amber) 35%, #1c1c1f);
   }
 }
 @media (max-width: 600px) {

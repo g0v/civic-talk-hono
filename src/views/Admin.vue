@@ -466,7 +466,7 @@ const filteredReports = computed(() => {
             </div>
             <div class="overflow-x-auto rounded-lg border border-border">
               <table class="w-full border-collapse text-sm">
-                <thead class="bg-gray-100">
+                <thead class="bg-gray-100 dark:bg-gray-800">
                   <tr>
                     <th class="px-3 py-2 text-left">{{ t('adm_th_id') }}</th>
                     <th class="px-3 py-2 text-left">{{ t('adm_th_title') }}</th>
@@ -622,7 +622,7 @@ const filteredReports = computed(() => {
             </div>
             <div v-else class="overflow-x-auto rounded-lg border border-border">
               <table class="w-full border-collapse text-sm">
-                <thead class="bg-gray-100">
+                <thead class="bg-gray-100 dark:bg-gray-800">
                   <tr>
                     <th class="px-3 py-2 text-left">{{ t('adm_rpt_th_id') }}</th>
                     <th class="px-3 py-2 text-left">{{ t('adm_rpt_th_reporter') }}</th>
@@ -824,7 +824,7 @@ const filteredReports = computed(() => {
     <div v-if="modalBriefing" class="modal-overlay" @click.self="modalBriefing = false">
       <div class="modal">
         <h2 class="mt-0 mb-4 font-serif text-xl">{{ t('adm_modal_briefing_title') }}</h2>
-        <div v-if="briefingAuthor?.author_id" class="mb-4 rounded-lg bg-gray-50 p-3 text-sm text-muted">
+        <div v-if="briefingAuthor?.author_id" class="mb-4 rounded-lg bg-gray-50 dark:bg-gray-800 p-3 text-sm text-muted">
           <p class="m-0">{{ t('adm_briefing_author') }}{{ briefingAuthor.author_name || t('adm_author_unknown') }}</p>
           <p class="m-0 text-xs">{{ t('adm_author_id') }}{{ briefingAuthor.author_id }}</p>
           <p v-if="briefingAuthor.author_email" class="m-0 text-xs">{{ t('adm_author_email') }}{{ briefingAuthor.author_email }}</p>

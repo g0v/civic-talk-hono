@@ -33,8 +33,8 @@ const { t } = useI18n()
 
           <section class="mb-8">
             <h2 class="mb-3 text-xl font-semibold">{{ t('privacy_s3_h') }}</h2>
-            <div class="mb-4 border-l-4 border-red-400 bg-red-50 p-4">
-              <p class="font-semibold text-red-800">{{ t('privacy_s3_alert') }}</p>
+            <div class="alert alert-warn mb-4">
+              <p class="font-semibold">{{ t('privacy_s3_alert') }}</p>
             </div>
             <p class="mb-3 leading-relaxed text-gray-700">{{ t('privacy_s3_p1') }}</p>
             <p class="mb-3 leading-relaxed text-gray-700">{{ t('privacy_s3_p2') }}</p>
@@ -58,9 +58,9 @@ const { t } = useI18n()
           <section class="mb-8">
             <h2 class="mb-3 text-xl font-semibold">{{ t('privacy_s5_h') }}</h2>
             <p class="mb-3 leading-relaxed text-gray-700">{{ t('privacy_s5_p') }}</p>
-            <div class="mb-3 border-l-4 border-amber-400 bg-amber-50 p-4">
-              <p class="font-semibold text-amber-800">{{ t('privacy_s5_alert_h') }}</p>
-              <p class="mt-1 text-amber-900" v-html="t('privacy_s5_alert_body')"></p>
+            <div class="alert alert-warn mb-3">
+              <p class="font-semibold">{{ t('privacy_s5_alert_h') }}</p>
+              <p class="mt-1" v-html="t('privacy_s5_alert_body')"></p>
             </div>
           </section>
 
@@ -82,7 +82,7 @@ const { t } = useI18n()
 
           <section class="mb-8">
             <h2 class="mb-3 text-xl font-semibold">{{ t('privacy_s8_h') }}</h2>
-            <div class="rounded-lg bg-gray-50 p-4">
+            <div class="rounded-lg bg-gray-50 dark:bg-gray-100 p-4">
               <p class="mb-2">
                 <strong>{{ t('privacy_s8_email_label') }}</strong> info@vtaiwan.tw
               </p>

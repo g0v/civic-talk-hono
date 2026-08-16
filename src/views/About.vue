@@ -100,7 +100,7 @@ const techRows = computed(() => [
             <table class="w-full border-collapse text-sm">
               <tbody>
                 <tr v-for="row in techRows" :key="row.label" class="border-b border-border last:border-0">
-                  <th class="bg-gray-100 px-4 py-3 text-left font-semibold w-36">{{ row.label }}</th>
+                  <th class="bg-gray-100 dark:bg-gray-800 px-4 py-3 text-left font-semibold w-36">{{ row.label }}</th>
                   <td class="px-4 py-3">{{ row.value }}</td>
                 </tr>
               </tbody>

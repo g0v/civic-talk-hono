@@ -227,7 +227,7 @@ async function submitMaterial() {
           </div>
         </div>
 
-        <div class="card mt-6 bg-gray-50">
+        <div class="card mt-6 bg-gray-50 dark:bg-gray-800">
           <h3 class="mt-0 mb-2 font-medium">{{ t('contrib_tips_title') }}</h3>
           <p class="m-0 whitespace-pre-line text-sm text-muted">{{ t('contrib_tips_body') }}</p>
         </div>

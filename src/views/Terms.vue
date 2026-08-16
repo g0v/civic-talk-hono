@@ -28,8 +28,8 @@ const { t } = useI18n()
 
           <section class="mb-8">
             <h2 class="mb-3 text-xl font-semibold">{{ t('terms_s3_h') }}</h2>
-            <div class="mb-4 border-l-4 border-red-400 bg-red-50 p-4">
-              <p class="font-semibold text-red-800">{{ t('terms_s3_alert') }}</p>
+            <div class="alert alert-warn mb-4">
+              <p class="font-semibold">{{ t('terms_s3_alert') }}</p>
             </div>
             <p class="mb-3 leading-relaxed text-gray-700" v-html="t('terms_s3_p1')"></p>
             <p class="mb-3 leading-relaxed text-gray-700">{{ t('terms_s3_p2') }}</p>
@@ -44,8 +44,8 @@ const { t } = useI18n()
 
           <section class="mb-8">
             <h2 class="mb-3 text-xl font-semibold">{{ t('terms_s5_h') }}</h2>
-            <div class="mb-4 border-l-4 border-amber-400 bg-amber-50 p-4">
-              <p class="font-semibold text-amber-800">{{ t('terms_s5_alert') }}</p>
+            <div class="alert alert-warn mb-4">
+              <p class="font-semibold">{{ t('terms_s5_alert') }}</p>
             </div>
             <ul class="mb-3 list-disc pl-6 leading-relaxed text-gray-700">
               <li>{{ t('terms_s5_li1') }}</li>
@@ -68,9 +68,9 @@ const { t } = useI18n()
 
           <section class="mb-8">
             <h2 class="mb-3 text-xl font-semibold">{{ t('terms_s7_h') }}</h2>
-            <div class="mb-4 border-l-4 border-amber-400 bg-amber-50 p-4">
-              <p class="font-semibold text-amber-800">{{ t('terms_s7_alert_h') }}</p>
-              <p class="mt-1 text-amber-900" v-html="t('terms_s7_alert_body')"></p>
+            <div class="alert alert-warn mb-4">
+              <p class="font-semibold">{{ t('terms_s7_alert_h') }}</p>
+              <p class="mt-1" v-html="t('terms_s7_alert_body')"></p>
             </div>
           </section>
 
@@ -91,7 +91,7 @@ const { t } = useI18n()
 
           <section class="mb-8">
             <h2 class="mb-3 text-xl font-semibold">{{ t('terms_s11_h') }}</h2>
-            <div class="rounded-lg bg-gray-50 p-4">
+            <div class="rounded-lg bg-gray-50 dark:bg-gray-100 p-4">
               <p class="mb-2">
                 <strong>{{ t('terms_s11_email_label') }}</strong> info@vtaiwan.tw
               </p>

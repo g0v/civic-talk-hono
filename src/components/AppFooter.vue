@@ -5,10 +5,11 @@ const { t } = useI18n()
 </script>
 
 <template>
-  <footer class="mt-16 border-t border-border bg-white">
+  <footer class="mt-16 border-t border-border bg-vt-bg-1">
     <div class="container py-10">
       <div class="mb-4">
-        <img src="/vtaiwan-logo.svg" alt="vTaiwan" class="h-7 w-auto" />
+        <img src="/vtaiwan-logo.svg" alt="vTaiwan" class="h-7 w-auto dark:hidden" />
+        <img src="/vtaiwan-logo-dark.svg" alt="vTaiwan" class="hidden h-7 w-auto dark:block" />
       </div>
       <p class="mb-4 max-w-xl text-sm text-muted">
         {{ t('footer_desc') }}

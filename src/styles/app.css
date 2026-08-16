@@ -1,6 +1,7 @@
 /* Civic Talk — Tailwind v4 source → public/styles.css */
 
 @import 'tailwindcss' source(none);
+@custom-variant dark (&:where(.dark, .dark *));
 
 /* Utilities only need to scan Vue templates; component CSS below is always emitted. */
 @source '../components/**/*.vue';
@@ -128,6 +129,35 @@
     scroll-behavior: smooth;
   }
 
+  html.dark {
+    color-scheme: dark;
+
+    /* 語意前景 */
+    --color-vt-fg-1: #f0f0ee;
+    --color-vt-fg-2: #b0b0ae;
+    --color-vt-fg-3: #707070;
+
+    /* 語意背景 */
+    --color-vt-bg-1: #111114;
+    --color-vt-bg-2: #1c1c1f;
+    --color-vt-border: #2e2e32;
+    --color-vt-border-strong: #f0f0ee;
+
+    /* 相容別名（這些不走 vt- 路線，直接覆寫） */
+    --color-bg: #111114;
+    --color-border: #2e2e32;
+    --color-muted: #909090;
+    --color-ink: #f0f0ee;
+    --color-gray-50: #111114;
+    --color-gray-100: #1c1c1f;
+    --color-gray-200: #2e2e32;
+    --color-gray-300: #3e3e42;
+    --color-gray-400: #606060;
+    --color-gray-600: #909090;
+    --color-gray-700: #b0b0ae;
+    --color-gray-900: #e0e0de;
+  }
+
   body {
     margin: 0;
     font-family: var(--font-sans);
@@ -242,7 +272,7 @@
   }
 
   .btn-secondary {
-    background: white;
+    background: var(--color-vt-bg-1);
     color: var(--color-ink);
     border-color: var(--color-border);
   }
@@ -253,7 +283,7 @@
 
   .btn-ghost {
     background: transparent;
-    color: #2a2a30;
+    color: var(--color-vt-fg-1);
   }
 
   .btn-ghost:hover:not(:disabled) {
@@ -276,7 +306,7 @@
   }
 
   .card {
-    background: white;
+    background: var(--color-vt-bg-1);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-lg);
     padding: 1.25rem 1.35rem;
@@ -306,7 +336,7 @@
     border: 1px solid var(--color-border);
     border-radius: var(--radius-md);
     padding: 0.65rem 0.8rem;
-    background: white;
+    background: var(--color-vt-bg-1);
     color: var(--color-ink);
   }
 
@@ -519,7 +549,7 @@
   }
 
   .modal {
-    background: white;
+    background: var(--color-vt-bg-1);
     border-radius: var(--radius-lg);
     width: min(560px, 100%);
     max-height: 90vh;
@@ -637,6 +667,24 @@
     color: inherit;
     padding: 0;
   }
+}
+
+html.dark .status-collecting {
+  background: color-mix(in srgb, var(--color-amber) 20%, #1c1c1f);
+}
+html.dark .status-summarizing {
+  background: color-mix(in srgb, var(--color-teal) 18%, #1c1c1f);
+}
+html.dark .status-published {
+  background: color-mix(in srgb, var(--color-red) 18%, #1c1c1f);
+}
+html.dark .alert-info {
+  background: color-mix(in srgb, var(--color-teal) 15%, #1c1c1f);
+  border-color: color-mix(in srgb, var(--color-teal) 35%, #1c1c1f);
+}
+html.dark .alert-warn {
+  background: color-mix(in srgb, var(--color-amber) 15%, #1c1c1f);
+  border-color: color-mix(in srgb, var(--color-amber) 35%, #1c1c1f);
 }
 
 @media (max-width: 600px) {
