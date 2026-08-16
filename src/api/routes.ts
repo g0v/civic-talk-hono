@@ -12,12 +12,13 @@ import type {
   Opinion,
   OpinionWithAuthor,
   Stance,
+  ModerationSubmissionType,
 } from '../db/queries'
 import * as db from '../db/queries'
 import { isAdminRole, tryGetAuthContext, type AuthContext } from '../auth/authorization'
 import { createAuth } from '../auth/createAuth'
 import { TERMS_VERSION } from '../legal/terms'
-import { moderationReasonForPolicy, moderateSubmission, type ModerationDecision, type ModerationSubmission } from '../moderation/service'
+import { moderationReasonForPolicy, moderateSubmission, moderateSubmissionWithDiagnostics, type ModerationDecision, type ModerationSubmission } from '../moderation/service'
 import type { App, AppBindings } from './types'
 
 // 公開讀取端點維持開放跨來源；管理端則刻意「不可跨來源」——
@@ -62,7 +63,7 @@ async function requireAdmin(request: Request, env: AppBindings): Promise<Respons
   const context = await tryGetAuthContext(env, request.headers)
   if (!context) return error('Unauthorized', 401)
   // 停權帳號即使有 admin 角色也不得操作：先判 banned，再判角色（#11）
-  if (context.banned) return error('Forbidden: account is suspended', 403)
+  if (context.banned) return error('Forbidden: account is banned', 403)
   if (!isAdminRole(context.role)) return error('Forbidden', 403)
   return null
 }
@@ -108,13 +109,13 @@ async function requireUser(request: Request, env: AppBindings): Promise<{ contex
   const context = await tryGetAuthContext(env, request.headers)
   if (!context) return { denied: error('Unauthorized', 401) }
   // 停權帳號不得執行任何寫入動作（#11）
-  if (context.banned) return { denied: error('Forbidden: account is suspended', 403) }
+  if (context.banned) return { denied: error('Forbidden: account is banned', 403) }
   return { context }
 }
 
 /**
- * 申訴守衛只要求仍有有效 session，不檢查 banned 或本地停權建議；
- * 被凍結／停權的人必須仍能送出申訴。這支只用在申訴端點，不可拿來寫投稿。
+ * 申訴守衛只要求仍有有效 session，不檢查 banned；
+ * 被停權的人仍可送出申訴。這支只用在申訴端點，不可拿來寫投稿。
  */
 async function requireAppealUser(request: Request, env: AppBindings): Promise<{ context: AuthContext } | { denied: Response }> {
   const context = await tryGetAuthContext(env, request.headers)
@@ -122,6 +123,16 @@ async function requireAppealUser(request: Request, env: AppBindings): Promise<{ 
   return { context }
 }
 
+const PREVIEW_FIELDS: Record<ModerationSubmissionType, string> = {
+  issue: 'description',
+  material: 'content',
+  opinion: 'summary',
+  briefing: 'consensus',
+}
+
+function isModerationSubmissionType(value: string): value is ModerationSubmissionType {
+  return value === 'issue' || value === 'material' || value === 'opinion' || value === 'briefing'
+}
 function parseId(raw: string): number | null {
   const n = Number.parseInt(raw, 10)
   return Number.isFinite(n) && n > 0 ? n : null
@@ -148,21 +159,25 @@ export function buildAuthorSnapshot(user: AuthContext['user'], showEmail: boolea
     show_email: showEmail,
   }
 }
-async function requireSubmissionUser(request: Request, env: AppBindings): Promise<{ context: AuthContext } | { denied: Response }> {
-  const auth = await requireUser(request, env)
-  if ('denied' in auth) return auth
-  // Better Auth 的 banUser 需要管理員 session，無法由無人值守 Worker 直接呼叫。
-  // 達到三筆門檻時先建立本地停權建議並凍結後續投稿，實際 ban 由管理員確認時執行。
-  if (await db.hasPendingSuspensionRecommendation(env.DB, auth.context.user.id)) {
-    return { denied: error('Forbidden: submissions are suspended pending moderation review', 403) }
-  }
-  return auth
+type SubmissionModeration = {
+  decision: ModerationDecision
+  hidden: boolean
 }
-type RecordedModerationDecision = ModerationDecision extends infer Decision
-  ? Decision extends { outcome: 'violation' }
-    ? Decision & { report_id?: number; violation_count?: number; suspension_recommendation_id?: number }
-    : Decision
-  : never
+
+async function moderateSubmissionForWrite(env: AppBindings, submission: ModerationSubmission): Promise<SubmissionModeration> {
+  const decision = await moderateSubmission(env.OPEN_ROUTER_API_KEY, env.ASSETS, submission)
+  return { decision, hidden: decision.outcome === 'violation' }
+}
+
+function moderationMetadata(decision: Extract<ModerationDecision, { outcome: 'violation' }>, reportId: number | undefined) {
+  return {
+    hidden: true,
+    policy_code: decision.policy_code,
+    rationale: decision.rationale,
+    report_id: reportId ?? null,
+    appeal_allowed: true,
+  }
+}
 
 function logModerationAuditFailure(kind: string, error: unknown): void {
   console.error('ai_moderation_audit_failure', {
@@ -171,14 +186,16 @@ function logModerationAuditFailure(kind: string, error: unknown): void {
   })
 }
 
-async function moderateAndRecord(env: AppBindings, context: AuthContext, submission: ModerationSubmission): Promise<RecordedModerationDecision> {
-  const decision = await moderateSubmission(env.OPEN_ROUTER_API_KEY, env.ASSETS, submission)
-  if (decision.outcome !== 'violation') return decision
-
+async function recordModerationViolation(
+  env: AppBindings,
+  context: AuthContext,
+  submission: ModerationSubmission,
+  decision: Extract<ModerationDecision, { outcome: 'violation' }>,
+  target: { issue_id: number | null; material_id: number | null; briefing_id: number | null; opinion_id: number | null }
+): Promise<number | undefined> {
   const user = context.user
-  let reportId: number | undefined
   try {
-    reportId = await db.createAiModerationReport(env.DB, {
+    return await db.createAiModerationReport(env.DB, {
       user_id: user.id,
       user_name: user.name?.trim() || null,
       user_email: user.email,
@@ -187,50 +204,12 @@ async function moderateAndRecord(env: AppBindings, context: AuthContext, submiss
       submission_type: submission.type,
       content_snapshot: JSON.stringify(submission.fields),
       description: decision.rationale,
+      ...target,
     })
   } catch (error) {
     logModerationAuditFailure('create_ai_moderation_report', error)
+    return undefined
   }
-
-  let violationCount: number | undefined
-  try {
-    violationCount = await db.countRecentAiViolations(env.DB, user.id)
-  } catch (error) {
-    logModerationAuditFailure('count_recent_ai_violations', error)
-  }
-  if (violationCount === undefined || violationCount < 3) return { ...decision, report_id: reportId, violation_count: violationCount }
-
-  let recommendationId: number | undefined
-  try {
-    const now = new Date()
-    recommendationId = await db.createSuspensionRecommendation(env.DB, {
-      user_id: user.id,
-      user_name: user.name?.trim() || null,
-      user_email: user.email,
-      violation_count: violationCount,
-      window_started_at: new Date(now.getTime() - 60 * 60 * 1000).toISOString(),
-    })
-  } catch (error) {
-    logModerationAuditFailure('create_suspension_recommendation', error)
-  }
-  return { ...decision, report_id: reportId, violation_count: violationCount, suspension_recommendation_id: recommendationId }
-}
-
-function moderationRejection(decision: Extract<RecordedModerationDecision, { outcome: 'violation' }>): Response {
-  return json(
-    {
-      error: 'Submission rejected by community guidelines',
-      moderation: {
-        policy_code: decision.policy_code,
-        rationale: decision.rationale,
-      },
-      report_id: decision.report_id,
-      violation_count: decision.violation_count,
-      suspension_recommendation_id: decision.suspension_recommendation_id,
-      appeal_allowed: true,
-    },
-    422
-  )
 }
 
 export function registerApiRoutes(app: App): void {
@@ -245,6 +224,12 @@ export function registerApiRoutes(app: App): void {
     const stats = await db.getAdminStats(c.env.DB)
     return json(stats)
   })
+  // GET /api/me/moderation-reports — 只回傳目前登入者待複核的 AI 回報。
+  app.get('/api/me/moderation-reports', async c => {
+    const auth = await requireUser(c.req.raw, c.env)
+    if ('denied' in auth) return auth.denied
+    return json(await db.listPendingAiModerationReportsForUser(c.env.DB, auth.context.user.id))
+  })
 
   // 一般讀取只拿公開作者投影；管理員另拿完整快照與條款同意記錄。
   app.get('/api/issues', async c => {
@@ -258,7 +243,7 @@ export function registerApiRoutes(app: App): void {
   // 建立議題同樣需要登入（#9 的延伸，使用者裁示）：議題是所有素材與意見的容器，
   // 開放匿名建立等於開一扇沒有守門的門。
   app.post('/api/issues', async c => {
-    const auth = await requireSubmissionUser(c.req.raw, c.env)
+    const auth = await requireUser(c.req.raw, c.env)
     if ('denied' in auth) return auth.denied
     let body: { title?: string; description?: string; polis_id?: string | null } & SubmissionOptions
     try {
@@ -269,22 +254,33 @@ export function registerApiRoutes(app: App): void {
     if (!body.title?.trim()) return error('title is required')
     const invalidOptions = validateSubmissionOptions(body)
     if (invalidOptions) return invalidOptions
-    const moderation = await moderateAndRecord(c.env, auth.context, {
+    const moderation = await moderateSubmissionForWrite(c.env, {
       type: 'issue',
       fields: {
         title: body.title.trim(),
         description: body.description ?? '',
       },
     })
-    if (moderation.outcome === 'violation') return moderationRejection(moderation)
-    const id = await db.createIssue(c.env.DB, {
-      title: body.title.trim(),
-      description: body.description ?? '',
-      polis_id: body.polis_id ?? null,
-      ...buildAuthorSnapshot(auth.context.user, body.show_email === true),
-      terms_version: TERMS_VERSION,
-    })
-    return json({ id, title: body.title.trim() }, 201)
+    const id = await db.createIssue(
+      c.env.DB,
+      {
+        title: body.title.trim(),
+        description: body.description ?? '',
+        polis_id: body.polis_id ?? null,
+        ...buildAuthorSnapshot(auth.context.user, body.show_email === true),
+        terms_version: TERMS_VERSION,
+      },
+      { moderationHidden: moderation.hidden }
+    )
+    if (!moderation.hidden || moderation.decision.outcome !== 'violation') return json({ id, title: body.title.trim() }, 201)
+    const reportId = await recordModerationViolation(c.env, auth.context, {
+      type: 'issue',
+      fields: {
+        title: body.title.trim(),
+        description: body.description ?? '',
+      },
+    }, moderation.decision, { issue_id: id, material_id: null, briefing_id: null, opinion_id: null })
+    return json({ id, title: body.title.trim(), moderation: moderationMetadata(moderation.decision, reportId) }, 201)
   })
 
   app.delete('/api/materials/:id', async c => {
@@ -367,7 +363,7 @@ export function registerApiRoutes(app: App): void {
   // #9：素材投稿必須登入（品質把關 + 濫用時可追溯）。這是不變量 5 的授權例外之一，
   // 由 issue #9 明確授權：路徑、方法與成功回應形狀照舊，只是未登入改回 401。
   app.post('/api/issues/:id/materials', async c => {
-    const auth = await requireSubmissionUser(c.req.raw, c.env)
+    const auth = await requireUser(c.req.raw, c.env)
     if ('denied' in auth) return auth.denied
     const id = parseId(c.req.param('id'))
     if (!id) return error('Invalid id')
@@ -387,7 +383,7 @@ export function registerApiRoutes(app: App): void {
     if (!body.content?.trim()) return error('content is required')
     const invalidOptions = validateSubmissionOptions(body)
     if (invalidOptions) return invalidOptions
-    const moderation = await moderateAndRecord(c.env, auth.context, {
+    const submission: ModerationSubmission = {
       type: 'material',
       fields: {
         source_name: body.source_name ?? '',
@@ -395,8 +391,8 @@ export function registerApiRoutes(app: App): void {
         stance: body.stance ?? 'unknown',
         content: body.content.trim(),
       },
-    })
-    if (moderation.outcome === 'violation') return moderationRejection(moderation)
+    }
+    const moderation = await moderateSubmissionForWrite(c.env, submission)
     const materialId = await db.createMaterial(c.env.DB, id, {
       content: body.content.trim(),
       source_name: body.source_name ?? '',
@@ -404,8 +400,15 @@ export function registerApiRoutes(app: App): void {
       stance: body.stance ?? 'unknown',
       ...buildAuthorSnapshot(auth.context.user, body.show_email === true),
       terms_version: TERMS_VERSION,
+    }, { moderationHidden: moderation.hidden, skipStatusTransition: moderation.hidden })
+    if (!moderation.hidden || moderation.decision.outcome !== 'violation') return json({ id: materialId }, 201)
+    const reportId = await recordModerationViolation(c.env, auth.context, submission, moderation.decision, {
+      issue_id: null,
+      material_id: materialId,
+      briefing_id: null,
+      opinion_id: null,
     })
-    return json({ id: materialId }, 201)
+    return json({ id: materialId, moderation: moderationMetadata(moderation.decision, reportId) }, 201)
   })
 
   app.get('/api/issues/:id/briefing', async c => {
@@ -421,7 +424,7 @@ export function registerApiRoutes(app: App): void {
   app.post('/api/issues/:id/briefing', async c => {
     // 志願者工具會產生 prompt 並回寫彙整／說明頁；與其他投稿一樣要求登入，
     // 才能確保工具使用與內容異動都有可追溯的帳號。
-    const auth = await requireSubmissionUser(c.req.raw, c.env)
+    const auth = await requireUser(c.req.raw, c.env)
     if ('denied' in auth) return auth.denied
     const id = parseId(c.req.param('id'))
     if (!id) return error('Invalid id')
@@ -441,7 +444,7 @@ export function registerApiRoutes(app: App): void {
       return error('Invalid JSON')
     }
     if (body.show_email !== undefined && typeof body.show_email !== 'boolean') return error('show_email must be a boolean')
-    const moderation = await moderateAndRecord(c.env, auth.context, {
+    const submission: ModerationSubmission = {
       type: 'briefing',
       fields: {
         consensus: body.consensus ?? '',
@@ -450,11 +453,25 @@ export function registerApiRoutes(app: App): void {
         narrative: body.narrative ?? '',
         opinion_prompt: body.opinion_prompt ?? '',
       },
-    })
-    if (moderation.outcome === 'violation') return moderationRejection(moderation)
+    }
+    const moderation = await moderateSubmissionForWrite(c.env, submission)
     // 說明頁公開顯示投稿當下名稱；email 僅在 show_email = true 時公開。
-    const version = await db.createBriefing(c.env.DB, id, buildAuthorSnapshot(auth.context.user, body.show_email === true), body)
-    return json({ version }, 201)
+    const version = await db.createBriefing(
+      c.env.DB,
+      id,
+      buildAuthorSnapshot(auth.context.user, body.show_email === true),
+      body,
+      { moderationHidden: moderation.hidden, skipStatusTransition: moderation.hidden }
+    )
+    if (!moderation.hidden || moderation.decision.outcome !== 'violation') return json({ version }, 201)
+    const briefingId = await db.getBriefingIdByVersion(c.env.DB, id, version)
+    const reportId = briefingId === null ? undefined : await recordModerationViolation(c.env, auth.context, submission, moderation.decision, {
+      issue_id: null,
+      material_id: null,
+      briefing_id: briefingId,
+      opinion_id: null,
+    })
+    return json({ version, moderation: moderationMetadata(moderation.decision, reportId) }, 201)
   })
 
   app.put('/api/issues/:id/briefing', async c => {
@@ -491,7 +508,7 @@ export function registerApiRoutes(app: App): void {
 
   // 意見投稿同樣需要登入（#9 的延伸，使用者裁示），並記錄完整作者快照以便問責。
   app.post('/api/issues/:id/opinions', async c => {
-    const auth = await requireSubmissionUser(c.req.raw, c.env)
+    const auth = await requireUser(c.req.raw, c.env)
     if ('denied' in auth) return auth.denied
     const id = parseId(c.req.param('id'))
     if (!id) return error('Invalid id')
@@ -506,17 +523,24 @@ export function registerApiRoutes(app: App): void {
     if (!body.summary?.trim()) return error('summary is required')
     const invalidOptions = validateSubmissionOptions(body)
     if (invalidOptions) return invalidOptions
-    const moderation = await moderateAndRecord(c.env, auth.context, {
+    const submission: ModerationSubmission = {
       type: 'opinion',
       fields: { summary: body.summary.trim() },
-    })
-    if (moderation.outcome === 'violation') return moderationRejection(moderation)
+    }
+    const moderation = await moderateSubmissionForWrite(c.env, submission)
     const opinionId = await db.createOpinion(c.env.DB, id, {
       summary: body.summary.trim(),
       ...buildAuthorSnapshot(auth.context.user, body.show_email === true),
       terms_version: TERMS_VERSION,
+    }, { moderationHidden: moderation.hidden })
+    if (!moderation.hidden || moderation.decision.outcome !== 'violation') return json({ id: opinionId }, 201)
+    const reportId = await recordModerationViolation(c.env, auth.context, submission, moderation.decision, {
+      issue_id: null,
+      material_id: null,
+      briefing_id: null,
+      opinion_id: opinionId,
     })
-    return json({ id: opinionId }, 201)
+    return json({ id: opinionId, moderation: moderationMetadata(moderation.decision, reportId) }, 201)
   })
 
   app.get('/api/issues/:id/prompt', async c => {
@@ -611,7 +635,7 @@ export function registerApiRoutes(app: App): void {
     return json({ ok: true }, 201)
   })
 
-  // POST /api/appeals — 被拒投稿／投稿凍結的申訴；停權或凍結者仍可使用。
+  // POST /api/appeals — 被拒投稿／帳號停權的申訴；停權者仍可使用。
   app.post('/api/appeals', async c => {
     const auth = await requireAppealUser(c.req.raw, c.env)
     if ('denied' in auth) return auth.denied
@@ -622,18 +646,15 @@ export function registerApiRoutes(app: App): void {
     } catch {
       return error('Invalid JSON')
     }
-    if (body.appeal_type !== 'rejected_submission' && body.appeal_type !== 'automatic_ban') {
-      return error('appeal_type must be "rejected_submission" or "automatic_ban"')
+    if (body.appeal_type !== 'rejected_submission' && body.appeal_type !== 'account_ban') {
+      return error('appeal_type must be "rejected_submission" or "account_ban"')
     }
     const reportId = typeof body.abuse_report_id === 'number' && body.abuse_report_id > 0 ? body.abuse_report_id : null
     if (body.appeal_type === 'rejected_submission' && reportId === null) return error('abuse_report_id is required for rejected submission appeals')
 
     const report = reportId === null ? null : await db.getAiAbuseReportForUser(c.env.DB, reportId, auth.context.user.id)
     if (reportId !== null && !report) return error('Moderation report not found', 404)
-    const pendingRecommendation = await db.getPendingSuspensionRecommendation(c.env.DB, auth.context.user.id)
-    if (body.appeal_type === 'automatic_ban' && !pendingRecommendation && !auth.context.banned && !report) {
-      return error('No active suspension to appeal', 409)
-    }
+    if (body.appeal_type === 'account_ban' && !auth.context.banned) return error('No active account ban to appeal', 409)
     if (report && report.review_status !== 'pending' && body.appeal_type === 'rejected_submission') {
       return error('Moderation report already resolved', 409)
     }
@@ -658,49 +679,42 @@ export function registerApiRoutes(app: App): void {
     return json({ id: appealId, status: 'pending' }, 201)
   })
 
-  // GET /api/admin/moderation/suspensions — 管理端查看達門檻的停權建議。
-  app.get('/api/admin/moderation/suspensions', async c => {
-    const denied = await requireAdmin(c.req.raw, c.env)
-    if (denied) return denied
-    return json(await db.listSuspensionRecommendations(c.env.DB))
-  })
-
-  // PATCH /api/admin/moderation/suspensions/:id/resolve — 管理員確認或駁回停權建議。
-  // confirm 先經 Better Auth banUser，再寫本地狀態；dismiss 解除本地投稿凍結。
-  app.patch('/api/admin/moderation/suspensions/:id/resolve', async c => {
-    const denied = await requireAdmin(c.req.raw, c.env)
-    if (denied) return denied
-    const id = parseId(c.req.param('id'))
-    if (!id) return error('Invalid ID', 400)
-    let body: { action?: unknown; resolution_note?: unknown }
-    try {
-      body = await c.req.json()
-    } catch {
-      return error('Invalid JSON')
-    }
-    if (body.action !== 'confirm' && body.action !== 'dismiss') return error('action must be "confirm" or "dismiss"')
-    const recommendation = await db.getSuspensionRecommendation(c.env.DB, id)
-    if (!recommendation) return error('Suspension recommendation not found', 404)
-    if (recommendation.status !== 'pending') return error('Suspension recommendation already resolved', 409)
-    const admin = await tryGetAuthContext(c.env, c.req.raw.headers)
-    if (!admin) return error('Unauthorized', 401)
-    if (body.action === 'confirm') {
-      const banError = await adminBanUser(c.req.raw, c.env, recommendation.user_id, 'AI 審查達門檻：管理員複核確認停權')
-      if (banError) return banError
-    }
-    await db.resolveSuspensionRecommendation(c.env.DB, id, body.action === 'confirm' ? 'confirmed' : 'dismissed', { id: admin.user.id, name: admin.user.name?.trim() || null }, typeof body.resolution_note === 'string' ? body.resolution_note.trim() || null : null)
-    return json({ ok: true })
-  })
-
-  // GET /api/admin/moderation/appeals — 管理端查看拒絕／停權申訴。
+  // GET /api/admin/moderation/appeals — 管理端查看拒絕／帳號停權申訴。
   app.get('/api/admin/moderation/appeals', async c => {
     const denied = await requireAdmin(c.req.raw, c.env)
     if (denied) return denied
     return json(await db.listModerationAppeals(c.env.DB))
   })
 
+
+  app.get('/api/admin/moderation/preview', async c => {
+    const denied = await requireAdmin(c.req.raw, c.env)
+    if (denied) return denied
+
+    const text = c.req.query('text')?.trim() ?? ''
+    if (!text) return error('text is required')
+    const rawType = c.req.query('type') ?? 'opinion'
+    if (!isModerationSubmissionType(rawType)) return error('type must be "issue", "material", "opinion", or "briefing"')
+
+    const evaluation = await moderateSubmissionWithDiagnostics(c.env.OPEN_ROUTER_API_KEY, c.env.ASSETS, {
+      type: rawType,
+      fields: { [PREVIEW_FIELDS[rawType]]: text },
+    })
+    return json({
+      type: rawType,
+      verdict: evaluation.model?.verdict ?? null,
+      policy_code: evaluation.model?.policy_code ?? null,
+      rationale: evaluation.model?.rationale ?? null,
+      confidence: evaluation.model?.confidence ?? null,
+      decision: evaluation.decision,
+      finish_reason: evaluation.diagnostics.finish_reason,
+      usage: evaluation.diagnostics.usage,
+      failure_kind: evaluation.diagnostics.failure_kind,
+    })
+  })
+
   // PATCH /api/admin/moderation/appeals/:id/resolve — 維持或推翻申訴。
-  // 自動停權的 uphold/overturn 會先透過 Better Auth ban/unban，再更新本地記錄。
+  // 帳號停權申訴的 uphold/overturn 會先透過 Better Auth ban/unban，再更新本地記錄。
   app.patch('/api/admin/moderation/appeals/:id/resolve', async c => {
     const denied = await requireAdmin(c.req.raw, c.env)
     if (denied) return denied
@@ -719,8 +733,7 @@ export function registerApiRoutes(app: App): void {
     const admin = await tryGetAuthContext(c.env, c.req.raw.headers)
     if (!admin) return error('Unauthorized', 401)
 
-    const recommendation = await db.getPendingSuspensionRecommendation(c.env.DB, appeal.user_id)
-    if (appeal.appeal_type === 'automatic_ban') {
+    if (appeal.appeal_type === 'account_ban') {
       let targetBanned = false
       try {
         const target = await createAuth(c.env).api.getUser({ query: { id: appeal.user_id }, headers: c.req.raw.headers })
@@ -729,21 +742,28 @@ export function registerApiRoutes(app: App): void {
         return error('User not found', 404)
       }
       if (body.action === 'uphold' && !targetBanned) {
-        const banError = await adminBanUser(c.req.raw, c.env, appeal.user_id, 'AI 審查申訴維持：管理員確認停權')
+        const banError = await adminBanUser(c.req.raw, c.env, appeal.user_id, '帳號申訴維持：管理員確認停權')
         if (banError) return banError
       } else if (body.action === 'overturn' && targetBanned) {
         const unbanError = await adminUnbanUser(c.req.raw, c.env, appeal.user_id)
         if (unbanError) return unbanError
       }
-      if (recommendation) {
-        await db.resolveSuspensionRecommendation(c.env.DB, recommendation.id, body.action === 'uphold' ? 'confirmed' : 'dismissed', { id: admin.user.id, name: admin.user.name?.trim() || null }, typeof body.review_note === 'string' ? body.review_note.trim() || null : null)
-      }
     }
 
     if (appeal.abuse_report_id !== null) {
+      const report = await db.getAbuseReport(c.env.DB, appeal.abuse_report_id)
+      if (!report) return error('Moderation report not found', 404)
       await db.resolveAbuseReport(c.env.DB, appeal.abuse_report_id, body.action === 'uphold' ? 'resolved_abuse' : 'resolved_false')
+      if (body.action === 'uphold') await db.confirmFlagContent(c.env.DB, report)
+      else await db.unflagContent(c.env.DB, report)
     }
-    await db.resolveModerationAppeal(c.env.DB, id, body.action === 'uphold' ? 'upheld' : 'overturned', { id: admin.user.id, name: admin.user.name?.trim() || null }, typeof body.review_note === 'string' ? body.review_note.trim() || null : null)
+    await db.resolveModerationAppeal(
+      c.env.DB,
+      id,
+      body.action === 'uphold' ? 'upheld' : 'overturned',
+      { id: admin.user.id, name: admin.user.name?.trim() || null },
+      typeof body.review_note === 'string' ? body.review_note.trim() || null : null
+    )
     return json({ ok: true })
   })
   // 使用 Better Auth admin plugin getUser，不對 DB_AUTH 下自訂 SQL（不變量 11）。
@@ -783,8 +803,7 @@ export function registerApiRoutes(app: App): void {
     return json(reports)
   })
 
-  // PATCH /api/admin/abuse-reports/:id/resolve — 審核濫用回報：誤報或確認濫用
-  // 誤報   → 停權回報者（ban）→ 清除旗標 → resolved_false
+  // 誤報 → 使用者回報時停權回報者；AI 回報誤報不處置任何人；→ 清除旗標 → resolved_false
   // 確認濫用 → 停權張貼者（ban）→ resolved_abuse（旗標維持）
   //
   // ban 先做，成功後才寫 DB——確保失敗時 review_status 保持 pending，
@@ -813,9 +832,9 @@ export function registerApiRoutes(app: App): void {
     if (!report) return error('Report not found', 404)
     if (report.review_status !== 'pending') return error('Report already resolved', 409)
 
-    // broken_link 的 false_report 不 ban 回報者（回報個失效連結誤判，懲罰太重）
-    // confirmed_broken 也不 ban 任何人（非惡意內容）
-    const shouldBan = body.action !== 'confirmed_broken' && !(body.action === 'false_report' && report.reason === 'broken_link')
+    // AI 回報的 reporter_id 是投稿者本人；確認誤報時絕不因同一個人被誤判而停權。
+    // ban 先做，且只有 confirmed_abuse 或一般使用者誤報需要 ban。
+    const shouldBan = body.action === 'confirmed_abuse' || (body.action === 'false_report' && report.source !== 'ai' && report.reason !== 'broken_link')
 
     if (shouldBan) {
       const targetUserId = body.action === 'false_report' ? report.reporter_id : report.target_author_id

@@ -49,30 +49,50 @@ export type ModerationAssets = {
   fetch: (request: RequestInfo | URL, init?: RequestInit) => Promise<Response>
 }
 
+export type ModerationUsage = Record<string, unknown>
+
+export type ModerationDiagnostics = {
+  finish_reason: string | null
+  usage: ModerationUsage | null
+  failure_kind: string | null
+}
+
+export type ModerationEvaluation = {
+  decision: ModerationDecision
+  diagnostics: ModerationDiagnostics
+  model: ModerationResponse | null
+}
+
+type Failure = {
+  kind: string
+  details?: Record<string, unknown>
+}
+
 function logModerationFailure(kind: string, details?: Record<string, unknown>): void {
   // fail-open 是刻意的可用性取捨：OpenRouter 故障時放行，濫用仍可由使用者回報與管理員處理。
   // 不記錄 API key、投稿內容或完整模型回應，避免機密與個資進入 Worker log。
   console.error('ai_moderation_fail_open', { kind, ...details })
 }
 
-async function loadCommunityGuidelines(assets: ModerationAssets): Promise<string | null> {
+async function loadCommunityGuidelines(assets: ModerationAssets, onFailure: (failure: Failure) => void): Promise<string | null> {
   try {
     const response = await assets.fetch('https://assets.internal/rules/community-guidelines.md')
     if (!response.ok) {
-      logModerationFailure('guidelines_fetch_http', { status: response.status })
+      onFailure({ kind: 'guidelines_fetch_http', details: { status: response.status } })
       return null
     }
     const text = await response.text()
     if (!text.trim()) {
-      logModerationFailure('guidelines_empty')
+      onFailure({ kind: 'guidelines_empty' })
       return null
     }
     return text
   } catch (error) {
-    logModerationFailure('guidelines_fetch_error', { error: error instanceof Error ? error.name : 'unknown' })
+    onFailure({ kind: 'guidelines_fetch_error', details: { error: error instanceof Error ? error.name : 'unknown' } })
     return null
   }
 }
+
 function neutralizeSubmissionDelimiters(value: string): string {
   return value.replace(/<\/?submission\b[^>]*>/gi, '[已移除投稿分隔符]')
 }
@@ -85,29 +105,26 @@ function buildSubmissionText(submission: ModerationSubmission): string {
   return `<submission>\n投稿類型：${submission.type}\n\n${fields}\n</submission>`
 }
 
-function isModerationResponse(value: unknown): value is ModerationResponse {
-  if (!value || typeof value !== 'object') return false
+function getModerationResponseFailureKind(value: unknown): string | null {
+  if (!value || typeof value !== 'object') return 'openrouter_invalid_decision'
   const data = value as Record<string, unknown>
-  if (data.verdict !== 'pass' && data.verdict !== 'violation') return false
-  if (typeof data.policy_code !== 'string' || !POLICY_CODES.includes(data.policy_code as (typeof POLICY_CODES)[number])) {
-    logModerationFailure('unknown_policy_code')
-    return false
+  if (data.verdict !== 'pass' && data.verdict !== 'violation') return 'openrouter_invalid_decision'
+  if (typeof data.policy_code !== 'string' || !POLICY_CODES.includes(data.policy_code as (typeof POLICY_CODES)[number])) return 'unknown_policy_code'
+  if (
+    typeof data.rationale !== 'string' ||
+    typeof data.confidence !== 'number' ||
+    !Number.isFinite(data.confidence) ||
+    data.confidence < 0 ||
+    data.confidence > 1
+  ) {
+    return 'openrouter_invalid_decision'
   }
-  return (
-    typeof data.rationale === 'string' &&
-    typeof data.confidence === 'number' &&
-    Number.isFinite(data.confidence) &&
-    data.confidence >= 0 &&
-    data.confidence <= 1
-  )
+  return null
 }
 
-function mapDecision(value: ModerationResponse): ModerationDecision {
+function mapDecision(value: ModerationResponse): ModerationDecision | null {
   if (value.verdict === 'pass' && value.policy_code === 'pass') return { outcome: 'allow' }
-  if (value.verdict !== 'violation' || value.policy_code === 'pass') {
-    logModerationFailure('invalid_model_decision')
-    return { outcome: 'fail-open' }
-  }
+  if (value.verdict !== 'violation' || value.policy_code === 'pass') return null
   return {
     outcome: 'violation',
     policy_code: value.policy_code,
@@ -116,29 +133,47 @@ function mapDecision(value: ModerationResponse): ModerationDecision {
   }
 }
 
+function extractUsage(value: unknown): ModerationUsage | null {
+  if (!value || typeof value !== 'object') return null
+  const usage = (value as { usage?: unknown }).usage
+  return usage && typeof usage === 'object' ? (usage as ModerationUsage) : null
+}
+
 /**
- * 用守則對單筆投稿做前置審查。
+ * 用守則對單筆投稿做前置審查，並回傳模型診斷資訊。
  *
  * 守則一定在執行時從 ASSETS 讀取，避免程式碼與 public/rules/內容漂移。
  * OpenRouter timeout、HTTP 錯誤、格式錯誤或設定缺失一律 fail-open：放行投稿並留下
- * 結構化錯誤 log，不把基礎設施故障誤標成濫用，也不讓全站投稿因模型暫時不可用而中斷。
+ * 結構化錯誤 log（正式投稿路徑），不把基礎設施故障誤標成濫用，也不讓全站投稿因模型暫時不可用而中斷。
  */
-export async function moderateSubmission(
+async function evaluateModerationSubmission(
   apiKey: string | undefined,
   assets: ModerationAssets | undefined,
-  submission: ModerationSubmission
-): Promise<ModerationDecision> {
-  if (!apiKey) {
-    logModerationFailure('missing_api_key')
-    return { outcome: 'fail-open' }
+  submission: ModerationSubmission,
+  emitFailureLogs: boolean
+): Promise<ModerationEvaluation> {
+  const diagnostics: ModerationDiagnostics = {
+    finish_reason: null,
+    usage: null,
+    failure_kind: null,
   }
-  if (!assets) {
-    logModerationFailure('missing_assets_binding')
-    return { outcome: 'fail-open' }
+  const reportFailure = (failure: Failure): void => {
+    diagnostics.failure_kind = failure.kind
+    if (emitFailureLogs) logModerationFailure(failure.kind, failure.details)
+  }
+  const failOpen = (failure: Failure): ModerationEvaluation => {
+    reportFailure(failure)
+    return { decision: { outcome: 'fail-open' }, diagnostics, model: null }
   }
 
-  const guidelines = await loadCommunityGuidelines(assets)
-  if (!guidelines) return { outcome: 'fail-open' }
+  if (!apiKey) return failOpen({ kind: 'missing_api_key' })
+  if (!assets) return failOpen({ kind: 'missing_assets_binding' })
+
+  let guidelineFailure: Failure | null = null
+  const guidelines = await loadCommunityGuidelines(assets, failure => {
+    guidelineFailure = failure
+  })
+  if (!guidelines) return failOpen(guidelineFailure ?? { kind: 'guidelines_fetch_error' })
 
   const controller = AbortSignal.timeout(MODERATION_TIMEOUT_MS)
   try {
@@ -182,65 +217,67 @@ export async function moderateSubmission(
       signal: controller,
     })
 
-    if (!response.ok) {
-      logModerationFailure('openrouter_http', { status: response.status })
-      return { outcome: 'fail-open' }
+    let data: unknown = null
+    try {
+      data = await response.json()
+    } catch {
+      data = null
     }
+    diagnostics.usage = extractUsage(data)
 
-    const data: unknown = await response.json()
-    if (!data || typeof data !== 'object') {
-      logModerationFailure('openrouter_invalid_body')
-      return { outcome: 'fail-open' }
-    }
+    if (!response.ok) return failOpen({ kind: 'openrouter_http', details: { status: response.status } })
+    if (!data || typeof data !== 'object') return failOpen({ kind: 'openrouter_invalid_body' })
+
     const choices = (data as { choices?: unknown }).choices
-    if (!Array.isArray(choices) || choices.length === 0) {
-      logModerationFailure('openrouter_missing_choice')
-      return { outcome: 'fail-open' }
-    }
+    if (!Array.isArray(choices) || choices.length === 0) return failOpen({ kind: 'openrouter_missing_choice' })
+
     const choice = choices[0]
-    if (!choice || typeof choice !== 'object') {
-      logModerationFailure('openrouter_invalid_choice')
-      return { outcome: 'fail-open' }
-    }
+    if (!choice || typeof choice !== 'object') return failOpen({ kind: 'openrouter_invalid_choice' })
     const choiceRecord = choice as { finish_reason?: unknown; error?: unknown; message?: unknown }
-    if (choiceRecord.error) {
-      logModerationFailure('openrouter_choice_error', { finishReason: choiceRecord.finish_reason })
-      return { outcome: 'fail-open' }
-    }
-    if (choiceRecord.finish_reason === 'length') {
-      logModerationFailure('openrouter_truncated', { finishReason: choiceRecord.finish_reason })
-      return { outcome: 'fail-open' }
-    }
-    if (choiceRecord.finish_reason !== 'stop') {
-      logModerationFailure('openrouter_choice_error', { finishReason: choiceRecord.finish_reason })
-      return { outcome: 'fail-open' }
-    }
-    if (!choiceRecord.message || typeof choiceRecord.message !== 'object') {
-      logModerationFailure('openrouter_missing_message')
-      return { outcome: 'fail-open' }
-    }
+    diagnostics.finish_reason = typeof choiceRecord.finish_reason === 'string' ? choiceRecord.finish_reason : null
+    if (choiceRecord.error) return failOpen({ kind: 'openrouter_choice_error', details: { finishReason: choiceRecord.finish_reason } })
+    if (choiceRecord.finish_reason === 'length') return failOpen({ kind: 'openrouter_truncated', details: { finishReason: choiceRecord.finish_reason } })
+    if (choiceRecord.finish_reason !== 'stop') return failOpen({ kind: 'openrouter_choice_error', details: { finishReason: choiceRecord.finish_reason } })
+    if (!choiceRecord.message || typeof choiceRecord.message !== 'object') return failOpen({ kind: 'openrouter_missing_message' })
+
     const content = (choiceRecord.message as { content?: unknown }).content
-    if (typeof content !== 'string') {
-      logModerationFailure('openrouter_non_string_content')
-      return { outcome: 'fail-open' }
-    }
+    if (typeof content !== 'string') return failOpen({ kind: 'openrouter_non_string_content' })
 
     let parsed: unknown
     try {
       parsed = JSON.parse(content)
     } catch {
-      logModerationFailure('openrouter_invalid_json')
-      return { outcome: 'fail-open' }
+      return failOpen({ kind: 'openrouter_invalid_json' })
     }
-    if (!isModerationResponse(parsed)) {
-      logModerationFailure('openrouter_invalid_decision')
-      return { outcome: 'fail-open' }
-    }
-    return mapDecision(parsed)
+
+    const responseFailureKind = getModerationResponseFailureKind(parsed)
+    if (responseFailureKind) return failOpen({ kind: responseFailureKind })
+    const model = parsed as ModerationResponse
+    const decision = mapDecision(model)
+    if (!decision) return failOpen({ kind: 'invalid_model_decision' })
+    return { decision, diagnostics, model }
   } catch (error) {
-    logModerationFailure('openrouter_request_error', { error: error instanceof Error ? error.name : 'unknown' })
-    return { outcome: 'fail-open' }
+    return failOpen({ kind: 'openrouter_request_error', details: { error: error instanceof Error ? error.name : 'unknown' } })
   }
+}
+
+/** 正式投稿路徑使用的審查 API；錯誤會依既有契約寫結構化 fail-open log。 */
+export async function moderateSubmission(
+  apiKey: string | undefined,
+  assets: ModerationAssets | undefined,
+  submission: ModerationSubmission
+): Promise<ModerationDecision> {
+  const evaluation = await evaluateModerationSubmission(apiKey, assets, submission, true)
+  return evaluation.decision
+}
+
+/** 管理端預覽使用的同一審查路徑；保留診斷但不寫 log、不保存投稿內容。 */
+export async function moderateSubmissionWithDiagnostics(
+  apiKey: string | undefined,
+  assets: ModerationAssets | undefined,
+  submission: ModerationSubmission
+): Promise<ModerationEvaluation> {
+  return evaluateModerationSubmission(apiKey, assets, submission, false)
 }
 
 export function moderationReasonForPolicy(policyCode: ModerationPolicyCode): 'spam' | 'hate_speech' | 'defamation' | 'misinformation' | 'other' {
