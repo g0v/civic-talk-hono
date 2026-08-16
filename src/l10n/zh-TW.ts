@@ -422,6 +422,7 @@ export const messages = {
   privacy_s4_li1: '提供並維護平台服務（議題建立、素材收集、意見匯聚）',
   privacy_s4_li2: '確保內容品質：具名提交可降低惡意投稿的風險',
   privacy_s4_li3: '在有濫用情形時進行追溯與調查',
+  privacy_s4_li4: '自動安全審查：被拒絕的投稿會保存內容快照，供管理員複核與處理申訴；如需申訴，請使用平台提供的申訴管道。',
   privacy_s5_h: '資料分享',
   privacy_s5_p: '除必要的基礎設施服務（Cloudflare Workers 平台）外，平台不會將您的個人資料出售、出租或分享給第三方用於商業目的。',
   privacy_s5_alert_h: '執法配合聲明',

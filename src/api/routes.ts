@@ -17,6 +17,7 @@ import * as db from '../db/queries'
 import { isAdminRole, tryGetAuthContext, type AuthContext } from '../auth/authorization'
 import { createAuth } from '../auth/createAuth'
 import { TERMS_VERSION } from '../legal/terms'
+import { moderationReasonForPolicy, moderateSubmission, type ModerationDecision, type ModerationSubmission } from '../moderation/service'
 import type { App, AppBindings } from './types'
 
 // 公開讀取端點維持開放跨來源；管理端則刻意「不可跨來源」——
@@ -106,6 +107,67 @@ export function buildAuthorSnapshot(user: AuthContext['user'], showEmail: boolea
     show_email: showEmail,
   }
 }
+async function requireSubmissionUser(request: Request, env: AppBindings): Promise<{ context: AuthContext } | { denied: Response }> {
+  const auth = await requireUser(request, env)
+  if ('denied' in auth) return auth
+  // Better Auth 的 banUser 需要管理員 session，無法由無人值守 Worker 直接呼叫。
+  // 達到三筆門檻時先建立本地停權建議並凍結後續投稿，實際 ban 由管理員確認時執行。
+  if (await db.hasPendingSuspensionRecommendation(env.DB, auth.context.user.id)) {
+    return { denied: error('Forbidden: submissions are suspended pending moderation review', 403) }
+  }
+  return auth
+}
+type RecordedModerationDecision = ModerationDecision extends infer Decision
+  ? Decision extends { outcome: 'violation' }
+    ? Decision & { report_id?: number; violation_count?: number; suspension_recommendation_id?: number }
+    : Decision
+  : never
+
+async function moderateAndRecord(env: AppBindings, context: AuthContext, submission: ModerationSubmission): Promise<RecordedModerationDecision> {
+  const decision = await moderateSubmission(env.OPEN_ROUTER_API_KEY, env.ASSETS, submission)
+  if (decision.outcome !== 'violation') return decision
+
+  const user = context.user
+  const reportId = await db.createAiModerationReport(env.DB, {
+    user_id: user.id,
+    user_name: user.name?.trim() || null,
+    user_email: user.email,
+    policy_code: decision.policy_code,
+    reason: moderationReasonForPolicy(decision.policy_code),
+    submission_type: submission.type,
+    content_snapshot: JSON.stringify(submission.fields),
+    description: decision.rationale,
+  })
+  const violationCount = await db.countRecentAiViolations(env.DB, user.id)
+  if (violationCount < 3) return { ...decision, report_id: reportId, violation_count: violationCount }
+
+  const now = new Date()
+  const recommendationId = await db.createSuspensionRecommendation(env.DB, {
+    user_id: user.id,
+    user_name: user.name?.trim() || null,
+    user_email: user.email,
+    violation_count: violationCount,
+    window_started_at: new Date(now.getTime() - 60 * 60 * 1000).toISOString(),
+  })
+  return { ...decision, report_id: reportId, violation_count: violationCount, suspension_recommendation_id: recommendationId }
+}
+
+function moderationRejection(decision: Extract<RecordedModerationDecision, { outcome: 'violation' }>): Response {
+  return json(
+    {
+      error: 'Submission rejected by community guidelines',
+      moderation: {
+        policy_code: decision.policy_code,
+        rationale: decision.rationale,
+      },
+      report_id: decision.report_id,
+      violation_count: decision.violation_count,
+      suspension_recommendation_id: decision.suspension_recommendation_id,
+      appeal_allowed: true,
+    },
+    422
+  )
+}
 
 export function registerApiRoutes(app: App): void {
   app.options('/api/*', () => withCors(new Response(null, { status: 204 })))
@@ -132,7 +194,7 @@ export function registerApiRoutes(app: App): void {
   // 建立議題同樣需要登入（#9 的延伸，使用者裁示）：議題是所有素材與意見的容器，
   // 開放匿名建立等於開一扇沒有守門的門。
   app.post('/api/issues', async c => {
-    const auth = await requireUser(c.req.raw, c.env)
+    const auth = await requireSubmissionUser(c.req.raw, c.env)
     if ('denied' in auth) return auth.denied
     let body: { title?: string; description?: string; polis_id?: string | null } & SubmissionOptions
     try {
@@ -143,6 +205,14 @@ export function registerApiRoutes(app: App): void {
     if (!body.title?.trim()) return error('title is required')
     const invalidOptions = validateSubmissionOptions(body)
     if (invalidOptions) return invalidOptions
+    const moderation = await moderateAndRecord(c.env, auth.context, {
+      type: 'issue',
+      fields: {
+        title: body.title.trim(),
+        description: body.description ?? '',
+      },
+    })
+    if (moderation.outcome === 'violation') return moderationRejection(moderation)
     const id = await db.createIssue(c.env.DB, {
       title: body.title.trim(),
       description: body.description ?? '',
@@ -233,7 +303,7 @@ export function registerApiRoutes(app: App): void {
   // #9：素材投稿必須登入（品質把關 + 濫用時可追溯）。這是不變量 5 的授權例外之一，
   // 由 issue #9 明確授權：路徑、方法與成功回應形狀照舊，只是未登入改回 401。
   app.post('/api/issues/:id/materials', async c => {
-    const auth = await requireUser(c.req.raw, c.env)
+    const auth = await requireSubmissionUser(c.req.raw, c.env)
     if ('denied' in auth) return auth.denied
     const id = parseId(c.req.param('id'))
     if (!id) return error('Invalid id')
@@ -253,6 +323,16 @@ export function registerApiRoutes(app: App): void {
     if (!body.content?.trim()) return error('content is required')
     const invalidOptions = validateSubmissionOptions(body)
     if (invalidOptions) return invalidOptions
+    const moderation = await moderateAndRecord(c.env, auth.context, {
+      type: 'material',
+      fields: {
+        source_name: body.source_name ?? '',
+        source_url: body.source_url ?? '',
+        stance: body.stance ?? 'unknown',
+        content: body.content.trim(),
+      },
+    })
+    if (moderation.outcome === 'violation') return moderationRejection(moderation)
     const materialId = await db.createMaterial(c.env.DB, id, {
       content: body.content.trim(),
       source_name: body.source_name ?? '',
@@ -277,7 +357,7 @@ export function registerApiRoutes(app: App): void {
   app.post('/api/issues/:id/briefing', async c => {
     // 志願者工具會產生 prompt 並回寫彙整／說明頁；與其他投稿一樣要求登入，
     // 才能確保工具使用與內容異動都有可追溯的帳號。
-    const auth = await requireUser(c.req.raw, c.env)
+    const auth = await requireSubmissionUser(c.req.raw, c.env)
     if ('denied' in auth) return auth.denied
     const id = parseId(c.req.param('id'))
     if (!id) return error('Invalid id')
@@ -297,6 +377,17 @@ export function registerApiRoutes(app: App): void {
       return error('Invalid JSON')
     }
     if (body.show_email !== undefined && typeof body.show_email !== 'boolean') return error('show_email must be a boolean')
+    const moderation = await moderateAndRecord(c.env, auth.context, {
+      type: 'briefing',
+      fields: {
+        consensus: body.consensus ?? '',
+        disputes: body.disputes ?? '',
+        positions: body.positions ?? '',
+        narrative: body.narrative ?? '',
+        opinion_prompt: body.opinion_prompt ?? '',
+      },
+    })
+    if (moderation.outcome === 'violation') return moderationRejection(moderation)
     // 說明頁公開顯示投稿當下名稱；email 僅在 show_email = true 時公開。
     const version = await db.createBriefing(c.env.DB, id, buildAuthorSnapshot(auth.context.user, body.show_email === true), body)
     return json({ version }, 201)
@@ -336,7 +427,7 @@ export function registerApiRoutes(app: App): void {
 
   // 意見投稿同樣需要登入（#9 的延伸，使用者裁示），並記錄完整作者快照以便問責。
   app.post('/api/issues/:id/opinions', async c => {
-    const auth = await requireUser(c.req.raw, c.env)
+    const auth = await requireSubmissionUser(c.req.raw, c.env)
     if ('denied' in auth) return auth.denied
     const id = parseId(c.req.param('id'))
     if (!id) return error('Invalid id')
@@ -351,6 +442,11 @@ export function registerApiRoutes(app: App): void {
     if (!body.summary?.trim()) return error('summary is required')
     const invalidOptions = validateSubmissionOptions(body)
     if (invalidOptions) return invalidOptions
+    const moderation = await moderateAndRecord(c.env, auth.context, {
+      type: 'opinion',
+      fields: { summary: body.summary.trim() },
+    })
+    if (moderation.outcome === 'violation') return moderationRejection(moderation)
     const opinionId = await db.createOpinion(c.env.DB, id, {
       summary: body.summary.trim(),
       ...buildAuthorSnapshot(auth.context.user, body.show_email === true),
