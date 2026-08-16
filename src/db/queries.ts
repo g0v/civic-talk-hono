@@ -8,9 +8,8 @@ export type AbuseReportSource = 'user' | 'ai'
 export type ModerationPolicyCode = 'spam' | 'sexual_content' | 'hate_speech' | 'defamation' | 'misinformation' | 'illegal'
 export type ModerationSubmissionType = 'issue' | 'material' | 'opinion' | 'briefing'
 export type AbuseReviewStatus = 'pending' | 'resolved_false' | 'resolved_abuse' | 'resolved_broken'
-export type ModerationAppealType = 'rejected_submission' | 'automatic_ban'
+export type ModerationAppealType = 'rejected_submission' | 'account_ban'
 export type ModerationAppealStatus = 'pending' | 'upheld' | 'overturned'
-export type SuspensionRecommendationStatus = 'pending' | 'confirmed' | 'dismissed'
 
 export interface AuthorSnapshotInput {
   author_id: string
@@ -25,11 +24,12 @@ export interface SubmissionConsentInput {
 
 export interface Issue {
   id: number
-  title: string
+  title: string | null
   description: string | null
   status: IssueStatus
   polis_id: string | null
   created_at: string
+  abuse_flagged: 0 | 1 | 2 | 3
   /** 建立者的 OAuth 顯示名稱；#9 之前的舊資料或系統建立為 null */
   author_name: string | null
   /** 建立者投稿當下的 email 快照；公開查詢只在 show_email = 1 時回傳 */
@@ -65,16 +65,15 @@ export interface Material {
   issue_id: number
   source_name: string | null
   source_url: string | null
-  stance: Stance
-  content: string
+  content: string | null
   verified_count: number
   created_at: string
   /** 投稿者的 OAuth 顯示名稱；#9 之前的舊資料為 null */
   author_name: string | null
   /** 投稿者投稿當下的 email 快照；公開查詢只在 show_email = 1 時回傳 */
   author_email: string | null
-  /** 是否有用戶回報濫用（0 正常，1 待審核，2 已確認違規）；公開欄位，前台用來折疊或完全隱藏 */
-  abuse_flagged: 0 | 1 | 2
+  /** 0 正常、1 使用者回報待審、2 確認濫用、3 AI 違規待複核；公開查詢只回傳必要的顯示狀態 */
+  abuse_flagged: 0 | 1 | 2 | 3
 }
 
 /** 素材 + 完整作者快照（僅供管理端） */
@@ -101,8 +100,8 @@ export interface Briefing {
   created_at: string
   author_name: string | null
   author_email: string | null
-  /** 是否有用戶回報濫用（0 正常，1 待審核，2 已確認違規）；公開欄位 */
-  abuse_flagged: 0 | 1 | 2
+  /** 0 正常、1 使用者回報待審、2 確認濫用、3 AI 違規待複核 */
+  abuse_flagged: 0 | 1 | 2 | 3
 }
 
 /** briefing + 完整作者快照（僅供管理端） */
@@ -118,14 +117,14 @@ export interface BriefingWithAuthor extends Briefing {
 export interface Opinion {
   id: number
   issue_id: number
-  summary: string
+  summary: string | null
   created_at: string
   /** 投稿者的 OAuth 顯示名稱；#9 之前的舊資料為 null */
   author_name: string | null
   /** 投稿者投稿當下的 email 快照；公開查詢只在 show_email = 1 時回傳 */
   author_email: string | null
-  /** 是否有用戶回報濫用（0 正常，1 待審核，2 已確認違規）；公開欄位 */
-  abuse_flagged: 0 | 1 | 2
+  /** 0 正常、1 使用者回報待審、2 確認濫用、3 AI 違規待複核 */
+  abuse_flagged: 0 | 1 | 2 | 3
 }
 
 /** 意見 + 完整作者快照（僅供管理端） */
@@ -142,6 +141,7 @@ export interface AbuseReport {
   reporter_name: string | null
   reporter_email: string
   reason: AbuseReportReason
+  issue_id: number | null
   description: string | null
   material_id: number | null
   briefing_id: number | null
@@ -168,6 +168,7 @@ export interface CreateAbuseReportInput {
   material_id: number | null
   briefing_id: number | null
   opinion_id: number | null
+  issue_id?: number | null
   source?: AbuseReportSource
   policy_code?: ModerationPolicyCode | null
   submission_type?: ModerationSubmissionType | null
@@ -184,6 +185,10 @@ export interface CreateAiModerationReportInput {
   submission_type: ModerationSubmissionType
   content_snapshot: string
   description: string
+  issue_id: number | null
+  material_id: number | null
+  briefing_id: number | null
+  opinion_id: number | null
 }
 
 export interface ModerationAppeal {
@@ -203,6 +208,15 @@ export interface ModerationAppeal {
   reviewed_at: string | null
 }
 
+export interface MyModerationReport {
+  id: number
+  policy_code: ModerationPolicyCode
+  submission_type: ModerationSubmissionType
+  content_snapshot: string
+  description: string | null
+  review_status: 'pending'
+  created_at: string
+}
 export interface CreateModerationAppealInput {
   user_id: string
   user_name: string | null
@@ -211,20 +225,6 @@ export interface CreateModerationAppealInput {
   appeal_type: ModerationAppealType
   content_snapshot: string | null
   message: string
-}
-export interface SuspensionRecommendation {
-  id: number
-  user_id: string
-  user_name: string | null
-  user_email: string
-  violation_count: number
-  window_started_at: string
-  status: SuspensionRecommendationStatus
-  admin_id: string | null
-  admin_name: string | null
-  resolution_note: string | null
-  created_at: string
-  resolved_at: string | null
 }
 
 export interface AdminStats {
@@ -238,15 +238,16 @@ const PUBLIC_AUTHOR_COLUMNS = 'author_name, CASE WHEN show_email = 1 THEN author
 const PRIVATE_AUTHOR_COLUMNS = 'author_id, author_name, author_email, show_email'
 const SUBMISSION_CONSENT_COLUMNS = 'terms_version, terms_accepted_at'
 const ISSUE_BASE_COLUMNS = 'id, title, description, status, polis_id, created_at'
-const ISSUE_PUBLIC_COLUMNS = `${ISSUE_BASE_COLUMNS}, ${PUBLIC_AUTHOR_COLUMNS}`
-const ISSUE_ADMIN_COLUMNS = `${ISSUE_BASE_COLUMNS}, ${PRIVATE_AUTHOR_COLUMNS}, ${SUBMISSION_CONSENT_COLUMNS}`
+const ISSUE_PUBLIC_COLUMNS =
+  `${ISSUE_BASE_COLUMNS.replace('title', 'CASE WHEN abuse_flagged = 3 THEN NULL ELSE title END AS title').replace('description', 'CASE WHEN abuse_flagged = 3 THEN NULL ELSE description END AS description')}, abuse_flagged, ${PUBLIC_AUTHOR_COLUMNS}`
+const ISSUE_ADMIN_COLUMNS = `${ISSUE_BASE_COLUMNS}, ${PRIVATE_AUTHOR_COLUMNS}, ${SUBMISSION_CONSENT_COLUMNS}, abuse_flagged`
 
 const ISSUE_COUNT_SUBQUERIES = `
-  (SELECT COUNT(*) FROM ct_materials WHERE issue_id = ct_issues.id) AS material_count,
-  (SELECT COUNT(*) FROM ct_opinions  WHERE issue_id = ct_issues.id) AS opinion_count`
+  (SELECT COUNT(*) FROM ct_materials WHERE issue_id = ct_issues.id AND abuse_flagged IN (0, 1)) AS material_count,
+  (SELECT COUNT(*) FROM ct_opinions  WHERE issue_id = ct_issues.id AND abuse_flagged IN (0, 1)) AS opinion_count`
 
 export async function listIssues(db: D1Database): Promise<IssueListItem[]> {
-  const { results } = await db.prepare(`SELECT ${ISSUE_PUBLIC_COLUMNS}, ${ISSUE_COUNT_SUBQUERIES} FROM ct_issues ORDER BY created_at DESC`).all<IssueListItem>()
+  const { results } = await db.prepare(`SELECT ${ISSUE_PUBLIC_COLUMNS}, ${ISSUE_COUNT_SUBQUERIES} FROM ct_issues WHERE abuse_flagged IN (0, 1, 3) ORDER BY created_at DESC`).all<IssueListItem>()
   return results ?? []
 }
 
@@ -261,7 +262,7 @@ export async function listIssuesWithAuthor(db: D1Database): Promise<IssueListIte
  * window.__SSR_STATE__。author_name 已在公開欄位（#27），但 author_id 仍不得洩漏。
  */
 export async function getIssue(db: D1Database, id: number): Promise<Issue | null> {
-  return db.prepare(`SELECT ${ISSUE_PUBLIC_COLUMNS} FROM ct_issues WHERE id = ?`).bind(id).first<Issue>()
+  return db.prepare(`SELECT ${ISSUE_PUBLIC_COLUMNS} FROM ct_issues WHERE id = ? AND abuse_flagged IN (0, 1, 3)`).bind(id).first<Issue>()
 }
 
 export async function createIssue(
@@ -271,13 +272,14 @@ export async function createIssue(
     description?: string
     polis_id?: string | null
   } & AuthorSnapshotInput &
-    SubmissionConsentInput
+    SubmissionConsentInput,
+  options: { moderationHidden?: boolean } = {}
 ): Promise<number> {
   const { meta } = await db
     .prepare(
-      'INSERT INTO ct_issues (title, description, polis_id, author_id, author_name, author_email, show_email, terms_version, terms_accepted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)'
+      'INSERT INTO ct_issues (title, description, polis_id, author_id, author_name, author_email, show_email, terms_version, terms_accepted_at, abuse_flagged) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)'
     )
-    .bind(input.title, input.description ?? '', input.polis_id ?? null, input.author_id, input.author_name, input.author_email, input.show_email ? 1 : 0, input.terms_version)
+    .bind(input.title, input.description ?? '', input.polis_id ?? null, input.author_id, input.author_name, input.author_email, input.show_email ? 1 : 0, input.terms_version, options.moderationHidden ? 3 : 0)
     .run()
   return meta.last_row_id
 }
@@ -306,11 +308,11 @@ export async function deleteIssueCascade(db: D1Database, id: number): Promise<vo
 }
 
 const MATERIAL_BASE_COLUMNS = 'id, issue_id, source_name, source_url, stance, content, verified_count, created_at, abuse_flagged'
-const MATERIAL_PUBLIC_COLUMNS = `${MATERIAL_BASE_COLUMNS}, ${PUBLIC_AUTHOR_COLUMNS}`
+const MATERIAL_PUBLIC_COLUMNS = 'id, issue_id, source_name, source_url, stance, CASE WHEN abuse_flagged = 3 THEN NULL ELSE content END AS content, verified_count, created_at, abuse_flagged, ' + PUBLIC_AUTHOR_COLUMNS
 const MATERIAL_ADMIN_COLUMNS = `${MATERIAL_BASE_COLUMNS}, ${PRIVATE_AUTHOR_COLUMNS}, ${SUBMISSION_CONSENT_COLUMNS}`
 
 export async function listMaterials(db: D1Database, issueId: number): Promise<Material[]> {
-  const { results } = await db.prepare(`SELECT ${MATERIAL_PUBLIC_COLUMNS} FROM ct_materials WHERE issue_id = ? AND abuse_flagged < 2 ORDER BY created_at DESC`).bind(issueId).all<Material>()
+  const { results } = await db.prepare(`SELECT ${MATERIAL_PUBLIC_COLUMNS} FROM ct_materials WHERE issue_id = ? AND abuse_flagged IN (0, 1, 3) ORDER BY created_at DESC`).bind(issueId).all<Material>()
   return results ?? []
 }
 
@@ -329,11 +331,12 @@ export async function createMaterial(
     stance?: Stance
     content: string
   } & AuthorSnapshotInput &
-    SubmissionConsentInput
+    SubmissionConsentInput,
+  options: { moderationHidden?: boolean; skipStatusTransition?: boolean } = {}
 ): Promise<number> {
   const { meta } = await db
     .prepare(
-      'INSERT INTO ct_materials (issue_id, source_name, source_url, stance, content, author_id, author_name, author_email, show_email, terms_version, terms_accepted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)'
+      'INSERT INTO ct_materials (issue_id, source_name, source_url, stance, content, author_id, author_name, author_email, show_email, terms_version, terms_accepted_at, abuse_flagged) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)'
     )
     .bind(
       issueId,
@@ -345,10 +348,13 @@ export async function createMaterial(
       input.author_name,
       input.author_email,
       input.show_email ? 1 : 0,
-      input.terms_version
+      input.terms_version,
+      options.moderationHidden ? 3 : 0
     )
     .run()
-  await db.prepare("UPDATE ct_issues SET status = 'summarizing' WHERE id = ? AND status = 'collecting'").bind(issueId).run()
+  if (!options.skipStatusTransition) {
+    await db.prepare("UPDATE ct_issues SET status = 'summarizing' WHERE id = ? AND status = 'collecting'").bind(issueId).run()
+  }
   return meta.last_row_id
 }
 
@@ -361,7 +367,7 @@ const BRIEFING_PUBLIC_COLUMNS = `${BRIEFING_BASE_COLUMNS}, ${PUBLIC_AUTHOR_COLUM
 const BRIEFING_ADMIN_COLUMNS = `${BRIEFING_BASE_COLUMNS}, ${PRIVATE_AUTHOR_COLUMNS}`
 
 export async function getLatestBriefing(db: D1Database, issueId: number): Promise<Briefing | null> {
-  return db.prepare(`SELECT ${BRIEFING_PUBLIC_COLUMNS} FROM ct_briefings WHERE issue_id = ? AND abuse_flagged < 2 ORDER BY version DESC LIMIT 1`).bind(issueId).first<Briefing>()
+  return db.prepare(`SELECT ${BRIEFING_PUBLIC_COLUMNS} FROM ct_briefings WHERE issue_id = ? AND abuse_flagged IN (0, 1) ORDER BY version DESC LIMIT 1`).bind(issueId).first<Briefing>()
 }
 
 export async function getLatestBriefingWithAuthor(db: D1Database, issueId: number): Promise<BriefingWithAuthor | null> {
@@ -378,13 +384,14 @@ export async function createBriefing(
     positions?: string
     narrative?: string
     opinion_prompt?: string
-  }
+  },
+  options: { moderationHidden?: boolean; skipStatusTransition?: boolean } = {}
 ): Promise<number> {
   const existing = await db.prepare('SELECT MAX(version) as maxv FROM ct_briefings WHERE issue_id = ?').bind(issueId).first<{ maxv: number | null }>()
   const nextVersion = (existing?.maxv ?? 0) + 1
   await db
     .prepare(
-      'INSERT INTO ct_briefings (issue_id, consensus, disputes, positions, narrative, opinion_prompt, version, author_id, author_name, author_email, show_email) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      'INSERT INTO ct_briefings (issue_id, consensus, disputes, positions, narrative, opinion_prompt, version, author_id, author_name, author_email, show_email, abuse_flagged) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     )
     .bind(
       issueId,
@@ -397,11 +404,19 @@ export async function createBriefing(
       author.author_id,
       author.author_name,
       author.author_email,
-      author.show_email ? 1 : 0
+      author.show_email ? 1 : 0,
+      options.moderationHidden ? 3 : 0
     )
     .run()
-  await db.prepare("UPDATE ct_issues SET status = 'published' WHERE id = ? AND status IN ('collecting', 'summarizing')").bind(issueId).run()
+  if (!options.skipStatusTransition) {
+    await db.prepare("UPDATE ct_issues SET status = 'published' WHERE id = ? AND status IN ('collecting', 'summarizing')").bind(issueId).run()
+  }
   return nextVersion
+}
+
+export async function getBriefingIdByVersion(db: D1Database, issueId: number, version: number): Promise<number | null> {
+  const row = await db.prepare('SELECT id FROM ct_briefings WHERE issue_id = ? AND version = ?').bind(issueId, version).first<{ id: number }>()
+  return row?.id ?? null
 }
 
 export async function updateLatestBriefing(
@@ -424,11 +439,11 @@ export async function updateLatestBriefing(
 }
 
 const OPINION_BASE_COLUMNS = 'id, issue_id, summary, created_at, abuse_flagged'
-const OPINION_PUBLIC_COLUMNS = `${OPINION_BASE_COLUMNS}, ${PUBLIC_AUTHOR_COLUMNS}`
+const OPINION_PUBLIC_COLUMNS = 'id, issue_id, CASE WHEN abuse_flagged = 3 THEN NULL ELSE summary END AS summary, created_at, abuse_flagged, ' + PUBLIC_AUTHOR_COLUMNS
 const OPINION_ADMIN_COLUMNS = `${OPINION_BASE_COLUMNS}, ${PRIVATE_AUTHOR_COLUMNS}, ${SUBMISSION_CONSENT_COLUMNS}`
 
 export async function listOpinions(db: D1Database, issueId: number): Promise<Opinion[]> {
-  const { results } = await db.prepare(`SELECT ${OPINION_PUBLIC_COLUMNS} FROM ct_opinions WHERE issue_id = ? AND abuse_flagged < 2 ORDER BY created_at DESC`).bind(issueId).all<Opinion>()
+  const { results } = await db.prepare(`SELECT ${OPINION_PUBLIC_COLUMNS} FROM ct_opinions WHERE issue_id = ? AND abuse_flagged IN (0, 1, 3) ORDER BY created_at DESC`).bind(issueId).all<Opinion>()
   return results ?? []
 }
 
@@ -444,11 +459,12 @@ export async function createOpinion(
   input: {
     summary: string
   } & AuthorSnapshotInput &
-    SubmissionConsentInput
+    SubmissionConsentInput,
+  options: { moderationHidden?: boolean } = {}
 ): Promise<number> {
   const { meta } = await db
-    .prepare('INSERT INTO ct_opinions (issue_id, summary, author_id, author_name, author_email, show_email, terms_version, terms_accepted_at) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)')
-    .bind(issueId, input.summary, input.author_id, input.author_name, input.author_email, input.show_email ? 1 : 0, input.terms_version)
+    .prepare('INSERT INTO ct_opinions (issue_id, summary, author_id, author_name, author_email, show_email, terms_version, terms_accepted_at, abuse_flagged) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)')
+    .bind(issueId, input.summary, input.author_id, input.author_name, input.author_email, input.show_email ? 1 : 0, input.terms_version, options.moderationHidden ? 3 : 0)
     .run()
   return meta.last_row_id
 }
@@ -468,6 +484,8 @@ export async function getIssueDetail(
 } | null> {
   const issue = await getIssue(db, id)
   if (!issue) return null
+  const moderation = await db.prepare('SELECT abuse_flagged FROM ct_issues WHERE id = ?').bind(id).first<{ abuse_flagged: number }>()
+  if ((moderation?.abuse_flagged ?? 0) >= 2) return { issue, materials: [], briefing: null, opinions: [] }
   const [materials, briefing, opinions] = await Promise.all([listMaterials(db, id), getLatestBriefing(db, id), listOpinions(db, id)])
   return { issue, materials, briefing, opinions }
 }
@@ -487,22 +505,25 @@ export async function getAdminStats(db: D1Database): Promise<AdminStats> {
   }
 }
 
-export async function listMaterialsForPrompt(db: D1Database, issueId: number): Promise<Pick<Material, 'source_name' | 'source_url' | 'stance' | 'content'>[]> {
+export async function listMaterialsForPrompt(
+  db: D1Database,
+  issueId: number
+): Promise<{ source_name: string | null; source_url: string | null; stance: Stance | null; content: string | null }[]> {
   const { results } = await db
-    .prepare('SELECT source_name, source_url, stance, content FROM ct_materials WHERE issue_id = ? AND abuse_flagged < 2 ORDER BY created_at')
+    .prepare('SELECT source_name, source_url, stance, content FROM ct_materials WHERE issue_id = ? AND abuse_flagged IN (0, 1) ORDER BY created_at')
     .bind(issueId)
-    .all<Pick<Material, 'source_name' | 'source_url' | 'stance' | 'content'>>()
+    .all<{ source_name: string | null; source_url: string | null; stance: Stance | null; content: string | null }>()
   return results ?? []
 }
 
 export async function listOpinionSummaries(db: D1Database, issueId: number, limit = 50): Promise<Pick<Opinion, 'summary'>[]> {
-  const { results } = await db.prepare('SELECT summary FROM ct_opinions WHERE issue_id = ? AND abuse_flagged < 2 ORDER BY created_at DESC LIMIT ?').bind(issueId, limit).all<Pick<Opinion, 'summary'>>()
+  const { results } = await db.prepare('SELECT summary FROM ct_opinions WHERE issue_id = ? AND abuse_flagged IN (0, 1) ORDER BY created_at DESC LIMIT ?').bind(issueId, limit).all<Pick<Opinion, 'summary'>>()
   return results ?? []
 }
 
 /** 素材詳情頁用：取單筆素材（公開欄位）及其所屬議題，用於 /issues/:id/source/:materialId */
 export async function getMaterialWithIssue(db: D1Database, materialId: number): Promise<{ material: Material; issue: Issue } | null> {
-  const material = await db.prepare(`SELECT ${MATERIAL_PUBLIC_COLUMNS} FROM ct_materials WHERE id = ?`).bind(materialId).first<Material>()
+  const material = await db.prepare(`SELECT ${MATERIAL_PUBLIC_COLUMNS} FROM ct_materials WHERE id = ? AND abuse_flagged IN (0, 1, 3)`).bind(materialId).first<Material>()
   if (!material) return null
   const issue = await getIssue(db, material.issue_id)
   if (!issue) return null
@@ -511,7 +532,7 @@ export async function getMaterialWithIssue(db: D1Database, materialId: number): 
 
 /** 意見詳情頁用：取單筆意見（公開欄位）及其所屬議題，用於 /issues/:id/comment/:opinionId */
 export async function getOpinionWithIssue(db: D1Database, opinionId: number): Promise<{ opinion: Opinion; issue: Issue } | null> {
-  const opinion = await db.prepare(`SELECT ${OPINION_PUBLIC_COLUMNS} FROM ct_opinions WHERE id = ?`).bind(opinionId).first<Opinion>()
+  const opinion = await db.prepare(`SELECT ${OPINION_PUBLIC_COLUMNS} FROM ct_opinions WHERE id = ? AND abuse_flagged IN (0, 1, 3)`).bind(opinionId).first<Opinion>()
   if (!opinion) return null
   const issue = await getIssue(db, opinion.issue_id)
   if (!issue) return null
@@ -537,10 +558,11 @@ export async function listForRss(db: D1Database, limit = 20): Promise<RssFeedIte
       .prepare(
         `SELECT 'issue' AS type, id, title, description, NULL AS issue_id, created_at
          FROM ct_issues
+         WHERE abuse_flagged IN (0, 1)
          UNION ALL
          SELECT 'material' AS type, id, source_name AS title, content AS description, issue_id, created_at
          FROM ct_materials
-         WHERE abuse_flagged < 2
+         WHERE abuse_flagged IN (0, 1)
          ORDER BY created_at DESC
          LIMIT ?`
       )
@@ -557,7 +579,7 @@ export async function listForRss(db: D1Database, limit = 20): Promise<RssFeedIte
 export async function createAbuseReport(db: D1Database, input: CreateAbuseReportInput): Promise<number> {
   const { meta } = await db
     .prepare(
-      'INSERT INTO ct_abuse_reports (reporter_id, reporter_name, reporter_email, reason, description, material_id, briefing_id, opinion_id, source, policy_code, submission_type, content_snapshot, target_user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      'INSERT INTO ct_abuse_reports (reporter_id, reporter_name, reporter_email, reason, description, issue_id, material_id, briefing_id, opinion_id, source, policy_code, submission_type, content_snapshot, target_user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     )
     .bind(
       input.reporter_id,
@@ -565,6 +587,7 @@ export async function createAbuseReport(db: D1Database, input: CreateAbuseReport
       input.reporter_email,
       input.reason,
       input.description ?? null,
+      input.issue_id ?? null,
       input.material_id ?? null,
       input.briefing_id ?? null,
       input.opinion_id ?? null,
@@ -575,18 +598,21 @@ export async function createAbuseReport(db: D1Database, input: CreateAbuseReport
       input.target_user_id ?? null
     )
     .run()
-  // 第 1 次回報即打標——後續回報是冪等的 UPDATE（已是 1 就 no-op）
-  if (input.material_id != null) {
-    await db.prepare('UPDATE ct_materials SET abuse_flagged = 1 WHERE id = ?').bind(input.material_id).run()
-  } else if (input.briefing_id != null) {
-    await db.prepare('UPDATE ct_briefings SET abuse_flagged = 1 WHERE id = ?').bind(input.briefing_id).run()
-  } else if (input.opinion_id != null) {
-    await db.prepare('UPDATE ct_opinions SET abuse_flagged = 1 WHERE id = ?').bind(input.opinion_id).run()
+  // 第 1 次使用者回報即打標；AI 投稿在 INSERT 時已帶 abuse_flagged = 3。
+  if ((input.source ?? 'user') === 'user') {
+    if (input.issue_id != null) {
+      await db.prepare('UPDATE ct_issues SET abuse_flagged = 1 WHERE id = ?').bind(input.issue_id).run()
+    } else if (input.material_id != null) {
+      await db.prepare('UPDATE ct_materials SET abuse_flagged = 1 WHERE id = ?').bind(input.material_id).run()
+    } else if (input.briefing_id != null) {
+      await db.prepare('UPDATE ct_briefings SET abuse_flagged = 1 WHERE id = ?').bind(input.briefing_id).run()
+    } else if (input.opinion_id != null) {
+      await db.prepare('UPDATE ct_opinions SET abuse_flagged = 1 WHERE id = ?').bind(input.opinion_id).run()
+    }
   }
   return meta.last_row_id
 }
-
-/** 建立 AI 審查判定違規的私有回報快照；內容不會寫入公開投稿表。 */
+/** 建立 AI 審查判定違規的回報，直接指向已寫入且暫時隱藏的投稿列。 */
 export async function createAiModerationReport(db: D1Database, input: CreateAiModerationReportInput): Promise<number> {
   return createAbuseReport(db, {
     reporter_id: input.user_id,
@@ -594,9 +620,10 @@ export async function createAiModerationReport(db: D1Database, input: CreateAiMo
     reporter_email: input.user_email,
     reason: input.reason,
     description: input.description,
-    material_id: null,
-    briefing_id: null,
-    opinion_id: null,
+    issue_id: input.issue_id,
+    material_id: input.material_id,
+    briefing_id: input.briefing_id,
+    opinion_id: input.opinion_id,
     source: 'ai',
     policy_code: input.policy_code,
     submission_type: input.submission_type,
@@ -604,6 +631,7 @@ export async function createAiModerationReport(db: D1Database, input: CreateAiMo
     target_user_id: input.user_id,
   })
 }
+
 
 /** 查詢目標內容是否已有 pending 中的回報（防重複送出）。*/
 export async function findPendingReportForTarget(db: D1Database, target: { material_id: number | null; briefing_id: number | null; opinion_id: number | null }): Promise<boolean> {
@@ -626,10 +654,10 @@ export async function listAbuseReports(db: D1Database): Promise<AbuseReport[]> {
     .prepare(
       `SELECT r.id, r.reporter_id, r.reporter_name, r.reporter_email,
               r.reason, r.description,
-              r.material_id, r.briefing_id, r.opinion_id,
+              r.issue_id, r.material_id, r.briefing_id, r.opinion_id,
               r.review_status, r.created_at, r.source, r.policy_code,
               r.submission_type, r.content_snapshot, r.target_user_id,
-              COALESCE(m.issue_id, b.issue_id, o.issue_id)   AS target_issue_id,
+              COALESCE(r.issue_id, m.issue_id, b.issue_id, o.issue_id) AS target_issue_id,
               COALESCE(r.target_user_id, m.author_id, b.author_id, o.author_id) AS target_author_id
        FROM ct_abuse_reports r
        LEFT JOIN ct_materials m ON r.material_id = m.id
@@ -647,10 +675,10 @@ export async function getAbuseReport(db: D1Database, id: number): Promise<AbuseR
     .prepare(
       `SELECT r.id, r.reporter_id, r.reporter_name, r.reporter_email,
               r.reason, r.description,
-              r.material_id, r.briefing_id, r.opinion_id,
+              r.issue_id, r.material_id, r.briefing_id, r.opinion_id,
               r.review_status, r.created_at, r.source, r.policy_code,
               r.submission_type, r.content_snapshot, r.target_user_id,
-              COALESCE(m.issue_id, b.issue_id, o.issue_id)   AS target_issue_id,
+              COALESCE(r.issue_id, m.issue_id, b.issue_id, o.issue_id) AS target_issue_id,
               COALESCE(r.target_user_id, m.author_id, b.author_id, o.author_id) AS target_author_id
        FROM ct_abuse_reports r
        LEFT JOIN ct_materials m ON r.material_id = m.id
@@ -661,26 +689,24 @@ export async function getAbuseReport(db: D1Database, id: number): Promise<AbuseR
     .bind(id)
     .first<AbuseReport>()
 }
-/** 計算帳號在指定時間窗內被 AI 判定違規的投稿數；邊界時間包含在內。 */
-export async function countRecentAiViolations(db: D1Database, userId: string, now?: string): Promise<number> {
-  const row = now
-    ? await db
-        .prepare(
-          "SELECT COUNT(*) AS cnt FROM ct_abuse_reports WHERE source = 'ai' AND target_user_id = ? AND created_at >= datetime(?, '-1 hour') AND created_at <= datetime(?)"
-        )
-        .bind(userId, now, now)
-        .first<{ cnt: number }>()
-    : await db
-        .prepare("SELECT COUNT(*) AS cnt FROM ct_abuse_reports WHERE source = 'ai' AND target_user_id = ? AND created_at >= datetime('now', '-1 hour') AND created_at <= CURRENT_TIMESTAMP")
-        .bind(userId)
-        .first<{ cnt: number }>()
-  return row?.cnt ?? 0
-}
 
 /** 取指定使用者自己的 AI 回報，避免把別人的申訴目標暴露給前端。 */
 export async function getAiAbuseReportForUser(db: D1Database, reportId: number, userId: string): Promise<AbuseReport | null> {
   const report = await getAbuseReport(db, reportId)
   return report?.source === 'ai' && report.target_user_id === userId ? report : null
+}
+/** 只列出登入者自己的待複核 AI 回報；不回傳 reporter 或 target_user 欄位。 */
+export async function listPendingAiModerationReportsForUser(db: D1Database, userId: string): Promise<MyModerationReport[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT id, policy_code, submission_type, content_snapshot, description, review_status, created_at
+       FROM ct_abuse_reports
+       WHERE source = 'ai' AND target_user_id = ? AND review_status = 'pending'
+       ORDER BY created_at DESC`
+    )
+    .bind(userId)
+    .all<MyModerationReport>()
+  return results ?? []
 }
 
 /** 建立一筆自動審查申訴；呼叫端必須先驗證 report 所屬使用者。 */
@@ -750,116 +776,17 @@ export async function resolveModerationAppeal(
     .bind(status, admin.id, admin.name, reviewNote, id)
     .run()
 }
-/** 查詢帳號是否有待管理員確認的停權建議；投稿守門會使用這個結果凍結新投稿。 */
-export async function hasPendingSuspensionRecommendation(db: D1Database, userId: string): Promise<boolean> {
-  const row = await db
-    .prepare("SELECT 1 AS found FROM ct_moderation_suspension_recommendations WHERE user_id = ? AND status = 'pending' LIMIT 1")
-    .bind(userId)
-    .first<{ found: number }>()
-  return row?.found === 1
-}
 
-/** 取帳號待處理的唯一停權建議。 */
-export async function getPendingSuspensionRecommendation(db: D1Database, userId: string): Promise<SuspensionRecommendation | null> {
-  return db
-    .prepare(
-      "SELECT id, user_id, user_name, user_email, violation_count, window_started_at, status, admin_id, admin_name, resolution_note, created_at, resolved_at FROM ct_moderation_suspension_recommendations WHERE user_id = ? AND status = 'pending' LIMIT 1"
-    )
-    .bind(userId)
-    .first<SuspensionRecommendation>()
-}
-
-/** 建立或更新帳號的待停權建議，避免同一帳號重複產生多筆 pending 工作。 */
-export async function createSuspensionRecommendation(
-  db: D1Database,
-  input: { user_id: string; user_name: string | null; user_email: string; violation_count: number; window_started_at: string }
-): Promise<number> {
-  const existing = await getPendingSuspensionRecommendation(db, input.user_id)
-  if (existing) {
-    await db
-      .prepare('UPDATE ct_moderation_suspension_recommendations SET violation_count = MAX(violation_count, ?) WHERE id = ?')
-      .bind(input.violation_count, existing.id)
-      .run()
-    return existing.id
-  }
-  try {
-    const { meta } = await db
-      .prepare(
-        'INSERT INTO ct_moderation_suspension_recommendations (user_id, user_name, user_email, violation_count, window_started_at) VALUES (?, ?, ?, ?, ?)'
-      )
-      .bind(input.user_id, input.user_name, input.user_email, input.violation_count, input.window_started_at)
-      .run()
-    return meta.last_row_id
-  } catch (error) {
-    const message =
-      error instanceof Error
-        ? error.message
-        : typeof error === 'object' && error !== null && 'message' in error && typeof error.message === 'string'
-          ? error.message
-          : ''
-    if (!/unique constraint|constraint failed/i.test(message)) throw error
-    const concurrent = await getPendingSuspensionRecommendation(db, input.user_id)
-    if (!concurrent) throw error
-    await db
-      .prepare('UPDATE ct_moderation_suspension_recommendations SET violation_count = MAX(violation_count, ?) WHERE id = ?')
-      .bind(input.violation_count, concurrent.id)
-      .run()
-    return concurrent.id
-  }
-}
-
-/** 管理端列出待停權建議（高優先工作項目）。 */
-export async function listSuspensionRecommendations(db: D1Database): Promise<SuspensionRecommendation[]> {
-  const { results } = await db
-    .prepare(
-      `SELECT id, user_id, user_name, user_email, violation_count, window_started_at,
-              status, admin_id, admin_name, resolution_note, created_at, resolved_at
-       FROM ct_moderation_suspension_recommendations
-       ORDER BY CASE WHEN status = 'pending' THEN 0 ELSE 1 END, created_at DESC`
-    )
-    .all<SuspensionRecommendation>()
-  return results ?? []
-}
-
-/** 管理端取單筆停權建議。 */
-export async function getSuspensionRecommendation(db: D1Database, id: number): Promise<SuspensionRecommendation | null> {
-  return db
-    .prepare(
-      `SELECT id, user_id, user_name, user_email, violation_count, window_started_at,
-              status, admin_id, admin_name, resolution_note, created_at, resolved_at
-       FROM ct_moderation_suspension_recommendations
-       WHERE id = ?`
-    )
-    .bind(id)
-    .first<SuspensionRecommendation>()
-}
-
-/** 管理端完成停權建議處理；Better Auth ban/unban 必須先由呼叫端完成。 */
-export async function resolveSuspensionRecommendation(
-  db: D1Database,
-  id: number,
-  status: Exclude<SuspensionRecommendationStatus, 'pending'>,
-  admin: { id: string; name: string | null },
-  resolutionNote: string | null
-): Promise<void> {
-  await db
-    .prepare(
-      'UPDATE ct_moderation_suspension_recommendations SET status = ?, admin_id = ?, admin_name = ?, resolution_note = ?, resolved_at = CURRENT_TIMESTAMP WHERE id = ?'
-    )
-    .bind(status, admin.id, admin.name, resolutionNote, id)
-    .run()
-}
-
-
-
-/** 更新回報審核狀態。 */
-export async function resolveAbuseReport(db: D1Database, id: number, status: 'resolved_false' | 'resolved_abuse' | 'resolved_broken'): Promise<void> {
+/** 更新濫用回報審核狀態。 */
+export async function resolveAbuseReport(db: D1Database, id: number, status: Exclude<AbuseReviewStatus, 'pending'>): Promise<void> {
   await db.prepare('UPDATE ct_abuse_reports SET review_status = ? WHERE id = ?').bind(status, id).run()
 }
 
 /** 誤報時將目標內容的 abuse_flagged 清回 0。 */
-export async function unflagContent(db: D1Database, report: Pick<AbuseReport, 'material_id' | 'briefing_id' | 'opinion_id'>): Promise<void> {
-  if (report.material_id != null) {
+export async function unflagContent(db: D1Database, report: Pick<AbuseReport, 'issue_id' | 'material_id' | 'briefing_id' | 'opinion_id'>): Promise<void> {
+  if (report.issue_id != null) {
+    await db.prepare('UPDATE ct_issues SET abuse_flagged = 0 WHERE id = ?').bind(report.issue_id).run()
+  } else if (report.material_id != null) {
     await db.prepare('UPDATE ct_materials SET abuse_flagged = 0 WHERE id = ?').bind(report.material_id).run()
   } else if (report.briefing_id != null) {
     await db.prepare('UPDATE ct_briefings SET abuse_flagged = 0 WHERE id = ?').bind(report.briefing_id).run()
@@ -869,8 +796,10 @@ export async function unflagContent(db: D1Database, report: Pick<AbuseReport, 'm
 }
 
 /** 確認濫用時將目標內容的 abuse_flagged 設為 2（完全隱藏，不可展開）。 */
-export async function confirmFlagContent(db: D1Database, report: Pick<AbuseReport, 'material_id' | 'briefing_id' | 'opinion_id'>): Promise<void> {
-  if (report.material_id != null) {
+export async function confirmFlagContent(db: D1Database, report: Pick<AbuseReport, 'issue_id' | 'material_id' | 'briefing_id' | 'opinion_id'>): Promise<void> {
+  if (report.issue_id != null) {
+    await db.prepare('UPDATE ct_issues SET abuse_flagged = 2 WHERE id = ?').bind(report.issue_id).run()
+  } else if (report.material_id != null) {
     await db.prepare('UPDATE ct_materials SET abuse_flagged = 2 WHERE id = ?').bind(report.material_id).run()
   } else if (report.briefing_id != null) {
     await db.prepare('UPDATE ct_briefings SET abuse_flagged = 2 WHERE id = ?').bind(report.briefing_id).run()
