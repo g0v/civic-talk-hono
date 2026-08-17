@@ -74,9 +74,10 @@ function logModerationFailure(kind: string, details?: Record<string, unknown>): 
   console.error('ai_moderation_fail_open', { kind, ...details })
 }
 
-async function loadCommunityGuidelines(assets: ModerationAssets, onFailure: (failure: Failure) => void): Promise<string | null> {
+async function loadCommunityGuidelines(assets: ModerationAssets, requestUrl: string, onFailure: (failure: Failure) => void): Promise<string | null> {
   try {
-    const response = await assets.fetch('https://assets.internal/rules/community-guidelines.md')
+    const guidelinesUrl = new URL('/rules/community-guidelines.md', requestUrl)
+    const response = await assets.fetch(guidelinesUrl)
     if (!response.ok) {
       onFailure({ kind: 'guidelines_fetch_http', details: { status: response.status } })
       return null
@@ -149,6 +150,7 @@ function extractUsage(value: unknown): ModerationUsage | null {
 async function evaluateModerationSubmission(
   apiKey: string | undefined,
   assets: ModerationAssets | undefined,
+  requestUrl: string,
   submission: ModerationSubmission,
   emitFailureLogs: boolean
 ): Promise<ModerationEvaluation> {
@@ -170,7 +172,7 @@ async function evaluateModerationSubmission(
   if (!assets) return failOpen({ kind: 'missing_assets_binding' })
 
   let guidelineFailure: Failure | null = null
-  const guidelines = await loadCommunityGuidelines(assets, failure => {
+  const guidelines = await loadCommunityGuidelines(assets, requestUrl, failure => {
     guidelineFailure = failure
   })
   if (!guidelines) return failOpen(guidelineFailure ?? { kind: 'guidelines_fetch_error' })
@@ -265,9 +267,10 @@ async function evaluateModerationSubmission(
 export async function moderateSubmission(
   apiKey: string | undefined,
   assets: ModerationAssets | undefined,
+  requestUrl: string,
   submission: ModerationSubmission
 ): Promise<ModerationDecision> {
-  const evaluation = await evaluateModerationSubmission(apiKey, assets, submission, true)
+  const evaluation = await evaluateModerationSubmission(apiKey, assets, requestUrl, submission, true)
   return evaluation.decision
 }
 
@@ -275,9 +278,10 @@ export async function moderateSubmission(
 export async function moderateSubmissionWithDiagnostics(
   apiKey: string | undefined,
   assets: ModerationAssets | undefined,
+  requestUrl: string,
   submission: ModerationSubmission
 ): Promise<ModerationEvaluation> {
-  return evaluateModerationSubmission(apiKey, assets, submission, false)
+  return evaluateModerationSubmission(apiKey, assets, requestUrl, submission, false)
 }
 
 export function moderationReasonForPolicy(policyCode: ModerationPolicyCode): 'spam' | 'hate_speech' | 'defamation' | 'misinformation' | 'other' {

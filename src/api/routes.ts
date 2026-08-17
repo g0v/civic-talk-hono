@@ -164,8 +164,8 @@ type SubmissionModeration = {
   hidden: boolean
 }
 
-async function moderateSubmissionForWrite(env: AppBindings, submission: ModerationSubmission): Promise<SubmissionModeration> {
-  const decision = await moderateSubmission(env.OPEN_ROUTER_API_KEY, env.ASSETS, submission)
+async function moderateSubmissionForWrite(request: Request, env: AppBindings, submission: ModerationSubmission): Promise<SubmissionModeration> {
+  const decision = await moderateSubmission(env.OPEN_ROUTER_API_KEY, env.ASSETS, request.url, submission)
   return { decision, hidden: decision.outcome === 'violation' }
 }
 
@@ -254,7 +254,7 @@ export function registerApiRoutes(app: App): void {
     if (!body.title?.trim()) return error('title is required')
     const invalidOptions = validateSubmissionOptions(body)
     if (invalidOptions) return invalidOptions
-    const moderation = await moderateSubmissionForWrite(c.env, {
+    const moderation = await moderateSubmissionForWrite(c.req.raw, c.env, {
       type: 'issue',
       fields: {
         title: body.title.trim(),
@@ -392,7 +392,7 @@ export function registerApiRoutes(app: App): void {
         content: body.content.trim(),
       },
     }
-    const moderation = await moderateSubmissionForWrite(c.env, submission)
+    const moderation = await moderateSubmissionForWrite(c.req.raw, c.env, submission)
     const materialId = await db.createMaterial(c.env.DB, id, {
       content: body.content.trim(),
       source_name: body.source_name ?? '',
@@ -454,7 +454,7 @@ export function registerApiRoutes(app: App): void {
         opinion_prompt: body.opinion_prompt ?? '',
       },
     }
-    const moderation = await moderateSubmissionForWrite(c.env, submission)
+    const moderation = await moderateSubmissionForWrite(c.req.raw, c.env, submission)
     // 說明頁公開顯示投稿當下名稱；email 僅在 show_email = true 時公開。
     const version = await db.createBriefing(
       c.env.DB,
@@ -527,7 +527,7 @@ export function registerApiRoutes(app: App): void {
       type: 'opinion',
       fields: { summary: body.summary.trim() },
     }
-    const moderation = await moderateSubmissionForWrite(c.env, submission)
+    const moderation = await moderateSubmissionForWrite(c.req.raw, c.env, submission)
     const opinionId = await db.createOpinion(c.env.DB, id, {
       summary: body.summary.trim(),
       ...buildAuthorSnapshot(auth.context.user, body.show_email === true),
@@ -696,7 +696,7 @@ export function registerApiRoutes(app: App): void {
     const rawType = c.req.query('type') ?? 'opinion'
     if (!isModerationSubmissionType(rawType)) return error('type must be "issue", "material", "opinion", or "briefing"')
 
-    const evaluation = await moderateSubmissionWithDiagnostics(c.env.OPEN_ROUTER_API_KEY, c.env.ASSETS, {
+    const evaluation = await moderateSubmissionWithDiagnostics(c.env.OPEN_ROUTER_API_KEY, c.env.ASSETS, c.req.url, {
       type: rawType,
       fields: { [PREVIEW_FIELDS[rawType]]: text },
     })
