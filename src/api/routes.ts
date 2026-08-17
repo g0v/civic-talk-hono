@@ -230,6 +230,21 @@ export function registerApiRoutes(app: App): void {
     if ('denied' in auth) return auth.denied
     return json(await db.listPendingAiModerationReportsForUser(c.env.DB, auth.context.user.id))
   })
+  // GET /api/me/appealable-moderation-items — 新的集中式「濫用與申訴」頁面資料。
+  // 與投稿守衛不同，停權者必須能讀到帳號停權項目並提出申訴。
+  app.get('/api/me/appealable-moderation-items', async c => {
+    const auth = await requireAppealUser(c.req.raw, c.env)
+    if ('denied' in auth) return auth.denied
+    const userId = auth.context.user.id
+    const [reports, accountBanAppealPending] = await Promise.all([
+      db.listAppealableAiModerationReportsForUser(c.env.DB, userId),
+      auth.context.banned ? db.findPendingModerationAppeal(c.env.DB, userId, null, 'account_ban') : Promise.resolve(false),
+    ])
+    return json({
+      account_ban: auth.context.banned && !accountBanAppealPending,
+      reports,
+    })
+  })
 
   // 一般讀取只拿公開作者投影；管理員另拿完整快照與條款同意記錄。
   app.get('/api/issues', async c => {

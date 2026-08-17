@@ -47,4 +47,43 @@ describe('moderation API authorization', () => {
     expect(response.status).toBe(403)
     expect(await response.json()).toEqual({ error: 'Forbidden' })
   })
+
+  it('lets a banned user list their appealable reports and account action', async () => {
+    authContext.current = {
+      user: { id: 'user-1', name: 'User', email: 'user@example.com', image: null },
+      role: 'user',
+      banned: true,
+      nameChangeCooldownDays: null,
+    }
+    const report = {
+      id: 7,
+      policy_code: 'spam',
+      submission_type: 'opinion',
+      content_snapshot: '{"summary":"test"}',
+      description: 'test rationale',
+      review_status: 'pending',
+      created_at: '2026-08-17 00:00:00',
+    }
+    const fakeDb = {
+      prepare(sql: string) {
+        return {
+          bind() {
+            return this
+          },
+          async all() {
+            return { results: sql.includes('FROM ct_abuse_reports r') ? [report] : [] }
+          },
+          async first() {
+            return { cnt: 0 }
+          },
+        }
+      },
+    }
+
+    const testEnv = Object.assign({}, env, { DB: fakeDb as unknown as D1Database }) as never
+    const response = await testApp().request('/api/me/appealable-moderation-items', undefined, testEnv)
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ account_ban: true, reports: [report] })
+  })
 })

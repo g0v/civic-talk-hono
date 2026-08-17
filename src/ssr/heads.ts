@@ -89,6 +89,16 @@ export function headForProfile(origin: string): HeadConfig {
   }
 }
 
+export function headForAppeals(origin: string): HeadConfig {
+  const title = `濫用與申訴 — ${SITE_NAME}`
+  const description = '查看自己的自動審查項目與帳號處置，並提出申訴。'
+  return {
+    title,
+    description,
+    meta: [...buildOg(title, description, DEFAULT_OG_IMAGE(origin), `${origin}/appeals`), { name: 'robots', content: 'noindex,nofollow' }],
+  }
+}
+
 export function headForMaterial(sourceName: string | null, issueTitle: string, issueId: number, materialId: number, origin: string): HeadConfig {
   const label = sourceName || '素材'
   const pageTitle = `${label}｜${issueTitle} — ${SITE_NAME}`

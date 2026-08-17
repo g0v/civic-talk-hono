@@ -31,6 +31,7 @@ const message = ref('')
 const submitting = ref(false)
 const submitted = ref(false)
 const errorMessage = ref('')
+const messageId = computed(() => `moderation-appeal-message-${props.appealType}-${props.reportId ?? 'account'}`)
 const policyLabel = computed(() => {
   const code = props.policyCode
   if (!code) return ''
@@ -85,8 +86,8 @@ async function submitAppeal() {
     <p v-if="rationale" class="mb-3 whitespace-pre-wrap text-sm"><strong>{{ t('moderation_rationale_label') }}</strong>{{ rationale }}</p>
     <div v-if="submitted" class="font-semibold text-teal">{{ t('moderation_appeal_submitted') }}</div>
     <template v-else>
-      <label class="block text-sm font-semibold" for="moderation-appeal-message">{{ t('moderation_appeal_message_label') }}</label>
-      <textarea id="moderation-appeal-message" v-model="message" class="mt-1 w-full" rows="4" :placeholder="t('moderation_appeal_message_placeholder')" />
+      <label class="block text-sm font-semibold" :for="messageId">{{ t('moderation_appeal_message_label') }}</label>
+      <textarea :id="messageId" v-model="message" class="mt-1 w-full" rows="4" :placeholder="t('moderation_appeal_message_placeholder')" />
       <p v-if="errorMessage" class="mt-2 text-sm text-red">{{ errorMessage }}</p>
       <button type="button" class="btn btn-secondary mt-3" :disabled="submitting" @click="submitAppeal">
         {{ t('moderation_appeal_submit') }}

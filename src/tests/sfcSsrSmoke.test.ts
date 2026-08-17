@@ -5,6 +5,7 @@ import AppFooter from '../components/AppFooter.vue'
 import AppHeader from '../components/AppHeader.vue'
 import IssueCard from '../components/IssueCard.vue'
 import ModerationAppealForm from '../components/ModerationAppealForm.vue'
+import ModerationAppealNotice from '../components/ModerationAppealNotice.vue'
 import SignInButtons from '../components/SignInButtons.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import Toast from '../components/Toast.vue'
@@ -19,6 +20,7 @@ import OpinionDetailView from '../views/OpinionDetail.vue'
 import PrivacyView from '../views/Privacy.vue'
 import ProfileView from '../views/Profile.vue'
 import TermsView from '../views/Terms.vue'
+import AppealsView from '../views/Appeals.vue'
 
 const issue = {
   id: 1,
@@ -67,6 +69,7 @@ describe('routable view SSR smoke tests', () => {
     { name: 'home', component: HomeView, props: { initialIssues: [{ ...issue, material_count: 1, opinion_count: 1 }] } },
     { name: 'about', component: AboutView },
     { name: 'admin', component: AdminView },
+    { name: 'appeals', component: AppealsView },
     { name: 'contribute', component: ContributeView, props: { issueId: 1, issueTitle: issue.title } },
     { name: 'material detail', component: MaterialDetailView, props: { issueId: 1, materialId: 1, initialData: { issue, material } } },
     { name: 'not found', component: NotFoundView },
@@ -90,6 +93,7 @@ describe('shared component SSR smoke tests', () => {
     { name: 'app header', component: AppHeader },
     { name: 'issue card', component: IssueCard, props: { issue: { ...issue, material_count: 1, opinion_count: 1 } } },
     { name: 'moderation appeal form', component: ModerationAppealForm, props: { appealType: 'rejected_submission', reportId: 1, policyCode: 'spam', rationale: '測試' } },
+    { name: 'moderation appeal notice', component: ModerationAppealNotice, props: { appealType: 'rejected_submission', reportId: 1, policyCode: 'spam', rationale: '測試' } },
     { name: 'sign-in buttons', component: SignInButtons, props: { callbackUrl: '/' } },
     { name: 'status badge', component: StatusBadge, props: { status: 'collecting' } },
     { name: 'toast', component: Toast },

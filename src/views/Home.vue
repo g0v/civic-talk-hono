@@ -5,7 +5,7 @@ import AppFooter from '../components/AppFooter.vue'
 import IssueCard from '../components/IssueCard.vue'
 import SignInButtons from '../components/SignInButtons.vue'
 import Toast from '../components/Toast.vue'
-import ModerationAppealForm from '../components/ModerationAppealForm.vue'
+import ModerationAppealNotice from '../components/ModerationAppealNotice.vue'
 import { useI18n } from '../l10n'
 import { useAuth } from '../composables/useAuth'
 import type { IssueListItem } from '../db/queries'
@@ -187,7 +187,7 @@ async function copyRssUrl() {
               <p class="mt-0 mb-3">{{ t('login_expired_hint') }}</p>
               <SignInButtons callback-url="/" />
             </div>
-            <ModerationAppealForm
+            <ModerationAppealNotice
               v-if="moderationNotice"
               :appeal-type="moderationNotice.appealType"
               :report-id="moderationNotice.reportId"

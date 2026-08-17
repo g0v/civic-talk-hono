@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test'
-import { createModerationAppeal, resolveModerationAppeal } from '../db/queries'
+import { createModerationAppeal, listAppealableAiModerationReportsForUser, resolveModerationAppeal } from '../db/queries'
 
 type FakeAppeal = {
   id: number
@@ -67,5 +67,30 @@ describe('moderation appeals', () => {
     expect(appealId).toBe(1)
     await resolveModerationAppeal(db, appealId, 'overturned', { id: 'admin-1', name: 'Admin' }, '確認為誤判')
     expect(db.appeals[0]?.status).toBe('overturned')
+  })
+
+  it('queries only reports without a pending appeal for the current user', async () => {
+    let sql = ''
+    let args: unknown[] = []
+    const db = {
+      prepare(statement: string) {
+        sql = statement
+        return {
+          bind(...values: unknown[]) {
+            args = values
+            return this
+          },
+          async all() {
+            return { results: [] }
+          },
+        }
+      },
+    } as unknown as D1Database
+
+    await listAppealableAiModerationReportsForUser(db, 'user-1')
+
+    expect(sql).toContain('NOT EXISTS')
+    expect(sql).toContain("a.status = 'pending'")
+    expect(args).toEqual(['user-1', 'user-1'])
   })
 })

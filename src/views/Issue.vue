@@ -5,7 +5,7 @@ import AppFooter from '../components/AppFooter.vue'
 import SignInButtons from '../components/SignInButtons.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import Toast from '../components/Toast.vue'
-import ModerationAppealForm from '../components/ModerationAppealForm.vue'
+import ModerationAppealNotice from '../components/ModerationAppealNotice.vue'
 import { useAuth } from '../composables/useAuth'
 import type { Briefing, Issue, Material, Opinion } from '../db/queries'
 import { formatDate, useI18n } from '../l10n'
@@ -73,11 +73,14 @@ const sessionExpired = ref(false)
 const volunteerSessionExpired = ref(false)
 // 登入後導回這一頁的意見分頁
 const loginCallbackUrl = computed(() => `/issues/${props.issueId}`)
-const moderationNotice = ref<{ appealType: 'rejected_submission' | 'account_ban'; reportId?: number; policyCode?: string; rationale?: string } | null>(null)
+type ModerationNotice = { appealType: 'rejected_submission' | 'account_ban'; reportId?: number; policyCode?: string; rationale?: string }
+const volunteerModerationNotice = ref<ModerationNotice | null>(null)
+const opinionModerationNotice = ref<ModerationNotice | null>(null)
 
-async function handleModerationResult(res: Response): Promise<boolean> {
+async function handleModerationResult(res: Response, source: 'volunteer' | 'opinion'): Promise<boolean> {
+  const notice = source === 'volunteer' ? volunteerModerationNotice : opinionModerationNotice
   if (res.status === 403) {
-    moderationNotice.value = { appealType: 'account_ban' }
+    notice.value = { appealType: 'account_ban' }
     toast.value?.show(t('banned_toast'))
     return true
   }
@@ -85,8 +88,11 @@ async function handleModerationResult(res: Response): Promise<boolean> {
   const data = (await res.json().catch(() => ({}))) as {
     moderation?: { hidden?: boolean; policy_code?: string; rationale?: string; report_id?: number | null }
   }
-  if (!data.moderation?.hidden) return false
-  moderationNotice.value = {
+  if (!data.moderation?.hidden) {
+    notice.value = null
+    return false
+  }
+  notice.value = {
     appealType: 'rejected_submission',
     reportId: data.moderation.report_id ?? undefined,
     policyCode: data.moderation.policy_code,
@@ -297,7 +303,7 @@ async function submitSummarize() {
     toast.value?.show(t('login_expired_toast'))
     return
   }
-  if (await handleModerationResult(res)) return
+  if (await handleModerationResult(res, 'volunteer')) return
   if (res.ok) {
     toast.value?.show(t('vol_toast_summarize_ok'))
     await loadIssue()
@@ -327,7 +333,7 @@ async function submitNarrative() {
     toast.value?.show(t('login_expired_toast'))
     return
   }
-  if (await handleModerationResult(res)) return
+  if (await handleModerationResult(res, 'volunteer')) return
   if (res.ok) {
     narrative.value = ''
     toast.value?.show(t('vol_toast_narrative_ok'))
@@ -435,7 +441,7 @@ async function submitOpinion() {
     toast.value?.show(t('login_expired_toast'))
     return
   }
-  if (await handleModerationResult(res)) return
+  if (await handleModerationResult(res, 'opinion')) return
   if (res.ok) {
     toast.value?.show(t('op_toast_submit_ok'))
     opinionInput.value = ''
@@ -611,12 +617,12 @@ async function submitOpinion() {
                 <p class="mt-0 mb-3">{{ t('login_expired_hint') }}</p>
                 <SignInButtons :callback-url="loginCallbackUrl" />
               </div>
-              <ModerationAppealForm
-                v-if="moderationNotice"
-                :appeal-type="moderationNotice.appealType"
-                :report-id="moderationNotice.reportId"
-                :policy-code="moderationNotice.policyCode"
-                :rationale="moderationNotice.rationale"
+              <ModerationAppealNotice
+                v-if="volunteerModerationNotice"
+                :appeal-type="volunteerModerationNotice.appealType"
+                :report-id="volunteerModerationNotice.reportId"
+                :policy-code="volunteerModerationNotice.policyCode"
+                :rationale="volunteerModerationNotice.rationale"
               />
               <p class="mb-6 text-sm text-muted">{{ t('vol_step1') }} → {{ t('vol_step2') }} → {{ t('vol_step3') }}</p>
               <div class="form-group mb-6">
@@ -712,6 +718,13 @@ async function submitOpinion() {
                 <p class="mt-4 mb-0 text-sm text-muted">{{ t('login_shared_account_hint') }}</p>
               </template>
               <template v-else>
+                <ModerationAppealNotice
+                  v-if="opinionModerationNotice"
+                  :appeal-type="opinionModerationNotice.appealType"
+                  :report-id="opinionModerationNotice.reportId"
+                  :policy-code="opinionModerationNotice.policyCode"
+                  :rationale="opinionModerationNotice.rationale"
+                />
                 <div v-if="sessionExpired" class="alert alert-warn mb-4">
                   <p class="mt-0 mb-3">{{ t('login_expired_hint') }}</p>
                   <SignInButtons :callback-url="loginCallbackUrl" />

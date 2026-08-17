@@ -709,6 +709,33 @@ export async function listPendingAiModerationReportsForUser(db: D1Database, user
   return results ?? []
 }
 
+/**
+ * 列出登入者目前仍可提出申訴的 AI 回報。
+ * 已經有 pending 申訴的回報不再顯示表單，避免使用者重複送件後才看到 409。
+ */
+export async function listAppealableAiModerationReportsForUser(db: D1Database, userId: string): Promise<MyModerationReport[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT r.id, r.policy_code, r.submission_type, r.content_snapshot,
+              r.description, r.review_status, r.created_at
+       FROM ct_abuse_reports r
+       WHERE r.source = 'ai'
+         AND r.target_user_id = ?
+         AND r.review_status = 'pending'
+         AND NOT EXISTS (
+           SELECT 1
+           FROM ct_moderation_appeals a
+           WHERE a.user_id = ?
+             AND a.abuse_report_id = r.id
+             AND a.status = 'pending'
+         )
+       ORDER BY r.created_at DESC`
+    )
+    .bind(userId, userId)
+    .all<MyModerationReport>()
+  return results ?? []
+}
+
 /** 建立一筆自動審查申訴；呼叫端必須先驗證 report 所屬使用者。 */
 export async function createModerationAppeal(db: D1Database, input: CreateModerationAppealInput): Promise<number> {
   const { meta } = await db
