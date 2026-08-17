@@ -115,6 +115,7 @@ async function saveName() {
               <button type="button" class="btn btn-primary" :disabled="cooldownDays !== null" @click="startEditing">
                 {{ t('profile_edit_name') }}
               </button>
+              <a href="/appeals" class="btn btn-secondary">{{ t('nav_appeals') }}</a>
               <button type="button" class="btn btn-secondary" @click="signOutAndReload">
                 {{ t('logout') }}
               </button>

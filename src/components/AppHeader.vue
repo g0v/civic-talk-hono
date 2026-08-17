@@ -110,13 +110,6 @@ function handleNewIssue() {
           {{ t('nav_about') }}
         </a>
         <a
-          href="/appeals"
-          class="rounded-pill px-3 py-1.5 text-[15px] text-vt-fg-2 no-underline hover:bg-black/5 dark:hover:bg-white/10"
-          :class="{ 'font-semibold text-vt-democratic-red': current === 'appeals' }"
-        >
-          {{ t('nav_appeals') }}
-        </a>
-        <a
           v-if="hasAdminAccess"
           href="/admin"
           class="rounded-pill px-3 py-1.5 text-[15px] text-vt-fg-2 no-underline hover:bg-black/5 dark:hover:bg-white/10"
@@ -278,14 +271,6 @@ function handleNewIssue() {
           @click="closeMenu"
         >
           {{ t('nav_about') }}
-        </a>
-        <a
-          href="/appeals"
-          class="rounded-lg px-3 py-2.5 text-[15px] no-underline hover:bg-black/5 dark:hover:bg-white/10"
-          :class="current === 'appeals' ? 'font-semibold text-vt-democratic-red' : 'text-vt-fg-1'"
-          @click="closeMenu"
-        >
-          {{ t('nav_appeals') }}
         </a>
         <a
           v-if="hasAdminAccess"
