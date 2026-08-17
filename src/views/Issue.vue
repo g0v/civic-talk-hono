@@ -8,6 +8,7 @@ import Toast from '../components/Toast.vue'
 import ModerationAppealForm from '../components/ModerationAppealForm.vue'
 import { useAuth } from '../composables/useAuth'
 import type { Briefing, Issue, Material, Opinion } from '../db/queries'
+import { formatDate, useI18n } from '../l10n'
 import { renderSafeMarkdown } from '../markdown/renderSafeMarkdown'
 
 type TabName = 'briefing' | 'materials' | 'volunteer' | 'opinions'
