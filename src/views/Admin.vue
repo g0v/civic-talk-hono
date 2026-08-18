@@ -408,6 +408,28 @@ const filteredReports = computed(() => {
       (r.description?.toLowerCase().includes(q) ?? false)
   )
 })
+
+/**
+ * 這裡刻意使用「內容快照」，而不是回查並複製完整的 ct_* 業務資料：
+ * AI 複核與申訴需要看到模型判定當下實際收到的投稿欄位，不能讓內容後續被編輯、
+ * 解除隱藏或刪除後改變審核依據。快照也讓 issue／material／opinion／briefing
+ * 共用同一種稽核格式，且不額外複製作者資料、同意紀錄與狀態等非審查必要資訊。
+ * AI 審查快照是 JSON；舊資料或帳號停權申訴則不保證是 JSON。
+ */
+function parseSnapshot(snapshotJSON: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(snapshotJSON) as unknown
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : null
+  } catch {
+    return null
+  }
+}
+
+function snapshotSummary(snapshotJSON: string): string {
+  const summary = parseSnapshot(snapshotJSON)?.summary
+  return typeof summary === 'string' && summary.trim() ? summary : snapshotJSON
+}
+
 </script>
 
 <template>
@@ -516,7 +538,7 @@ const filteredReports = computed(() => {
                   </p>
                   <div v-if="appeal.content_snapshot" class="mb-2">
                     <strong class="text-sm">{{ t('adm_mod_th_content') }}</strong>
-                    <pre class="mt-1 max-h-48 overflow-auto whitespace-pre-wrap rounded bg-gray-50 p-2 text-xs">{{ appeal.content_snapshot }}</pre>
+                    <pre class="mt-1 max-h-48 overflow-auto whitespace-pre-wrap rounded bg-gray-50 p-2 text-xs">{{ snapshotSummary(appeal.content_snapshot) }}</pre>
                   </div>
                   <div class="mb-2">
                     <strong class="text-sm">{{ t('adm_mod_th_message') }}</strong>
@@ -775,14 +797,14 @@ const filteredReports = computed(() => {
                     </td>
                     <td class="px-3 py-2">
                       <div>{{ t(ABUSE_REASON_LABELS[r.reason] ?? 'report_reason_other') }}</div>
-                      <div v-if="r.source === 'ai'" class="mt-1 text-xs text-red">{{ t('adm_rpt_source_ai') }} · {{ r.policy_code }}</div>
+                      <div v-if="r.source === 'ai'" class="mt-1 text-xs text-red">{{ t('adm_rpt_source_ai') }} · {{ t('report_reason_' + (r.policy_code ?? 'other')) }}</div>
                     </td>
                     <td class="px-3 py-2 max-w-xs">
                       <span v-if="r.description" class="whitespace-pre-wrap text-xs">{{ r.description }}</span>
                       <span v-else class="text-muted">—</span>
                       <div v-if="r.source === 'ai' && r.content_snapshot" class="mt-2">
                         <strong class="text-xs">{{ t('adm_rpt_snapshot') }}</strong>
-                        <pre class="mt-1 max-h-48 overflow-auto whitespace-pre-wrap rounded bg-gray-50 p-2 text-xs">{{ r.content_snapshot }}</pre>
+                        <pre class="mt-1 max-h-48 overflow-auto whitespace-pre-wrap rounded bg-gray-50 p-2 text-xs">{{ snapshotSummary(r.content_snapshot) }}</pre>
                       </div>
                     </td>
                     <td class="px-3 py-2">
