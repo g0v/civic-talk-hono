@@ -5,9 +5,10 @@ import AppFooter from '../components/AppFooter.vue'
 import SignInButtons from '../components/SignInButtons.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import Toast from '../components/Toast.vue'
-import { formatDate, useI18n } from '../l10n'
+import ModerationAppealNotice from '../components/ModerationAppealNotice.vue'
 import { useAuth } from '../composables/useAuth'
 import type { Briefing, Issue, Material, Opinion } from '../db/queries'
+import { formatDate, useI18n } from '../l10n'
 import { renderSafeMarkdown } from '../markdown/renderSafeMarkdown'
 
 type TabName = 'briefing' | 'materials' | 'volunteer' | 'opinions'
@@ -72,6 +73,34 @@ const sessionExpired = ref(false)
 const volunteerSessionExpired = ref(false)
 // 登入後導回這一頁的意見分頁
 const loginCallbackUrl = computed(() => `/issues/${props.issueId}`)
+type ModerationNotice = { appealType: 'rejected_submission' | 'account_ban'; reportId?: number; policyCode?: string; rationale?: string }
+const volunteerModerationNotice = ref<ModerationNotice | null>(null)
+const opinionModerationNotice = ref<ModerationNotice | null>(null)
+
+async function handleModerationResult(res: Response, source: 'volunteer' | 'opinion'): Promise<boolean> {
+  const notice = source === 'volunteer' ? volunteerModerationNotice : opinionModerationNotice
+  if (res.status === 403) {
+    notice.value = { appealType: 'account_ban' }
+    toast.value?.show(t('banned_toast'))
+    return true
+  }
+  if (!res.ok) return false
+  const data = (await res.json().catch(() => ({}))) as {
+    moderation?: { hidden?: boolean; policy_code?: string; rationale?: string; report_id?: number | null }
+  }
+  if (!data.moderation?.hidden) {
+    notice.value = null
+    return false
+  }
+  notice.value = {
+    appealType: 'rejected_submission',
+    reportId: data.moderation.report_id ?? undefined,
+    policyCode: data.moderation.policy_code,
+    rationale: data.moderation.rationale,
+  }
+  toast.value?.show(t('moderation_hidden_title'))
+  return true
+}
 
 // 回報濫用 modal 狀態
 const reportTarget = ref<{ type: 'material' | 'briefing' | 'opinion'; id: number } | null>(null)
@@ -274,6 +303,7 @@ async function submitSummarize() {
     toast.value?.show(t('login_expired_toast'))
     return
   }
+  if (await handleModerationResult(res, 'volunteer')) return
   if (res.ok) {
     toast.value?.show(t('vol_toast_summarize_ok'))
     await loadIssue()
@@ -303,6 +333,7 @@ async function submitNarrative() {
     toast.value?.show(t('login_expired_toast'))
     return
   }
+  if (await handleModerationResult(res, 'volunteer')) return
   if (res.ok) {
     narrative.value = ''
     toast.value?.show(t('vol_toast_narrative_ok'))
@@ -410,11 +441,7 @@ async function submitOpinion() {
     toast.value?.show(t('login_expired_toast'))
     return
   }
-  // 帳號被停權（#11）：提示並保留意見內容
-  if (res.status === 403) {
-    toast.value?.show(t('banned_toast'))
-    return
-  }
+  if (await handleModerationResult(res, 'opinion')) return
   if (res.ok) {
     toast.value?.show(t('op_toast_submit_ok'))
     opinionInput.value = ''
@@ -439,8 +466,10 @@ async function submitOpinion() {
         <template v-else-if="issue">
           <div class="mb-6">
             <StatusBadge :status="issue.status" />
-            <h1 class="mt-3 mb-2 font-serif text-3xl font-bold">{{ issue.title }}</h1>
-            <p v-if="issue.description" class="mt-0 mb-3 text-muted">{{ issue.description }}</p>
+            <h1 class="mt-3 mb-2 font-serif text-3xl font-bold">
+              {{ issue.abuse_flagged === 3 ? t('moderation_hidden_placeholder') : issue.title }}
+            </h1>
+            <p v-if="issue.abuse_flagged !== 3 && issue.description" class="mt-0 mb-3 text-muted">{{ issue.description }}</p>
             <p class="m-0 text-sm text-muted">
               {{ t('issue_created') }} {{ formatDate(issue.created_at, locale) }} · {{ materials.length }} {{ t('issue_materials_unit') }} · {{ t('issue_author_label') }}：{{
                 issue.author_name || t('author_system')
@@ -528,6 +557,8 @@ async function submitOpinion() {
             <div v-for="m in materials" :key="m.id" class="card mb-4">
               <!-- 已確認違規（2）：完全隱藏，無展開選項 -->
               <p v-if="m.abuse_flagged === 2" class="m-0 py-1 text-sm text-red">{{ t('flagged_confirmed') }}</p>
+              <!-- AI 審查違規（3）：只顯示不可展開的佔位，不洩漏內容 -->
+              <p v-else-if="m.abuse_flagged === 3" class="m-0 py-1 text-sm text-muted">{{ t('moderation_hidden_placeholder') }}</p>
               <!-- 待審核（1）：折疊 + 可展開 -->
               <div v-else-if="m.abuse_flagged === 1 && !expandedFlagged.has(`material-${m.id}`)" class="mb-2">
                 <div class="alert alert-warn mb-2 flex items-center justify-between gap-2 py-2">
@@ -538,7 +569,7 @@ async function submitOpinion() {
                 </div>
               </div>
               <!-- 正常或待審核已展開：顯示內容 -->
-              <template v-if="m.abuse_flagged !== 2 && (!m.abuse_flagged || expandedFlagged.has(`material-${m.id}`))">
+              <template v-if="m.abuse_flagged !== 2 && m.abuse_flagged !== 3 && (!m.abuse_flagged || expandedFlagged.has(`material-${m.id}`))">
                 <div v-if="m.abuse_flagged === 1" class="mb-2 flex items-center justify-between gap-2">
                   <span class="text-xs text-amber-600">{{ t('flagged_warning') }}</span>
                   <button type="button" class="btn btn-ghost btn-sm shrink-0 text-xs" @click="toggleFlagged('material', m.id)">
@@ -552,8 +583,8 @@ async function submitOpinion() {
                 </div>
                 <div class="whitespace-pre-wrap text-sm leading-relaxed">{{ m.content }}</div>
               </template>
-              <!-- metadata（已確認違規時不顯示） -->
-              <p v-if="m.abuse_flagged !== 2" class="mt-2 mb-0 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
+              <!-- metadata（已確認或 AI 審查違規時不顯示） -->
+              <p v-if="m.abuse_flagged !== 2 && m.abuse_flagged !== 3" class="mt-2 mb-0 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
                 <span>{{ formatDate(m.created_at, locale) }} · {{ m.verified_count }} {{ t('mat_contributor') }}</span>
                 <span
                   >{{ t('mat_author_label') }}：{{ m.author_name || t('author_system') }}<template v-if="m.author_email"> · {{ t('author_email_label') }}：{{ m.author_email }}</template></span
@@ -586,6 +617,13 @@ async function submitOpinion() {
                 <p class="mt-0 mb-3">{{ t('login_expired_hint') }}</p>
                 <SignInButtons :callback-url="loginCallbackUrl" />
               </div>
+              <ModerationAppealNotice
+                v-if="volunteerModerationNotice"
+                :appeal-type="volunteerModerationNotice.appealType"
+                :report-id="volunteerModerationNotice.reportId"
+                :policy-code="volunteerModerationNotice.policyCode"
+                :rationale="volunteerModerationNotice.rationale"
+              />
               <p class="mb-6 text-sm text-muted">{{ t('vol_step1') }} → {{ t('vol_step2') }} → {{ t('vol_step3') }}</p>
               <div class="form-group mb-6">
                 <label class="flex items-start gap-2 font-normal">
@@ -666,27 +704,28 @@ async function submitOpinion() {
 
           <!-- Opinions -->
           <section v-show="activeTab === 'opinions'">
-            <h2 class="mt-0 mb-3 font-serif text-xl">{{ t('op_title') }}</h2>
+            <h2 class="m-0 font-serif text-xl">{{ t('op_title') }}</h2>
             <div class="alert alert-info mb-4" v-html="t('op_alert')" />
-            <button type="button" class="btn btn-secondary mb-6" @click="downloadOpinionMd">
-              {{ t('op_download_btn') }}
-            </button>
+            <button type="button" class="btn btn-secondary btn-sm mb-6" @click="downloadOpinionMd">{{ t('op_download_btn') }}</button>
             <div class="card mb-6">
               <h3 class="mt-0 mb-3 text-base">{{ t('op_submit_title') }}</h3>
-
-              <!-- 讀取 session 中：SSR 與 hydration 首幀共用這個骨架 -->
-              <p v-if="authState === 'loading'" class="m-0 text-muted">{{ t('loading') }}</p>
-
-              <!-- 未登入：意見投稿需登入，輸入框不出現（守門在伺服器端） -->
+              <template v-if="authState === 'loading'">
+                <p class="m-0 text-muted">{{ t('loading') }}</p>
+              </template>
               <template v-else-if="authState === 'anonymous'">
                 <p class="mb-4 text-muted">{{ t('op_login_desc') }}</p>
                 <SignInButtons :callback-url="loginCallbackUrl" />
                 <p class="mt-4 mb-0 text-sm text-muted">{{ t('login_shared_account_hint') }}</p>
               </template>
-
               <template v-else>
-                <!-- 打字期間 session 過期：輸入框留著，只補一列重新登入 -->
-                <div v-if="sessionExpired" class="alert alert-warn mb-5">
+                <ModerationAppealNotice
+                  v-if="opinionModerationNotice"
+                  :appeal-type="opinionModerationNotice.appealType"
+                  :report-id="opinionModerationNotice.reportId"
+                  :policy-code="opinionModerationNotice.policyCode"
+                  :rationale="opinionModerationNotice.rationale"
+                />
+                <div v-if="sessionExpired" class="alert alert-warn mb-4">
                   <p class="mt-0 mb-3">{{ t('login_expired_hint') }}</p>
                   <SignInButtons :callback-url="loginCallbackUrl" />
                 </div>
@@ -729,6 +768,8 @@ async function submitOpinion() {
               <div v-for="o in opinions" :key="o.id" class="card mb-4">
                 <!-- 已確認違規（2）：完全隱藏，無展開選項 -->
                 <p v-if="o.abuse_flagged === 2" class="m-0 py-1 text-sm text-red">{{ t('flagged_confirmed') }}</p>
+                <!-- AI 審查違規（3）：只顯示不可展開的佔位，不洩漏內容 -->
+                <p v-else-if="o.abuse_flagged === 3" class="m-0 py-1 text-sm text-muted">{{ t('moderation_hidden_placeholder') }}</p>
                 <!-- 待審核（1）：折疊 + 可展開 -->
                 <div v-else-if="o.abuse_flagged === 1 && !expandedFlagged.has(`opinion-${o.id}`)" class="mb-2">
                   <div class="alert alert-warn flex items-center justify-between gap-2 py-2">
@@ -739,7 +780,7 @@ async function submitOpinion() {
                   </div>
                 </div>
                 <!-- 正常或待審核已展開：顯示內容 -->
-                <template v-if="o.abuse_flagged !== 2 && (!o.abuse_flagged || expandedFlagged.has(`opinion-${o.id}`))">
+                <template v-if="o.abuse_flagged !== 2 && o.abuse_flagged !== 3 && (!o.abuse_flagged || expandedFlagged.has(`opinion-${o.id}`))">
                   <div v-if="o.abuse_flagged === 1" class="mb-1 flex items-center justify-between gap-2">
                     <span class="text-xs text-amber-600">{{ t('flagged_warning') }}</span>
                     <button type="button" class="btn btn-ghost btn-sm shrink-0 text-xs" @click="toggleFlagged('opinion', o.id)">

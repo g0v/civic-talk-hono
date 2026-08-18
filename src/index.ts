@@ -5,7 +5,7 @@ import type { AppBindings } from './api/types'
 import { listIssues, getIssue, getIssueDetail, getMaterialWithIssue, getOpinionWithIssue } from './db/queries'
 import { handleRss } from './rss'
 import { renderPage } from './ssr/render'
-import { headForAbout, headForAdmin, headForContribute, headForHome, headForIssue, headForMaterial, headForNotFound, headForOpinion, headForPrivacy, headForProfile, headForTerms } from './ssr/heads'
+import { headForAbout, headForAdmin, headForAppeals, headForContribute, headForHome, headForIssue, headForMaterial, headForNotFound, headForOpinion, headForPrivacy, headForProfile, headForTerms } from './ssr/heads'
 import HomeView from './views/Home.vue'
 import AboutView from './views/About.vue'
 import IssueView from './views/Issue.vue'
@@ -17,6 +17,7 @@ import NotFoundView from './views/NotFound.vue'
 import PrivacyView from './views/Privacy.vue'
 import TermsView from './views/Terms.vue'
 import ProfileView from './views/Profile.vue'
+import AppealsView from './views/Appeals.vue'
 
 const app = new Hono<{ Bindings: AppBindings }>()
 
@@ -71,7 +72,7 @@ app.get('/issues/:id', async c => {
   const origin = new URL(c.req.url).origin
   const detail = await getIssueDetail(c.env.DB, id)
   if (!detail) return c.html(await notFoundHtml(origin), 404)
-  const html = await renderPage(IssueView, { issueId: id, initialDetail: detail }, headForIssue(detail.issue.title, detail.issue.description ?? '', id, origin), {
+  const html = await renderPage(IssueView, { issueId: id, initialDetail: detail }, headForIssue(detail.issue.title ?? '', detail.issue.description ?? '', id, origin), {
     hydrate: {
       page: 'issue',
       state: { issueId: id, initialDetail: detail },
@@ -91,7 +92,7 @@ app.get('/issues/:id/source/:materialId', async c => {
   // 已確認違規（abuse_flagged = 2）→ 410 Gone，不渲染任何內容
   if (data.material.abuse_flagged === 2) return c.html(await notFoundHtml(origin), 410)
   const { material, issue } = data
-  const html = await renderPage(MaterialDetailView, { issueId, materialId, initialData: { material, issue } }, headForMaterial(material.source_name, issue.title, issueId, materialId, origin), {
+  const html = await renderPage(MaterialDetailView, { issueId, materialId, initialData: { material, issue } }, headForMaterial(material.source_name, issue.title ?? '', issueId, materialId, origin), {
     hydrate: { page: 'material', state: { issueId, materialId, initialData: { material, issue } } },
   })
   return c.html(html)
@@ -108,7 +109,7 @@ app.get('/issues/:id/comment/:opinionId', async c => {
   // 已確認違規（abuse_flagged = 2）→ 410 Gone，不渲染任何內容
   if (data.opinion.abuse_flagged === 2) return c.html(await notFoundHtml(origin), 410)
   const { opinion, issue } = data
-  const html = await renderPage(OpinionDetailView, { issueId, opinionId, initialData: { opinion, issue } }, headForOpinion(opinion.summary, issue.title, issueId, opinionId, origin), {
+  const html = await renderPage(OpinionDetailView, { issueId, opinionId, initialData: { opinion, issue } }, headForOpinion(opinion.summary ?? '', issue.title ?? '', issueId, opinionId, origin), {
     hydrate: { page: 'opinion', state: { issueId, opinionId, initialData: { opinion, issue } } },
   })
   return c.html(html)
@@ -120,10 +121,10 @@ app.get('/contribute/:id', async c => {
   const origin = new URL(c.req.url).origin
   const issue = await getIssue(c.env.DB, id)
   if (!issue) return c.html(await notFoundHtml(origin), 404)
-  const html = await renderPage(ContributeView, { issueId: id, issueTitle: issue.title }, headForContribute(issue.title, id, origin), {
+  const html = await renderPage(ContributeView, { issueId: id, issueTitle: issue.title ?? '' }, headForContribute(issue.title ?? '', id, origin), {
     hydrate: {
       page: 'contribute',
-      state: { issueId: id, issueTitle: issue.title },
+      state: { issueId: id, issueTitle: issue.title ?? '' },
     },
   })
   return c.html(html)
@@ -140,6 +141,13 @@ app.get('/profile', async c => {
   const origin = new URL(c.req.url).origin
   const html = await renderPage(ProfileView, {}, headForProfile(origin), {
     hydrate: { page: 'profile', state: {} },
+  })
+  return c.html(html)
+})
+app.get('/appeals', async c => {
+  const origin = new URL(c.req.url).origin
+  const html = await renderPage(AppealsView, {}, headForAppeals(origin), {
+    hydrate: { page: 'appeals', state: {} },
   })
   return c.html(html)
 })

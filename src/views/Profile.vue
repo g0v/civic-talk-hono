@@ -7,7 +7,6 @@ import { updateProfileName } from '../client/auth-session'
 import { useAuth } from '../composables/useAuth'
 import { DISPLAY_NAME_MAX_LENGTH, isNameChangeCooldownPayload, NAME_CHANGE_COOLDOWN_DAYS, normalizeDisplayName } from '../lib/profile-name'
 import { useI18n } from '../l10n'
-
 const { t } = useI18n()
 const { authState, session, ensureAuthSession, signOutAndReload, updateSessionName } = useAuth()
 const editing = ref(false)
@@ -15,15 +14,14 @@ const saving = ref(false)
 const draftName = ref('')
 const errorMessage = ref('')
 const localCooldownDays = ref<number | null>(null)
-
 const cooldownDays = computed(() => localCooldownDays.value ?? session.value?.nameChangeCooldownDays ?? null)
 const displayName = computed(() => session.value?.user.name || session.value?.user.email || t('profile_name_not_set'))
 const avatarImage = computed(() => session.value?.user.image ?? null)
 const avatarInitial = computed(() => displayName.value.charAt(0).toUpperCase())
 const hasChanges = computed(() => !!session.value && draftName.value !== session.value.user.name)
 
-onMounted(() => {
-  void ensureAuthSession()
+onMounted(async () => {
+  await ensureAuthSession()
 })
 
 function startEditing() {
@@ -117,6 +115,7 @@ async function saveName() {
               <button type="button" class="btn btn-primary" :disabled="cooldownDays !== null" @click="startEditing">
                 {{ t('profile_edit_name') }}
               </button>
+              <a href="/appeals" class="btn btn-secondary">{{ t('nav_appeals') }}</a>
               <button type="button" class="btn btn-secondary" @click="signOutAndReload">
                 {{ t('logout') }}
               </button>

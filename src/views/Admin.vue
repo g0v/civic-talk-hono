@@ -9,9 +9,9 @@ import { formatDate, useI18n } from '../l10n'
 import type { MessageKey } from '../l10n/zh-TW'
 import { useAuth } from '../composables/useAuth'
 import { isAdminSession } from '../client/auth-session'
-import type { AbuseReport, BriefingWithAuthor, IssueListItemWithAuthor, IssueStatus, MaterialWithAuthor, OpinionWithAuthor } from '../db/queries'
+import type { AbuseReport, BriefingWithAuthor, IssueListItemWithAuthor, IssueStatus, MaterialWithAuthor, ModerationAppeal, OpinionWithAuthor } from '../db/queries'
 
-type AdminTab = 'issues' | 'materials' | 'opinions' | 'reports'
+type AdminTab = 'issues' | 'materials' | 'opinions' | 'reports' | 'moderation'
 
 const { t, locale } = useI18n()
 const toast = ref<{ show: (msg: string) => void } | null>(null)
@@ -37,6 +37,7 @@ const issues = ref<IssueListItemWithAuthor[]>([])
 const materials = ref<MaterialWithAuthor[]>([])
 const opinions = ref<OpinionWithAuthor[]>([])
 const abuseReports = ref<AbuseReport[]>([])
+const moderationAppeals = ref<ModerationAppeal[]>([])
 const matIssueId = ref<number | ''>('')
 const opIssueId = ref<number | ''>('')
 const issueSearch = ref('')
@@ -71,7 +72,7 @@ onMounted(async () => {
 })
 
 async function bootstrap() {
-  await Promise.all([loadStats(), loadIssues(), loadAbuseReports()])
+  await Promise.all([loadStats(), loadIssues(), loadAbuseReports(), loadModeration()])
 }
 
 async function loadStats() {
@@ -114,6 +115,10 @@ async function onOpIssueChange() {
 async function loadAbuseReports() {
   const res = await fetch('/api/admin/abuse-reports', { headers: authHeaders() })
   if (res.ok) abuseReports.value = await res.json()
+}
+async function loadModeration() {
+  const appealsRes = await fetch('/api/admin/moderation/appeals', { headers: authHeaders() })
+  if (appealsRes.ok) moderationAppeals.value = await appealsRes.json()
 }
 
 type LiveUserEntry = { name: string | null; email: string; role: string | null; banned: boolean; banReason: string | null }
@@ -158,6 +163,29 @@ async function resolveReport(id: number, action: 'false_report' | 'confirmed_abu
     await loadAbuseReports()
   } else {
     let msg = t('adm_rpt_toast_fail')
+    try {
+      const data = (await res.json()) as { error?: string }
+      if (data.error) msg = data.error
+    } catch {
+      /* 忽略 */
+    }
+    toast.value?.show(msg)
+  }
+}
+
+async function resolveAppeal(id: number, action: 'uphold' | 'overturn') {
+  const confirmKey = action === 'uphold' ? 'adm_mod_confirm_uphold' : 'adm_mod_confirm_overturn'
+  if (!confirm(t(confirmKey))) return
+  const res = await fetch(`/api/admin/moderation/appeals/${id}/resolve`, {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: JSON.stringify({ action }),
+  })
+  if (res.ok) {
+    toast.value?.show(t('adm_mod_toast_done'))
+    await loadModeration()
+  } else {
+    let msg = t('adm_mod_toast_fail')
     try {
       const data = (await res.json()) as { error?: string }
       if (data.error) msg = data.error
@@ -315,8 +343,22 @@ const REVIEW_STATUS_LABELS: Record<string, MessageKey> = {
   resolved_abuse: 'adm_rpt_status_resolved_abuse',
   resolved_broken: 'adm_rpt_status_resolved_broken',
 }
+const MODERATION_POLICY_LABELS: Record<string, MessageKey> = {
+  spam: 'adm_mod_policy_spam',
+  sexual_content: 'adm_mod_policy_sexual_content',
+  hate_speech: 'adm_mod_policy_hate_speech',
+  defamation: 'adm_mod_policy_defamation',
+  misinformation: 'adm_mod_policy_misinformation',
+  illegal: 'adm_mod_policy_illegal',
+}
+const APPEAL_STATUS_LABELS: Record<string, MessageKey> = {
+  pending: 'adm_mod_appeal_pending',
+  upheld: 'adm_mod_appeal_upheld',
+  overturned: 'adm_mod_appeal_overturned',
+}
 const tabs = computed(() => [
   { id: 'reports' as const, label: t('adm_tab_reports') },
+  { id: 'moderation' as const, label: t('adm_tab_moderation') },
   { id: 'issues' as const, label: t('adm_tab_issues') },
   { id: 'materials' as const, label: t('adm_tab_materials') },
   { id: 'opinions' as const, label: t('adm_tab_opinions') },
@@ -325,6 +367,7 @@ const tabs = computed(() => [
 async function onTabChange(id: AdminTab) {
   activeTab.value = id
   if (id === 'reports' && abuseReports.value.length === 0) await loadAbuseReports()
+  if (id === 'moderation' && moderationAppeals.value.length === 0) await loadModeration()
 }
 
 const filteredIssues = computed(() => {
@@ -365,6 +408,28 @@ const filteredReports = computed(() => {
       (r.description?.toLowerCase().includes(q) ?? false)
   )
 })
+
+/**
+ * 這裡刻意使用「內容快照」，而不是回查並複製完整的 ct_* 業務資料：
+ * AI 複核與申訴需要看到模型判定當下實際收到的投稿欄位，不能讓內容後續被編輯、
+ * 解除隱藏或刪除後改變審核依據。快照也讓 issue／material／opinion／briefing
+ * 共用同一種稽核格式，且不額外複製作者資料、同意紀錄與狀態等非審查必要資訊。
+ * AI 審查快照是 JSON；舊資料或帳號停權申訴則不保證是 JSON。
+ */
+function parseSnapshot(snapshotJSON: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(snapshotJSON) as unknown
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : null
+  } catch {
+    return null
+  }
+}
+
+function snapshotSummary(snapshotJSON: string): string {
+  const summary = parseSnapshot(snapshotJSON)?.summary
+  return typeof summary === 'string' && summary.trim() ? summary : snapshotJSON
+}
+
 </script>
 
 <template>
@@ -448,7 +513,56 @@ const filteredReports = computed(() => {
             </button>
           </div>
 
-          <!-- Issues -->
+          <!-- AI moderation and appeals -->
+          <section v-show="activeTab === 'moderation'">
+            <h2 class="mt-0 mb-4 font-serif text-xl">{{ t('adm_mod_title') }}</h2>
+
+
+            <div>
+              <h3 class="mb-3 font-serif text-lg">{{ t('adm_mod_appeals_title') }}</h3>
+              <div v-if="!moderationAppeals.length" class="empty">{{ t('adm_mod_empty_appeals') }}</div>
+              <div v-else class="space-y-3">
+                <article v-for="appeal in moderationAppeals" :key="appeal.id" class="card">
+                  <div class="mb-2 flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <strong>{{ appeal.user_name || t('adm_author_unknown') }}</strong>
+                      <span class="ml-2 text-sm text-muted">{{ appeal.user_email }}</span>
+                    </div>
+                    <span class="text-sm" :class="appeal.status === 'pending' ? 'text-amber' : appeal.status === 'overturned' ? 'text-teal' : 'text-muted'">
+                      {{ t(APPEAL_STATUS_LABELS[appeal.status] ?? 'adm_mod_appeal_pending') }}
+                    </span>
+                  </div>
+                  <p class="mb-2 text-sm text-muted">
+                    {{ appeal.appeal_type === 'account_ban' ? t('adm_mod_type_account_ban') : t('adm_mod_type_rejected') }}
+                    · {{ formatDate(appeal.created_at, locale) }}
+                  </p>
+                  <div v-if="appeal.content_snapshot" class="mb-2">
+                    <strong class="text-sm">{{ t('adm_mod_th_content') }}</strong>
+                    <pre class="mt-1 max-h-48 overflow-auto whitespace-pre-wrap rounded bg-gray-50 p-2 text-xs">{{ snapshotSummary(appeal.content_snapshot) }}</pre>
+                  </div>
+                  <div class="mb-2">
+                    <strong class="text-sm">{{ t('adm_mod_th_message') }}</strong>
+                    <p class="mt-1 whitespace-pre-wrap text-sm">{{ appeal.message }}</p>
+                  </div>
+                  <div v-if="appeal.status === 'pending'" class="flex flex-wrap gap-2">
+                    <button type="button" class="btn btn-ghost btn-sm" @click="resolveAppeal(appeal.id, 'uphold')">
+                      {{ t('adm_mod_btn_uphold') }}
+                    </button>
+                    <button
+                      type="button"
+                      class="btn btn-ghost btn-sm text-teal"
+                      :disabled="appeal.appeal_type === 'account_ban' && session?.role !== 'super-admin'"
+                      :title="appeal.appeal_type === 'account_ban' && session?.role !== 'super-admin' ? t('adm_mod_need_super_admin') : undefined"
+                      @click="resolveAppeal(appeal.id, 'overturn')"
+                    >
+                      {{ t('adm_mod_btn_overturn') }}
+                    </button>
+                  </div>
+                </article>
+              </div>
+            </div>
+          </section>
+
           <section v-show="activeTab === 'issues'">
             <div class="mb-4 flex items-center justify-between">
               <h2 class="m-0 font-serif text-xl">{{ t('adm_issues_title') }}</h2>
@@ -681,10 +795,17 @@ const filteredReports = computed(() => {
                         </div>
                       </div>
                     </td>
-                    <td class="px-3 py-2">{{ t(ABUSE_REASON_LABELS[r.reason] ?? 'report_reason_other') }}</td>
+                    <td class="px-3 py-2">
+                      <div>{{ t(ABUSE_REASON_LABELS[r.reason] ?? 'report_reason_other') }}</div>
+                      <div v-if="r.source === 'ai'" class="mt-1 text-xs text-red">{{ t('adm_rpt_source_ai') }} · {{ t('report_reason_' + (r.policy_code ?? 'other')) }}</div>
+                    </td>
                     <td class="px-3 py-2 max-w-xs">
                       <span v-if="r.description" class="whitespace-pre-wrap text-xs">{{ r.description }}</span>
                       <span v-else class="text-muted">—</span>
+                      <div v-if="r.source === 'ai' && r.content_snapshot" class="mt-2">
+                        <strong class="text-xs">{{ t('adm_rpt_snapshot') }}</strong>
+                        <pre class="mt-1 max-h-48 overflow-auto whitespace-pre-wrap rounded bg-gray-50 p-2 text-xs">{{ snapshotSummary(r.content_snapshot) }}</pre>
+                      </div>
                     </td>
                     <td class="px-3 py-2">
                       <span
@@ -703,16 +824,16 @@ const filteredReports = computed(() => {
                           <button
                             @click="resolveReport(r.id, 'false_report', r.reason)"
                             class="btn btn-ghost btn-sm text-amber-700"
-                            :disabled="(r.reason !== 'broken_link' && session?.role !== 'super-admin') || r.reporter_id === session?.user?.id"
+                            :disabled="(r.source !== 'ai' && r.reason !== 'broken_link' && session?.role !== 'super-admin') || (r.source !== 'ai' && r.reporter_id === session?.user?.id)"
                             :title="
-                              r.reason !== 'broken_link' && session?.role !== 'super-admin'
+                              r.source !== 'ai' && r.reason !== 'broken_link' && session?.role !== 'super-admin'
                                 ? t('adm_rpt_need_super_admin')
-                                : r.reporter_id === session?.user?.id
+                                : r.source !== 'ai' && r.reporter_id === session?.user?.id
                                   ? t('adm_rpt_cannot_ban_self')
                                   : undefined
                             "
                           >
-                            {{ r.reason === 'broken_link' ? t('adm_rpt_btn_false_no_ban') : t('adm_rpt_btn_false') }}
+                            {{ r.source === 'ai' || r.reason === 'broken_link' ? t('adm_rpt_btn_false_no_ban') : t('adm_rpt_btn_false') }}
                           </button>
                           <!-- 確認失效（藏住素材，不停權）→ 所有 admin 都可以；僅 broken_link 顯示 -->
                           <button v-if="r.reason === 'broken_link'" type="button" class="btn btn-ghost btn-sm text-amber-600" @click="resolveReport(r.id, 'confirmed_broken')">

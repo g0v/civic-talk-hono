@@ -136,8 +136,8 @@ async function copyLink() {
               </a>
             </p>
 
-            <!-- 內容 -->
-            <div class="whitespace-pre-wrap leading-relaxed">{{ material.content }}</div>
+            <div v-if="material.abuse_flagged === 3" class="whitespace-pre-wrap leading-relaxed text-muted">{{ t('moderation_hidden_placeholder') }}</div>
+            <div v-else class="whitespace-pre-wrap leading-relaxed">{{ material.content }}</div>
 
             <!-- 後設資訊 -->
             <p class="mt-4 mb-0 text-sm text-muted">

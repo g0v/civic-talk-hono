@@ -9,7 +9,7 @@ const darkMode = useDarkMode()
 
 const props = withDefaults(
   defineProps<{
-    current?: 'home' | 'about' | 'admin' | 'issue' | 'contribute' | 'profile' | 'other'
+    current?: 'home' | 'about' | 'admin' | 'issue' | 'contribute' | 'profile' | 'appeals' | 'other'
     showNewIssue?: boolean
     backHref?: string
     backLabel?: string

@@ -23,7 +23,7 @@
 違反任何一條就是破壞專案的根本契約。動手前先讀，改完後逐條自查。
 
 1. **所有資料表一律 `ct_` 前綴。** 遠端 D1 `vtaiwan-civic-talks` 位於 vTaiwan 命名空間、可能與其他專案共用，未加前綴的 `issues`／`materials`／`briefings`／`opinions` 會撞名並造成不可逆的資料破壞。所有 DDL、SQL、型別一律只碰 `ct_*`；migration 套用後查 `sqlite_master` 確認只新增 `ct_` 開頭的業務表。
-2. **伺服器端絕不呼叫 AI API。** 這是 Civic Talk 的產品層契約：素材彙整與說明頁生成全由志願者用自己的 AI token 完成，平台只負責產出 prompt 與收回結果。任何在 Worker 內接 OpenAI／Anthropic／Gemini 等 API 的作法都不允許——要改這個策略，先與使用者確認。
+2. **內容生成與投稿安全審查分開。** 素材彙整／說明頁等**內容生成**仍由志願者使用自己的 AI token 完成，平台只產出 prompt 並收回結果；伺服器端不得代為呼叫生成模型。**例外（issue #29，使用者明確授權）**：四個投稿入口可在 Worker 內呼叫 OpenRouter 的 `openai/gpt-oss-safeguard-20b` 做投稿安全審查。審查採 **fail-open**：OpenRouter 缺 key、逾時或 5xx 等基礎設施故障時記錄結構化錯誤並放行投稿，不把故障誤判成濫用，也不因外部服務故障擋住全站投稿。
 3. **SSR 路徑絕不碰瀏覽器 API。** 任何在 SSR 期間執行的程式碼（元件 `setup`、模組頂層、共用工廠）不得使用 `window`／`document`／`localStorage`／`navigator`——需要時用 `typeof window === 'undefined'` 守衛或放到 `onMounted`。每請求新建獨立的 app 實例，嚴禁跨請求共享可變狀態。
 4. **舊網址永不失效。** 下列舊路徑必須以 301／302 導向新的乾淨路由，且此對應表只能新增、不能刪除：
 
@@ -193,21 +193,27 @@ Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑�
 | `PUT`    | `/api/issues/:id`           | 編輯議題（admin）                                                                      |
 | `DELETE` | `/api/issues/:id`           | 刪除議題（admin，級聯刪 materials/briefings/opinions）                                 |
 | `GET`    | `/api/issues/:id/materials` | 素材列表（公開顯示 `author_name`，email 僅依 opt-in 顯示；管理員另拿完整作者快照）     |
-| `POST`   | `/api/issues/:id/materials` | 投稿素材（**需登入**，#9；`collecting` → `summarizing` 狀態轉換）                      |
+| `POST`   | `/api/issues/:id/materials` | 投稿素材（**需登入**，#9；正常投稿 `collecting` → `summarizing`；自動審查違規會保存但暫時隱藏，且不觸發狀態轉換） |
 | `DELETE` | `/api/materials/:id`        | 刪除素材（admin）                                                                      |
 | `GET`    | `/api/issues/:id/briefing`  | 取得說明頁（公開顯示 `author_name`，email 僅依 opt-in；管理員另拿完整作者快照）        |
-| `POST`   | `/api/issues/:id/briefing`  | 新增說明頁（**需登入**；版本遞增；→ `published`）                                      |
+| `POST`   | `/api/issues/:id/briefing`  | 新增說明頁（**需登入**；版本遞增；正常投稿 → `published`；違規投稿保存但暫時隱藏且不觸發狀態轉換） |
 | `PUT`    | `/api/issues/:id/briefing`  | 編輯說明頁（admin）                                                                    |
 | `GET`    | `/api/issues/:id/opinions`  | 意見列表                                                                               |
-| `POST`   | `/api/issues/:id/opinions`  | 投稿意見（**需登入**，#9 延伸）                                                        |
+| `POST`   | `/api/issues/:id/opinions`  | 投稿意見（**需登入**，#9 延伸；違規投稿仍回成功狀態但暫時隱藏）                         |
 | `DELETE` | `/api/opinions/:id`         | 刪除意見（admin）                                                                      |
 | `GET`    | `/api/issues/:id/prompt`    | 產生 prompt（**需登入**），`?type=summarize\|narrative\|synthesis`（預設 `summarize`） |
 | `GET`    | `/api/admin/stats`          | 管理統計                                                                               |
+| `POST`   | `/api/appeals`              | 暫時隱藏投稿或帳號停權申訴（需登入；停權帳號仍可使用）                                  |
+| `GET`    | `/api/admin/moderation/preview` | 管理端以文字測試自動審查（需 admin；純模型診斷，不寫 D1）                              |
+| `GET`    | `/api/admin/moderation/appeals` | 管理端查看投稿安全審查申訴（admin）                                                  |
+| `PATCH`  | `/api/admin/moderation/appeals/:id/resolve` | 管理端維持／推翻申訴（admin；帳號停權處置透過 Better Auth）                       |
+| `GET`    | `/api/admin/users/:userId`   | 管理端查詢投稿者目前 Better Auth 帳號／停權狀態（admin）                               |
 
 > `POST /api/admin/login`（以 `ADMIN_PASSWORD` 換 token）**已於 #5 移除**——這是不變量 5 明列的授權例外。舊網址不必保留：它從來只是管理員自己用的登入端點，不是公開契約。
 
 - 統一 JSON 錯誤形狀 `{ error: string }`，並補齊輸入驗證與 `400` / `401` / `404` 回應。
-- 議題狀態機（**照舊站語意，不要收得更嚴**）：POST material 把 `collecting` 推到 `summarizing`；POST briefing 從 `collecting` **或** `summarizing` 直接推到 `published`——也就是說 `collecting` → `published` 是合法的，可跳過 `summarizing`。素材立場預設 `unknown`。
+- 議題狀態機（照舊站語意）：正常 POST material 把 `collecting` 推到 `summarizing`；正常 POST briefing 從 `collecting` 或 `summarizing` 推到 `published`；`abuse_flagged = 3` 的素材／說明頁寫入不觸發任何狀態轉換，日後誤報解除也不補推。
+✅ **#29 投稿安全審查已完成。** 四個投稿端點在 `requireUser()` 之後呼叫 OpenRouter 審查：判定違規仍寫入原投稿列並在 INSERT 時帶 `abuse_flagged = 3`，同時建立指向該列的 `source = 'ai'` 回報，端點維持原本成功狀態碼與回應形狀，另外附帶 `moderation.hidden`、分類、理由、回報 ID 與申訴資格。公開查詢以 placeholder 呈現，管理員可複核並依記錄停權；沒有自動停權或自動隱藏門檻。OpenRouter 基礎設施故障採 fail-open 放行並記錄結構化錯誤。
 
 ### 授權方式（#5 帶來的變更）
 
@@ -458,6 +464,18 @@ npx wrangler d1 migrations apply vtaiwan-civic-talks --remote   # 🚫 需先取
 - 公開 SQL 直接遮蔽未 opt-in email，並排除 `author_id`／`show_email`；管理端才取得完整快照。
 - 三個投稿 API 要求 `terms_accepted === true` 且嚴格驗證 `show_email` 為 boolean；版本與同意時間由伺服器寫入。
 - `/privacy`、`/terms` 已說明快照、公開選擇及帳號刪除不會自動清除跨資料庫內容快照。
+
+### 已完成：#29 投稿 AI 安全審查與誤判申訴
+
+| #    | 項目                   | 狀態    | 內容                                                                                                                                                                                                                           |
+| ---- | ---------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 29-1 | `migration`            | ✅ 完成 | 最終 schema 收斂在 `migrations/0009_ai_moderation.sql`（0009–0012 從未套用遠端）；本機完整重跑後確認業務表均為 `ct_*`，遠端 migration 尚未套用且依使用者指示暫不套用 |
+| 29-2 | `moderation-service`   | ✅ 完成 | `src/moderation/service.ts` 執行時讀 `ASSETS.fetch('/rules/community-guidelines.md')`，以 OpenRouter 結構化 JSON schema 判定；`AbortSignal.timeout()`、fail-open 與結構化錯誤 log |
+| 29-3 | `submission-moderation` | ✅ 完成 | 四個投稿端點維持成功回應；違規投稿 INSERT 時標記 `abuse_flagged = 3` 並建立指向該列的 `source = 'ai'` 回報，公開查詢只回 placeholder，且素材／說明頁違規不觸發議題狀態轉換 |
+| 29-4 | `appeals-api`          | ✅ 完成 | `POST /api/appeals`（`rejected_submission`／`account_ban`）；管理端申訴列表與 resolve 端點；帳號處置透過 Better Auth |
+| 29-5 | `appeals-ui`           | ✅ 完成 | `ModerationAppealForm.vue`、Home／Contribute／Issue 投稿表單保留輸入並提供申訴；Admin moderation 分頁可查看與處理；zh-TW／en key 集合同步 |
+| 29-6 | `preview`              | ✅ 完成 | `GET /api/admin/moderation/preview` 使用正式相同模型請求路徑，回傳判定、finish reason、usage 與 fail-open failure kind，不寫 D1 |
+| 29-7 | `verify`               | ✅ 待本分支驗證 | typecheck、測試、build、本機 Worker smoke test 與真實模型預覽測試依本次變更重新執行；內容生成仍只提供志願者 prompt，未改成伺服器代打模型 |
 
 > 後續可選：切換到 `vue-router` 全站 hydration、自動化測試／CI——動工前先與使用者確認。
 

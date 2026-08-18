@@ -4,6 +4,7 @@ import AppHeader from '../components/AppHeader.vue'
 import AppFooter from '../components/AppFooter.vue'
 import SignInButtons from '../components/SignInButtons.vue'
 import Toast from '../components/Toast.vue'
+import ModerationAppealNotice from '../components/ModerationAppealNotice.vue'
 import { useI18n } from '../l10n'
 import { useAuth } from '../composables/useAuth'
 
@@ -37,6 +38,7 @@ const { authState, session, authFailed, ensureAuthSession } = useAuth()
  * 這裡改成表單留在原地，只在上方多出一列重新登入的提示。
  */
 const sessionExpired = ref(false)
+const moderationNotice = ref<{ appealType: 'rejected_submission' | 'account_ban'; reportId?: number; policyCode?: string; rationale?: string } | null>(null)
 
 const charLabel = computed(() => `${content.value.length}${t('contrib_chars_suffix')}`)
 const backHref = computed(() => `/issues/${props.issueId}`)
@@ -99,13 +101,25 @@ async function submitMaterial() {
       toast.value?.show(t('login_expired_toast'))
       return
     }
-    // 帳號被停權（#11）：提示並保留表單內容
+    // 帳號被管理員停權：保留表單內容，另提供帳號申訴入口。
     if (res.status === 403) {
+      moderationNotice.value = { appealType: 'account_ban' }
       toast.value?.show(t('banned_toast'))
       return
     }
     if (!res.ok) {
       toast.value?.show(t('contrib_toast_fail'))
+      return
+    }
+    const data = (await res.json().catch(() => ({}))) as { moderation?: { hidden?: boolean; policy_code?: string; rationale?: string; report_id?: number | null } }
+    if (data.moderation?.hidden) {
+      moderationNotice.value = {
+        appealType: 'rejected_submission',
+        reportId: data.moderation.report_id ?? undefined,
+        policyCode: data.moderation.policy_code,
+        rationale: data.moderation.rationale,
+      }
+      toast.value?.show(t('moderation_hidden_title'))
       return
     }
     toast.value?.show(t('contrib_toast_ok'))
@@ -157,6 +171,13 @@ async function submitMaterial() {
             <p class="mt-0 mb-3">{{ t('login_expired_hint') }}</p>
             <SignInButtons :callback-url="loginCallbackUrl" />
           </div>
+          <ModerationAppealNotice
+            v-if="moderationNotice"
+            :appeal-type="moderationNotice.appealType"
+            :report-id="moderationNotice.reportId"
+            :policy-code="moderationNotice.policyCode"
+            :rationale="moderationNotice.rationale"
+          />
           <!-- 登出鈕在 AppHeader，這裡只交代「你會以誰的身分投稿」 -->
           <p class="mb-5 border-b border-border pb-3 text-sm text-muted">
             {{ t('contrib_signed_in_as', { name: session?.user.name || session?.user.email || '' }) }}

@@ -5,6 +5,7 @@ import AppFooter from '../components/AppFooter.vue'
 import IssueCard from '../components/IssueCard.vue'
 import SignInButtons from '../components/SignInButtons.vue'
 import Toast from '../components/Toast.vue'
+import ModerationAppealNotice from '../components/ModerationAppealNotice.vue'
 import { useI18n } from '../l10n'
 import { useAuth } from '../composables/useAuth'
 import type { IssueListItem } from '../db/queries'
@@ -29,6 +30,7 @@ const toast = ref<{ show: (msg: string) => void } | null>(null)
 const { authState, session, ensureAuthSession } = useAuth()
 // 送出時才發現 session 過期：表單留著（別吃掉使用者打的字），只在上方補一列重新登入
 const sessionExpired = ref(false)
+const moderationNotice = ref<{ appealType: 'rejected_submission' | 'account_ban'; reportId?: number; policyCode?: string; rationale?: string } | null>(null)
 
 const searchQuery = ref('')
 type SortOrder = 'newest' | 'most' | 'least'
@@ -97,8 +99,9 @@ async function createIssue() {
       toast.value?.show(t('login_expired_toast'))
       return
     }
-    // 帳號被停權：提示並保留表單內容（不清表單、不切登入狀態，守門在伺服器端）
+    // 帳號被管理員停權：保留表單內容，另提供帳號申訴入口。
     if (res.status === 403) {
+      moderationNotice.value = { appealType: 'account_ban' }
       toast.value?.show(t('banned_toast'))
       return
     }
@@ -106,7 +109,17 @@ async function createIssue() {
       toast.value?.show(t('idx_toast_create_fail'))
       return
     }
-    const data = (await res.json()) as { id: number }
+    const data = (await res.json()) as { id: number; moderation?: { hidden?: boolean; policy_code?: string; rationale?: string; report_id?: number | null } }
+    if (data.moderation?.hidden) {
+      moderationNotice.value = {
+        appealType: 'rejected_submission',
+        reportId: data.moderation.report_id ?? undefined,
+        policyCode: data.moderation.policy_code,
+        rationale: data.moderation.rationale,
+      }
+      toast.value?.show(t('moderation_hidden_title'))
+      return
+    }
     toast.value?.show(t('idx_toast_create_ok'))
     showForm.value = false
     title.value = ''
@@ -174,6 +187,13 @@ async function copyRssUrl() {
               <p class="mt-0 mb-3">{{ t('login_expired_hint') }}</p>
               <SignInButtons callback-url="/" />
             </div>
+            <ModerationAppealNotice
+              v-if="moderationNotice"
+              :appeal-type="moderationNotice.appealType"
+              :report-id="moderationNotice.reportId"
+              :policy-code="moderationNotice.policyCode"
+              :rationale="moderationNotice.rationale"
+            />
             <div class="form-group">
               <label>
                 <span>{{ t('idx_label_title') }}</span>
