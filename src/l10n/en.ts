@@ -303,7 +303,7 @@ export const messages = {
   contrib_submit: '✅ Submit Material',
   contrib_tips_title: '🙋 What materials help most?',
   contrib_tips_body:
-    '• Government docs\n• NGO statements\n• News reports with links\n• Representative social posts\n• Academic findings\n\nThe same material can be submitted by multiple people; the platform tracks consistency.',
+    '• Constitution, laws, and administrative orders\n• International conventions and global trends\n• Government docs\n• NGO statements\n• News reports with links\n• Representative social posts\n• Academic findings\n\nThe same material can be submitted by multiple people; the platform tracks consistency.',
   contrib_toast_required: 'Please enter material content',
   contrib_toast_too_short: 'Content is too short — please add more detail or a fuller summary',
   contrib_toast_license: 'Please confirm licensing or submit a summary instead',
