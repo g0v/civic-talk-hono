@@ -365,7 +365,7 @@ export const messages = {
   // Email disclosure option (#27)
   show_email_label: 'Make my email public: {email}',
   show_email_hint: '(optional; an email snapshot is stored and only published when checked)',
-  author_email_label: 'Email',
+  author_email_link_title: 'Email {name}',
   // RSS subscription (#45)
   rss_subscribe_btn: '📡 Subscribe via RSS',
   rss_copy_ok: 'RSS link copied to clipboard! Paste it into your RSS reader to subscribe.',

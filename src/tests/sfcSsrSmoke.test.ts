@@ -87,6 +87,52 @@ describe('routable view SSR smoke tests', () => {
   }
 })
 
+describe('author email disclosure (#60)', () => {
+  const optedIn = { ...issue, material_count: 1, opinion_count: 1, author_name: '投稿者', author_email: 'contributor@example.com' }
+
+  it('renders the opted-in email as a mailto link, not as visible text', async () => {
+    const html = await render(IssueCard, { issue: optedIn })
+    expect(html).toContain('mailto:contributor@example.com')
+    // 明碼只能出現在 href 裡，不能成為可見文字
+    expect(html.replace(/mailto:contributor@example\.com/g, '')).not.toContain('contributor@example.com')
+  })
+
+  it('never nests an anchor inside the issue card link', async () => {
+    const html = await render(IssueCard, { issue: optedIn })
+    // 先去掉註解，避免註解文字裡的標籤字樣被誤判
+    const anchors = html.replace(/<!--[\s\S]*?-->/g, '').match(/<a\b|<\/a>/g) ?? []
+    let depth = 0
+    for (const token of anchors) {
+      depth += token === '</a>' ? -1 : 1
+      expect(depth).toBeLessThanOrEqual(1)
+    }
+    expect(depth).toBe(0)
+  })
+
+  it('renders mailto links on the detail views', async () => {
+    const materialHtml = await render(MaterialDetailView, {
+      issueId: 1,
+      materialId: 1,
+      initialData: { issue, material: { ...material, author_name: '投稿者', author_email: 'material@example.com' } },
+    })
+    expect(materialHtml).toContain('mailto:material@example.com')
+    expect(materialHtml.replace(/mailto:material@example\.com/g, '')).not.toContain('material@example.com')
+
+    const opinionHtml = await render(OpinionDetailView, {
+      issueId: 1,
+      opinionId: 1,
+      initialData: { issue, opinion: { ...opinion, author_name: '投稿者', author_email: 'opinion@example.com' } },
+    })
+    expect(opinionHtml).toContain('mailto:opinion@example.com')
+    expect(opinionHtml.replace(/mailto:opinion@example\.com/g, '')).not.toContain('opinion@example.com')
+  })
+
+  it('renders nothing when the author did not opt in', async () => {
+    const html = await render(IssueCard, { issue: { ...issue, material_count: 0, opinion_count: 0 } })
+    expect(html).not.toContain('mailto:')
+  })
+})
+
 describe('shared component SSR smoke tests', () => {
   const cases: Array<{ name: string; component: Component; props?: Record<string, unknown> }> = [
     { name: 'app footer', component: AppFooter },

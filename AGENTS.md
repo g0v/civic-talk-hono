@@ -461,6 +461,7 @@ npx wrangler d1 migrations apply vtaiwan-civic-talks --remote   # 🚫 需先取
 - `migrations/0005_author_email.sql` 讓四種內容都有完整作者快照；0004／0005／0006 本機與遠端皆已套用。
 - `migrations/0006_submission_consent.sql` 保存三類具名投稿接受的條款版本與時間；版本常數在 `src/legal/terms.ts`，修改條款時必須同步更新。
 - 公開頁面固定顯示投稿當下的 `author_name`，email 只有該筆內容的 `show_email = 1` 才顯示；名稱缺漏時不以 email 代替。
+- **#60：公開的 email 一律以信封 icon 的 `mailto:` 連結呈現（`src/components/AuthorEmailLink.vue`），不在頁面上輸出明碼文字。**無障礙名稱用顯示名稱（`author_email_link_title`），不放地址。管理端（`Admin.vue`）仍顯示完整快照，不受此限。注意地址仍在 `href` 與 SSR state 內，**不是防爬蟲措施**。`IssueCard.vue` 因此改為 stretched link 結構——卡片根節點不可是 `<a>`，否則巢狀連結會造成 hydration mismatch。
 - 公開 SQL 直接遮蔽未 opt-in email，並排除 `author_id`／`show_email`；管理端才取得完整快照。
 - 三個投稿 API 要求 `terms_accepted === true` 且嚴格驗證 `show_email` 為 boolean；版本與同意時間由伺服器寫入。
 - `/privacy`、`/terms` 已說明快照、公開選擇及帳號刪除不會自動清除跨資料庫內容快照。
