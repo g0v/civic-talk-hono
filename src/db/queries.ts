@@ -177,6 +177,8 @@ export interface CreateAbuseReportInput {
   target_user_id?: string | null
 }
 
+type AbuseReportTarget = Pick<CreateAbuseReportInput, 'issue_id' | 'material_id' | 'briefing_id' | 'opinion_id'>
+
 export interface CreateAiModerationReportInput {
   user_id: string
   user_name: string | null
@@ -398,11 +400,18 @@ export async function createBriefing(
   },
   options: { moderationHidden?: boolean; skipStatusTransition?: boolean } = {}
 ): Promise<number> {
-  const existing = await db.prepare('SELECT MAX(version) as maxv FROM ct_briefings WHERE issue_id = ?').bind(issueId).first<{ maxv: number | null }>()
-  const nextVersion = (existing?.maxv ?? 0) + 1
-  await db
+  // 版本計算與 INSERT 必須是同一個 SQL statement；拆成 MAX(version) + INSERT 時，
+  // 兩個同時投稿可能選到同一版號。
+  const inserted = await db
     .prepare(
-      'INSERT INTO ct_briefings (issue_id, consensus, disputes, positions, narrative, opinion_prompt, version, author_id, author_name, author_email, show_email, abuse_flagged) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      `INSERT INTO ct_briefings (
+         issue_id, consensus, disputes, positions, narrative, opinion_prompt, version,
+         author_id, author_name, author_email, show_email, abuse_flagged
+       )
+       SELECT ?, ?, ?, ?, ?, ?, COALESCE(MAX(version), 0) + 1, ?, ?, ?, ?, ?
+       FROM ct_briefings
+       WHERE issue_id = ?
+       RETURNING version`
     )
     .bind(
       issueId,
@@ -411,18 +420,19 @@ export async function createBriefing(
       input.positions ?? '',
       input.narrative ?? '',
       input.opinion_prompt ?? '',
-      nextVersion,
       author.author_id,
       author.author_name,
       author.author_email,
       author.show_email ? 1 : 0,
-      options.moderationHidden ? 3 : 0
+      options.moderationHidden ? 3 : 0,
+      issueId
     )
-    .run()
+    .first<{ version: number }>()
+  if (!inserted) throw new Error('Briefing insert did not return a version')
   if (!options.skipStatusTransition) {
     await db.prepare("UPDATE ct_issues SET status = 'published' WHERE id = ? AND status IN ('collecting', 'summarizing')").bind(issueId).run()
   }
-  return nextVersion
+  return inserted.version
 }
 
 export async function getBriefingIdByVersion(db: D1Database, issueId: number, version: number): Promise<number | null> {
@@ -586,48 +596,83 @@ export async function listForRss(db: D1Database, limit = 20): Promise<RssFeedIte
 
 /**
  * 建立一筆濫用回報，並立即將目標內容的 abuse_flagged 設為 1（第 1 次回報即打標）。
+ * 使用者回報在單一 D1 batch 內進行去重、INSERT 與打標，避免平行請求留下不一致資料。
  * 呼叫端必須先過 requireUser()。AI 審查回報沒有公開內容列，會以 source='ai'
  * 搭配 target_user_id 與 content_snapshot 保存供管理員複核。
  */
-export async function createAbuseReport(db: D1Database, input: CreateAbuseReportInput): Promise<number> {
-  const { meta } = await db
-    .prepare(
-      'INSERT INTO ct_abuse_reports (reporter_id, reporter_name, reporter_email, reason, description, issue_id, material_id, briefing_id, opinion_id, source, policy_code, submission_type, content_snapshot, target_user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-    )
-    .bind(
-      input.reporter_id,
-      input.reporter_name,
-      input.reporter_email,
-      input.reason,
-      input.description ?? null,
-      input.issue_id ?? null,
-      input.material_id ?? null,
-      input.briefing_id ?? null,
-      input.opinion_id ?? null,
-      input.source ?? 'user',
-      input.policy_code ?? null,
-      input.submission_type ?? null,
-      input.content_snapshot ?? null,
-      input.target_user_id ?? null
-    )
-    .run()
-  // 第 1 次使用者回報即打標；AI 投稿在 INSERT 時已帶 abuse_flagged = 3。
-  if ((input.source ?? 'user') === 'user') {
-    if (input.issue_id != null) {
-      await db.prepare('UPDATE ct_issues SET abuse_flagged = 1 WHERE id = ?').bind(input.issue_id).run()
-    } else if (input.material_id != null) {
-      await db.prepare('UPDATE ct_materials SET abuse_flagged = 1 WHERE id = ?').bind(input.material_id).run()
-    } else if (input.briefing_id != null) {
-      await db.prepare('UPDATE ct_briefings SET abuse_flagged = 1 WHERE id = ?').bind(input.briefing_id).run()
-    } else if (input.opinion_id != null) {
-      await db.prepare('UPDATE ct_opinions SET abuse_flagged = 1 WHERE id = ?').bind(input.opinion_id).run()
-    }
+export async function createAbuseReport(db: D1Database, input: CreateAbuseReportInput): Promise<number | null> {
+  const source = input.source ?? 'user'
+  const target: AbuseReportTarget = {
+    issue_id: input.issue_id ?? null,
+    material_id: input.material_id ?? null,
+    briefing_id: input.briefing_id ?? null,
+    opinion_id: input.opinion_id ?? null,
   }
-  return meta.last_row_id
+  const targetKey = source === 'user' ? abuseReportTargetKey(target) : null
+  const values = [
+    input.reporter_id,
+    input.reporter_name,
+    input.reporter_email,
+    input.reason,
+    input.description ?? null,
+    target.issue_id,
+    target.material_id,
+    target.briefing_id,
+    target.opinion_id,
+    source,
+    input.policy_code ?? null,
+    input.submission_type ?? null,
+    input.content_snapshot ?? null,
+    input.target_user_id ?? null,
+    targetKey,
+  ]
+  const insert = db
+    .prepare(
+      source === 'user'
+        ? `INSERT INTO ct_abuse_reports (
+             reporter_id, reporter_name, reporter_email, reason, description, issue_id, material_id,
+             briefing_id, opinion_id, source, policy_code, submission_type, content_snapshot,
+             target_user_id, pending_target_key
+           )
+           SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+           WHERE NOT EXISTS (
+             SELECT 1 FROM ct_abuse_reports
+             WHERE source = 'user' AND review_status = 'pending'
+               AND issue_id IS ? AND material_id IS ? AND briefing_id IS ? AND opinion_id IS ?
+           )`
+        : 'INSERT INTO ct_abuse_reports (reporter_id, reporter_name, reporter_email, reason, description, issue_id, material_id, briefing_id, opinion_id, source, policy_code, submission_type, content_snapshot, target_user_id, pending_target_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    )
+    .bind(...values, ...(source === 'user' ? [target.issue_id, target.material_id, target.briefing_id, target.opinion_id] : []))
+
+  // AI 投稿在 INSERT 時已帶 abuse_flagged = 3；使用者回報才需要打上待審旗標。
+  if (source !== 'user') {
+    const { meta } = await insert.run()
+    return meta.last_row_id
+  }
+
+  const flag = flagContentForPendingReport(db, target)
+  const [created] = await db.batch([insert, flag])
+  return created?.meta.changes === 1 ? created.meta.last_row_id : null
+}
+
+function abuseReportTargetKey(target: AbuseReportTarget): string {
+  if (target.issue_id != null) return `issue:${target.issue_id}`
+  if (target.material_id != null) return `material:${target.material_id}`
+  if (target.briefing_id != null) return `briefing:${target.briefing_id}`
+  if (target.opinion_id != null) return `opinion:${target.opinion_id}`
+  throw new Error('Abuse report requires exactly one target')
+}
+
+function flagContentForPendingReport(db: D1Database, target: AbuseReportTarget): D1PreparedStatement {
+  if (target.issue_id != null) return db.prepare('UPDATE ct_issues SET abuse_flagged = 1 WHERE id = ?').bind(target.issue_id)
+  if (target.material_id != null) return db.prepare('UPDATE ct_materials SET abuse_flagged = 1 WHERE id = ?').bind(target.material_id)
+  if (target.briefing_id != null) return db.prepare('UPDATE ct_briefings SET abuse_flagged = 1 WHERE id = ?').bind(target.briefing_id)
+  if (target.opinion_id != null) return db.prepare('UPDATE ct_opinions SET abuse_flagged = 1 WHERE id = ?').bind(target.opinion_id)
+  throw new Error('Abuse report requires exactly one target')
 }
 /** 建立 AI 審查判定違規的回報，直接指向已寫入且暫時隱藏的投稿列。 */
 export async function createAiModerationReport(db: D1Database, input: CreateAiModerationReportInput): Promise<number> {
-  return createAbuseReport(db, {
+  const id = await createAbuseReport(db, {
     reporter_id: input.user_id,
     reporter_name: input.user_name,
     reporter_email: input.user_email,
@@ -643,20 +688,8 @@ export async function createAiModerationReport(db: D1Database, input: CreateAiMo
     content_snapshot: input.content_snapshot,
     target_user_id: input.user_id,
   })
-}
-
-/** 查詢目標內容是否已有 pending 中的回報（防重複送出）。*/
-export async function findPendingReportForTarget(db: D1Database, target: { material_id: number | null; briefing_id: number | null; opinion_id: number | null }): Promise<boolean> {
-  const { material_id, briefing_id, opinion_id } = target
-  let row: { cnt: number } | null = null
-  if (material_id !== null) {
-    row = await db.prepare("SELECT COUNT(*) AS cnt FROM ct_abuse_reports WHERE material_id = ? AND review_status = 'pending'").bind(material_id).first<{ cnt: number }>()
-  } else if (briefing_id !== null) {
-    row = await db.prepare("SELECT COUNT(*) AS cnt FROM ct_abuse_reports WHERE briefing_id = ? AND review_status = 'pending'").bind(briefing_id).first<{ cnt: number }>()
-  } else if (opinion_id !== null) {
-    row = await db.prepare("SELECT COUNT(*) AS cnt FROM ct_abuse_reports WHERE opinion_id = ? AND review_status = 'pending'").bind(opinion_id).first<{ cnt: number }>()
-  }
-  return (row?.cnt ?? 0) > 0
+  if (id === null) throw new Error('AI moderation report unexpectedly deduplicated')
+  return id
 }
 
 /** 管理端：列出所有濫用回報（按建立時間降冪），LEFT JOIN 取回目標所屬議題與作者 ID。
@@ -810,7 +843,7 @@ export async function resolveModerationAppeal(
 
 /** 更新濫用回報審核狀態。 */
 export async function resolveAbuseReport(db: D1Database, id: number, status: Exclude<AbuseReviewStatus, 'pending'>): Promise<void> {
-  await db.prepare('UPDATE ct_abuse_reports SET review_status = ? WHERE id = ?').bind(status, id).run()
+  await db.prepare('UPDATE ct_abuse_reports SET review_status = ?, pending_target_key = NULL WHERE id = ?').bind(status, id).run()
 }
 
 /** 誤報時將目標內容的 abuse_flagged 清回 0。 */
