@@ -5,7 +5,20 @@ import type { AppBindings } from './api/types'
 import { listIssues, getIssue, getIssueDetail, getMaterialWithIssue, getOpinionWithIssue } from './db/queries'
 import { handleRss } from './rss'
 import { renderPage } from './ssr/render'
-import { headForAbout, headForAdmin, headForAppeals, headForContribute, headForHome, headForIssue, headForMaterial, headForNotFound, headForOpinion, headForPrivacy, headForProfile, headForTerms } from './ssr/heads'
+import {
+  headForAbout,
+  headForAdmin,
+  headForAppeals,
+  headForContribute,
+  headForHome,
+  headForIssue,
+  headForMaterial,
+  headForNotFound,
+  headForOpinion,
+  headForPrivacy,
+  headForProfile,
+  headForTerms,
+} from './ssr/heads'
 import HomeView from './views/Home.vue'
 import AboutView from './views/About.vue'
 import IssueView from './views/Issue.vue'

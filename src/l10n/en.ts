@@ -451,7 +451,8 @@ export const messages = {
   privacy_s4_li1: 'Providing and maintaining the platform service (issue creation, material collection, opinion aggregation)',
   privacy_s4_li2: 'Ensuring content quality: named attribution reduces the risk of malicious submissions',
   privacy_s4_li3: 'Tracing and investigating abuse when it occurs',
-  privacy_s4_li4: 'Automated safety review: rejected submissions are retained as content snapshots for admin review and appeal handling; use the Platform appeal channel if you believe a rejection was mistaken.',
+  privacy_s4_li4:
+    'Automated safety review: rejected submissions are retained as content snapshots for admin review and appeal handling; use the Platform appeal channel if you believe a rejection was mistaken.',
   privacy_s5_h: 'Data Sharing',
   privacy_s5_p:
     'Except for necessary infrastructure services (the Cloudflare Workers platform), the Platform will not sell, rent, or share your personal data with third parties for commercial purposes.',
@@ -604,5 +605,5 @@ export const messages = {
   appeals_type_briefing: 'Briefing',
   appeals_account_ban_item_title: 'Appeal an account ban',
   appeals_account_ban_item_body: 'Your account is currently banned. If you believe this action was mistaken, explain why and include any relevant context below.',
-  appeals_content_snapshot: 'Submitted content'
+  appeals_content_snapshot: 'Submitted content',
 } as const

@@ -429,7 +429,6 @@ function snapshotSummary(snapshotJSON: string): string {
   const summary = parseSnapshot(snapshotJSON)?.summary
   return typeof summary === 'string' && summary.trim() ? summary : snapshotJSON
 }
-
 </script>
 
 <template>
@@ -516,7 +515,6 @@ function snapshotSummary(snapshotJSON: string): string {
           <!-- AI moderation and appeals -->
           <section v-show="activeTab === 'moderation'">
             <h2 class="mt-0 mb-4 font-serif text-xl">{{ t('adm_mod_title') }}</h2>
-
 
             <div>
               <h3 class="mb-3 font-serif text-lg">{{ t('adm_mod_appeals_title') }}</h3>

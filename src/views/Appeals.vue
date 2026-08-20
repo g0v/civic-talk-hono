@@ -156,12 +156,7 @@ onMounted(async () => {
                   </div>
                 </dl>
               </div>
-              <ModerationAppealForm
-                appeal-type="rejected_submission"
-                :report-id="report.id"
-                :policy-code="report.policy_code"
-                :rationale="report.description ?? undefined"
-              />
+              <ModerationAppealForm appeal-type="rejected_submission" :report-id="report.id" :policy-code="report.policy_code" :rationale="report.description ?? undefined" />
             </article>
           </div>
         </section>

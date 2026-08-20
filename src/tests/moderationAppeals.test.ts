@@ -37,7 +37,17 @@ function fakeDb() {
         },
         async run() {
           if (sql.startsWith('INSERT INTO ct_moderation_appeals')) {
-            appeals.push({ id: nextId++, user_id: String(args[0]), user_name: (args[1] as string | null) ?? null, user_email: String(args[2]), abuse_report_id: (args[3] as number | null) ?? null, appeal_type: args[4] as FakeAppeal['appeal_type'], content_snapshot: (args[5] as string | null) ?? null, message: String(args[6]), status: 'pending' })
+            appeals.push({
+              id: nextId++,
+              user_id: String(args[0]),
+              user_name: (args[1] as string | null) ?? null,
+              user_email: String(args[2]),
+              abuse_report_id: (args[3] as number | null) ?? null,
+              appeal_type: args[4] as FakeAppeal['appeal_type'],
+              content_snapshot: (args[5] as string | null) ?? null,
+              message: String(args[6]),
+              status: 'pending',
+            })
           } else if (sql.startsWith('UPDATE ct_moderation_appeals SET status')) {
             const appeal = appeals.find(item => item.id === Number(args[4]))
             if (appeal) appeal.status = args[0] as FakeAppeal['status']

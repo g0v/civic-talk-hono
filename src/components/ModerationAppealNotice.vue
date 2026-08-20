@@ -36,8 +36,14 @@ const policyLabel = computed(() => {
     <p class="mb-2">
       {{ appealType === 'rejected_submission' ? t('moderation_hidden_notice_body') : t('moderation_account_ban_notice_body') }}
     </p>
-    <p v-if="policyCode" class="mb-1 text-sm"><strong>{{ t('moderation_policy_label') }}</strong>{{ policyLabel }}</p>
-    <p v-if="rationale" class="mb-3 whitespace-pre-wrap text-sm"><strong>{{ t('moderation_rationale_label') }}</strong>{{ rationale }}</p>
+    <p v-if="policyCode" class="mb-1 text-sm">
+      <strong>{{ t('moderation_policy_label') }}</strong
+      >{{ policyLabel }}
+    </p>
+    <p v-if="rationale" class="mb-3 whitespace-pre-wrap text-sm">
+      <strong>{{ t('moderation_rationale_label') }}</strong
+      >{{ rationale }}
+    </p>
     <a :href="appealHref" class="btn btn-secondary mt-2">{{ t('moderation_appeal_link') }}</a>
   </aside>
 </template>

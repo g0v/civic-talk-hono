@@ -288,13 +288,19 @@ export function registerApiRoutes(app: App): void {
       { moderationHidden: moderation.hidden }
     )
     if (!moderation.hidden || moderation.decision.outcome !== 'violation') return json({ id, title: body.title.trim() }, 201)
-    const reportId = await recordModerationViolation(c.env, auth.context, {
-      type: 'issue',
-      fields: {
-        title: body.title.trim(),
-        description: body.description ?? '',
+    const reportId = await recordModerationViolation(
+      c.env,
+      auth.context,
+      {
+        type: 'issue',
+        fields: {
+          title: body.title.trim(),
+          description: body.description ?? '',
+        },
       },
-    }, moderation.decision, { issue_id: id, material_id: null, briefing_id: null, opinion_id: null })
+      moderation.decision,
+      { issue_id: id, material_id: null, briefing_id: null, opinion_id: null }
+    )
     return json({ id, title: body.title.trim(), moderation: moderationMetadata(moderation.decision, reportId) }, 201)
   })
 
@@ -408,14 +414,19 @@ export function registerApiRoutes(app: App): void {
       },
     }
     const moderation = await moderateSubmissionForWrite(c.req.raw, c.env, submission)
-    const materialId = await db.createMaterial(c.env.DB, id, {
-      content: body.content.trim(),
-      source_name: body.source_name ?? '',
-      source_url: body.source_url ?? '',
-      stance: body.stance ?? 'unknown',
-      ...buildAuthorSnapshot(auth.context.user, body.show_email === true),
-      terms_version: TERMS_VERSION,
-    }, { moderationHidden: moderation.hidden, skipStatusTransition: moderation.hidden })
+    const materialId = await db.createMaterial(
+      c.env.DB,
+      id,
+      {
+        content: body.content.trim(),
+        source_name: body.source_name ?? '',
+        source_url: body.source_url ?? '',
+        stance: body.stance ?? 'unknown',
+        ...buildAuthorSnapshot(auth.context.user, body.show_email === true),
+        terms_version: TERMS_VERSION,
+      },
+      { moderationHidden: moderation.hidden, skipStatusTransition: moderation.hidden }
+    )
     if (!moderation.hidden || moderation.decision.outcome !== 'violation') return json({ id: materialId }, 201)
     const reportId = await recordModerationViolation(c.env, auth.context, submission, moderation.decision, {
       issue_id: null,
@@ -471,21 +482,21 @@ export function registerApiRoutes(app: App): void {
     }
     const moderation = await moderateSubmissionForWrite(c.req.raw, c.env, submission)
     // 說明頁公開顯示投稿當下名稱；email 僅在 show_email = true 時公開。
-    const version = await db.createBriefing(
-      c.env.DB,
-      id,
-      buildAuthorSnapshot(auth.context.user, body.show_email === true),
-      body,
-      { moderationHidden: moderation.hidden, skipStatusTransition: moderation.hidden }
-    )
+    const version = await db.createBriefing(c.env.DB, id, buildAuthorSnapshot(auth.context.user, body.show_email === true), body, {
+      moderationHidden: moderation.hidden,
+      skipStatusTransition: moderation.hidden,
+    })
     if (!moderation.hidden || moderation.decision.outcome !== 'violation') return json({ version }, 201)
     const briefingId = await db.getBriefingIdByVersion(c.env.DB, id, version)
-    const reportId = briefingId === null ? undefined : await recordModerationViolation(c.env, auth.context, submission, moderation.decision, {
-      issue_id: null,
-      material_id: null,
-      briefing_id: briefingId,
-      opinion_id: null,
-    })
+    const reportId =
+      briefingId === null
+        ? undefined
+        : await recordModerationViolation(c.env, auth.context, submission, moderation.decision, {
+            issue_id: null,
+            material_id: null,
+            briefing_id: briefingId,
+            opinion_id: null,
+          })
     return json({ version, moderation: moderationMetadata(moderation.decision, reportId) }, 201)
   })
 
@@ -543,11 +554,16 @@ export function registerApiRoutes(app: App): void {
       fields: { summary: body.summary.trim() },
     }
     const moderation = await moderateSubmissionForWrite(c.req.raw, c.env, submission)
-    const opinionId = await db.createOpinion(c.env.DB, id, {
-      summary: body.summary.trim(),
-      ...buildAuthorSnapshot(auth.context.user, body.show_email === true),
-      terms_version: TERMS_VERSION,
-    }, { moderationHidden: moderation.hidden })
+    const opinionId = await db.createOpinion(
+      c.env.DB,
+      id,
+      {
+        summary: body.summary.trim(),
+        ...buildAuthorSnapshot(auth.context.user, body.show_email === true),
+        terms_version: TERMS_VERSION,
+      },
+      { moderationHidden: moderation.hidden }
+    )
     if (!moderation.hidden || moderation.decision.outcome !== 'violation') return json({ id: opinionId }, 201)
     const reportId = await recordModerationViolation(c.env, auth.context, submission, moderation.decision, {
       issue_id: null,
@@ -700,7 +716,6 @@ export function registerApiRoutes(app: App): void {
     if (denied) return denied
     return json(await db.listModerationAppeals(c.env.DB))
   })
-
 
   app.get('/api/admin/moderation/preview', async c => {
     const denied = await requireAdmin(c.req.raw, c.env)

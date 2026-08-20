@@ -238,8 +238,7 @@ const PUBLIC_AUTHOR_COLUMNS = 'author_name, CASE WHEN show_email = 1 THEN author
 const PRIVATE_AUTHOR_COLUMNS = 'author_id, author_name, author_email, show_email'
 const SUBMISSION_CONSENT_COLUMNS = 'terms_version, terms_accepted_at'
 const ISSUE_BASE_COLUMNS = 'id, title, description, status, polis_id, created_at'
-const ISSUE_PUBLIC_COLUMNS =
-  `${ISSUE_BASE_COLUMNS.replace('title', 'CASE WHEN abuse_flagged = 3 THEN NULL ELSE title END AS title').replace('description', 'CASE WHEN abuse_flagged = 3 THEN NULL ELSE description END AS description')}, abuse_flagged, ${PUBLIC_AUTHOR_COLUMNS}`
+const ISSUE_PUBLIC_COLUMNS = `${ISSUE_BASE_COLUMNS.replace('title', 'CASE WHEN abuse_flagged = 3 THEN NULL ELSE title END AS title').replace('description', 'CASE WHEN abuse_flagged = 3 THEN NULL ELSE description END AS description')}, abuse_flagged, ${PUBLIC_AUTHOR_COLUMNS}`
 const ISSUE_ADMIN_COLUMNS = `${ISSUE_BASE_COLUMNS}, ${PRIVATE_AUTHOR_COLUMNS}, ${SUBMISSION_CONSENT_COLUMNS}, abuse_flagged`
 
 const ISSUE_COUNT_SUBQUERIES = `
@@ -279,7 +278,17 @@ export async function createIssue(
     .prepare(
       'INSERT INTO ct_issues (title, description, polis_id, author_id, author_name, author_email, show_email, terms_version, terms_accepted_at, abuse_flagged) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)'
     )
-    .bind(input.title, input.description ?? '', input.polis_id ?? null, input.author_id, input.author_name, input.author_email, input.show_email ? 1 : 0, input.terms_version, options.moderationHidden ? 3 : 0)
+    .bind(
+      input.title,
+      input.description ?? '',
+      input.polis_id ?? null,
+      input.author_id,
+      input.author_name,
+      input.author_email,
+      input.show_email ? 1 : 0,
+      input.terms_version,
+      options.moderationHidden ? 3 : 0
+    )
     .run()
   return meta.last_row_id
 }
@@ -308,7 +317,8 @@ export async function deleteIssueCascade(db: D1Database, id: number): Promise<vo
 }
 
 const MATERIAL_BASE_COLUMNS = 'id, issue_id, source_name, source_url, stance, content, verified_count, created_at, abuse_flagged'
-const MATERIAL_PUBLIC_COLUMNS = 'id, issue_id, source_name, source_url, stance, CASE WHEN abuse_flagged = 3 THEN NULL ELSE content END AS content, verified_count, created_at, abuse_flagged, ' + PUBLIC_AUTHOR_COLUMNS
+const MATERIAL_PUBLIC_COLUMNS =
+  'id, issue_id, source_name, source_url, stance, CASE WHEN abuse_flagged = 3 THEN NULL ELSE content END AS content, verified_count, created_at, abuse_flagged, ' + PUBLIC_AUTHOR_COLUMNS
 const MATERIAL_ADMIN_COLUMNS = `${MATERIAL_BASE_COLUMNS}, ${PRIVATE_AUTHOR_COLUMNS}, ${SUBMISSION_CONSENT_COLUMNS}`
 
 export async function listMaterials(db: D1Database, issueId: number): Promise<Material[]> {
@@ -463,7 +473,9 @@ export async function createOpinion(
   options: { moderationHidden?: boolean } = {}
 ): Promise<number> {
   const { meta } = await db
-    .prepare('INSERT INTO ct_opinions (issue_id, summary, author_id, author_name, author_email, show_email, terms_version, terms_accepted_at, abuse_flagged) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)')
+    .prepare(
+      'INSERT INTO ct_opinions (issue_id, summary, author_id, author_name, author_email, show_email, terms_version, terms_accepted_at, abuse_flagged) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)'
+    )
     .bind(issueId, input.summary, input.author_id, input.author_name, input.author_email, input.show_email ? 1 : 0, input.terms_version, options.moderationHidden ? 3 : 0)
     .run()
   return meta.last_row_id
@@ -505,10 +517,7 @@ export async function getAdminStats(db: D1Database): Promise<AdminStats> {
   }
 }
 
-export async function listMaterialsForPrompt(
-  db: D1Database,
-  issueId: number
-): Promise<{ source_name: string | null; source_url: string | null; stance: Stance | null; content: string | null }[]> {
+export async function listMaterialsForPrompt(db: D1Database, issueId: number): Promise<{ source_name: string | null; source_url: string | null; stance: Stance | null; content: string | null }[]> {
   const { results } = await db
     .prepare('SELECT source_name, source_url, stance, content FROM ct_materials WHERE issue_id = ? AND abuse_flagged IN (0, 1) ORDER BY created_at')
     .bind(issueId)
@@ -517,7 +526,10 @@ export async function listMaterialsForPrompt(
 }
 
 export async function listOpinionSummaries(db: D1Database, issueId: number, limit = 50): Promise<Pick<Opinion, 'summary'>[]> {
-  const { results } = await db.prepare('SELECT summary FROM ct_opinions WHERE issue_id = ? AND abuse_flagged IN (0, 1) ORDER BY created_at DESC LIMIT ?').bind(issueId, limit).all<Pick<Opinion, 'summary'>>()
+  const { results } = await db
+    .prepare('SELECT summary FROM ct_opinions WHERE issue_id = ? AND abuse_flagged IN (0, 1) ORDER BY created_at DESC LIMIT ?')
+    .bind(issueId, limit)
+    .all<Pick<Opinion, 'summary'>>()
   return results ?? []
 }
 
@@ -632,7 +644,6 @@ export async function createAiModerationReport(db: D1Database, input: CreateAiMo
   })
 }
 
-
 /** 查詢目標內容是否已有 pending 中的回報（防重複送出）。*/
 export async function findPendingReportForTarget(db: D1Database, target: { material_id: number | null; briefing_id: number | null; opinion_id: number | null }): Promise<boolean> {
   const { material_id, briefing_id, opinion_id } = target
@@ -739,9 +750,7 @@ export async function listAppealableAiModerationReportsForUser(db: D1Database, u
 /** 建立一筆自動審查申訴；呼叫端必須先驗證 report 所屬使用者。 */
 export async function createModerationAppeal(db: D1Database, input: CreateModerationAppealInput): Promise<number> {
   const { meta } = await db
-    .prepare(
-      'INSERT INTO ct_moderation_appeals (user_id, user_name, user_email, abuse_report_id, appeal_type, content_snapshot, message) VALUES (?, ?, ?, ?, ?, ?, ?)'
-    )
+    .prepare('INSERT INTO ct_moderation_appeals (user_id, user_name, user_email, abuse_report_id, appeal_type, content_snapshot, message) VALUES (?, ?, ?, ?, ?, ?, ?)')
     .bind(input.user_id, input.user_name, input.user_email, input.abuse_report_id, input.appeal_type, input.content_snapshot ?? null, input.message)
     .run()
   return meta.last_row_id
@@ -751,14 +760,8 @@ export async function createModerationAppeal(db: D1Database, input: CreateModera
 export async function findPendingModerationAppeal(db: D1Database, userId: string, reportId: number | null, appealType: ModerationAppealType): Promise<boolean> {
   const row =
     reportId !== null
-      ? await db
-          .prepare("SELECT COUNT(*) AS cnt FROM ct_moderation_appeals WHERE user_id = ? AND abuse_report_id = ? AND status = 'pending'")
-          .bind(userId, reportId)
-          .first<{ cnt: number }>()
-      : await db
-          .prepare("SELECT COUNT(*) AS cnt FROM ct_moderation_appeals WHERE user_id = ? AND appeal_type = ? AND status = 'pending'")
-          .bind(userId, appealType)
-          .first<{ cnt: number }>()
+      ? await db.prepare("SELECT COUNT(*) AS cnt FROM ct_moderation_appeals WHERE user_id = ? AND abuse_report_id = ? AND status = 'pending'").bind(userId, reportId).first<{ cnt: number }>()
+      : await db.prepare("SELECT COUNT(*) AS cnt FROM ct_moderation_appeals WHERE user_id = ? AND appeal_type = ? AND status = 'pending'").bind(userId, appealType).first<{ cnt: number }>()
   return (row?.cnt ?? 0) > 0
 }
 

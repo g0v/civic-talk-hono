@@ -1,7 +1,4 @@
-import type {
-  ModerationPolicyCode,
-  ModerationSubmissionType,
-} from '../db/queries'
+import type { ModerationPolicyCode, ModerationSubmissionType } from '../db/queries'
 
 const OPENROUTER_ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions'
 const OPENROUTER_MODEL = 'openai/gpt-oss-safeguard-20b'
@@ -111,13 +108,7 @@ function getModerationResponseFailureKind(value: unknown): string | null {
   const data = value as Record<string, unknown>
   if (data.verdict !== 'pass' && data.verdict !== 'violation') return 'openrouter_invalid_decision'
   if (typeof data.policy_code !== 'string' || !POLICY_CODES.includes(data.policy_code as (typeof POLICY_CODES)[number])) return 'unknown_policy_code'
-  if (
-    typeof data.rationale !== 'string' ||
-    typeof data.confidence !== 'number' ||
-    !Number.isFinite(data.confidence) ||
-    data.confidence < 0 ||
-    data.confidence > 1
-  ) {
+  if (typeof data.rationale !== 'string' || typeof data.confidence !== 'number' || !Number.isFinite(data.confidence) || data.confidence < 0 || data.confidence > 1) {
     return 'openrouter_invalid_decision'
   }
   return null
@@ -198,9 +189,7 @@ async function evaluateModerationSubmission(
           },
           {
             role: 'user',
-            content:
-              '請審查以下投稿。若明確違反守則第 2 節，回傳 violation 與最具體的 policy_code；若不確定或屬於第 3 節的豁免情形，回傳 pass。\n\n' +
-              buildSubmissionText(submission),
+            content: '請審查以下投稿。若明確違反守則第 2 節，回傳 violation 與最具體的 policy_code；若不確定或屬於第 3 節的豁免情形，回傳 pass。\n\n' + buildSubmissionText(submission),
           },
         ],
         response_format: {
@@ -264,12 +253,7 @@ async function evaluateModerationSubmission(
 }
 
 /** 正式投稿路徑使用的審查 API；錯誤會依既有契約寫結構化 fail-open log。 */
-export async function moderateSubmission(
-  apiKey: string | undefined,
-  assets: ModerationAssets | undefined,
-  requestUrl: string,
-  submission: ModerationSubmission
-): Promise<ModerationDecision> {
+export async function moderateSubmission(apiKey: string | undefined, assets: ModerationAssets | undefined, requestUrl: string, submission: ModerationSubmission): Promise<ModerationDecision> {
   const evaluation = await evaluateModerationSubmission(apiKey, assets, requestUrl, submission, true)
   return evaluation.decision
 }

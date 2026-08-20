@@ -82,8 +82,14 @@ async function submitAppeal() {
       {{ appealType === 'rejected_submission' ? t('moderation_hidden_title') : t('moderation_account_ban_title') }}
     </h3>
     <p class="mb-2">{{ appealType === 'rejected_submission' ? t('moderation_hidden_body') : t('moderation_account_ban_body') }}</p>
-    <p v-if="policyCode" class="mb-1 text-sm"><strong>{{ t('moderation_policy_label') }}</strong>{{ policyLabel }}</p>
-    <p v-if="rationale" class="mb-3 whitespace-pre-wrap text-sm"><strong>{{ t('moderation_rationale_label') }}</strong>{{ rationale }}</p>
+    <p v-if="policyCode" class="mb-1 text-sm">
+      <strong>{{ t('moderation_policy_label') }}</strong
+      >{{ policyLabel }}
+    </p>
+    <p v-if="rationale" class="mb-3 whitespace-pre-wrap text-sm">
+      <strong>{{ t('moderation_rationale_label') }}</strong
+      >{{ rationale }}
+    </p>
     <div v-if="submitted" class="font-semibold text-teal">{{ t('moderation_appeal_submitted') }}</div>
     <template v-else>
       <label class="block text-sm font-semibold" :for="messageId">{{ t('moderation_appeal_message_label') }}</label>

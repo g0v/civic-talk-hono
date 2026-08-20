@@ -534,8 +534,10 @@ async function submitOpinion() {
                   >{{ t('brief_version_prefix') }}{{ briefing.version }}，{{ t('brief_updated') }} {{ formatDate(briefing.created_at, locale) }} · {{ t('brief_author_label') }}：{{
                     briefing.author_name || t('author_system')
                   }}
-                  <template v-if="briefing.author_email"> <AuthorEmailLink :email="briefing.author_email" :name="briefing.author_name" /></template></span
-                >
+                  <template v-if="briefing.author_email">
+                    <AuthorEmailLink :email="briefing.author_email" :name="briefing.author_name" />
+                  </template>
+                </span>
                 <button v-if="authState === 'signed-in' && !briefing.abuse_flagged" type="button" class="ml-auto text-xs text-muted hover:text-red" @click="openReport('briefing', briefing.id)">
                   {{ t('report_btn') }}
                 </button>
@@ -588,9 +590,12 @@ async function submitOpinion() {
               <!-- metadata（已確認或 AI 審查違規時不顯示） -->
               <p v-if="m.abuse_flagged !== 2 && m.abuse_flagged !== 3" class="mt-2 mb-0 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
                 <span>{{ formatDate(m.created_at, locale) }} · {{ m.verified_count }} {{ t('mat_contributor') }}</span>
-                <span
-                  >{{ t('mat_author_label') }}：{{ m.author_name || t('author_system') }}<template v-if="m.author_email"> <AuthorEmailLink :email="m.author_email" :name="m.author_name" /></template></span
-                >
+                <span>
+                  {{ t('mat_author_label') }}：{{ m.author_name || t('author_system') }}
+                  <template v-if="m.author_email">
+                    <AuthorEmailLink :email="m.author_email" :name="m.author_name" />
+                  </template>
+                </span>
                 <a :href="`/issues/${issueId}/source/${m.id}`" class="text-xs text-muted hover:underline"> 🔗 {{ t('card_permalink') }} </a>
                 <button v-if="authState === 'signed-in' && m.source_url && !m.abuse_flagged" type="button" class="text-xs text-muted hover:text-amber-600" @click="submitBrokenLinkReport(m.id)">
                   {{ t('report_broken_btn') }}
@@ -791,9 +796,12 @@ async function submitOpinion() {
                   </div>
                   <p class="mt-0 mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
                     <span>{{ formatDate(o.created_at, locale) }}</span>
-                    <span
-                      >{{ t('op_author_label') }}：{{ o.author_name || t('author_system') }}<template v-if="o.author_email"> <AuthorEmailLink :email="o.author_email" :name="o.author_name" /></template></span
-                    >
+                    <span>
+                      {{ t('op_author_label') }}：{{ o.author_name || t('author_system') }}
+                      <template v-if="o.author_email">
+                        <AuthorEmailLink :email="o.author_email" :name="o.author_name" />
+                      </template>
+                    </span>
                     <a :href="`/issues/${issueId}/comment/${o.id}`" class="text-xs text-muted hover:underline"> 🔗 {{ t('card_permalink') }} </a>
                     <button v-if="authState === 'signed-in' && !o.abuse_flagged" type="button" class="ml-auto text-xs text-muted hover:text-red" @click="openReport('opinion', o.id)">
                       {{ t('report_btn') }}

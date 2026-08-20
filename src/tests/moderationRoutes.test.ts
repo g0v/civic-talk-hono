@@ -2,7 +2,9 @@ import { Hono } from 'hono'
 import { describe, expect, it, vi } from 'vite-plus/test'
 import { registerApiRoutes } from '../api/routes'
 
-const authContext = vi.hoisted(() => ({ current: null as null | { user: { id: string; name: string; email: string; image: null }; role: 'user' | 'admin' | 'super-admin'; banned: boolean; nameChangeCooldownDays: null } }))
+const authContext = vi.hoisted(() => ({
+  current: null as null | { user: { id: string; name: string; email: string; image: null }; role: 'user' | 'admin' | 'super-admin'; banned: boolean; nameChangeCooldownDays: null },
+}))
 
 vi.mock('../auth/authorization', () => ({
   isAdminRole: (role: string) => role === 'admin' || role === 'super-admin',
