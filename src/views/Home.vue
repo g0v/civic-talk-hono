@@ -40,12 +40,12 @@ const sortOrder = ref<SortOrder>('newest')
 const similarIssues = computed(() => {
   const q = title.value.trim().toLowerCase()
   if (q.length < 2) return []
-  return issues.value.filter(i => i.title.toLowerCase().includes(q)).slice(0, 5)
+  return issues.value.filter(i => (i.title ?? '').toLowerCase().includes(q)).slice(0, 5)
 })
 
 const filteredAndSortedIssues = computed(() => {
   const q = searchQuery.value.trim().toLowerCase()
-  let result = q ? issues.value.filter(i => i.title.toLowerCase().includes(q) || (i.description ?? '').toLowerCase().includes(q)) : [...issues.value]
+  let result = q ? issues.value.filter(i => (i.title ?? '').toLowerCase().includes(q) || (i.description ?? '').toLowerCase().includes(q)) : [...issues.value]
   if (sortOrder.value === 'most') {
     result.sort((a, b) => b.material_count + b.opinion_count - (a.material_count + a.opinion_count))
   } else if (sortOrder.value === 'least') {
