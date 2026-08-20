@@ -608,7 +608,7 @@ export function registerApiRoutes(app: App): void {
       const briefing = await db.getLatestBriefing(c.env.DB, id)
       if (opinions.length === 0) return error('尚無民眾意見。')
       const opinionsText = opinions.map((o, i) => `【意見 ${i + 1}】\n${o.summary}`).join('\n\n---\n\n')
-      prompt = `請分析以下 ${opinions.length} 份個人意見，與原有彙整比對，找出新觀點：\n\n原有共識：${briefing?.consensus ?? ''}\n原有爭點：${briefing?.disputes ?? ''}\n\n個人意見：\n${opinionsText}`
+      prompt = `你是一位公民審議助理。請把以下民眾個人意見整合進既有彙整，產出**更新後的完整三個區塊**，讓志願者可以直接貼回相應欄位。\n\n議題：${issue.title}\n\n---\n\n## 一、素材（有來源可查證的一手依據，共 ${materials.length} 筆）\n\n${materialsText}\n\n---\n\n## 二、既有彙整\n\n**共識**：\n${briefing?.consensus ?? '（尚無）'}\n\n**爭點**：\n${briefing?.disputes ?? '（尚無）'}\n\n**立場地圖**：\n${briefing?.positions ?? '（尚無）'}\n\n---\n\n## 三、民眾個人意見（共 ${opinions.length} 份）\n\n${opinionsText}\n\n---\n\n## 輸出要求\n\n### 素材與意見的權重\n\n- **素材**（第一節）是有來源、可查證的一手依據（新聞、法條、報告、NGO 聲明等），權重高於個人意見。\n- **民眾意見**（第三節）是個人觀點，未經查證。意見的作用是**補充素材尚未涵蓋的面向**，不是覆蓋或稀釋素材的結論。\n- 當素材與意見衝突時，**以素材為準**；意見中與素材矛盾的論點請降低優先度，但可以在立場地圖中如實呈現為「部分民眾的主張」。\n\n### 雷同意見的處理\n\n- 先把內容或論點**高度相似**的意見合併為同一個觀點，合併後只計為**一份**權重，不因出現次數多就提高重要性。\n- 判斷某個觀點是否值得進入立場地圖，看的是**論點本身是否成立、是否有素材支撐**，不是有多少人這樣說。\n- 若發現異常大量的雷同意見，請在三個區塊之後附上「**【志願者注意】**」段落，說明「有 N 份意見內容高度相似，已合併為一個觀點，請評估是否有帶風向的情形」。此段**不屬於要貼回欄位的三個區塊**，僅供志願者參考。\n\n### 輸出格式\n\n請依序輸出以下三個區塊（格式與「既有彙整」相同）：\n\n1. **共識**：整合後完整的共識內容（若無新增，保留原文）\n2. **爭點**：整合後完整的爭點內容（若無新增，保留原文）\n3. **立場地圖**：整合後完整的立場地圖（若有新立場或論據，補充進去；若無變化，保留原文）\n\n要求：忠實呈現素材與意見，不添加立場判斷；每個區塊都必須輸出完整內容，不可省略；格式使用繁體中文 Markdown。`
     } else {
       return error('Invalid prompt type')
     }

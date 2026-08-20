@@ -387,6 +387,12 @@ export async function getLatestBriefingWithAuthor(db: D1Database, issueId: numbe
   return db.prepare(`SELECT ${BRIEFING_ADMIN_COLUMNS} FROM ct_briefings WHERE issue_id = ? ORDER BY version DESC LIMIT 1`).bind(issueId).first<BriefingWithAuthor>()
 }
 
+/** 留白（未提供或只有空白字元）代表沿用上一版，不是清空——見 issue #71。 */
+function blankToNull(value: string | undefined): string | null {
+  const trimmed = value?.trim()
+  return trimmed ? trimmed : null
+}
+
 export async function createBriefing(
   db: D1Database,
   issueId: number,
@@ -402,24 +408,47 @@ export async function createBriefing(
 ): Promise<number> {
   // 版本計算與 INSERT 必須是同一個 SQL statement；拆成 MAX(version) + INSERT 時，
   // 兩個同時投稿可能選到同一版號。
+  //
+  // 留白欄位沿用上一個乾淨版本（#71）：志願者只更新部分區塊時，
+  // 其餘區塊不得被空字串覆蓋。prev 限定 abuse_flagged = 0，避免把待審（1）、
+  // 已確認違規（2）或 AI 遮蔽（3）的文字複製成新的未標記版本——繼承的內容
+  // 不會再經過投稿審查，所以來源必須是已通過所有現有審查的版本。
+  //
+  // ⚠️ 版號與繼承來源必須分開查：版號一律取「全部版本」的 MAX，若跟著 prev
+  // 的 abuse_flagged 過濾走，最新版被遮蔽時會算出重複版號，撞上 0010 的
+  // UNIQUE (issue_id, version) 而讓整個議題的 briefing POST 壞掉。
   const inserted = await db
     .prepare(
       `INSERT INTO ct_briefings (
          issue_id, consensus, disputes, positions, narrative, opinion_prompt, version,
          author_id, author_name, author_email, show_email, abuse_flagged
        )
-       SELECT ?, ?, ?, ?, ?, ?, COALESCE(MAX(version), 0) + 1, ?, ?, ?, ?, ?
-       FROM ct_briefings
-       WHERE issue_id = ?
+       SELECT ?,
+              COALESCE(?, prev.consensus, ''),
+              COALESCE(?, prev.disputes, ''),
+              COALESCE(?, prev.positions, ''),
+              COALESCE(?, prev.narrative, ''),
+              COALESCE(?, prev.opinion_prompt, ''),
+              COALESCE((SELECT MAX(version) FROM ct_briefings WHERE issue_id = ?), 0) + 1,
+              ?, ?, ?, ?, ?
+       FROM (SELECT 1) AS anchor
+       LEFT JOIN (
+         SELECT consensus, disputes, positions, narrative, opinion_prompt
+         FROM ct_briefings
+         WHERE issue_id = ? AND abuse_flagged = 0
+         ORDER BY version DESC
+         LIMIT 1
+       ) AS prev ON 1 = 1
        RETURNING version`
     )
     .bind(
       issueId,
-      input.consensus ?? '',
-      input.disputes ?? '',
-      input.positions ?? '',
-      input.narrative ?? '',
-      input.opinion_prompt ?? '',
+      blankToNull(input.consensus),
+      blankToNull(input.disputes),
+      blankToNull(input.positions),
+      blankToNull(input.narrative),
+      blankToNull(input.opinion_prompt),
+      issueId,
       author.author_id,
       author.author_name,
       author.author_email,
@@ -452,9 +481,18 @@ export async function updateLatestBriefing(
 ): Promise<boolean> {
   const existing = await getLatestBriefing(db, issueId)
   if (!existing) return false
+  // 留白欄位保留原值（#71）；管理端沒有「清空某區塊」的 UI，
+  // 全部送空字串等於誤刪已發布內容。opinion_prompt 不在 SET 內，本來就不受影響。
   await db
-    .prepare('UPDATE ct_briefings SET consensus = ?, disputes = ?, positions = ?, narrative = ? WHERE id = ?')
-    .bind(input.consensus ?? '', input.disputes ?? '', input.positions ?? '', input.narrative ?? '', existing.id)
+    .prepare(
+      `UPDATE ct_briefings SET
+         consensus = COALESCE(?, consensus),
+         disputes  = COALESCE(?, disputes),
+         positions = COALESCE(?, positions),
+         narrative = COALESCE(?, narrative)
+       WHERE id = ?`
+    )
+    .bind(blankToNull(input.consensus), blankToNull(input.disputes), blankToNull(input.positions), blankToNull(input.narrative), existing.id)
     .run()
   return true
 }
