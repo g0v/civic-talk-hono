@@ -847,17 +847,15 @@ export async function resolveAbuseReport(db: D1Database, id: number, status: Exc
   await db.prepare('UPDATE ct_abuse_reports SET review_status = ?, pending_target_key = NULL WHERE id = ?').bind(status, id).run()
 }
 
-/** 誤報時將目標內容的 abuse_flagged 清回 0。 */
-export async function unflagContent(db: D1Database, report: Pick<AbuseReport, 'issue_id' | 'material_id' | 'briefing_id' | 'opinion_id'>): Promise<void> {
-  if (report.issue_id != null) {
-    await db.prepare('UPDATE ct_issues SET abuse_flagged = 0 WHERE id = ?').bind(report.issue_id).run()
-  } else if (report.material_id != null) {
-    await db.prepare('UPDATE ct_materials SET abuse_flagged = 0 WHERE id = ?').bind(report.material_id).run()
-  } else if (report.briefing_id != null) {
-    await db.prepare('UPDATE ct_briefings SET abuse_flagged = 0 WHERE id = ?').bind(report.briefing_id).run()
-  } else if (report.opinion_id != null) {
-    await db.prepare('UPDATE ct_opinions SET abuse_flagged = 0 WHERE id = ?').bind(report.opinion_id).run()
-  }
+/** 誤報時將目標內容的 abuse_flagged 清回 0。
+ * source='user' 誤報只清 1（使用者待審），不降低 AI 遮蔽（3）或管理員確認（2）。
+ * source='ai'  誤報只清 3（AI 遮蔽），不干擾使用者待審（1）或確認（2）。*/
+export async function unflagContent(db: D1Database, report: Pick<AbuseReport, 'issue_id' | 'material_id' | 'briefing_id' | 'opinion_id' | 'source'>): Promise<void> {
+  const flag = report.source === 'ai' ? 3 : 1
+  if (report.issue_id    != null) await db.prepare('UPDATE ct_issues    SET abuse_flagged = 0 WHERE id = ? AND abuse_flagged = ?').bind(report.issue_id,    flag).run()
+  if (report.material_id != null) await db.prepare('UPDATE ct_materials SET abuse_flagged = 0 WHERE id = ? AND abuse_flagged = ?').bind(report.material_id, flag).run()
+  if (report.briefing_id != null) await db.prepare('UPDATE ct_briefings SET abuse_flagged = 0 WHERE id = ? AND abuse_flagged = ?').bind(report.briefing_id, flag).run()
+  if (report.opinion_id  != null) await db.prepare('UPDATE ct_opinions  SET abuse_flagged = 0 WHERE id = ? AND abuse_flagged = ?').bind(report.opinion_id,  flag).run()
 }
 
 /** 確認濫用時將目標內容的 abuse_flagged 設為 2（完全隱藏，不可展開）。 */
