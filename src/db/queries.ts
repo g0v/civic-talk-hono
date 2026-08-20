@@ -409,10 +409,10 @@ export async function createBriefing(
   // 版本計算與 INSERT 必須是同一個 SQL statement；拆成 MAX(version) + INSERT 時，
   // 兩個同時投稿可能選到同一版號。
   //
-  // 留白欄位沿用上一個「公開可見」版本（#71）：志願者只更新部分區塊時，
-  // 其餘區塊不得被空字串覆蓋。prev 限定 abuse_flagged IN (0, 1)，避免把
-  // AI 遮蔽（3）或已確認違規（2）的文字復活成新的可見版本——繼承的內容
-  // 不會再經過投稿審查，所以來源必須是目前公開看得到的那一版。
+  // 留白欄位沿用上一個乾淨版本（#71）：志願者只更新部分區塊時，
+  // 其餘區塊不得被空字串覆蓋。prev 限定 abuse_flagged = 0，避免把待審（1）、
+  // 已確認違規（2）或 AI 遮蔽（3）的文字複製成新的未標記版本——繼承的內容
+  // 不會再經過投稿審查，所以來源必須是已通過所有現有審查的版本。
   //
   // ⚠️ 版號與繼承來源必須分開查：版號一律取「全部版本」的 MAX，若跟著 prev
   // 的 abuse_flagged 過濾走，最新版被遮蔽時會算出重複版號，撞上 0010 的
@@ -435,7 +435,7 @@ export async function createBriefing(
        LEFT JOIN (
          SELECT consensus, disputes, positions, narrative, opinion_prompt
          FROM ct_briefings
-         WHERE issue_id = ? AND abuse_flagged IN (0, 1)
+         WHERE issue_id = ? AND abuse_flagged = 0
          ORDER BY version DESC
          LIMIT 1
        ) AS prev ON 1 = 1

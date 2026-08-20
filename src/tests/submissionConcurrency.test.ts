@@ -70,6 +70,8 @@ describe('投稿寫入併發保護', () => {
 
     // 版號在同一個 statement 內原子取得（不先 SELECT MAX 再 INSERT）
     expect(sql[0]).toContain('RETURNING version')
+    // 留白只能繼承乾淨版本，不能把待審或已遮蔽的內容複製成新版本。
+    expect(sql[0]).toContain('WHERE issue_id = ? AND abuse_flagged = 0')
     // mock 的 first() 固定回 { version: 3 }
     expect(version).toBe(3)
 
