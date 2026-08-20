@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test'
-import { buildAuthorSnapshot, validateSubmissionOptions } from '../api/routes'
+import { buildAuthorSnapshot, canReadAdminSnapshots, validateSubmissionOptions } from '../api/routes'
 import type { AuthContext } from '../auth/authorization'
 import { getLatestBriefing, getLatestBriefingWithAuthor, listIssues, listIssuesWithAuthor, listMaterials, listOpinions } from '../db/queries'
 
@@ -28,6 +28,21 @@ function recordingDb() {
 }
 
 describe('作者資料隱私守護', () => {
+  it('只有未停權的管理員可讀取完整作者快照', () => {
+    const admin = {
+      user: { id: 'admin-1', name: 'Admin', email: 'admin@example.com', image: null },
+      role: 'admin',
+      banned: false,
+      nameChangeCooldownDays: null,
+    } satisfies AuthContext
+    const bannedAdmin = { ...admin, banned: true }
+
+    expect(canReadAdminSnapshots(admin)).toBe(true)
+    expect(canReadAdminSnapshots(bannedAdmin)).toBe(false)
+    expect(canReadAdminSnapshots({ ...admin, role: 'user' })).toBe(false)
+    expect(canReadAdminSnapshots(null)).toBe(false)
+  })
+
   it('名稱缺漏時不以 email 代替公開名稱', () => {
     const user = {
       id: 'user-1',

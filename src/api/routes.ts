@@ -123,6 +123,14 @@ async function requireAppealUser(request: Request, env: AppBindings): Promise<{ 
   return { context }
 }
 
+/**
+ * 完整作者快照只提供給可操作管理端的帳號。停權的管理員不得藉由公開讀取端點
+ * 取得 author_id、未 opt-in 的 email 或條款同意紀錄。
+ */
+export function canReadAdminSnapshots(context: AuthContext | null): boolean {
+  return context !== null && !context.banned && isAdminRole(context.role)
+}
+
 const PREVIEW_FIELDS: Record<ModerationSubmissionType, string> = {
   issue: 'description',
   material: 'content',
@@ -249,7 +257,7 @@ export function registerApiRoutes(app: App): void {
   // 一般讀取只拿公開作者投影；管理員另拿完整快照與條款同意記錄。
   app.get('/api/issues', async c => {
     const context = await tryGetAuthContext(c.env, c.req.raw.headers)
-    const issues: IssueListItem[] | IssueListItemWithAuthor[] = context && isAdminRole(context.role) ? await db.listIssuesWithAuthor(c.env.DB) : await db.listIssues(c.env.DB)
+    const issues: IssueListItem[] | IssueListItemWithAuthor[] = canReadAdminSnapshots(context) ? await db.listIssuesWithAuthor(c.env.DB) : await db.listIssues(c.env.DB)
     const res = json(issues)
     res.headers.set('Vary', 'Cookie')
     return res
@@ -372,7 +380,7 @@ export function registerApiRoutes(app: App): void {
     const id = parseId(c.req.param('id'))
     if (!id) return error('Invalid id')
     const context = await tryGetAuthContext(c.env, c.req.raw.headers)
-    const materials: Material[] | MaterialWithAuthor[] = context && isAdminRole(context.role) ? await db.listMaterialsWithAuthor(c.env.DB, id) : await db.listMaterials(c.env.DB, id)
+    const materials: Material[] | MaterialWithAuthor[] = canReadAdminSnapshots(context) ? await db.listMaterialsWithAuthor(c.env.DB, id) : await db.listMaterials(c.env.DB, id)
     const res = json(materials)
     // 回應內容依 cookie（登入身分）而異——標 Vary 讓任何快取層不會把管理員版本
     // 餵給一般讀者。目前 Worker 回應沒設 Cache-Control 所以不會被邊緣快取，
@@ -441,7 +449,7 @@ export function registerApiRoutes(app: App): void {
     const id = parseId(c.req.param('id'))
     if (!id) return error('Invalid id')
     const context = await tryGetAuthContext(c.env, c.req.raw.headers)
-    const briefing: Briefing | BriefingWithAuthor | null = context && isAdminRole(context.role) ? await db.getLatestBriefingWithAuthor(c.env.DB, id) : await db.getLatestBriefing(c.env.DB, id)
+    const briefing: Briefing | BriefingWithAuthor | null = canReadAdminSnapshots(context) ? await db.getLatestBriefingWithAuthor(c.env.DB, id) : await db.getLatestBriefing(c.env.DB, id)
     const res = json(briefing)
     res.headers.set('Vary', 'Cookie')
     return res
@@ -526,7 +534,7 @@ export function registerApiRoutes(app: App): void {
     const id = parseId(c.req.param('id'))
     if (!id) return error('Invalid id')
     const context = await tryGetAuthContext(c.env, c.req.raw.headers)
-    const opinions: Opinion[] | OpinionWithAuthor[] = context && isAdminRole(context.role) ? await db.listOpinionsWithAuthor(c.env.DB, id) : await db.listOpinions(c.env.DB, id)
+    const opinions: Opinion[] | OpinionWithAuthor[] = canReadAdminSnapshots(context) ? await db.listOpinionsWithAuthor(c.env.DB, id) : await db.listOpinions(c.env.DB, id)
     const res = json(opinions)
     res.headers.set('Vary', 'Cookie')
     return res
