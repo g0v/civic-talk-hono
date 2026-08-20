@@ -650,17 +650,9 @@ export function registerApiRoutes(app: App): void {
       return error('broken_link reports only support material_id')
     }
 
-    // 同一筆內容若已有 pending 回報，拒絕重複送出
-    const alreadyPending = await db.findPendingReportForTarget(c.env.DB, {
-      material_id: materialId,
-      briefing_id: briefingId,
-      opinion_id: opinionId,
-    })
-    if (alreadyPending) return error('此內容已有待審核的回報，請等待管理員處理後再回報', 409)
-
     const descriptionRaw = typeof body.description === 'string' ? body.description.trim() : null
     const user = auth.context.user
-    await db.createAbuseReport(c.env.DB, {
+    const reportId = await db.createAbuseReport(c.env.DB, {
       reporter_id: user.id,
       reporter_name: user.name?.trim() || null,
       reporter_email: user.email,
@@ -670,6 +662,7 @@ export function registerApiRoutes(app: App): void {
       briefing_id: briefingId,
       opinion_id: opinionId,
     })
+    if (reportId === null) return error('此內容已有待審核的回報，請等待管理員處理後再回報', 409)
 
     return json({ ok: true }, 201)
   })
