@@ -206,7 +206,7 @@ function openNew() {
 
 function openEdit(issue: IssueListItemWithAuthor) {
   editId.value = issue.id
-  formTitle.value = issue.title
+  formTitle.value = issue.title ?? ''
   formDesc.value = issue.description ?? ''
   formStatus.value = issue.status
   formPolis.value = !!issue.polis_id
@@ -273,7 +273,7 @@ async function saveIssue() {
 }
 
 async function deleteIssue(issue: IssueListItemWithAuthor) {
-  const msg = t('adm_confirm_delete', { title: issue.title })
+  const msg = t('adm_confirm_delete', { title: issue.title ?? '' })
   if (!confirm(msg)) return
   const res = await fetch(`/api/issues/${issue.id}`, {
     method: 'DELETE',
@@ -373,7 +373,7 @@ async function onTabChange(id: AdminTab) {
 const filteredIssues = computed(() => {
   if (!issueSearch.value.trim()) return issues.value
   const q = issueSearch.value.toLowerCase()
-  return issues.value.filter(i => i.title.toLowerCase().includes(q) || (i.description?.toLowerCase().includes(q) ?? false) || (i.author_name?.toLowerCase().includes(q) ?? false))
+  return issues.value.filter(i => (i.title?.toLowerCase().includes(q) ?? false) || (i.description?.toLowerCase().includes(q) ?? false) || (i.author_name?.toLowerCase().includes(q) ?? false))
 })
 
 const filteredMaterials = computed(() => {
@@ -383,7 +383,7 @@ const filteredMaterials = computed(() => {
     m =>
       (m.source_name?.toLowerCase().includes(q) ?? false) ||
       (m.source_url?.toLowerCase().includes(q) ?? false) ||
-      m.content.toLowerCase().includes(q) ||
+      (m.content?.toLowerCase().includes(q) ?? false) ||
       (m.author_name?.toLowerCase().includes(q) ?? false)
   )
 })
@@ -391,7 +391,7 @@ const filteredMaterials = computed(() => {
 const filteredOpinions = computed(() => {
   if (!opinionSearch.value.trim()) return opinions.value
   const q = opinionSearch.value.toLowerCase()
-  return opinions.value.filter(o => o.summary.toLowerCase().includes(q) || (o.author_name?.toLowerCase().includes(q) ?? false))
+  return opinions.value.filter(o => (o.summary?.toLowerCase().includes(q) ?? false) || (o.author_name?.toLowerCase().includes(q) ?? false))
 })
 
 const filteredReports = computed(() => {
@@ -795,7 +795,7 @@ function snapshotSummary(snapshotJSON: string): string {
                     </td>
                     <td class="px-3 py-2">
                       <div>{{ t(ABUSE_REASON_LABELS[r.reason] ?? 'report_reason_other') }}</div>
-                      <div v-if="r.source === 'ai'" class="mt-1 text-xs text-red">{{ t('adm_rpt_source_ai') }} · {{ t('report_reason_' + (r.policy_code ?? 'other')) }}</div>
+                      <div v-if="r.source === 'ai'" class="mt-1 text-xs text-red">{{ t('adm_rpt_source_ai') }} · {{ t(MODERATION_POLICY_LABELS[r.policy_code ?? ''] ?? 'report_reason_other') }}</div>
                     </td>
                     <td class="px-3 py-2 max-w-xs">
                       <span v-if="r.description" class="whitespace-pre-wrap text-xs">{{ r.description }}</span>
