@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppFooter from '../components/AppFooter.vue'
 import AuthorEmailLink from '../components/AuthorEmailLink.vue'
+import LongTextContent from '../components/LongTextContent.vue'
 import SignInButtons from '../components/SignInButtons.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import Toast from '../components/Toast.vue'
@@ -585,7 +586,7 @@ async function submitOpinion() {
                   <span class="text-sm" :class="stanceClass(m.stance)">{{ stanceLabel(m.stance) }}</span>
                   <a v-if="m.source_url" :href="m.source_url" target="_blank" rel="noopener noreferrer" class="text-sm">{{ t('mat_link') }}</a>
                 </div>
-                <div class="whitespace-pre-wrap text-sm leading-relaxed">{{ m.content }}</div>
+                <LongTextContent :text="m.content" :content-id="`material-content-${m.id}`" content-class="whitespace-pre-wrap text-sm leading-relaxed" />
               </template>
               <!-- metadata（已確認或 AI 審查違規時不顯示） -->
               <p v-if="m.abuse_flagged !== 2 && m.abuse_flagged !== 3" class="mt-2 mb-0 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">

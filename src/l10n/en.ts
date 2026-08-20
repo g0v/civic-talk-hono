@@ -499,6 +499,10 @@ export const messages = {
   flagged_expand_btn: 'Show content',
   flagged_collapse_btn: 'Collapse',
   flagged_confirmed: '🚫 This content has been confirmed as abusive by an admin and is not shown',
+  // long material collapsing (#65): show the character count only, never a truncated excerpt
+  long_text_char_count: '{count} characters in full',
+  long_text_expand_btn: 'Show full text',
+  long_text_collapse_btn: 'Collapse full text',
   adm_tab_reports: '⚑ Abuse & Broken Links',
   adm_rpt_title: 'Abuse & Broken Link Reports',
   adm_rpt_empty: 'No abuse reports at this time',

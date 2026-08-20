@@ -109,4 +109,64 @@ describe('Issue SSR', () => {
     }
     expect(depth).toBe(0)
   })
+
+  it('collapses materials longer than 1000 characters into a character count (#65)', async () => {
+    const longContent = '報'.repeat(6000)
+    const app = createSSRApp(IssueView, {
+      issueId: 1,
+      initialDetail: {
+        issue: {
+          id: 1,
+          title: '測試議題',
+          description: '議題說明',
+          status: 'collecting',
+          polis_id: null,
+          created_at: '2026-08-17 00:00:00',
+          abuse_flagged: 0,
+          author_name: null,
+          author_email: null,
+        },
+        materials: [
+          {
+            id: 7,
+            issue_id: 1,
+            source_name: '長篇來源',
+            source_url: 'https://example.com/long',
+            content: longContent,
+            stance: 'neutral',
+            verified_count: 0,
+            created_at: '2026-08-17 00:00:00',
+            author_name: null,
+            author_email: null,
+            abuse_flagged: 0,
+          },
+          {
+            id: 8,
+            issue_id: 1,
+            source_name: '短篇來源',
+            source_url: null,
+            content: '短素材內容',
+            stance: 'neutral',
+            verified_count: 0,
+            created_at: '2026-08-17 00:00:00',
+            author_name: null,
+            author_email: null,
+            abuse_flagged: 0,
+          },
+        ],
+        briefing: null,
+        opinions: [],
+      },
+    })
+    provideI18n(app, 'zh-TW')
+
+    const html = await renderToString(app)
+
+    expect(html).toContain('全文共 6000 字')
+    expect(html).toContain('展開全文')
+    // 折疊時不輸出任何原文片段（不截短，符合 CC BY-NC-ND 的禁止改作）
+    expect(html).not.toContain('報報報')
+    // 短素材照舊直接顯示
+    expect(html).toContain('短素材內容')
+  })
 })

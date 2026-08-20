@@ -474,6 +474,10 @@ export const messages = {
   flagged_expand_btn: '展開內容',
   flagged_collapse_btn: '收合',
   flagged_confirmed: '🚫 此內容已被管理員確認為違規，不予顯示',
+  // 長篇素材折疊（#65）：只顯示字數，不截短內容
+  long_text_char_count: '全文共 {count} 字',
+  long_text_expand_btn: '展開全文',
+  long_text_collapse_btn: '收合全文',
   adm_tab_reports: '⚑ 濫用及失效回報',
   adm_rpt_title: '濫用及失效回報',
   adm_rpt_empty: '目前沒有濫用回報',
