@@ -568,7 +568,7 @@ export async function getAdminStats(db: D1Database): Promise<AdminStats> {
 
 export async function listMaterialsForPrompt(db: D1Database, issueId: number): Promise<{ source_name: string | null; source_url: string | null; stance: Stance | null; content: string | null }[]> {
   const { results } = await db
-    .prepare('SELECT source_name, source_url, stance, content FROM ct_materials WHERE issue_id = ? AND abuse_flagged IN (0, 1) ORDER BY created_at')
+    .prepare('SELECT source_name, source_url, stance, content FROM ct_materials WHERE issue_id = ? AND abuse_flagged = 0 ORDER BY created_at')
     .bind(issueId)
     .all<{ source_name: string | null; source_url: string | null; stance: Stance | null; content: string | null }>()
   return results ?? []
@@ -576,7 +576,7 @@ export async function listMaterialsForPrompt(db: D1Database, issueId: number): P
 
 export async function listOpinionSummaries(db: D1Database, issueId: number, limit = 50): Promise<Pick<Opinion, 'summary'>[]> {
   const { results } = await db
-    .prepare('SELECT summary FROM ct_opinions WHERE issue_id = ? AND abuse_flagged IN (0, 1) ORDER BY created_at DESC LIMIT ?')
+    .prepare('SELECT summary FROM ct_opinions WHERE issue_id = ? AND abuse_flagged = 0 ORDER BY created_at DESC LIMIT ?')
     .bind(issueId, limit)
     .all<Pick<Opinion, 'summary'>>()
   return results ?? []
