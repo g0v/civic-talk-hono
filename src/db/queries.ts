@@ -65,6 +65,7 @@ export interface Material {
   issue_id: number
   source_name: string | null
   source_url: string | null
+  stance: Stance
   content: string | null
   verified_count: number
   created_at: string
