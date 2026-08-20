@@ -67,6 +67,12 @@ const opinionTosAgreed = ref(false)
 const opinionShowEmail = ref(false)
 // 志願者送出說明頁時的 email 公開選項
 const volunteerShowEmail = ref(false)
+// Step 3 再彙整的獨立輸入 ref（不與 Step 1 的 consensus/disputes/positions 共用）
+const synthConsensus = ref('')
+const synthDisputes = ref('')
+const synthPositions = ref('')
+// 再彙整送出成功後顯示「建議重跑 Step 2」提示
+const synthesisDone = ref(false)
 
 // 全站共用的登入狀態（與 AppHeader 共用同一次 /api/me）；SSR 期間永遠是 'loading'
 const { authState, session, ensureAuthSession } = useAuth()
@@ -313,6 +319,34 @@ async function submitSummarize() {
   } else toast.value?.show(t('vol_toast_save_fail'))
 }
 
+async function submitSynthesis() {
+  const body = {
+    consensus: synthConsensus.value.trim(),
+    disputes: synthDisputes.value.trim(),
+    positions: synthPositions.value.trim(),
+  }
+  if (!body.consensus && !body.disputes && !body.positions) {
+    toast.value?.show(t('vol_toast_fill_one'))
+    return
+  }
+  const res = await fetch(`/api/issues/${props.issueId}/briefing`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...body, show_email: volunteerShowEmail.value }),
+  })
+  if (res.status === 401) {
+    volunteerSessionExpired.value = true
+    toast.value?.show(t('login_expired_toast'))
+    return
+  }
+  if (await handleModerationResult(res, 'volunteer')) return
+  if (res.ok) {
+    toast.value?.show(t('vol_toast_synthesis_ok'))
+    synthesisDone.value = true
+    await loadIssue()
+  } else toast.value?.show(t('vol_toast_save_fail'))
+}
+
 async function submitNarrative() {
   const text = narrative.value.trim()
   if (!text) {
@@ -320,12 +354,7 @@ async function submitNarrative() {
     return
   }
   if (typeof window !== 'undefined' && !window.confirm(t('vol_confirm_submit_narrative'))) return
-  const body = {
-    consensus: briefing.value?.consensus ?? '',
-    disputes: briefing.value?.disputes ?? '',
-    positions: briefing.value?.positions ?? '',
-    narrative: text,
-  }
+  const body = { narrative: text }
   const res = await fetch(`/api/issues/${props.issueId}/briefing`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -705,7 +734,25 @@ async function submitOpinion() {
                     {{ t('vol_copy') }}
                   </button>
                 </div>
-                <div v-if="promptVisible.synthesis" class="prompt-box">{{ promptText.synthesis }}</div>
+                <div v-if="promptVisible.synthesis" class="prompt-box mb-4">{{ promptText.synthesis }}</div>
+                <p class="mb-2 text-sm font-medium">{{ t('vol_paste_title') }}</p>
+                <div class="alert alert-info mb-3 text-sm">{{ t('vol_s3_partial_hint') }}</div>
+                <div class="form-group">
+                  <label>{{ t('vol_label_consensus') }}</label>
+                  <textarea v-model="synthConsensus" rows="3" :placeholder="t('vol_ph_consensus')" />
+                </div>
+                <div class="form-group">
+                  <label>{{ t('vol_label_disputes') }}</label>
+                  <textarea v-model="synthDisputes" rows="3" :placeholder="t('vol_ph_disputes')" />
+                </div>
+                <div class="form-group">
+                  <label>{{ t('vol_label_positions') }}</label>
+                  <textarea v-model="synthPositions" rows="4" :placeholder="t('vol_ph_positions')" />
+                </div>
+                <button type="button" class="btn btn-primary" @click="submitSynthesis">
+                  {{ t('vol_submit_synthesis') }}
+                </button>
+                <div v-if="synthesisDone" class="alert alert-info mt-4 text-sm">{{ t('vol_synth_done_hint') }}</div>
               </div>
             </template>
           </section>
