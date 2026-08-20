@@ -664,10 +664,11 @@ function abuseReportTargetKey(target: AbuseReportTarget): string {
 }
 
 function flagContentForPendingReport(db: D1Database, target: AbuseReportTarget): D1PreparedStatement {
-  if (target.issue_id != null) return db.prepare('UPDATE ct_issues SET abuse_flagged = 1 WHERE id = ?').bind(target.issue_id)
-  if (target.material_id != null) return db.prepare('UPDATE ct_materials SET abuse_flagged = 1 WHERE id = ?').bind(target.material_id)
-  if (target.briefing_id != null) return db.prepare('UPDATE ct_briefings SET abuse_flagged = 1 WHERE id = ?').bind(target.briefing_id)
-  if (target.opinion_id != null) return db.prepare('UPDATE ct_opinions SET abuse_flagged = 1 WHERE id = ?').bind(target.opinion_id)
+  // AND abuse_flagged = 0 防止使用者回報把 AI 遮蔽（3）或管理員確認（2）降級為待審（1）
+  if (target.issue_id    != null) return db.prepare('UPDATE ct_issues    SET abuse_flagged = 1 WHERE id = ? AND abuse_flagged = 0').bind(target.issue_id)
+  if (target.material_id != null) return db.prepare('UPDATE ct_materials SET abuse_flagged = 1 WHERE id = ? AND abuse_flagged = 0').bind(target.material_id)
+  if (target.briefing_id != null) return db.prepare('UPDATE ct_briefings SET abuse_flagged = 1 WHERE id = ? AND abuse_flagged = 0').bind(target.briefing_id)
+  if (target.opinion_id  != null) return db.prepare('UPDATE ct_opinions  SET abuse_flagged = 1 WHERE id = ? AND abuse_flagged = 0').bind(target.opinion_id)
   throw new Error('Abuse report requires exactly one target')
 }
 /** 建立 AI 審查判定違規的回報，直接指向已寫入且暫時隱藏的投稿列。 */
