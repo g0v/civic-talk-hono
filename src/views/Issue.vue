@@ -38,6 +38,7 @@ const renderedBriefing = computed(() => {
   if (!current) return null
 
   return {
+    narrative: renderSafeMarkdown(current.narrative),
     consensus: renderSafeMarkdown(current.consensus),
     disputes: renderSafeMarkdown(current.disputes),
     positions: renderSafeMarkdown(current.positions),
@@ -506,7 +507,7 @@ async function submitOpinion() {
             <!-- 正常或待審核：顯示 briefing -->
             <template v-else>
               <h2 class="mt-0 mb-3 font-serif text-xl">{{ t('brief_overview') }}</h2>
-              <div class="mb-6 whitespace-pre-wrap leading-relaxed">{{ briefing.narrative }}</div>
+              <div class="markdown-content mb-6 leading-relaxed" v-html="renderedBriefing?.narrative ?? ''" />
               <div class="grid-2 mb-6">
                 <div class="card">
                   <h3 class="mt-0 mb-2 text-base">{{ t('brief_consensus') }}</h3>
