@@ -66,6 +66,7 @@ Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑�
 - `src/views/` — `Home`／`Issue`／`Contribute`／`About`／`Admin`／`MaterialDetail`／`OpinionDetail`；共用 `AppHeader`／`AppFooter`／`StatusBadge`／`IssueCard`／`Toast`。
 - `src/composables/useAuth.ts` — 全站共用的登入狀態（`authState`／`session`／`ensureAuthSession`／`signOutAndReload`）。模組層級的 ref，同一頁的 `AppHeader` 與表單共用同一次 `/api/me`；**只在瀏覽器端寫入**（`ensureAuthSession()` 開頭擋掉 SSR），所以 SSR 永遠是 `'loading'`。
 - `src/components/SignInButtons.vue` — Google／GitHub 登入鈕（`/`、`/issues/:id`、`/contribute/:id`、`/admin` 與 `AppHeader` 共用）。
+- `src/components/LongTextContent.vue` — 長文折疊（#65）：超過 `threshold`（預設 1000 字，以 code point 計數）時**完全不輸出原文**，只顯示字數與展開／收合鈕。🚫 **不得改成截短預覽或摘要**——素材多為 CC BY-NC-ND 授權，截短等同改作。目前用於 `Issue.vue` 的素材卡；`MaterialDetail.vue`（專屬頁本來就是看全文）與 `Admin.vue`（管理員需審閱）維持全文顯示。
 - `src/l10n/` — 自製 i18n composable（`zh-TW`／`en` 雙檔 key 同步）；SSR 固定 `zh-TW`，`localStorage.civic_lang` 只在 hydration 後讀寫。
 - `src/styles/app.css` — Tailwind v4 `@theme static`（vTaiwan 色彩、字型、字級、間距、圓角、陰影與動效 token）；`vp run css` 產出 `public/styles.css`（**生成物，勿手改**）。
 - `wrangler.jsonc` — `ASSETS` + D1 `DB` → `vtaiwan-civic-talks` + D1 `DB_AUTH` → `vtaiwan-auth`（兩者都標 `remote: true`，只影響本機開發模式）；`compatibility_flags: ["nodejs_compat"]`。**不寫 `account_id`**（與 `../vTaiwan-hono` 一致，由 wrangler 登入的帳號決定）——不要為了「比較保險」把它加回來。

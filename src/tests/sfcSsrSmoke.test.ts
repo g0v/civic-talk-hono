@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vite-plus/test'
 import AppFooter from '../components/AppFooter.vue'
 import AppHeader from '../components/AppHeader.vue'
 import IssueCard from '../components/IssueCard.vue'
+import LongTextContent from '../components/LongTextContent.vue'
 import ModerationAppealForm from '../components/ModerationAppealForm.vue'
 import ModerationAppealNotice from '../components/ModerationAppealNotice.vue'
 import SignInButtons from '../components/SignInButtons.vue'
@@ -138,6 +139,7 @@ describe('shared component SSR smoke tests', () => {
     { name: 'app footer', component: AppFooter },
     { name: 'app header', component: AppHeader },
     { name: 'issue card', component: IssueCard, props: { issue: { ...issue, material_count: 1, opinion_count: 1 } } },
+    { name: 'long text content', component: LongTextContent, props: { text: '短素材' } },
     { name: 'moderation appeal form', component: ModerationAppealForm, props: { appealType: 'rejected_submission', reportId: 1, policyCode: 'spam', rationale: '測試' } },
     { name: 'moderation appeal notice', component: ModerationAppealNotice, props: { appealType: 'rejected_submission', reportId: 1, policyCode: 'spam', rationale: '測試' } },
     { name: 'sign-in buttons', component: SignInButtons, props: { callbackUrl: '/' } },
@@ -151,4 +153,32 @@ describe('shared component SSR smoke tests', () => {
       expect(html.length).toBeGreaterThan(0)
     })
   }
+})
+
+describe('long text collapsing (#65)', () => {
+  const longText = '長'.repeat(1200)
+
+  it('renders short content inline without a toggle', async () => {
+    const html = await render(LongTextContent, { text: '短素材內容' })
+    expect(html).toContain('短素材內容')
+    expect(html).not.toContain('展開全文')
+  })
+
+  it('renders content of exactly the threshold length inline', async () => {
+    const html = await render(LongTextContent, { text: '字'.repeat(1000) })
+    expect(html).not.toContain('展開全文')
+  })
+
+  it('shows the character count and a toggle instead of long content, never a truncated excerpt', async () => {
+    const html = await render(LongTextContent, { text: longText })
+    expect(html).toContain('全文共 1200 字')
+    expect(html).toContain('展開全文')
+    // 折疊時完全不輸出原文（不截短，符合 CC BY-NC-ND 的禁止改作）
+    expect(html).not.toContain('長長長')
+  })
+
+  it('counts astral characters as single characters', async () => {
+    const html = await render(LongTextContent, { text: '😀'.repeat(1001) })
+    expect(html).toContain('全文共 1001 字')
+  })
 })
