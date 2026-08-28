@@ -39,6 +39,8 @@ export interface Issue {
 export interface IssueListItem extends Issue {
   material_count: number
   opinion_count: number
+  /** 最新活動時間：素材／意見／說明頁（abuse_flagged IN (0,1)）的最新 created_at，皆無則 fallback 到議題建立時間（#77） */
+  last_activity_at: string
 }
 
 /** 議題 + 完整作者快照（僅供管理端；author_id／show_email 不進公開回應） */
@@ -248,8 +250,21 @@ const ISSUE_COUNT_SUBQUERIES = `
   (SELECT COUNT(*) FROM ct_materials WHERE issue_id = ct_issues.id AND abuse_flagged IN (0, 1)) AS material_count,
   (SELECT COUNT(*) FROM ct_opinions  WHERE issue_id = ct_issues.id AND abuse_flagged IN (0, 1)) AS opinion_count`
 
+/** #77：三類子內容（abuse_flagged IN (0,1)）的最新 created_at，皆無則 fallback 到議題自己的 created_at */
+const ISSUE_LAST_ACTIVITY_SUBQUERY = `
+  COALESCE(
+    (SELECT MAX(t) FROM (
+      SELECT created_at AS t FROM ct_materials WHERE issue_id = ct_issues.id AND abuse_flagged IN (0, 1)
+      UNION ALL
+      SELECT created_at AS t FROM ct_opinions  WHERE issue_id = ct_issues.id AND abuse_flagged IN (0, 1)
+      UNION ALL
+      SELECT created_at AS t FROM ct_briefings WHERE issue_id = ct_issues.id AND abuse_flagged IN (0, 1)
+    )),
+    created_at
+  ) AS last_activity_at`
+
 export async function listIssues(db: D1Database): Promise<IssueListItem[]> {
-  const { results } = await db.prepare(`SELECT ${ISSUE_PUBLIC_COLUMNS}, ${ISSUE_COUNT_SUBQUERIES} FROM ct_issues WHERE abuse_flagged IN (0, 1, 3) ORDER BY created_at DESC`).all<IssueListItem>()
+  const { results } = await db.prepare(`SELECT ${ISSUE_PUBLIC_COLUMNS}, ${ISSUE_COUNT_SUBQUERIES}, ${ISSUE_LAST_ACTIVITY_SUBQUERY} FROM ct_issues WHERE abuse_flagged IN (0, 1, 3) ORDER BY created_at DESC`).all<IssueListItem>()
   return results ?? []
 }
 

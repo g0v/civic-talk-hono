@@ -9,6 +9,7 @@ import ModerationAppealNotice from '../components/ModerationAppealNotice.vue'
 import { useI18n } from '../l10n'
 import { useAuth } from '../composables/useAuth'
 import type { IssueListItem } from '../db/queries'
+import { filterAndSortHomeIssues, type SortOrder, type ViewerRole } from '../lib/homeSorting'
 
 const props = defineProps<{
   initialIssues?: IssueListItem[]
@@ -33,8 +34,9 @@ const sessionExpired = ref(false)
 const moderationNotice = ref<{ appealType: 'rejected_submission' | 'account_ban'; reportId?: number; policyCode?: string; rationale?: string } | null>(null)
 
 const searchQuery = ref('')
-type SortOrder = 'newest' | 'most' | 'least'
 const sortOrder = ref<SortOrder>('newest')
+// 檢視者角色（#77）：citizen（預設）不顯示素材收集中的議題；volunteer 顯示全部且收集中的排最前
+const viewerRole = ref<ViewerRole>('citizen')
 
 // 建立議題表單：標題相近的既有議題提示（僅供參考，不擋送出、不做審核判斷，見 #36）
 const similarIssues = computed(() => {
@@ -43,19 +45,7 @@ const similarIssues = computed(() => {
   return issues.value.filter(i => (i.title ?? '').toLowerCase().includes(q)).slice(0, 5)
 })
 
-const filteredAndSortedIssues = computed(() => {
-  const q = searchQuery.value.trim().toLowerCase()
-  let result = q ? issues.value.filter(i => (i.title ?? '').toLowerCase().includes(q) || (i.description ?? '').toLowerCase().includes(q)) : [...issues.value]
-  if (sortOrder.value === 'most') {
-    result.sort((a, b) => b.material_count + b.opinion_count - (a.material_count + a.opinion_count))
-  } else if (sortOrder.value === 'least') {
-    result.sort((a, b) => a.material_count + a.opinion_count - (b.material_count + b.opinion_count))
-  } else {
-    // newest: created_at DESC (API already returns this order; preserve stable sort)
-    result.sort((a, b) => (a.created_at < b.created_at ? 1 : a.created_at > b.created_at ? -1 : 0))
-  }
-  return result
-})
+const filteredAndSortedIssues = computed(() => filterAndSortHomeIssues(issues.value, viewerRole.value, sortOrder.value, searchQuery.value))
 
 async function loadIssues() {
   loading.value = true
@@ -251,6 +241,12 @@ async function copyRssUrl() {
             class="flex-1 min-w-40 rounded border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-vt-democratic-red/40"
             :placeholder="t('idx_search_ph')"
           />
+          <div class="flex items-center gap-1 shrink-0">
+            <span class="text-sm text-muted">{{ t('idx_role_label') }}</span>
+            <button v-for="r in ['citizen', 'volunteer'] as const" :key="r" type="button" class="btn btn-sm" :class="viewerRole === r ? 'btn-primary' : 'btn-secondary'" @click="viewerRole = r">
+              {{ t(r === 'citizen' ? 'idx_role_citizen' : 'idx_role_volunteer') }}
+            </button>
+          </div>
           <div class="flex gap-1 shrink-0">
             <button v-for="s in ['newest', 'most', 'least'] as const" :key="s" type="button" class="btn btn-sm" :class="sortOrder === s ? 'btn-primary' : 'btn-secondary'" @click="sortOrder = s">
               {{ t(s === 'newest' ? 'idx_sort_newest' : s === 'most' ? 'idx_sort_most' : 'idx_sort_least') }}
