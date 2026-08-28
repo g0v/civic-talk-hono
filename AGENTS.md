@@ -492,4 +492,13 @@ npx wrangler d1 migrations apply vtaiwan-civic-talks --remote   # 🚫 需先取
 | 25-3 | `og-meta`     | ✅ 完成 | `headForMaterial()`／`headForOpinion()` 以素材標題或意見摘要前 80 字產生 OG title + description，適合分享到社群                                    |
 | 25-4 | `issue-links` | ✅ 完成 | `Issue.vue` 素材卡與意見卡各加「🔗 專屬連結」，讓使用者可從議題頁直接複製個別連結                                                                  |
 | 25-5 | `i18n`        | ✅ 完成 | 新增 `src_*`／`op_detail_*`／`card_permalink` 等 key；zh-TW 與 en 雙檔同步（`vp test` 通過）                                                       |
-| 25-6 | `verify`      | ✅ 完成 | `vp check --no-fmt --no-lint` 零錯誤；`vp test` 全部通過；`vp run build` 成功；DB 查詢只用公開欄位，無 author_* 洩漏風險                           |
+| 25-6 | `verify`      | ✅ 完成 | `vp check --no-fmt --no-lint` 零錯誤；`vp test` 全部通過；`vp run build` 成功；DB 查詢只用公開欄位，無 author\_\* 洩漏風險                         |
+
+# mobile-first 分支設計
+
+平台核心目的
+讓使用者：
+
+- 了解議題，快速掌握議題背景、事實與相關素材。
+- 看見不同立場與觀點，理解每個議題的「支持／反對」。
+- 可以在 mobile 上，形成自己的完整意見。
