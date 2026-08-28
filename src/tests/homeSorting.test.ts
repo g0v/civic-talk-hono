@@ -1,11 +1,11 @@
 import { DatabaseSync } from 'node:sqlite'
 import { describe, expect, it } from 'vite-plus/test'
-import { listIssues, type IssueListItem } from '../db/queries'
+import { createBriefing, createMaterial, createOpinion, listIssues, updateLatestBriefing, type IssueListItem } from '../db/queries'
 import { filterAndSortHomeIssues, filterByRole, sortByOrder } from '../lib/homeSorting'
 
 // ── listIssues 的 last_activity_at（#77）───────────────────────────────────
-// 用 node:sqlite 跑 listIssues 產出的真實 SQL，驗證子查詢語意：
-// 三類子內容（abuse_flagged IN (0,1)）的最新 created_at，皆無則 fallback 到議題 created_at。
+// 用 node:sqlite 跑 listIssues 產生的真實 SQL，驗證欄位版語意：
+// ct_issues.last_activity_at 為 NULL（尚無子內容活動）時 fallback 到 created_at。
 
 type Row = Record<string, string | number | null>
 
@@ -13,7 +13,7 @@ type Row = Record<string, string | number | null>
 function sqliteDb(tables: Record<string, Row[]>) {
   const sqlite = new DatabaseSync(':memory:')
   const schema: Record<string, string> = {
-    ct_issues: 'id INTEGER PRIMARY KEY, title TEXT, description TEXT, status TEXT, polis_id TEXT, created_at TEXT, abuse_flagged INTEGER, author_name TEXT, author_email TEXT, show_email INTEGER',
+    ct_issues: 'id INTEGER PRIMARY KEY, title TEXT, description TEXT, status TEXT, polis_id TEXT, created_at TEXT, last_activity_at TEXT, abuse_flagged INTEGER, author_name TEXT, author_email TEXT, show_email INTEGER',
     ct_materials: 'id INTEGER PRIMARY KEY, issue_id INTEGER, created_at TEXT, abuse_flagged INTEGER',
     ct_opinions: 'id INTEGER PRIMARY KEY, issue_id INTEGER, created_at TEXT, abuse_flagged INTEGER',
     ct_briefings: 'id INTEGER PRIMARY KEY, issue_id INTEGER, created_at TEXT, abuse_flagged INTEGER',
@@ -32,6 +32,15 @@ function sqliteDb(tables: Record<string, Row[]>) {
           const stmt = sqlite.prepare(query)
           return { results: stmt.all() as Row[] }
         },
+        async first() {
+          const stmt = sqlite.prepare(query)
+          return (stmt.get() as Row) ?? null
+        },
+        bind(...args: unknown[]) {
+          const stmt = sqlite.prepare(query)
+          const info = stmt.run(...(args as (string | number | null)[]))
+          return { meta: { changes: Number(info.changes) } }
+        },
       }
     },
   } as unknown as D1Database
@@ -43,21 +52,20 @@ function issueRow(id: number, created_at: string, overrides: Partial<Row> = {}):
 
 
 describe('listIssues 的 last_activity_at（#77）', () => {
-  it('回傳 last_activity_at 且等於三類子內容中最新的 created_at（abuse_flagged IN (0,1)）', async () => {
+  it('last_activity_at 欄位有值時直接回傳欄位值（覆蓋 migration 回填後的形狀）', async () => {
     const db = sqliteDb({
-      ct_issues: [issueRow(1, '2026-08-01 00:00:00')],
-      ct_materials: [{ id: 1, issue_id: 1, created_at: '2026-08-05 00:00:00', abuse_flagged: 0 }, { id: 2, issue_id: 1, created_at: '2026-08-12 00:00:00', abuse_flagged: 3 }],
-      ct_opinions: [{ id: 1, issue_id: 1, created_at: '2026-08-08 00:00:00', abuse_flagged: 1 }],
+      ct_issues: [issueRow(1, '2026-08-01 00:00:00', { last_activity_at: '2026-08-08 00:00:00' })],
+      ct_materials: [],
+      ct_opinions: [],
       ct_briefings: [],
     })
 
     const issues = await listIssues(db)
     expect(issues).toHaveLength(1)
-    // abuse_flagged = 3 的素材不計入；取正常素材 08-05 與意見 08-08 的最新
     expect(issues[0]!.last_activity_at).toBe('2026-08-08 00:00:00')
   })
 
-  it('無任何子內容時 fallback 到議題自己的 created_at', async () => {
+  it('last_activity_at 為 NULL（尚無子內容活動）時 fallback 到議題自己的 created_at', async () => {
     const db = sqliteDb({
       ct_issues: [issueRow(1, '2026-08-01 00:00:00')],
       ct_materials: [],
@@ -87,6 +95,80 @@ describe('listIssues 的 last_activity_at（#77）', () => {
     expect(sql).not.toMatch(/SELECT\s+\*/i)
   })
 })
+
+// ── 寫入路徑同步維護 ct_issues.last_activity_at（#77）──────────────────────
+
+describe('寫入路徑更新 last_activity_at（#77）', () => {
+  const AUTHOR = { author_id: 'user-1', author_name: 'User', author_email: 'user@example.com', show_email: false } as const
+  const CONSENT = { terms_version: '2026-01-01' } as const
+
+  /** 只查 ct_issues.last_activity_at 的小工具 */
+  function activityOf(sqlite: DatabaseSync, issueId: number): string | null {
+    const row = sqlite.prepare('SELECT last_activity_at FROM ct_issues WHERE id = ?').get(issueId) as { last_activity_at: string | null } | undefined
+    return row?.last_activity_at ?? null
+  }
+
+  /** 回傳 { db, sqlite }：db 餵給寫入函式，sqlite 用來驗證欄位真的被更新 */
+  function writableDb() {
+    const sqlite = new DatabaseSync(':memory:')
+    sqlite.exec(`
+      CREATE TABLE ct_issues (id INTEGER PRIMARY KEY, created_at TEXT, last_activity_at TEXT, status TEXT);
+      CREATE TABLE ct_materials (id INTEGER PRIMARY KEY, issue_id INTEGER, source_name TEXT, source_url TEXT, stance TEXT, content TEXT, author_id TEXT, author_name TEXT, author_email TEXT, show_email INTEGER, terms_version TEXT, terms_accepted_at TEXT, abuse_flagged INTEGER, created_at TEXT);
+      CREATE TABLE ct_opinions (id INTEGER PRIMARY KEY, issue_id INTEGER, summary TEXT, author_id TEXT, author_name TEXT, author_email TEXT, show_email INTEGER, terms_version TEXT, terms_accepted_at TEXT, abuse_flagged INTEGER, created_at TEXT);
+      CREATE TABLE ct_briefings (id INTEGER PRIMARY KEY, issue_id INTEGER, consensus TEXT, disputes TEXT, positions TEXT, narrative TEXT, opinion_prompt TEXT, version INTEGER, author_id TEXT, author_name TEXT, author_email TEXT, show_email INTEGER, abuse_flagged INTEGER, created_at TEXT);
+      INSERT INTO ct_issues (id, created_at, status) VALUES (1, '2026-08-01 00:00:00', 'collecting');
+    `)
+    const db = {
+      prepare(query: string) {
+        return {
+          bind(...args: unknown[]) {
+            const bindArgs = args as (string | number | null)[]
+            return {
+              async run() {
+                const info = sqlite.prepare(query).run(...bindArgs)
+                return { meta: { changes: Number(info.changes), last_row_id: 0 } }
+              },
+              async first<T>() {
+                return (sqlite.prepare(query).get(...bindArgs) ?? null) as T | null
+              },
+              async all() {
+                return { results: sqlite.prepare(query).all(...bindArgs) as Row[] }
+              },
+            }
+          },
+        }
+      },
+    } as unknown as D1Database
+    return { db, sqlite }
+  }
+
+  it('createMaterial（含 moderationHidden）更新 last_activity_at', async () => {
+    const { db, sqlite } = writableDb()
+    await createMaterial(db, 1, { content: '素材', ...AUTHOR, ...CONSENT }, { moderationHidden: true, skipStatusTransition: true })
+    expect(activityOf(sqlite, 1)).not.toBeNull()
+  })
+
+  it('createOpinion 更新 last_activity_at', async () => {
+    const { db, sqlite } = writableDb()
+    await createOpinion(db, 1, { summary: '意見', ...AUTHOR, ...CONSENT })
+    expect(activityOf(sqlite, 1)).not.toBeNull()
+  })
+
+  it('createBriefing 更新 last_activity_at', async () => {
+    const { db, sqlite } = writableDb()
+    await createBriefing(db, 1, AUTHOR, { consensus: '共識' })
+    expect(activityOf(sqlite, 1)).not.toBeNull()
+  })
+
+  it('updateLatestBriefing（原地 UPDATE）也更新 last_activity_at', async () => {
+    const { db, sqlite } = writableDb()
+    sqlite.prepare("INSERT INTO ct_briefings (id, issue_id, version, created_at, consensus, abuse_flagged) VALUES (1, 1, 1, '2026-08-02 00:00:00', '舊內容', 0)").run()
+    const ok = await updateLatestBriefing(db, 1, { consensus: '新內容' })
+    expect(ok).toBe(true)
+    expect(activityOf(sqlite, 1)).not.toBeNull()
+  })
+})
+
 
 // ── Home 過濾／排序純函式（src/lib/homeSorting.ts，#77）──────────────────
 

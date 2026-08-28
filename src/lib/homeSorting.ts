@@ -26,8 +26,14 @@ export function sortByOrder(issues: IssueListItem[], order: SortOrder): IssueLis
   } else if (order === 'least') {
     result.sort((a, b) => a.material_count + a.opinion_count - (b.material_count + b.opinion_count))
   } else {
-    // newest: last_activity_at DESC（穩定排序，維持 API 既有順序作為同值 fallback）
-    result.sort((a, b) => (a.last_activity_at < b.last_activity_at ? 1 : a.last_activity_at > b.last_activity_at ? -1 : 0))
+    // newest: last_activity_at DESC（穩定排序，維持 API 既有順序作為同值 fallback）。
+    // last_activity_at 為 NULL（尚無子內容活動）時 fallback 到 created_at（#77）。
+    const activityOf = (issue: IssueListItem): string => issue.last_activity_at ?? issue.created_at
+    result.sort((a, b) => {
+      const aAt = activityOf(a)
+      const bAt = activityOf(b)
+      return aAt < bAt ? 1 : aAt > bAt ? -1 : 0
+    })
   }
   return result
 }
