@@ -409,7 +409,7 @@ At the end of our conversation, please summarize my views in 100–300 words, co
 - Any remaining questions or uncertainties
 This summary can be submitted back to Civic Talk as a public opinion contribution.
 ---
-*Generated ${new Date().toLocaleDateString('en-US')} | civic-talk.pages.dev*
+*Generated ${new Date().toLocaleDateString('en-US')} | civic.vtaiwan.tw*
 `
     : `# OPINION.md｜Civic Talk
 ## 這是什麼？
@@ -433,7 +433,7 @@ ${briefingText}
 - 有沒有我還有疑問或不確定的地方
 這份摘要可以回傳到 Civic Talk 平台，作為民眾意見參考。
 ---
-*生成於 ${new Date().toLocaleDateString('zh-TW')}｜civic-talk.pages.dev*
+*生成於 ${new Date().toLocaleDateString('zh-TW')}｜civic.vtaiwan.tw*
 `
 
   const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' })
