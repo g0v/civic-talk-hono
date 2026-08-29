@@ -30,6 +30,7 @@ const issue = {
   status: 'collecting',
   polis_id: null,
   created_at: '2026-08-17 00:00:00',
+  last_activity_at: '2026-08-17 00:00:00',
   abuse_flagged: 0,
   author_name: null,
   author_email: null,
