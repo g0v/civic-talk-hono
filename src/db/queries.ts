@@ -39,6 +39,8 @@ export interface Issue {
 export interface IssueListItem extends Issue {
   material_count: number
   opinion_count: number
+  /** 最新活動時間：由寫入路徑維護的 ct_issues 欄位；NULL 表示尚無子內容活動，讀取層 fallback 到 created_at（#77） */
+  last_activity_at: string | null
 }
 
 /** 議題 + 完整作者快照（僅供管理端；author_id／show_email 不進公開回應） */
@@ -248,14 +250,21 @@ const ISSUE_COUNT_SUBQUERIES = `
   (SELECT COUNT(*) FROM ct_materials WHERE issue_id = ct_issues.id AND abuse_flagged IN (0, 1)) AS material_count,
   (SELECT COUNT(*) FROM ct_opinions  WHERE issue_id = ct_issues.id AND abuse_flagged IN (0, 1)) AS opinion_count`
 
+/** #77：last_activity_at 由寫入路徑維護；NULL（尚無子內容活動）在 SQL 層 fallback 到 created_at */
+const ISSUE_LAST_ACTIVITY_COLUMN = 'COALESCE(last_activity_at, created_at) AS last_activity_at'
+
 export async function listIssues(db: D1Database): Promise<IssueListItem[]> {
-  const { results } = await db.prepare(`SELECT ${ISSUE_PUBLIC_COLUMNS}, ${ISSUE_COUNT_SUBQUERIES} FROM ct_issues WHERE abuse_flagged IN (0, 1, 3) ORDER BY created_at DESC`).all<IssueListItem>()
+  const { results } = await db
+    .prepare(`SELECT ${ISSUE_PUBLIC_COLUMNS}, ${ISSUE_COUNT_SUBQUERIES}, ${ISSUE_LAST_ACTIVITY_COLUMN} FROM ct_issues WHERE abuse_flagged IN (0, 1, 3) ORDER BY created_at DESC`)
+    .all<IssueListItem>()
   return results ?? []
 }
 
 /** 管理端專用：回傳完整作者快照。呼叫端必須先確認請求者是管理員。 */
 export async function listIssuesWithAuthor(db: D1Database): Promise<IssueListItemWithAuthor[]> {
-  const { results } = await db.prepare(`SELECT ${ISSUE_ADMIN_COLUMNS}, ${ISSUE_COUNT_SUBQUERIES} FROM ct_issues ORDER BY created_at DESC`).all<IssueListItemWithAuthor>()
+  const { results } = await db
+    .prepare(`SELECT ${ISSUE_ADMIN_COLUMNS}, ${ISSUE_COUNT_SUBQUERIES}, ${ISSUE_LAST_ACTIVITY_COLUMN} FROM ct_issues ORDER BY created_at DESC`)
+    .all<IssueListItemWithAuthor>()
   return results ?? []
 }
 
@@ -265,6 +274,16 @@ export async function listIssuesWithAuthor(db: D1Database): Promise<IssueListIte
  */
 export async function getIssue(db: D1Database, id: number): Promise<Issue | null> {
   return db.prepare(`SELECT ${ISSUE_PUBLIC_COLUMNS} FROM ct_issues WHERE id = ? AND abuse_flagged IN (0, 1, 3)`).bind(id).first<Issue>()
+}
+
+/**
+ * #77：議題有非隱藏的子內容活動（素材／意見／說明頁的新增或更新）時更新
+ * ct_issues.last_activity_at。moderation-hidden（abuse_flagged = 3）的投稿
+ * 不算活動——與 migration 0011 回填（IN (0, 1)）及公開查詢
+ * material_count／opinion_count 的口徑一致。呼叫端負責 gating。
+ */
+async function touchIssueActivity(db: D1Database, issueId: number): Promise<void> {
+  await db.prepare('UPDATE ct_issues SET last_activity_at = CURRENT_TIMESTAMP WHERE id = ?').bind(issueId).run()
 }
 
 export async function createIssue(
@@ -365,6 +384,12 @@ export async function createMaterial(
       options.moderationHidden ? 3 : 0
     )
     .run()
+  // 隱藏投稿不算活動（#77）：只有非隱藏投稿才更新 last_activity_at，
+  // 與 migration 0011 回填（abuse_flagged IN (0, 1)）的口徑一致。
+  // skipStatusTransition 只影響狀態轉換，不影響此判斷。
+  if (!options.moderationHidden) {
+    await touchIssueActivity(db, issueId)
+  }
   if (!options.skipStatusTransition) {
     await db.prepare("UPDATE ct_issues SET status = 'summarizing' WHERE id = ? AND status = 'collecting'").bind(issueId).run()
   }
@@ -458,6 +483,11 @@ export async function createBriefing(
     )
     .first<{ version: number }>()
   if (!inserted) throw new Error('Briefing insert did not return a version')
+  // 隱藏投稿不算活動（#77）：只有非隱藏投稿才更新 last_activity_at，
+  // 與 migration 0011 回填（abuse_flagged IN (0, 1)）的口徑一致。
+  if (!options.moderationHidden) {
+    await touchIssueActivity(db, issueId)
+  }
   if (!options.skipStatusTransition) {
     await db.prepare("UPDATE ct_issues SET status = 'published' WHERE id = ? AND status IN ('collecting', 'summarizing')").bind(issueId).run()
   }
@@ -494,6 +524,9 @@ export async function updateLatestBriefing(
     )
     .bind(blankToNull(input.consensus), blankToNull(input.disputes), blankToNull(input.positions), blankToNull(input.narrative), existing.id)
     .run()
+  // 這裡無條件 touch：getLatestBriefing() 已過濾 abuse_flagged IN (0, 1)，
+  // UPDATE 只會觸及非隱藏列，本來就符合「隱藏投稿不算活動」的口徑（#77）。
+  await touchIssueActivity(db, issueId)
   return true
 }
 
@@ -527,6 +560,11 @@ export async function createOpinion(
     )
     .bind(issueId, input.summary, input.author_id, input.author_name, input.author_email, input.show_email ? 1 : 0, input.terms_version, options.moderationHidden ? 3 : 0)
     .run()
+  // 隱藏投稿不算活動（#77）：只有非隱藏投稿才更新 last_activity_at，
+  // 與 migration 0011 回填（abuse_flagged IN (0, 1)）的口徑一致。
+  if (!options.moderationHidden) {
+    await touchIssueActivity(db, issueId)
+  }
   return meta.last_row_id
 }
 
