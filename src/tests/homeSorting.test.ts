@@ -142,23 +142,50 @@ describe('寫入路徑更新 last_activity_at（#77）', () => {
     return { db, sqlite }
   }
 
-  it('createMaterial（含 moderationHidden）更新 last_activity_at', async () => {
+  it('createMaterial 更新 last_activity_at', async () => {
+    const { db, sqlite } = writableDb()
+    await createMaterial(db, 1, { content: '素材', ...AUTHOR, ...CONSENT })
+    const row = sqlite.prepare('SELECT COUNT(*) AS n FROM ct_materials WHERE issue_id = 1 AND content = ?').get('素材') as { n: number }
+    expect(row.n).toBe(1)
+    expect(activityOf(sqlite, 1)).not.toBeNull()
+  })
+
+  it('createMaterial 的 moderationHidden 投稿不算活動，不更新 last_activity_at', async () => {
     const { db, sqlite } = writableDb()
     await createMaterial(db, 1, { content: '素材', ...AUTHOR, ...CONSENT }, { moderationHidden: true, skipStatusTransition: true })
-    expect(activityOf(sqlite, 1)).not.toBeNull()
+    expect(activityOf(sqlite, 1)).toBeNull()
   })
 
   it('createOpinion 更新 last_activity_at', async () => {
     const { db, sqlite } = writableDb()
     await createOpinion(db, 1, { summary: '意見', ...AUTHOR, ...CONSENT })
+    const row = sqlite.prepare('SELECT COUNT(*) AS n FROM ct_opinions WHERE issue_id = 1 AND summary = ?').get('意見') as { n: number }
+    expect(row.n).toBe(1)
     expect(activityOf(sqlite, 1)).not.toBeNull()
+  })
+
+  it('createOpinion 的 moderationHidden 投稿不算活動，不更新 last_activity_at', async () => {
+    const { db, sqlite } = writableDb()
+    await createOpinion(db, 1, { summary: '意見', ...AUTHOR, ...CONSENT }, { moderationHidden: true })
+    const row = sqlite.prepare('SELECT COUNT(*) AS n FROM ct_opinions WHERE issue_id = 1').get() as { n: number }
+    expect(row.n).toBe(1)
+    expect(activityOf(sqlite, 1)).toBeNull()
   })
 
   it('createBriefing 更新 last_activity_at', async () => {
     const { db, sqlite } = writableDb()
-    await createBriefing(db, 1, AUTHOR, { consensus: '共識' })
+    const version = await createBriefing(db, 1, AUTHOR, { consensus: '共識' })
+    const row = sqlite.prepare('SELECT COUNT(*) AS n FROM ct_briefings WHERE issue_id = 1 AND version = ? AND consensus = ?').get(version, '共識') as { n: number }
+    expect(row.n).toBe(1)
     expect(activityOf(sqlite, 1)).not.toBeNull()
   })
+
+  it('createBriefing 的 moderationHidden 投稿不算活動，不更新 last_activity_at', async () => {
+    const { db, sqlite } = writableDb()
+    await createBriefing(db, 1, AUTHOR, { consensus: '共識' }, { moderationHidden: true })
+    expect(activityOf(sqlite, 1)).toBeNull()
+  })
+
 
   it('updateLatestBriefing（原地 UPDATE）也更新 last_activity_at', async () => {
     const { db, sqlite } = writableDb()

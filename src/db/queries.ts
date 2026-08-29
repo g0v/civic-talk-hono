@@ -277,9 +277,10 @@ export async function getIssue(db: D1Database, id: number): Promise<Issue | null
 }
 
 /**
- * #77：議題有任何子內容活動（素材／意見／說明頁的新增或更新）時更新
- * ct_issues.last_activity_at。moderation-hidden 的投稿也算活動，
- * 因此不受 skipStatusTransition 影響——狀態轉換可以 skip，活動時間不行。
+ * #77：議題有非隱藏的子內容活動（素材／意見／說明頁的新增或更新）時更新
+ * ct_issues.last_activity_at。moderation-hidden（abuse_flagged = 3）的投稿
+ * 不算活動——與 migration 0011 回填（IN (0, 1)）及公開查詢
+ * material_count／opinion_count 的口徑一致。呼叫端負責 gating。
  */
 async function touchIssueActivity(db: D1Database, issueId: number): Promise<void> {
   await db.prepare('UPDATE ct_issues SET last_activity_at = CURRENT_TIMESTAMP WHERE id = ?').bind(issueId).run()
@@ -383,7 +384,12 @@ export async function createMaterial(
       options.moderationHidden ? 3 : 0
     )
     .run()
-  await touchIssueActivity(db, issueId)
+  // 隱藏投稿不算活動（#77）：只有非隱藏投稿才更新 last_activity_at，
+  // 與 migration 0011 回填（abuse_flagged IN (0, 1)）的口徑一致。
+  // skipStatusTransition 只影響狀態轉換，不影響此判斷。
+  if (!options.moderationHidden) {
+    await touchIssueActivity(db, issueId)
+  }
   if (!options.skipStatusTransition) {
     await db.prepare("UPDATE ct_issues SET status = 'summarizing' WHERE id = ? AND status = 'collecting'").bind(issueId).run()
   }
@@ -477,7 +483,11 @@ export async function createBriefing(
     )
     .first<{ version: number }>()
   if (!inserted) throw new Error('Briefing insert did not return a version')
-  await touchIssueActivity(db, issueId)
+  // 隱藏投稿不算活動（#77）：只有非隱藏投稿才更新 last_activity_at，
+  // 與 migration 0011 回填（abuse_flagged IN (0, 1)）的口徑一致。
+  if (!options.moderationHidden) {
+    await touchIssueActivity(db, issueId)
+  }
   if (!options.skipStatusTransition) {
     await db.prepare("UPDATE ct_issues SET status = 'published' WHERE id = ? AND status IN ('collecting', 'summarizing')").bind(issueId).run()
   }
@@ -514,6 +524,8 @@ export async function updateLatestBriefing(
     )
     .bind(blankToNull(input.consensus), blankToNull(input.disputes), blankToNull(input.positions), blankToNull(input.narrative), existing.id)
     .run()
+  // 這裡無條件 touch：getLatestBriefing() 已過濾 abuse_flagged IN (0, 1)，
+  // UPDATE 只會觸及非隱藏列，本來就符合「隱藏投稿不算活動」的口徑（#77）。
   await touchIssueActivity(db, issueId)
   return true
 }
@@ -548,7 +560,11 @@ export async function createOpinion(
     )
     .bind(issueId, input.summary, input.author_id, input.author_name, input.author_email, input.show_email ? 1 : 0, input.terms_version, options.moderationHidden ? 3 : 0)
     .run()
-  await touchIssueActivity(db, issueId)
+  // 隱藏投稿不算活動（#77）：只有非隱藏投稿才更新 last_activity_at，
+  // 與 migration 0011 回填（abuse_flagged IN (0, 1)）的口徑一致。
+  if (!options.moderationHidden) {
+    await touchIssueActivity(db, issueId)
+  }
   return meta.last_row_id
 }
 
