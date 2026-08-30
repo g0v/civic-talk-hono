@@ -4,8 +4,10 @@ import { useI18n, useLocaleLabel, type Locale } from '../l10n'
 import { isAdminSession } from '../client/auth-session'
 import { useAuth } from '../composables/useAuth'
 import { useDarkMode } from '../composables/useDarkMode'
+import { useFontScale } from '../composables/useFontScale'
 import SignInButtons from './SignInButtons.vue'
 const darkMode = useDarkMode()
+const fontScale = useFontScale()
 
 const props = withDefaults(
   defineProps<{
@@ -57,7 +59,7 @@ onMounted(() => {
   }
   ready.value = true
   darkMode.init()
-  // 登入狀態同樣是 hydration 後才知道；useAuth 會跟頁面上的表單共用同一次 /api/me
+  fontScale.init()
   void ensureAuthSession()
 })
 
@@ -91,20 +93,20 @@ function handleNewIssue() {
 
       <!-- ── 桌面 nav（md 以上才顯示）── -->
       <nav class="hidden items-center gap-0.5 md:flex">
-        <a v-if="backHref" :href="backHref" class="rounded-pill px-3 py-1.5 text-[15px] text-vt-fg-2 no-underline hover:bg-black/5 dark:hover:bg-white/10">
+        <a v-if="backHref" :href="backHref" class="rounded-pill px-3 py-1.5 text-vt-nav text-vt-fg-2 no-underline hover:bg-black/5 dark:hover:bg-white/10">
           {{ backText }}
         </a>
         <a
           v-else
           href="/"
-          class="rounded-pill px-3 py-1.5 text-[15px] text-vt-fg-2 no-underline hover:bg-black/5 dark:hover:bg-white/10"
+          class="rounded-pill px-3 py-1.5 text-vt-nav text-vt-fg-2 no-underline hover:bg-black/5 dark:hover:bg-white/10"
           :class="{ 'font-semibold text-vt-democratic-red': current === 'home' }"
         >
           {{ t('nav_issues') }}
         </a>
         <a
           href="/about"
-          class="rounded-pill px-3 py-1.5 text-[15px] text-vt-fg-2 no-underline hover:bg-black/5 dark:hover:bg-white/10"
+          class="rounded-pill px-3 py-1.5 text-vt-nav text-vt-fg-2 no-underline hover:bg-black/5 dark:hover:bg-white/10"
           :class="{ 'font-semibold text-vt-democratic-red': current === 'about' }"
         >
           {{ t('nav_about') }}
@@ -112,7 +114,7 @@ function handleNewIssue() {
         <a
           v-if="hasAdminAccess"
           href="/admin"
-          class="rounded-pill px-3 py-1.5 text-[15px] text-vt-fg-2 no-underline hover:bg-black/5 dark:hover:bg-white/10"
+          class="rounded-pill px-3 py-1.5 text-vt-nav text-vt-fg-2 no-underline hover:bg-black/5 dark:hover:bg-white/10"
           :class="{ 'font-semibold text-vt-democratic-red': current === 'admin' }"
         >
           {{ t('nav_admin') }}
@@ -163,6 +165,19 @@ function handleNewIssue() {
             <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
           </svg>
         </button>
+        <button
+          type="button"
+          class="btn btn-ghost btn-sm"
+          :aria-label="t('font_size_toggle')"
+          :aria-pressed="fontScale.fontLarge.value"
+          @click="fontScale.toggle()"
+        >
+          <span class="inline-flex items-baseline gap-0.5" aria-hidden="true">
+            <span class="text-vt-xs">A</span>
+            <span class="text-vt-xs text-vt-fg-3">/</span>
+            <span class="text-vt-base" :class="fontScale.fontLarge.value ? 'font-bold text-vt-democratic-red' : ''">A</span>
+          </span>
+        </button>
         <button v-if="showNewIssue" type="button" class="btn btn-primary btn-sm" @click="emit('new-issue')">
           {{ t('idx_new_issue_btn') }}
         </button>
@@ -178,7 +193,7 @@ function handleNewIssue() {
               <img v-if="avatarImage" :src="avatarImage" :alt="displayName" referrerpolicy="no-referrer" />
               <span v-else>{{ avatarInitial }}</span>
             </div>
-            <span class="max-w-[10rem] truncate text-[14px] text-vt-fg-2">{{ displayName }}</span>
+            <span class="max-w-[10rem] truncate text-vt-sm text-vt-fg-2">{{ displayName }}</span>
           </a>
           <button type="button" class="btn btn-ghost btn-sm" @click="signOutAndReload">
             {{ t('logout') }}
@@ -253,11 +268,11 @@ function handleNewIssue() {
     <div v-if="showMenu" class="mx-auto mt-2 max-w-[980px] rounded-xl border border-vt-border/75 bg-vt-bg-1/95 px-5 py-4 shadow-md backdrop-blur-[20px] md:hidden">
       <!-- 導航連結 -->
       <nav class="mb-4 flex flex-col gap-1">
-        <a v-if="backHref" :href="backHref" class="rounded-lg px-3 py-2.5 text-[15px] text-vt-fg-1 no-underline hover:bg-black/5 dark:hover:bg-white/10" @click="closeMenu"> ← {{ backText }} </a>
+        <a v-if="backHref" :href="backHref" class="rounded-lg px-3 py-2.5 text-vt-nav text-vt-fg-1 no-underline hover:bg-black/5 dark:hover:bg-white/10" @click="closeMenu"> ← {{ backText }} </a>
         <template v-else>
           <a
             href="/"
-            class="rounded-lg px-3 py-2.5 text-[15px] no-underline hover:bg-black/5 dark:hover:bg-white/10"
+            class="rounded-lg px-3 py-2.5 text-vt-nav no-underline hover:bg-black/5 dark:hover:bg-white/10"
             :class="current === 'home' ? 'font-semibold text-vt-democratic-red' : 'text-vt-fg-1'"
             @click="closeMenu"
           >
@@ -266,7 +281,7 @@ function handleNewIssue() {
         </template>
         <a
           href="/about"
-          class="rounded-lg px-3 py-2.5 text-[15px] no-underline hover:bg-black/5 dark:hover:bg-white/10"
+          class="rounded-lg px-3 py-2.5 text-vt-nav no-underline hover:bg-black/5 dark:hover:bg-white/10"
           :class="current === 'about' ? 'font-semibold text-vt-democratic-red' : 'text-vt-fg-1'"
           @click="closeMenu"
         >
@@ -275,7 +290,7 @@ function handleNewIssue() {
         <a
           v-if="hasAdminAccess"
           href="/admin"
-          class="rounded-lg px-3 py-2.5 text-[15px] no-underline hover:bg-black/5 dark:hover:bg-white/10"
+          class="rounded-lg px-3 py-2.5 text-vt-nav no-underline hover:bg-black/5 dark:hover:bg-white/10"
           :class="current === 'admin' ? 'font-semibold text-vt-democratic-red' : 'text-vt-fg-1'"
           @click="closeMenu"
         >
@@ -330,6 +345,19 @@ function handleNewIssue() {
             <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
           </svg>
         </button>
+        <button
+          type="button"
+          class="btn btn-ghost btn-sm"
+          :aria-label="t('font_size_toggle')"
+          :aria-pressed="fontScale.fontLarge.value"
+          @click="fontScale.toggle()"
+        >
+          <span class="inline-flex items-baseline gap-0.5" aria-hidden="true">
+            <span class="text-vt-xs">A</span>
+            <span class="text-vt-xs text-vt-fg-3">/</span>
+            <span class="text-vt-base" :class="fontScale.fontLarge.value ? 'font-bold text-vt-democratic-red' : ''">A</span>
+          </span>
+        </button>
         <button v-if="showNewIssue" type="button" class="btn btn-primary btn-sm" @click="handleNewIssue">
           {{ t('idx_new_issue_btn') }}
         </button>
@@ -345,8 +373,8 @@ function handleNewIssue() {
             <span v-else>{{ avatarInitial }}</span>
           </div>
           <div class="min-w-0">
-            <div class="truncate text-[14px] font-medium text-vt-fg-1">{{ displayName }}</div>
-            <div class="truncate text-[13px] text-vt-fg-3">{{ session?.user.email }}</div>
+            <div class="truncate text-vt-sm font-medium text-vt-fg-1">{{ displayName }}</div>
+            <div class="truncate text-vt-xs text-vt-fg-3">{{ session?.user.email }}</div>
           </div>
         </a>
         <button type="button" class="btn btn-secondary btn-sm" @click="signOutAndReload">

@@ -32,6 +32,7 @@ export const messages = {
   login_err: 'Sign-in failed. Please try again.',
   logout: 'Sign Out',
   dark_mode_toggle: 'Toggle dark mode',
+  font_size_toggle: 'Toggle large font size',
   login: 'Sign In',
   signed_in_as: 'Signed in: {name}',
   login_panel_desc: 'Sign in to create issues and submit materials or opinions.',
