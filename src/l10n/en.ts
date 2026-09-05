@@ -254,7 +254,7 @@ export const messages = {
   abt_step3_title: 'Join the discussion',
   abt_step3_desc:
     'After reading the briefing, download OPINION.md and paste it into your own AI chat. Let the AI guide your thinking from your own life context, then submit your civic opinion back to the platform.',
-  abt_step3_wip_note: "Voting on other people's opinions",
+  abt_step3_wip_note: "You can also vote on other people's opinions",
   abt_step4_label: 'SHARE',
   abt_step4_title: 'Share your perspective',
   abt_step4_desc: 'Every opinion and source has its own permanent link, so you can share it on social media or send it to friends, bringing more people and viewpoints into the discussion.',
@@ -262,6 +262,7 @@ export const messages = {
   abt_step5_title: 'Synthesize opinions',
   abt_step5_desc:
     'Once enough civic opinions have accumulated, the different viewpoints are synthesized back into the briefing, surfacing new perspectives the original materials missed and deepening the discussion.',
+  abt_step5_wip_note: 'Combined with the Sensemaker opinion synthesizer, the distribution of civic discussion and votes is synthesized into an understandable report.',
   abt_wip_badge: 'In development',
   abt_principle_title: 'Turning idle compute into a public resource',
   abt_principle_desc:

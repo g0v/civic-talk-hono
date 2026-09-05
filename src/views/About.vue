@@ -26,7 +26,7 @@ type FlowStep = {
   desc: string
   /** 顯示「功能研發中」徽章 */
   wip: boolean
-  /** 研發中的子功能說明（整個步驟都在研發中時留空） */
+  /** 研發中的子功能說明；徽章掛在這一段，desc 本身描述的是已上線的部分 */
   wipNote: string
 }
 
@@ -37,7 +37,7 @@ const steps = computed<FlowStep[]>(() => [
   { n: 2, label: t('abt_step2_label'), title: t('abt_step2_title'), desc: t('abt_step2_desc'), wip: false, wipNote: '' },
   { n: 3, label: t('abt_step3_label'), title: t('abt_step3_title'), desc: t('abt_step3_desc'), wip: true, wipNote: t('abt_step3_wip_note') },
   { n: 4, label: t('abt_step4_label'), title: t('abt_step4_title'), desc: t('abt_step4_desc'), wip: false, wipNote: '' },
-  { n: 5, label: t('abt_step5_label'), title: t('abt_step5_title'), desc: t('abt_step5_desc'), wip: true, wipNote: '' },
+  { n: 5, label: t('abt_step5_label'), title: t('abt_step5_title'), desc: t('abt_step5_desc'), wip: true, wipNote: t('abt_step5_wip_note') },
 ])
 
 const techRows = computed(() => [
