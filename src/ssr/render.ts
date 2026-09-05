@@ -32,6 +32,7 @@ export async function renderPage(component: Component, props: Record<string, unk
   <head>
     <script>
 (function(){try{var s=localStorage.getItem('civic_dark');if(s==='dark'||(s===null&&matchMedia('(prefers-color-scheme: dark)').matches)){document.documentElement.classList.add('dark')}}catch(e){}})();
+(function(){try{var s=localStorage.getItem('civic_font');if(s==='large'){document.documentElement.classList.add('font-large')}}catch(e){}})();
 </script>
     ${headTags}
     <link rel="apple-touch-icon" sizes="180x180" href="/img/apple-touch-icon.png" />

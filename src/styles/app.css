@@ -43,23 +43,30 @@
   --font-vt-serif: 'Noto Serif TC', 'Source Han Serif TC', 'Songti TC', serif;
   --font-vt-sans: 'Noto Sans TC', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
   --font-vt-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
-  --text-vt-xs: 12px;
+  --text-vt-xs: 0.75rem;
   --text-vt-xs--line-height: 1.4;
-  --text-vt-sm: 14px;
+  --text-vt-sm: 0.875rem;
   --text-vt-sm--line-height: 1.5;
-  --text-vt-base: 16px;
+  --text-vt-base: 1rem;
   --text-vt-base--line-height: 1.6;
-  --text-vt-lg: 18px;
+  --text-vt-lg: 1.125rem;
   --text-vt-lg--line-height: 1.6;
-  --text-vt-xl: 20px;
+  --text-vt-xl: 1.25rem;
   --text-vt-xl--line-height: 1.3;
-  --text-vt-2xl: 24px;
+  --text-vt-2xl: 1.5rem;
   --text-vt-2xl--line-height: 1.25;
-  --text-vt-3xl: 30px;
+  --text-vt-nav: 0.9375rem;
+  --text-vt-nav--line-height: 1.5;
+  --text-vt-label: 0.8125rem;
+  --text-vt-label--line-height: 1.4;
+  --text-vt-display: 1.75rem;
+  --text-vt-display--line-height: 1.25;
+  --text-vt-hero-max: 2.5rem;
+  --text-vt-3xl: 1.875rem;
   --text-vt-3xl--line-height: 1.2;
-  --text-vt-4xl: 36px;
+  --text-vt-4xl: 2.25rem;
   --text-vt-4xl--line-height: 1.2;
-  --text-vt-5xl: 48px;
+  --text-vt-5xl: 3rem;
   --text-vt-5xl--line-height: 1.15;
 
   /* Spacing */
@@ -195,6 +202,48 @@
   }
 }
 
+/* ---- 全站字級切換（issue #79）：html.font-large 時閱讀字級放大一階 ---- */
+/* 只覆寫字級變數，不動 --spacing／html font-size，padding 與布局間距維持不變。 */
+html.font-large {
+  /* Tailwind 核心字級 utilities（text-xs…text-6xl）：與 normal 拉大差距（約 +2 級） */
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: 1.45;
+  --text-sm: 1rem;
+  --text-sm--line-height: 1.55;
+  --text-base: 1.125rem;
+  --text-base--line-height: 1.65;
+  --text-lg: 1.25rem;
+  --text-lg--line-height: 1.6;
+  --text-xl: 1.5rem;
+  --text-xl--line-height: 1.35;
+  --text-2xl: 1.875rem;
+  --text-2xl--line-height: 1.3;
+  --text-3xl: 2.25rem;
+  --text-3xl--line-height: 1.25;
+  --text-4xl: 2.75rem;
+  --text-4xl--line-height: 1.2;
+  --text-5xl: 3.5rem;
+  --text-5xl--line-height: 1.15;
+  --text-6xl: 4.25rem;
+  --text-6xl--line-height: 1.1;
+  /* vt token（元件樣式用；級距與 Tailwind 核心同名級距對齊） */
+  --text-vt-xs: 0.8125rem;
+  --text-vt-sm: 1rem;
+  --text-vt-base: 1.125rem;
+  --text-vt-lg: 1.25rem;
+  --text-vt-nav: 1.0625rem;
+  --text-vt-label: 0.9375rem;
+  --text-vt-xl: 1.5rem;
+  --text-vt-2xl: 1.875rem;
+  --text-vt-3xl: 2.25rem;
+  --text-vt-display: 2.25rem;
+  --text-vt-4xl: 2.75rem;
+  --text-vt-5xl: 3.5rem;
+  --text-vt-hero-max: 2.8125rem;
+}
+html.font-large body {
+  font-size: var(--text-vt-base);
+}
 @layer components {
   /* ---- Avatar ---- */
   .avatar {
@@ -207,7 +256,7 @@
     overflow: hidden;
     background: var(--color-vt-democratic-red);
     color: var(--color-vt-white);
-    font-size: 13px;
+    font-size: var(--text-vt-label);
     font-weight: 700;
     letter-spacing: 0;
     flex-shrink: 0;
@@ -225,7 +274,7 @@
   .avatar-lg {
     width: 40px;
     height: 40px;
-    font-size: 15px;
+    font-size: var(--text-vt-nav);
   }
 
   .container {
@@ -242,7 +291,7 @@
     border-radius: var(--radius-pill);
     border: 1px solid transparent;
     padding: 0.55rem 1.1rem;
-    font-size: 1rem;
+    font-size: var(--text-vt-base);
     font-weight: 500;
     cursor: pointer;
     text-decoration: none;
@@ -302,7 +351,7 @@
 
   .btn-sm {
     padding: 0.4rem 0.85rem;
-    font-size: 0.875rem;
+    font-size: var(--text-vt-sm);
   }
 
   .card {
@@ -325,7 +374,7 @@
 
   .label-hint {
     margin-left: 0.4rem;
-    font-size: 0.875rem;
+    font-size: var(--text-vt-sm);
     color: var(--color-muted);
   }
 
@@ -353,7 +402,7 @@
     align-items: center;
     border-radius: var(--radius-pill);
     padding: 0.2rem 0.65rem;
-    font-size: 0.8125rem;
+    font-size: var(--text-vt-label);
     font-weight: 600;
   }
 
@@ -441,7 +490,7 @@
   .alert {
     border-radius: var(--radius-md);
     padding: 0.9rem 1rem;
-    font-size: 1rem;
+    font-size: var(--text-vt-base);
   }
 
   .alert-info {
@@ -461,7 +510,7 @@
   }
 
   .empty-icon {
-    font-size: 1.75rem;
+    font-size: var(--text-vt-display);
     margin-bottom: 0.5rem;
   }
 
@@ -477,7 +526,7 @@
     border: none;
     background: transparent;
     padding: 0.75rem 0.9rem;
-    font-size: 1rem;
+    font-size: var(--text-vt-base);
     color: var(--color-muted);
     cursor: pointer;
     border-bottom: 2px solid transparent;
@@ -499,7 +548,7 @@
     color: white;
     padding: 0.7rem 1.15rem;
     border-radius: var(--radius-pill);
-    font-size: 0.9375rem;
+    font-size: var(--text-vt-nav);
     box-shadow: var(--shadow-md);
     opacity: 0;
     pointer-events: none;
@@ -530,7 +579,7 @@
   }
 
   .hero-tag {
-    font-size: 0.8125rem;
+    font-size: var(--text-vt-label);
     letter-spacing: 0.12em;
     text-transform: uppercase;
     color: color-mix(in srgb, white 70%, var(--color-red));
@@ -539,7 +588,7 @@
 
   .hero-title {
     font-family: var(--font-serif);
-    font-size: clamp(1.75rem, 4vw, 2.5rem);
+    font-size: clamp(var(--text-vt-display), 4vw, var(--text-vt-hero-max));
     font-weight: 900;
     line-height: 1.25;
     margin: 0 0 0.85rem;
@@ -559,7 +608,7 @@
   }
 
   .section-label {
-    font-size: 12px;
+    font-size: var(--text-vt-xs);
     font-weight: 700;
     letter-spacing: 0.1em;
     color: var(--color-red);
@@ -569,7 +618,7 @@
 
   .page-title {
     font-family: var(--font-serif);
-    font-size: 1.75rem;
+    font-size: var(--text-vt-display);
     font-weight: 700;
     margin: 0 0 0.35rem;
   }
@@ -618,7 +667,7 @@
     border-radius: var(--radius-md);
     padding: 0.9rem;
     white-space: pre-wrap;
-    font-size: 0.9375rem;
+    font-size: var(--text-vt-nav);
     max-height: 280px;
     overflow: auto;
   }

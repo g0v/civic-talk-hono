@@ -247,10 +247,10 @@ function renderPolis() {
   const isZh = locale.value === 'zh-TW'
   el.innerHTML = `
     <div class="divider"></div>
-    <h2 style="font-size:1.1rem;font-weight:700;margin-bottom:8px;">📊 ${t('polis_title')}</h2>
-    <p style="color:var(--color-muted);font-size:0.9rem;margin-bottom:16px;">${t('polis_desc')}</p>
+    <h2 style="font-size:var(--text-vt-lg);font-weight:700;margin-bottom:8px;">📊 ${t('polis_title')}</h2>
+    <p style="color:var(--color-muted);font-size:var(--text-vt-base);margin-bottom:16px;">${t('polis_desc')}</p>
     <div class="polis" data-page_id="civic-talk-issue-${iss.id}" data-site_id="polis_site_id_rdf0tsbfxaRo35qf1P"></div>
-    <p style="font-size:0.8rem;color:var(--color-muted);margin-top:8px;">
+    <p style="font-size:var(--text-vt-sm);color:var(--color-muted);margin-top:8px;">
       ${t('polis_powered')} <a href="https://polis.tw" target="_blank" rel="noopener noreferrer">polis.tw</a>
     </p>
   `
@@ -541,16 +541,16 @@ async function submitOpinion() {
               <div class="grid-2 mb-6">
                 <div class="card">
                   <h3 class="mt-0 mb-2 text-base">{{ t('brief_consensus') }}</h3>
-                  <div class="markdown-content text-sm" v-html="renderedBriefing?.consensus ?? ''" />
+                  <div class="markdown-content text-base" v-html="renderedBriefing?.consensus ?? ''" />
                 </div>
                 <div class="card">
                   <h3 class="mt-0 mb-2 text-base">{{ t('brief_disputes') }}</h3>
-                  <div class="markdown-content text-sm" v-html="renderedBriefing?.disputes ?? ''" />
+                  <div class="markdown-content text-base" v-html="renderedBriefing?.disputes ?? ''" />
                 </div>
               </div>
               <div class="card mb-6">
                 <h3 class="mt-0 mb-2 text-base">{{ t('brief_positions') }}</h3>
-                <div class="markdown-content text-sm" v-html="renderedBriefing?.positions ?? ''" />
+                <div class="markdown-content text-base" v-html="renderedBriefing?.positions ?? ''" />
               </div>
               <div class="alert alert-info mb-4">
                 {{ t('brief_opinion_alert') }}
@@ -615,7 +615,7 @@ async function submitOpinion() {
                   <span class="text-sm" :class="stanceClass(m.stance)">{{ stanceLabel(m.stance) }}</span>
                   <a v-if="m.source_url" :href="m.source_url" target="_blank" rel="noopener noreferrer" class="text-sm">{{ t('mat_link') }}</a>
                 </div>
-                <LongTextContent :text="m.content" :content-id="`material-content-${m.id}`" content-class="whitespace-pre-wrap text-sm leading-relaxed" />
+                <LongTextContent :text="m.content" :content-id="`material-content-${m.id}`" content-class="whitespace-pre-wrap text-base leading-relaxed" />
               </template>
               <!-- metadata（已確認或 AI 審查違規時不顯示） -->
               <p v-if="m.abuse_flagged !== 2 && m.abuse_flagged !== 3" class="mt-2 mb-0 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
@@ -855,7 +855,7 @@ async function submitOpinion() {
                       {{ t('report_btn') }}
                     </button>
                   </p>
-                  <div class="whitespace-pre-wrap text-sm leading-relaxed">{{ o.summary }}</div>
+                  <div class="whitespace-pre-wrap text-base leading-relaxed">{{ o.summary }}</div>
                 </template>
               </div>
             </template>
