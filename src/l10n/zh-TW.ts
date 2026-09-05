@@ -246,7 +246,7 @@ export const messages = {
   abt_step1_desc: '從你關心的公共議題開始。找不到想討論的議題？登入後可以自己建立一個新議題，邀請更多人一起關注。',
   abt_step2_label: 'INFORM',
   abt_step2_title: '建立客觀討論基礎',
-  abt_step2_desc: '志願者收集新聞、報告與各方說法等素材，再用自己的 AI 工具整理出共識、爭點與立場地圖，生成一份給一般人看的說明頁。',
+  abt_step2_desc: '志願者收集法規、政策、報告、新聞與正反方說法等素材，再用自己的 AI 工具整理出共識、爭點與立場地圖，生成一份給一般人看的說明頁。',
   abt_step3_label: 'DISCUSS',
   abt_step3_title: '參與討論',
   abt_step3_desc: '讀完說明頁後，下載 OPINION.md 貼到你慣用的 AI 對話，讓 AI 從你自己的生活情境引導思考，再把整理好的公民意見回傳平台。',

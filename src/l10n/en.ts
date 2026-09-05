@@ -248,7 +248,8 @@ export const messages = {
   abt_step1_desc: "Start with a public issue you care about. Can't find the one you want to discuss? Sign in and create a new issue to invite more people to follow it.",
   abt_step2_label: 'INFORM',
   abt_step2_title: 'Build an objective basis for discussion',
-  abt_step2_desc: 'Volunteers collect news, reports, and statements from all sides, then use their own AI tools to distill consensus, disputes, and a position map into a briefing anyone can read.',
+  abt_step2_desc:
+    'Volunteers collect materials such as laws, policies, reports, news, and arguments from both sides, then use their own AI tools to distill consensus, disputes, and a position map into a briefing anyone can read.',
   abt_step3_label: 'DISCUSS',
   abt_step3_title: 'Join the discussion',
   abt_step3_desc:
