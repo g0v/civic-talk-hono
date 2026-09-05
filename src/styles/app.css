@@ -406,6 +406,60 @@ html.font-large body {
     font-weight: 600;
   }
 
+  /* ---- 關於頁：平台導覽流程（issue #83） ----
+     五步驟以直向流程呈現；步驟之間用一條短線＋箭頭連接，表示順序。
+     放在這裡而非 SFC <style scoped>：HTML 殼目前只載入 /styles.css。 */
+  .flow-list {
+    display: grid;
+    gap: var(--spacing-vt-8);
+  }
+
+  .flow-step {
+    position: relative;
+  }
+
+  .flow-step + .flow-step::before {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: calc(-1 * var(--spacing-vt-8));
+    width: 2px;
+    height: var(--spacing-vt-8);
+    background: var(--color-border);
+    transform: translateX(-50%);
+  }
+
+  .flow-step + .flow-step::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: calc(-1 * var(--spacing-vt-3));
+    width: var(--spacing-vt-2);
+    height: var(--spacing-vt-2);
+    border-right: 2px solid var(--color-border);
+    border-bottom: 2px solid var(--color-border);
+    transform: translateX(-50%) rotate(45deg);
+  }
+
+  .flow-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: var(--radius-vt-full);
+    background: var(--color-red);
+    color: var(--color-vt-white);
+    font-family: var(--font-serif);
+    font-size: var(--text-vt-sm);
+    letter-spacing: 0;
+  }
+
+  .flow-wip {
+    background: var(--color-vt-yellow-tint);
+    color: var(--color-amber);
+  }
+
   .status-collecting {
     background: color-mix(in srgb, var(--color-amber) 14%, white);
     color: var(--color-amber);

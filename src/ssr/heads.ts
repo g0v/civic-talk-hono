@@ -41,7 +41,7 @@ export function headForHome(origin: string): HeadConfig {
 
 export function headForAbout(origin: string): HeadConfig {
   const title = `關於 — ${SITE_NAME}`
-  const description = 'Civic Talk 實驗中的公民審議平台：素材彙整、說明頁與意見回饋循環。'
+  const description = 'Civic Talk 實驗中的公民審議平台：關注議題、建立客觀討論基礎、參與討論、分享觀點、意見綜整。'
   return {
     title,
     description,
