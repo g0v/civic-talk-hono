@@ -174,6 +174,7 @@ Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑�
 - 模板一律用 token 或既有工具類別，**不硬寫顏色、字級、間距數值**。新增 token 時先在 `@theme` 定義再於模板使用。
 - Tailwind 導入後 `public/styles.css` 變成建置產物——**不可手改**，改 source 後重新建置。
 - View 的 SFC 樣式原則上用 `<style scoped>`，避免跨頁污染；真正全站共用的樣式才放進 CSS source。
+  - ⚠️ **現況限制（#83 實測）**：HTML 殼（`src/ssr/render.ts`）目前只載入 `/styles.css`，client build 從 SFC 抽出的 CSS（`public/assets/style-*.css`）沒有任何地方引用，所以 `<style scoped>` 在正式環境**不會生效**、只在 `vp run dev` 看得到。在把抽出的 CSS 接進 HTML 殼之前，元件樣式一律用 Tailwind utilities 或放進 `src/styles/app.css` 的 `@layer components`；repo 內目前沒有任何 SFC 帶 `<style>` 區塊，請維持這個狀態。要接上 SFC CSS 是結構性改動，先問使用者。
 
 ### i18n：zh-TW / en 雙檔同步
 
@@ -478,6 +479,18 @@ npx wrangler d1 migrations apply vtaiwan-civic-talks --remote   # 🚫 需先取
 | 29-5 | `appeals-ui`            | ✅ 完成         | `ModerationAppealForm.vue`、Home／Contribute／Issue 投稿表單保留輸入並提供申訴；Admin moderation 分頁可查看與處理；zh-TW／en key 集合同步                                         |
 | 29-6 | `preview`               | ✅ 完成         | `GET /api/admin/moderation/preview` 使用正式相同模型請求路徑，回傳判定、finish reason、usage 與 fail-open failure kind，不寫 D1                                                   |
 | 29-7 | `verify`                | ✅ 待本分支驗證 | typecheck、測試、build、本機 Worker smoke test 與真實模型預覽測試依本次變更重新執行；內容生成仍只提供志願者 prompt，未改成伺服器代打模型                                          |
+
+### 已完成：#83 關於頁的平台導覽流程
+
+分支 **`feat/issue-83-about-flow`**。
+
+| #    | 項目            | 狀態    | 內容                                                                                                                                                                                                                                |
+| ---- | --------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 83-1 | `five-steps`    | ✅ 完成 | `About.vue`「我們怎麼運作？」改為五步驟導覽（關注議題 → 建立客觀討論基礎 → 參與討論 → 分享觀點 → 意見綜整），取代原三階段循環；步驟 3 的「對其他人的意見投票」與步驟 5 依 issue 標示「功能研發中」                                  |
+| 83-2 | `illustrations` | ✅ 完成 | `src/components/AboutFlowIllustration.vue`：每步一張 inline SVG 插圖，顏色走 Tailwind `fill-*`／`stroke-*` token utilities，暗黑模式自動跟隨；`aria-hidden`，純裝飾。若日後要換成真實截圖，換掉這個元件即可                         |
+| 83-3 | `principle`     | ✅ 完成 | 「有一件事我們很堅持」改為「讓閒置算力變成公共資源」（#29 之後平台已會呼叫審查模型，舊文案「不呼叫任何 AI API」已不實）；結尾「歡迎到 GitHub 專案提 Issue 和 PR」以真實連結呈現（`abt_principle_note_prefix/link/suffix` 三段 key） |
+| 83-4 | `i18n`          | ✅ 完成 | 新增 `abt_step4_*`／`abt_step5_*`／`abt_step3_wip_note`／`abt_wip_badge`；`abt_how_desc` 改五步驟；zh-TW／en 雙檔同步（`vp test` 通過）；`headForAbout` description 同步改寫                                                        |
+| 83-5 | `styles`        | ✅ 完成 | 流程版型 `.flow-list`／`.flow-step`／`.flow-num`／`.flow-wip` 放在 `src/styles/app.css` `@layer components`（原因見「樣式」一節的現況限制）                                                                                         |
 
 > 後續可選：切換到 `vue-router` 全站 hydration、自動化測試／CI——動工前先與使用者確認。
 
