@@ -53,7 +53,7 @@ describe('Issue SSR', () => {
             issue_id: 1,
             source_name: '測試來源',
             source_url: 'https://example.com',
-            content: '測試素材',
+            content: '這是 **測試素材**',
             stance: 'neutral',
             verified_count: 0,
             created_at: '2026-08-17 00:00:00',
@@ -80,7 +80,7 @@ describe('Issue SSR', () => {
           {
             id: 1,
             issue_id: 1,
-            summary: '測試意見',
+            summary: '這是 **測試意見**',
             created_at: '2026-08-17 00:00:00',
             author_name: '意見投稿者',
             author_email: 'opinion@example.com',
@@ -92,6 +92,8 @@ describe('Issue SSR', () => {
     provideI18n(app, 'zh-TW')
 
     const html = await renderToString(app)
+    expect(html).toContain('<strong>測試素材</strong>')
+    expect(html).toContain('<strong>測試意見</strong>')
     const addresses = ['issue@example.com', 'material@example.com', 'briefing@example.com', 'opinion@example.com']
 
     for (const address of addresses) {

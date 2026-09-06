@@ -45,6 +45,7 @@ const renderedBriefing = computed(() => {
     positions: renderSafeMarkdown(current.positions),
   }
 })
+const renderedOpinions = computed(() => new Map(opinions.value.map(opinion => [opinion.id, renderSafeMarkdown(opinion.summary)])))
 
 const promptText = ref<Record<string, string>>({
   summarize: '',
@@ -615,7 +616,7 @@ async function submitOpinion() {
                   <span class="text-sm" :class="stanceClass(m.stance)">{{ stanceLabel(m.stance) }}</span>
                   <a v-if="m.source_url" :href="m.source_url" target="_blank" rel="noopener noreferrer" class="text-sm">{{ t('mat_link') }}</a>
                 </div>
-                <LongTextContent :text="m.content" :content-id="`material-content-${m.id}`" content-class="whitespace-pre-wrap text-sm leading-relaxed" />
+                <LongTextContent :text="m.content" :content-id="`material-content-${m.id}`" content-class="markdown-content text-sm" render-markdown />
               </template>
               <!-- metadata（已確認或 AI 審查違規時不顯示） -->
               <p v-if="m.abuse_flagged !== 2 && m.abuse_flagged !== 3" class="mt-2 mb-0 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
@@ -855,7 +856,7 @@ async function submitOpinion() {
                       {{ t('report_btn') }}
                     </button>
                   </p>
-                  <div class="whitespace-pre-wrap text-sm leading-relaxed">{{ o.summary }}</div>
+                  <div class="markdown-content text-sm" v-html="renderedOpinions.get(o.id) ?? ''" />
                 </template>
               </div>
             </template>
