@@ -84,9 +84,9 @@ describe('投稿寫入併發保護', () => {
 
     // issueId 必須出現在第 1、第 7、第 13 個位置（1-based），
     // 分別對應 SELECT 的第一欄、MAX(version) 子查詢、LEFT JOIN WHERE 子查詢
-    expect(binds[0][0]).toBe(1)   // index 0 → SQL pos 1
-    expect(binds[0][6]).toBe(1)   // index 6 → SQL pos 7
-    expect(binds[0][12]).toBe(1)  // index 12 → SQL pos 13
+    expect(binds[0][0]).toBe(1) // index 0 → SQL pos 1
+    expect(binds[0][6]).toBe(1) // index 6 → SQL pos 7
+    expect(binds[0][12]).toBe(1) // index 12 → SQL pos 13
   })
 
   it('blankToNull 把純空白字元轉成 null，不把空白當有效值寫入', async () => {

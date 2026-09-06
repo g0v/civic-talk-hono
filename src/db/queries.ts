@@ -262,9 +262,7 @@ export async function listIssues(db: D1Database): Promise<IssueListItem[]> {
 
 /** 管理端專用：回傳完整作者快照。呼叫端必須先確認請求者是管理員。 */
 export async function listIssuesWithAuthor(db: D1Database): Promise<IssueListItemWithAuthor[]> {
-  const { results } = await db
-    .prepare(`SELECT ${ISSUE_ADMIN_COLUMNS}, ${ISSUE_COUNT_SUBQUERIES}, ${ISSUE_LAST_ACTIVITY_COLUMN} FROM ct_issues ORDER BY created_at DESC`)
-    .all<IssueListItemWithAuthor>()
+  const { results } = await db.prepare(`SELECT ${ISSUE_ADMIN_COLUMNS}, ${ISSUE_COUNT_SUBQUERIES}, ${ISSUE_LAST_ACTIVITY_COLUMN} FROM ct_issues ORDER BY created_at DESC`).all<IssueListItemWithAuthor>()
   return results ?? []
 }
 
@@ -613,10 +611,7 @@ export async function listMaterialsForPrompt(db: D1Database, issueId: number): P
 }
 
 export async function listOpinionSummaries(db: D1Database, issueId: number, limit = 50): Promise<Pick<Opinion, 'summary'>[]> {
-  const { results } = await db
-    .prepare('SELECT summary FROM ct_opinions WHERE issue_id = ? AND abuse_flagged = 0 ORDER BY created_at DESC LIMIT ?')
-    .bind(issueId, limit)
-    .all<Pick<Opinion, 'summary'>>()
+  const { results } = await db.prepare('SELECT summary FROM ct_opinions WHERE issue_id = ? AND abuse_flagged = 0 ORDER BY created_at DESC LIMIT ?').bind(issueId, limit).all<Pick<Opinion, 'summary'>>()
   return results ?? []
 }
 
@@ -741,10 +736,10 @@ function abuseReportTargetKey(target: AbuseReportTarget): string {
 
 function flagContentForPendingReport(db: D1Database, target: AbuseReportTarget): D1PreparedStatement {
   // AND abuse_flagged = 0 防止使用者回報把 AI 遮蔽（3）或管理員確認（2）降級為待審（1）
-  if (target.issue_id    != null) return db.prepare('UPDATE ct_issues    SET abuse_flagged = 1 WHERE id = ? AND abuse_flagged = 0').bind(target.issue_id)
+  if (target.issue_id != null) return db.prepare('UPDATE ct_issues    SET abuse_flagged = 1 WHERE id = ? AND abuse_flagged = 0').bind(target.issue_id)
   if (target.material_id != null) return db.prepare('UPDATE ct_materials SET abuse_flagged = 1 WHERE id = ? AND abuse_flagged = 0').bind(target.material_id)
   if (target.briefing_id != null) return db.prepare('UPDATE ct_briefings SET abuse_flagged = 1 WHERE id = ? AND abuse_flagged = 0').bind(target.briefing_id)
-  if (target.opinion_id  != null) return db.prepare('UPDATE ct_opinions  SET abuse_flagged = 1 WHERE id = ? AND abuse_flagged = 0').bind(target.opinion_id)
+  if (target.opinion_id != null) return db.prepare('UPDATE ct_opinions  SET abuse_flagged = 1 WHERE id = ? AND abuse_flagged = 0').bind(target.opinion_id)
   throw new Error('Abuse report requires exactly one target')
 }
 /** 建立 AI 審查判定違規的回報，直接指向已寫入且暫時隱藏的投稿列。 */
@@ -928,10 +923,10 @@ export async function resolveAbuseReport(db: D1Database, id: number, status: Exc
  * source='ai'  誤報只清 3（AI 遮蔽），不干擾使用者待審（1）或確認（2）。*/
 export async function unflagContent(db: D1Database, report: Pick<AbuseReport, 'issue_id' | 'material_id' | 'briefing_id' | 'opinion_id' | 'source'>): Promise<void> {
   const flag = report.source === 'ai' ? 3 : 1
-  if (report.issue_id    != null) await db.prepare('UPDATE ct_issues    SET abuse_flagged = 0 WHERE id = ? AND abuse_flagged = ?').bind(report.issue_id,    flag).run()
+  if (report.issue_id != null) await db.prepare('UPDATE ct_issues    SET abuse_flagged = 0 WHERE id = ? AND abuse_flagged = ?').bind(report.issue_id, flag).run()
   if (report.material_id != null) await db.prepare('UPDATE ct_materials SET abuse_flagged = 0 WHERE id = ? AND abuse_flagged = ?').bind(report.material_id, flag).run()
   if (report.briefing_id != null) await db.prepare('UPDATE ct_briefings SET abuse_flagged = 0 WHERE id = ? AND abuse_flagged = ?').bind(report.briefing_id, flag).run()
-  if (report.opinion_id  != null) await db.prepare('UPDATE ct_opinions  SET abuse_flagged = 0 WHERE id = ? AND abuse_flagged = ?').bind(report.opinion_id,  flag).run()
+  if (report.opinion_id != null) await db.prepare('UPDATE ct_opinions  SET abuse_flagged = 0 WHERE id = ? AND abuse_flagged = ?').bind(report.opinion_id, flag).run()
 }
 
 /** 確認濫用時將目標內容的 abuse_flagged 設為 2（完全隱藏，不可展開）。 */

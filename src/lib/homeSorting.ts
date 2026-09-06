@@ -57,8 +57,14 @@ export function filterAndSortHomeIssues(issues: IssueListItem[], role: ViewerRol
   const searched = filterBySearch(issues, search)
   const filtered = filterByRole(searched, role)
   if (role === 'volunteer') {
-    const collecting = sortByOrder(filtered.filter(issue => issue.status === 'collecting'), order)
-    const rest = sortByOrder(filtered.filter(issue => issue.status !== 'collecting'), order)
+    const collecting = sortByOrder(
+      filtered.filter(issue => issue.status === 'collecting'),
+      order
+    )
+    const rest = sortByOrder(
+      filtered.filter(issue => issue.status !== 'collecting'),
+      order
+    )
     return [...collecting, ...rest]
   }
   return sortByOrder(filtered, order)

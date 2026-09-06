@@ -13,7 +13,8 @@ type Row = Record<string, string | number | null>
 function sqliteDb(tables: Record<string, Row[]>) {
   const sqlite = new DatabaseSync(':memory:')
   const schema: Record<string, string> = {
-    ct_issues: 'id INTEGER PRIMARY KEY, title TEXT, description TEXT, status TEXT, polis_id TEXT, created_at TEXT, last_activity_at TEXT, abuse_flagged INTEGER, author_name TEXT, author_email TEXT, show_email INTEGER',
+    ct_issues:
+      'id INTEGER PRIMARY KEY, title TEXT, description TEXT, status TEXT, polis_id TEXT, created_at TEXT, last_activity_at TEXT, abuse_flagged INTEGER, author_name TEXT, author_email TEXT, show_email INTEGER',
     ct_materials: 'id INTEGER PRIMARY KEY, issue_id INTEGER, created_at TEXT, abuse_flagged INTEGER',
     ct_opinions: 'id INTEGER PRIMARY KEY, issue_id INTEGER, created_at TEXT, abuse_flagged INTEGER',
     ct_briefings: 'id INTEGER PRIMARY KEY, issue_id INTEGER, created_at TEXT, abuse_flagged INTEGER',
@@ -49,7 +50,6 @@ function sqliteDb(tables: Record<string, Row[]>) {
 function issueRow(id: number, created_at: string, overrides: Partial<Row> = {}): Row {
   return { id, title: `議題${id}`, description: '描述', status: 'collecting', polis_id: null, created_at, abuse_flagged: 0, author_name: null, author_email: null, show_email: 0, ...overrides }
 }
-
 
 describe('listIssues 的 last_activity_at（#77）', () => {
   it('last_activity_at 欄位有值時直接回傳欄位值（覆蓋 migration 回填後的形狀）', async () => {
@@ -186,7 +186,6 @@ describe('寫入路徑更新 last_activity_at（#77）', () => {
     expect(activityOf(sqlite, 1)).toBeNull()
   })
 
-
   it('updateLatestBriefing（原地 UPDATE）也更新 last_activity_at', async () => {
     const { db, sqlite } = writableDb()
     sqlite.prepare("INSERT INTO ct_briefings (id, issue_id, version, created_at, consensus, abuse_flagged) VALUES (1, 1, 1, '2026-08-02 00:00:00', '舊內容', 0)").run()
@@ -195,7 +194,6 @@ describe('寫入路徑更新 last_activity_at（#77）', () => {
     expect(activityOf(sqlite, 1)).not.toBeNull()
   })
 })
-
 
 // ── Home 過濾／排序純函式（src/lib/homeSorting.ts，#77）──────────────────
 
@@ -244,7 +242,11 @@ describe('sortByOrder（#77）', () => {
 
 describe('filterAndSortHomeIssues（#77）', () => {
   it('citizen：過濾 collecting，newest 依 last_activity_at', () => {
-    const list = [item(1, { last_activity_at: '2026-08-01 00:00:00' }), item(2, { status: 'collecting', last_activity_at: '2026-09-01 00:00:00' }), item(3, { last_activity_at: '2026-08-15 00:00:00' })]
+    const list = [
+      item(1, { last_activity_at: '2026-08-01 00:00:00' }),
+      item(2, { status: 'collecting', last_activity_at: '2026-09-01 00:00:00' }),
+      item(3, { last_activity_at: '2026-08-15 00:00:00' }),
+    ]
     expect(filterAndSortHomeIssues(list, 'citizen', 'newest').map(i => i.id)).toEqual([3, 1])
   })
 
