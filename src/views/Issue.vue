@@ -431,7 +431,7 @@ ${briefingText}
 - 我最在乎的面向是什麼
 - 我的觀點或立場大概是什麼
 - 有沒有我還有疑問或不確定的地方
-這份摘要可以回傳到 Civic Talk 平台，作為民眾意見參考。
+這份摘要可以回傳到 Civic Talk 平台，作為公民意見參考。
 ---
 *生成於 ${new Date().toLocaleDateString('zh-TW')}｜civic.vtaiwan.tw*
 `
