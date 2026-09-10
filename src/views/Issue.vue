@@ -45,6 +45,7 @@ const renderedBriefing = computed(() => {
     positions: renderSafeMarkdown(current.positions),
   }
 })
+const renderedOpinions = computed(() => new Map(opinions.value.map(opinion => [opinion.id, renderSafeMarkdown(opinion.summary)])))
 
 const promptText = ref<Record<string, string>>({
   summarize: '',
@@ -431,7 +432,7 @@ ${briefingText}
 - 我最在乎的面向是什麼
 - 我的觀點或立場大概是什麼
 - 有沒有我還有疑問或不確定的地方
-這份摘要可以回傳到 Civic Talk 平台，作為民眾意見參考。
+這份摘要可以回傳到 Civic Talk 平台，作為公民意見參考。
 ---
 *生成於 ${new Date().toLocaleDateString('zh-TW')}｜civic.vtaiwan.tw*
 `
@@ -541,16 +542,16 @@ async function submitOpinion() {
               <div class="grid-2 mb-6">
                 <div class="card">
                   <h3 class="mt-0 mb-2 text-base">{{ t('brief_consensus') }}</h3>
-                  <div class="markdown-content text-sm" v-html="renderedBriefing?.consensus ?? ''" />
+                  <div class="markdown-content text-base sm:text-sm" v-html="renderedBriefing?.consensus ?? ''" />
                 </div>
                 <div class="card">
                   <h3 class="mt-0 mb-2 text-base">{{ t('brief_disputes') }}</h3>
-                  <div class="markdown-content text-sm" v-html="renderedBriefing?.disputes ?? ''" />
+                  <div class="markdown-content text-base sm:text-sm" v-html="renderedBriefing?.disputes ?? ''" />
                 </div>
               </div>
               <div class="card mb-6">
                 <h3 class="mt-0 mb-2 text-base">{{ t('brief_positions') }}</h3>
-                <div class="markdown-content text-sm" v-html="renderedBriefing?.positions ?? ''" />
+                <div class="markdown-content text-base sm:text-sm" v-html="renderedBriefing?.positions ?? ''" />
               </div>
               <div class="alert alert-info mb-4">
                 {{ t('brief_opinion_alert') }}
@@ -615,7 +616,7 @@ async function submitOpinion() {
                   <span class="text-sm" :class="stanceClass(m.stance)">{{ stanceLabel(m.stance) }}</span>
                   <a v-if="m.source_url" :href="m.source_url" target="_blank" rel="noopener noreferrer" class="text-sm">{{ t('mat_link') }}</a>
                 </div>
-                <LongTextContent :text="m.content" :content-id="`material-content-${m.id}`" content-class="whitespace-pre-wrap text-sm leading-relaxed" />
+                <LongTextContent :text="m.content" :content-id="`material-content-${m.id}`" content-class="markdown-content text-base sm:text-sm" render-markdown />
               </template>
               <!-- metadata（已確認或 AI 審查違規時不顯示） -->
               <p v-if="m.abuse_flagged !== 2 && m.abuse_flagged !== 3" class="mt-2 mb-0 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
@@ -855,7 +856,7 @@ async function submitOpinion() {
                       {{ t('report_btn') }}
                     </button>
                   </p>
-                  <div class="whitespace-pre-wrap text-sm leading-relaxed">{{ o.summary }}</div>
+                  <div class="markdown-content text-base sm:text-sm" v-html="renderedOpinions.get(o.id) ?? ''" />
                 </template>
               </div>
             </template>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useI18n } from '../l10n'
+import { renderSafeMarkdown } from '../markdown/renderSafeMarkdown'
 
 const props = withDefaults(
   defineProps<{
@@ -11,8 +12,10 @@ const props = withDefaults(
     contentClass?: string
     /** aria-controls 用的穩定 id；SSR 與 client 必須一致，所以由呼叫端給 */
     contentId?: string
+    /** 以既有的安全 renderer 呈現 Markdown；預設仍維持純文字。 */
+    renderMarkdown?: boolean
   }>(),
-  { threshold: 1000, contentClass: '', contentId: undefined }
+  { threshold: 1000, contentClass: '', contentId: undefined, renderMarkdown: false }
 )
 
 const { t } = useI18n()
@@ -25,6 +28,7 @@ const collapsible = computed(() => charCount.value > props.threshold)
 const showText = computed(() => !collapsible.value || expanded.value)
 // 內容被 v-if 拿掉時不能留下指向不存在節點的 IDREF
 const controls = computed(() => (showText.value ? props.contentId : undefined))
+const renderedMarkdown = computed(() => renderSafeMarkdown(props.text))
 </script>
 
 <template>
@@ -36,7 +40,10 @@ const controls = computed(() => (showText.value ? props.contentId : undefined))
         {{ expanded ? t('long_text_collapse_btn') : t('long_text_expand_btn') }}
       </button>
     </div>
-    <div v-if="showText" :id="contentId" :class="contentClass">{{ text }}</div>
+    <div v-if="showText" :id="contentId" :class="contentClass">
+      <div v-if="renderMarkdown" v-html="renderedMarkdown" />
+      <template v-else>{{ text }}</template>
+    </div>
     <!-- 全文很長，讀完後在末尾也給一個收合鈕 -->
     <div v-if="collapsible && expanded" class="mt-2">
       <button type="button" class="btn btn-ghost btn-sm" :aria-expanded="expanded" :aria-controls="controls" @click="expanded = false">

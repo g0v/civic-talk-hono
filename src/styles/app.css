@@ -641,7 +641,8 @@
   .markdown-content ul,
   .markdown-content ol,
   .markdown-content blockquote,
-  .markdown-content pre {
+  .markdown-content pre,
+  .markdown-content table {
     margin: 0 0 0.75rem;
   }
 
@@ -720,6 +721,31 @@
     background: transparent;
     color: inherit;
     padding: 0;
+  }
+
+  .markdown-content table {
+    border-collapse: collapse;
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+    width: max-content;
+  }
+
+  .markdown-content th,
+  .markdown-content td {
+    border: 1px solid var(--color-vt-border);
+    padding: var(--spacing-vt-2) var(--spacing-vt-3);
+    text-align: left;
+    vertical-align: top;
+  }
+
+  .markdown-content th {
+    background: var(--color-vt-bg-2);
+    font-weight: 700;
+  }
+
+  .markdown-content tbody tr:nth-child(even) {
+    background: color-mix(in srgb, var(--color-vt-bg-2) 55%, transparent);
   }
 }
 
