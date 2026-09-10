@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test'
-import { buildFactCheckUrl, factCheckAllowsPosting, factCheckBlockReason, parseFactCheckResult, type FactCheckResult } from '../lib/factCheck'
+import { buildFactCheckUrl, factCheckAllowsPosting, factCheckBlockReason, factCheckErrorKind, parseFactCheckResult, type FactCheckResult } from '../lib/factCheck'
 
 const allowed: FactCheckResult = {
   status: 'completed',
@@ -57,5 +57,21 @@ describe('事實查核張貼判斷', () => {
       status: 'blocked',
       verdict: null,
     })
+  })
+})
+describe('事實查核錯誤分類', () => {
+  const upstreamBody = { status: 'error', error: 'UPSTREAM_UNAVAILABLE', message: '上游訊息' }
+  it('200 與 503 的相同 JSON body 都分類為上游故障', async () => {
+    const responses = [
+      new Response(JSON.stringify(upstreamBody), { status: 200 }),
+      new Response(JSON.stringify(upstreamBody), { status: 503 }),
+    ]
+    for (const response of responses) {
+      expect(factCheckErrorKind(await response.json())).toBe('upstream_unavailable')
+    }
+  })
+  it('普通 error 與非 JSON 維持 generic', () => {
+    expect(factCheckErrorKind({ status: 'error', error: 'INVALID_INPUT' })).toBe('generic')
+    expect(factCheckErrorKind('<html>bad gateway</html>')).toBe('generic')
   })
 })

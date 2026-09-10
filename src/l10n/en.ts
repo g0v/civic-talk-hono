@@ -322,6 +322,7 @@ export const messages = {
   contrib_submit: '✅ Submit Material',
   contrib_factcheck_button: 'Run fact-check first',
   contrib_factcheck_checking: 'Checking…',
+  contrib_factcheck_upstream_error: 'The fact-check upstream service is temporarily unavailable. Please try again later.',
   contrib_factcheck_error: 'Fact-check failed. Please try again; material cannot be submitted until it completes.',
   contrib_factcheck_verdict: 'Fact-check verdict',
   contrib_factcheck_edit: 'Edit again',

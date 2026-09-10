@@ -7,7 +7,7 @@ import Toast from '../components/Toast.vue'
 import ModerationAppealNotice from '../components/ModerationAppealNotice.vue'
 import { useI18n } from '../l10n'
 import { useAuth } from '../composables/useAuth'
-import { buildFactCheckUrl, factCheckAllowsPosting, factCheckBlockReason, parseFactCheckResult, type FactCheckResult } from '../lib/factCheck'
+import { buildFactCheckUrl, factCheckAllowsPosting, factCheckBlockReason, factCheckErrorKind, parseFactCheckResult, type FactCheckErrorKind, type FactCheckResult } from '../lib/factCheck'
 const props = defineProps<{
   issueId: number
   issueTitle?: string
@@ -27,7 +27,7 @@ const showEmail = ref(false)
 const submitting = ref(false)
 const factChecking = ref(false)
 const factCheckResult = ref<FactCheckResult | null>(null)
-const factCheckError = ref(false)
+const factCheckError = ref<FactCheckErrorKind | null>(null)
 const checkedFactCheckKey = ref('')
 const factCheckRequestId = ref(0)
 let factCheckController: AbortController | null = null
@@ -79,7 +79,7 @@ async function editFactCheckInput() {
   factCheckController = null
   factChecking.value = false
   factCheckResult.value = null
-  factCheckError.value = false
+  factCheckError.value = null
   checkedFactCheckKey.value = ''
   await nextTick()
   contentInput.value?.focus()
@@ -91,7 +91,7 @@ watch([content, sourceUrl], () => {
   factCheckController = null
   factChecking.value = false
   factCheckResult.value = null
-  factCheckError.value = false
+  factCheckError.value = null
   checkedFactCheckKey.value = ''
 }, { flush: 'sync' })
 
@@ -111,21 +111,40 @@ async function checkFact() {
   factCheckController = controller
   const requestId = ++factCheckRequestId.value
   factChecking.value = true
-  factCheckError.value = false
+  factCheckError.value = null
   factCheckResult.value = null
   checkedFactCheckKey.value = ''
   const timeout = window.setTimeout(() => controller.abort(), 30_000)
   try {
     const res = await fetch(factCheckKey.value, { signal: controller.signal })
-    if (!res.ok) throw new Error('fact-check-failed')
-    const parsed = parseFactCheckResult(await res.json())
+    let body: unknown = null
+    try {
+      body = await res.json()
+    } catch {
+      if (!res.ok) {
+        factCheckError.value = 'generic'
+        return
+      }
+      throw new Error('fact-check-invalid')
+    }
+    if (requestId !== factCheckRequestId.value) return
+    const errorKind = factCheckErrorKind(body)
+    if (errorKind === 'upstream_unavailable') {
+      factCheckError.value = errorKind
+      return
+    }
+    if (!res.ok) {
+      factCheckError.value = 'generic'
+      return
+    }
+    const parsed = parseFactCheckResult(body)
     if (!parsed) throw new Error('fact-check-invalid')
     if (requestId !== factCheckRequestId.value) return
     factCheckResult.value = parsed
     checkedFactCheckKey.value = factCheckKey.value
   } catch {
     if (requestId !== factCheckRequestId.value) return
-    factCheckError.value = true
+    factCheckError.value = 'generic'
   } finally {
     window.clearTimeout(timeout)
     if (requestId === factCheckRequestId.value) {
@@ -318,7 +337,8 @@ async function submitMaterial() {
             <button v-if="!factCheckResult" type="button" class="btn btn-secondary" :disabled="factChecking" @click="checkFact">
               {{ factChecking ? t('contrib_factcheck_checking') : t('contrib_factcheck_button') }}
             </button>
-            <p v-if="factCheckError" class="mt-2 mb-0 text-sm text-red">{{ t('contrib_factcheck_error') }}</p>
+            <p v-if="factCheckError === 'upstream_unavailable'" class="mt-2 mb-0 text-sm text-red">{{ t('contrib_factcheck_upstream_error') }}</p>
+            <p v-else-if="factCheckError" class="mt-2 mb-0 text-sm text-red">{{ t('contrib_factcheck_error') }}</p>
             <div v-else-if="factCheckResult" class="alert mt-3" :class="factCheckAllowsPosting(factCheckResult) ? 'alert-info' : 'alert-warn'">
               <p class="mt-0 mb-2 font-medium">
                 {{ t('contrib_factcheck_verdict') }}：{{ factCheckVerdictLabel }}

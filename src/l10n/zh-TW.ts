@@ -316,6 +316,7 @@ export const messages = {
   contrib_factcheck_button: '先做事實查核',
   contrib_factcheck_checking: '查核中…',
   contrib_factcheck_error: '事實查核失敗，請重試；查核完成前不能提交素材。',
+  contrib_factcheck_upstream_error: '查核上游暫時無法服務，請稍後再試。',
   contrib_factcheck_verdict: '查核判斷',
   contrib_factcheck_edit: '重新編輯',
   contrib_factcheck_scores: '可信度：{factuality}　信心：{confidence}',

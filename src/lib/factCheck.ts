@@ -14,6 +14,15 @@ export interface FactCheckResult {
   confidence: number | null
   feedback: string
 }
+export type FactCheckErrorKind = 'upstream_unavailable' | 'generic'
+
+export function factCheckErrorKind(body: unknown): FactCheckErrorKind {
+  if (!body || typeof body !== 'object') return 'generic'
+  const record = body as Record<string, unknown>
+  if (record.status === 'error' && record.error === 'UPSTREAM_UNAVAILABLE') return 'upstream_unavailable'
+  return 'generic'
+}
+
 const FACT_CHECK_STATUSES: readonly FactCheckStatus[] = ['completed', 'partial', 'blocked']
 const MODERATION_DECISIONS: readonly FactCheckModerationDecision[] = ['allow', 'review', 'block', 'skipped']
 const VERDICTS: readonly FactCheckVerdict[] = ['supported', 'mostly_supported', 'mixed', 'mostly_refuted', 'refuted', 'insufficient_evidence']
