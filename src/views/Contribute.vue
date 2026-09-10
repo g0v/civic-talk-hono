@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppFooter from '../components/AppFooter.vue'
 import SignInButtons from '../components/SignInButtons.vue'
@@ -7,7 +7,7 @@ import Toast from '../components/Toast.vue'
 import ModerationAppealNotice from '../components/ModerationAppealNotice.vue'
 import { useI18n } from '../l10n'
 import { useAuth } from '../composables/useAuth'
-
+import { buildFactCheckRequestBody, FACT_CHECK_ENDPOINT, factCheckAllowsPosting, factCheckBlockReason, factCheckErrorKind, factCheckInputKey, parseFactCheckResult, type FactCheckErrorKind, type FactCheckResult } from '../lib/factCheck'
 const props = defineProps<{
   issueId: number
   issueTitle?: string
@@ -25,7 +25,14 @@ const tosAgreed = ref(false)
 // Email 公開選項（#27）
 const showEmail = ref(false)
 const submitting = ref(false)
+const factChecking = ref(false)
+const factCheckResult = ref<FactCheckResult | null>(null)
+const factCheckError = ref<FactCheckErrorKind | null>(null)
+const checkedFactCheckKey = ref('')
+const factCheckRequestId = ref(0)
+let factCheckController: AbortController | null = null
 const toast = ref<{ show: (msg: string) => void } | null>(null)
+const contentInput = ref<HTMLTextAreaElement | null>(null)
 
 /**
  * 登入狀態走全站共用的 useAuth（與 AppHeader 共用同一次 /api/me）。'loading' 是 SSR 與
@@ -44,6 +51,113 @@ const charLabel = computed(() => `${content.value.length}${t('contrib_chars_suff
 const backHref = computed(() => `/issues/${props.issueId}`)
 // 登入後導回這一頁，使用者可以接著把剛才想投的素材貼上
 const loginCallbackUrl = computed(() => `/contribute/${props.issueId}`)
+const factCheckKey = computed(() => factCheckInputKey(content.value, sourceUrl.value))
+const factCheckVerdictLabel = computed(() => {
+  switch (factCheckResult.value?.verdict) {
+    case 'supported':
+      return t('factcheck_verdict_supported')
+    case 'mostly_supported':
+      return t('factcheck_verdict_mostly_supported')
+    case 'mixed':
+      return t('factcheck_verdict_mixed')
+    case 'mostly_refuted':
+      return t('factcheck_verdict_mostly_refuted')
+    case 'refuted':
+      return t('factcheck_verdict_refuted')
+    case 'insufficient_evidence':
+      return t('factcheck_verdict_insufficient_evidence')
+    default:
+      return t('factcheck_verdict_unknown')
+  }
+})
+const factCheckReason = computed(() => (factCheckResult.value ? factCheckBlockReason(factCheckResult.value) : null))
+const factCheckLocked = computed(() => factChecking.value || factCheckResult.value !== null)
+
+async function editFactCheckInput() {
+  factCheckRequestId.value += 1
+  factCheckController?.abort()
+  factCheckController = null
+  factChecking.value = false
+  factCheckResult.value = null
+  factCheckError.value = null
+  checkedFactCheckKey.value = ''
+  await nextTick()
+  contentInput.value?.focus()
+}
+
+watch([content, sourceUrl], () => {
+  factCheckRequestId.value += 1
+  factCheckController?.abort()
+  factCheckController = null
+  factChecking.value = false
+  factCheckResult.value = null
+  factCheckError.value = null
+  checkedFactCheckKey.value = ''
+}, { flush: 'sync' })
+
+async function checkFact() {
+  if (factChecking.value) return
+  const text = content.value.trim()
+  if (!text) {
+    toast.value?.show(t('contrib_toast_required'))
+    return
+  }
+  if (text.length < 30) {
+    toast.value?.show(t('contrib_toast_too_short'))
+    return
+  }
+  factCheckController?.abort()
+  const controller = new AbortController()
+  factCheckController = controller
+  const requestId = ++factCheckRequestId.value
+  factChecking.value = true
+  factCheckError.value = null
+  factCheckResult.value = null
+  checkedFactCheckKey.value = ''
+  const timeout = window.setTimeout(() => controller.abort(), 30_000)
+  try {
+    const res = await fetch(FACT_CHECK_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(buildFactCheckRequestBody(content.value, sourceUrl.value)),
+      signal: controller.signal,
+    })
+    let body: unknown = null
+    try {
+      body = await res.json()
+    } catch {
+      if (!res.ok) {
+        factCheckError.value = 'generic'
+        return
+      }
+      throw new Error('fact-check-invalid')
+    }
+    if (requestId !== factCheckRequestId.value) return
+    const errorKind = factCheckErrorKind(body)
+    if (errorKind === 'upstream_unavailable') {
+      factCheckError.value = errorKind
+      return
+    }
+    if (!res.ok) {
+      factCheckError.value = 'generic'
+      return
+    }
+    const parsed = parseFactCheckResult(body)
+    if (!parsed) throw new Error('fact-check-invalid')
+    if (requestId !== factCheckRequestId.value) return
+    factCheckResult.value = parsed
+    checkedFactCheckKey.value = factCheckKey.value
+  } catch {
+    if (requestId !== factCheckRequestId.value) return
+    factCheckError.value = 'generic'
+  } finally {
+    window.clearTimeout(timeout)
+    if (requestId === factCheckRequestId.value) {
+      factChecking.value = false
+      factCheckController = null
+    }
+  }
+}
 
 onMounted(() => {
   void loadTitle()
@@ -78,6 +192,14 @@ async function submitMaterial() {
   }
   if (!tosAgreed.value) {
     toast.value?.show(t('tos_required_toast'))
+    return
+  }
+  if (
+    !factCheckResult.value ||
+    checkedFactCheckKey.value !== factCheckKey.value ||
+    !factCheckAllowsPosting(factCheckResult.value)
+  ) {
+    toast.value?.show(t('contrib_factcheck_required'))
     return
   }
   submitting.value = true
@@ -194,7 +316,7 @@ async function submitMaterial() {
               <span>{{ t('contrib_label_url') }}</span>
               <span class="label-hint">{{ t('contrib_hint_url') }}</span>
             </label>
-            <input v-model="sourceUrl" type="url" :placeholder="t('contrib_ph_url')" />
+            <input v-model="sourceUrl" type="url" :placeholder="t('contrib_ph_url')" :readonly="factCheckLocked" :aria-readonly="factCheckLocked" :class="{ 'opacity-60': factCheckLocked }" />
           </div>
           <div class="form-group">
             <label>
@@ -213,8 +335,26 @@ async function submitMaterial() {
               <span>{{ t('contrib_label_content') }}</span>
               <span class="label-hint">{{ t('contrib_hint_content') }}</span>
             </label>
-            <textarea v-model="content" rows="12" :placeholder="t('contrib_ph_content')" />
+            <textarea ref="contentInput" v-model="content" rows="12" :placeholder="t('contrib_ph_content')" :readonly="factCheckLocked" :aria-readonly="factCheckLocked" :class="{ 'opacity-60': factCheckLocked }" />
             <p class="mt-1 mb-0 text-sm text-muted">{{ charLabel }}</p>
+          </div>
+          <div class="form-group">
+            <button v-if="!factCheckResult" type="button" class="btn btn-secondary" :disabled="factChecking" @click="checkFact">
+              {{ factChecking ? t('contrib_factcheck_checking') : t('contrib_factcheck_button') }}
+            </button>
+            <p v-if="factCheckError === 'upstream_unavailable'" class="mt-2 mb-0 text-sm text-red">{{ t('contrib_factcheck_upstream_error') }}</p>
+            <p v-else-if="factCheckError" class="mt-2 mb-0 text-sm text-red">{{ t('contrib_factcheck_error') }}</p>
+            <div v-else-if="factCheckResult" class="alert mt-3" :class="factCheckAllowsPosting(factCheckResult) ? 'alert-info' : 'alert-warn'">
+              <p class="mt-0 mb-2 font-medium">
+                {{ t('contrib_factcheck_verdict') }}：{{ factCheckVerdictLabel }}
+              </p>
+              <p class="mb-2 text-sm">
+                {{ t('contrib_factcheck_scores', { factuality: factCheckResult.factuality ?? '—', confidence: factCheckResult.confidence ?? '—' }) }}
+              </p>
+              <p v-if="factCheckResult.feedback" class="mb-0 whitespace-pre-line text-sm">{{ factCheckResult.feedback }}</p>
+              <p v-if="factCheckReason === 'community_guidelines'" class="mt-2 mb-0 text-sm">{{ t('contrib_factcheck_blocked_community') }}</p>
+              <p v-else-if="factCheckReason === 'factuality'" class="mt-2 mb-0 text-sm">{{ t('contrib_factcheck_blocked_factuality') }}</p>
+            </div>
           </div>
           <div class="form-group">
             <label class="flex items-start gap-2 font-normal">
@@ -241,7 +381,16 @@ async function submitMaterial() {
             </label>
           </div>
           <div class="flex gap-2">
-            <button type="button" class="btn btn-primary" :disabled="submitting" @click="submitMaterial">
+            <button v-if="factCheckResult" type="button" class="btn btn-secondary" @click="editFactCheckInput">
+              {{ t('contrib_factcheck_edit') }}
+            </button>
+            <button
+              v-if="factCheckResult"
+              type="button"
+              class="btn btn-primary"
+              :disabled="submitting || !factCheckAllowsPosting(factCheckResult) || checkedFactCheckKey !== factCheckKey"
+              @click="submitMaterial"
+            >
               {{ t('contrib_submit') }}
             </button>
             <a :href="backHref" class="btn btn-secondary">{{ t('cancel') }}</a>

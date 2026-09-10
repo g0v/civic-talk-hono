@@ -2,7 +2,7 @@
 
 公共議題審議平台，**受原始版 [Civic Talk](https://github.com/v-taiwan/civic-talk) 啟發**，由該版靜態站移植而來：**Hono + Vue 3 SSR/hydration + Tailwind v4 + Cloudflare Workers / D1**。
 
-平台**不呼叫任何 AI API**——志願者用自己的 AI token 跑彙整，平台只產生 prompt 並收回結果。
+內容生成仍由志願者使用自己的 AI token 完成，平台只產生 prompt 並收回結果；例外是投稿安全審查與素材事實查核，會分別呼叫外部 moderation／fact-check 服務。
 
 ## 目前狀態
 
@@ -18,6 +18,7 @@
 功能面重點：
 
 - **投稿與志願者工具需登入**：建立議題、投稿素材、投稿意見、送出說明頁與產生志願者 prompt 都要先登入（任何未停權的登入者皆可，不看角色）。
+- **素材投稿先做事實查核**：素材表單直接呼叫 `https://check.vtaiwan.tw/api/fact-check`；查核完成且結果允許前不顯示張貼按鈕，查核錯誤、社群守則封鎖、查核結果不完整或事實性不足都不能張貼。送出時仍由 Civic Talk API 執行登入、條款與投稿安全審查。
 - **具名投稿與 email opt-in**：四種內容都保存投稿當下的作者快照；前台固定顯示 `author_name`，email 只在該筆內容明確同意公開時才顯示。
 - **條款同意落庫**：三類具名投稿由伺服器端驗證同意並寫入條款版本與時間。
 - **全站登入狀態**：`AppHeader` 顯示登入者與登出，未登入時提供 Google／GitHub 登入面板。
