@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test'
-import { buildFactCheckUrl, factCheckAllowsPosting, factCheckBlockReason, factCheckErrorKind, parseFactCheckResult, type FactCheckResult } from '../lib/factCheck'
+import { buildFactCheckRequestBody, factCheckAllowsPosting, factCheckBlockReason, factCheckErrorKind, factCheckInputKey, parseFactCheckResult, type FactCheckResult } from '../lib/factCheck'
 
 const allowed: FactCheckResult = {
   status: 'completed',
@@ -10,12 +10,20 @@ const allowed: FactCheckResult = {
   feedback: 'feedback',
 }
 
-describe('事實查核請求 URL', () => {
+describe('事實查核請求 body', () => {
   it('trim 文字，且只有非空來源網址才加入 url', () => {
-    expect(buildFactCheckUrl('  主張內容  ', '  https://example.com/a?x=1  ')).toBe(
-      'https://check.vtaiwan.tw/api/fact-check?text=%E4%B8%BB%E5%BC%B5%E5%85%A7%E5%AE%B9&url=https%3A%2F%2Fexample.com%2Fa%3Fx%3D1',
-    )
-    expect(buildFactCheckUrl('  主張內容  ', '   ')).toBe('https://check.vtaiwan.tw/api/fact-check?text=%E4%B8%BB%E5%BC%B5%E5%85%A7%E5%AE%B9')
+    expect(buildFactCheckRequestBody('  主張內容  ', '  https://example.com/a?x=1  ')).toEqual({
+      text: '主張內容',
+      url: 'https://example.com/a?x=1',
+    })
+    expect(buildFactCheckRequestBody('  主張內容  ', '   ')).toEqual({ text: '主張內容' })
+  })
+
+  it('有效性 key 永不為空字串，並跟著內容與來源網址變動', () => {
+    expect(factCheckInputKey('', '')).not.toBe('')
+    expect(factCheckInputKey('主張內容', 'https://example.com/a')).not.toBe(factCheckInputKey('主張內容', 'https://example.com/b'))
+    expect(factCheckInputKey('主張內容', 'https://example.com/a')).not.toBe(factCheckInputKey('另一個主張', 'https://example.com/a'))
+    expect(factCheckInputKey('  主張內容  ', '  https://example.com/a  ')).toBe(factCheckInputKey('主張內容', 'https://example.com/a'))
   })
 })
 

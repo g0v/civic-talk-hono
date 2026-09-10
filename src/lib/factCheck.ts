@@ -54,11 +54,33 @@ export function parseFactCheckResult(value: unknown): FactCheckResult | null {
   }
 }
 
-export function buildFactCheckUrl(content: string, sourceUrl: string): string {
-  const params = new URLSearchParams({ text: content.trim() })
+/**
+ * 上游查核 API。改用 POST 把參數放進 JSON body（PR #88 檢閱建議）——素材內容可以很長，
+ * 放在 query string 會撞上網址長度上限。上游已對 `https://civic.vtaiwan.tw` 開放
+ * POST 與 `Content-Type` 的 CORS preflight。
+ */
+export const FACT_CHECK_ENDPOINT = 'https://check.vtaiwan.tw/api/fact-check'
+
+export interface FactCheckRequestBody {
+  text: string
+  url?: string
+}
+
+/** 只有非空的來源網址才帶 `url`，維持與 query string 版本一致的語意。 */
+export function buildFactCheckRequestBody(content: string, sourceUrl: string): FactCheckRequestBody {
+  const body: FactCheckRequestBody = { text: content.trim() }
   const trimmedSourceUrl = sourceUrl.trim()
-  if (trimmedSourceUrl) params.set('url', trimmedSourceUrl)
-  return `https://check.vtaiwan.tw/api/fact-check?${params.toString()}`
+  if (trimmedSourceUrl) body.url = trimmedSourceUrl
+  return body
+}
+
+/**
+ * 查核結果的有效性 key：內容或來源網址一改，先前的查核結果就失效。以正規化後的 request
+ * body 為來源，讓 trim 與「空白來源網址不送 url」的規則兩邊一致。非空物件的 JSON 永遠
+ * 不會是空字串，因此不會與重設路徑寫入的 `''` sentinel 相撞。
+ */
+export function factCheckInputKey(content: string, sourceUrl: string): string {
+  return JSON.stringify(buildFactCheckRequestBody(content, sourceUrl))
 }
 
 export type FactCheckBlockReason = 'community_guidelines' | 'factuality' | null

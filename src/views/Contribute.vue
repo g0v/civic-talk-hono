@@ -7,7 +7,7 @@ import Toast from '../components/Toast.vue'
 import ModerationAppealNotice from '../components/ModerationAppealNotice.vue'
 import { useI18n } from '../l10n'
 import { useAuth } from '../composables/useAuth'
-import { buildFactCheckUrl, factCheckAllowsPosting, factCheckBlockReason, factCheckErrorKind, parseFactCheckResult, type FactCheckErrorKind, type FactCheckResult } from '../lib/factCheck'
+import { buildFactCheckRequestBody, FACT_CHECK_ENDPOINT, factCheckAllowsPosting, factCheckBlockReason, factCheckErrorKind, factCheckInputKey, parseFactCheckResult, type FactCheckErrorKind, type FactCheckResult } from '../lib/factCheck'
 const props = defineProps<{
   issueId: number
   issueTitle?: string
@@ -51,7 +51,7 @@ const charLabel = computed(() => `${content.value.length}${t('contrib_chars_suff
 const backHref = computed(() => `/issues/${props.issueId}`)
 // 登入後導回這一頁，使用者可以接著把剛才想投的素材貼上
 const loginCallbackUrl = computed(() => `/contribute/${props.issueId}`)
-const factCheckKey = computed(() => buildFactCheckUrl(content.value, sourceUrl.value))
+const factCheckKey = computed(() => factCheckInputKey(content.value, sourceUrl.value))
 const factCheckVerdictLabel = computed(() => {
   switch (factCheckResult.value?.verdict) {
     case 'supported':
@@ -116,7 +116,12 @@ async function checkFact() {
   checkedFactCheckKey.value = ''
   const timeout = window.setTimeout(() => controller.abort(), 30_000)
   try {
-    const res = await fetch(factCheckKey.value, { signal: controller.signal })
+    const res = await fetch(FACT_CHECK_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(buildFactCheckRequestBody(content.value, sourceUrl.value)),
+      signal: controller.signal,
+    })
     let body: unknown = null
     try {
       body = await res.json()
