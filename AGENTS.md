@@ -187,29 +187,29 @@ Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑�
 
 以型別化 Hono handlers 重寫 `../civic-talk/functions/api/[[route]].js`，**路徑與語意保持相容**：
 
-| 方法     | 路徑                                        | 說明                                                                                                              |
-| -------- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `GET`    | `/api/issues`                               | 議題列表                                                                                                          |
-| `POST`   | `/api/issues`                               | 新增議題（**需登入**，#9 延伸）                                                                                   |
-| `GET`    | `/api/issues/:id`                           | 議題詳情                                                                                                          |
-| `PUT`    | `/api/issues/:id`                           | 編輯議題（admin）                                                                                                 |
-| `DELETE` | `/api/issues/:id`                           | 刪除議題（admin，級聯刪 materials/briefings/opinions）                                                            |
-| `GET`    | `/api/issues/:id/materials`                 | 素材列表（公開顯示 `author_name`，email 僅依 opt-in 顯示；管理員另拿完整作者快照）                                |
+| 方法     | 路徑                                        | 說明                                                                                                                                                                                                       |
+| -------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET`    | `/api/issues`                               | 議題列表                                                                                                                                                                                                   |
+| `POST`   | `/api/issues`                               | 新增議題（**需登入**，#9 延伸）                                                                                                                                                                            |
+| `GET`    | `/api/issues/:id`                           | 議題詳情                                                                                                                                                                                                   |
+| `PUT`    | `/api/issues/:id`                           | 編輯議題（admin）                                                                                                                                                                                          |
+| `DELETE` | `/api/issues/:id`                           | 刪除議題（admin，級聯刪 materials/briefings/opinions）                                                                                                                                                     |
+| `GET`    | `/api/issues/:id/materials`                 | 素材列表（公開顯示 `author_name`，email 僅依 opt-in 顯示；管理員另拿完整作者快照）                                                                                                                         |
 | `POST`   | `/api/issues/:id/materials`                 | 投稿素材（**需登入**，#9；前端投稿表單須先完成 `check.vtaiwan.tw` 事實查核且結果允許；伺服器仍照常執行 moderation；正常投稿 `collecting` → `summarizing`；自動審查違規會保存但暫時隱藏，且不觸發狀態轉換） |
-| `DELETE` | `/api/materials/:id`                        | 刪除素材（admin）                                                                                                 |
-| `GET`    | `/api/issues/:id/briefing`                  | 取得說明頁（公開顯示 `author_name`，email 僅依 opt-in；管理員另拿完整作者快照）                                   |
-| `POST`   | `/api/issues/:id/briefing`                  | 新增說明頁（**需登入**；版本遞增；正常投稿 → `published`；違規投稿保存但暫時隱藏且不觸發狀態轉換）                |
-| `PUT`    | `/api/issues/:id/briefing`                  | 編輯說明頁（admin）                                                                                               |
-| `GET`    | `/api/issues/:id/opinions`                  | 意見列表                                                                                                          |
-| `POST`   | `/api/issues/:id/opinions`                  | 投稿意見（**需登入**，#9 延伸；違規投稿仍回成功狀態但暫時隱藏）                                                   |
-| `DELETE` | `/api/opinions/:id`                         | 刪除意見（admin）                                                                                                 |
-| `GET`    | `/api/issues/:id/prompt`                    | 產生 prompt（**需登入**），`?type=summarize\|narrative\|synthesis`（預設 `summarize`）                            |
-| `GET`    | `/api/admin/stats`                          | 管理統計                                                                                                          |
-| `POST`   | `/api/appeals`                              | 暫時隱藏投稿或帳號停權申訴（需登入；停權帳號仍可使用）                                                            |
-| `GET`    | `/api/admin/moderation/preview`             | 管理端以文字測試自動審查（需 admin；純模型診斷，不寫 D1）                                                         |
-| `GET`    | `/api/admin/moderation/appeals`             | 管理端查看投稿安全審查申訴（admin）                                                                               |
-| `PATCH`  | `/api/admin/moderation/appeals/:id/resolve` | 管理端維持／推翻申訴（admin；帳號停權處置透過 Better Auth）                                                       |
-| `GET`    | `/api/admin/users/:userId`                  | 管理端查詢投稿者目前 Better Auth 帳號／停權狀態（admin）                                                          |
+| `DELETE` | `/api/materials/:id`                        | 刪除素材（admin）                                                                                                                                                                                          |
+| `GET`    | `/api/issues/:id/briefing`                  | 取得說明頁（公開顯示 `author_name`，email 僅依 opt-in；管理員另拿完整作者快照）                                                                                                                            |
+| `POST`   | `/api/issues/:id/briefing`                  | 新增說明頁（**需登入**；版本遞增；正常投稿 → `published`；違規投稿保存但暫時隱藏且不觸發狀態轉換）                                                                                                         |
+| `PUT`    | `/api/issues/:id/briefing`                  | 編輯說明頁（admin）                                                                                                                                                                                        |
+| `GET`    | `/api/issues/:id/opinions`                  | 意見列表                                                                                                                                                                                                   |
+| `POST`   | `/api/issues/:id/opinions`                  | 投稿意見（**需登入**，#9 延伸；違規投稿仍回成功狀態但暫時隱藏）                                                                                                                                            |
+| `DELETE` | `/api/opinions/:id`                         | 刪除意見（admin）                                                                                                                                                                                          |
+| `GET`    | `/api/issues/:id/prompt`                    | 產生 prompt（**需登入**），`?type=summarize\|narrative\|synthesis`（預設 `summarize`）                                                                                                                     |
+| `GET`    | `/api/admin/stats`                          | 管理統計                                                                                                                                                                                                   |
+| `POST`   | `/api/appeals`                              | 暫時隱藏投稿或帳號停權申訴（需登入；停權帳號仍可使用）                                                                                                                                                     |
+| `GET`    | `/api/admin/moderation/preview`             | 管理端以文字測試自動審查（需 admin；純模型診斷，不寫 D1）                                                                                                                                                  |
+| `GET`    | `/api/admin/moderation/appeals`             | 管理端查看投稿安全審查申訴（admin）                                                                                                                                                                        |
+| `PATCH`  | `/api/admin/moderation/appeals/:id/resolve` | 管理端維持／推翻申訴（admin；帳號停權處置透過 Better Auth）                                                                                                                                                |
+| `GET`    | `/api/admin/users/:userId`                  | 管理端查詢投稿者目前 Better Auth 帳號／停權狀態（admin）                                                                                                                                                   |
 
 > `POST /api/admin/login`（以 `ADMIN_PASSWORD` 換 token）**已於 #5 移除**——這是不變量 5 明列的授權例外。舊網址不必保留：它從來只是管理員自己用的登入端點，不是公開契約。
 

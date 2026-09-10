@@ -70,10 +70,7 @@ describe('事實查核張貼判斷', () => {
 describe('事實查核錯誤分類', () => {
   const upstreamBody = { status: 'error', error: 'UPSTREAM_UNAVAILABLE', message: '上游訊息' }
   it('200 與 503 的相同 JSON body 都分類為上游故障', async () => {
-    const responses = [
-      new Response(JSON.stringify(upstreamBody), { status: 200 }),
-      new Response(JSON.stringify(upstreamBody), { status: 503 }),
-    ]
+    const responses = [new Response(JSON.stringify(upstreamBody), { status: 200 }), new Response(JSON.stringify(upstreamBody), { status: 503 })]
     for (const response of responses) {
       expect(factCheckErrorKind(await response.json())).toBe('upstream_unavailable')
     }
