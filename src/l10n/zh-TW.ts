@@ -317,6 +317,7 @@ export const messages = {
   contrib_factcheck_checking: '查核中…',
   contrib_factcheck_error: '事實查核失敗，請重試；查核完成前不能提交素材。',
   contrib_factcheck_verdict: '查核判斷',
+  contrib_factcheck_edit: '重新編輯',
   contrib_factcheck_scores: '可信度：{factuality}　信心：{confidence}',
   contrib_factcheck_blocked_community: '查核因社群守則判定不可張貼（安全封鎖、社群守則封鎖，或查核結果不完整）。',
   contrib_factcheck_blocked_factuality: '查核顯示此主張的事實性不足，因此目前不能張貼。',

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppFooter from '../components/AppFooter.vue'
 import SignInButtons from '../components/SignInButtons.vue'
@@ -32,6 +32,7 @@ const checkedFactCheckKey = ref('')
 const factCheckRequestId = ref(0)
 let factCheckController: AbortController | null = null
 const toast = ref<{ show: (msg: string) => void } | null>(null)
+const contentInput = ref<HTMLTextAreaElement | null>(null)
 
 /**
  * 登入狀態走全站共用的 useAuth（與 AppHeader 共用同一次 /api/me）。'loading' 是 SSR 與
@@ -70,6 +71,19 @@ const factCheckVerdictLabel = computed(() => {
   }
 })
 const factCheckReason = computed(() => (factCheckResult.value ? factCheckBlockReason(factCheckResult.value) : null))
+const factCheckLocked = computed(() => factChecking.value || factCheckResult.value !== null)
+
+async function editFactCheckInput() {
+  factCheckRequestId.value += 1
+  factCheckController?.abort()
+  factCheckController = null
+  factChecking.value = false
+  factCheckResult.value = null
+  factCheckError.value = false
+  checkedFactCheckKey.value = ''
+  await nextTick()
+  contentInput.value?.focus()
+}
 
 watch([content, sourceUrl], () => {
   factCheckRequestId.value += 1
@@ -278,7 +292,7 @@ async function submitMaterial() {
               <span>{{ t('contrib_label_url') }}</span>
               <span class="label-hint">{{ t('contrib_hint_url') }}</span>
             </label>
-            <input v-model="sourceUrl" type="url" :placeholder="t('contrib_ph_url')" />
+            <input v-model="sourceUrl" type="url" :placeholder="t('contrib_ph_url')" :readonly="factCheckLocked" :aria-readonly="factCheckLocked" :class="{ 'opacity-60': factCheckLocked }" />
           </div>
           <div class="form-group">
             <label>
@@ -297,11 +311,11 @@ async function submitMaterial() {
               <span>{{ t('contrib_label_content') }}</span>
               <span class="label-hint">{{ t('contrib_hint_content') }}</span>
             </label>
-            <textarea v-model="content" rows="12" :placeholder="t('contrib_ph_content')" />
+            <textarea ref="contentInput" v-model="content" rows="12" :placeholder="t('contrib_ph_content')" :readonly="factCheckLocked" :aria-readonly="factCheckLocked" :class="{ 'opacity-60': factCheckLocked }" />
             <p class="mt-1 mb-0 text-sm text-muted">{{ charLabel }}</p>
           </div>
           <div class="form-group">
-            <button type="button" class="btn btn-secondary" :disabled="factChecking" @click="checkFact">
+            <button v-if="!factCheckResult" type="button" class="btn btn-secondary" :disabled="factChecking" @click="checkFact">
               {{ factChecking ? t('contrib_factcheck_checking') : t('contrib_factcheck_button') }}
             </button>
             <p v-if="factCheckError" class="mt-2 mb-0 text-sm text-red">{{ t('contrib_factcheck_error') }}</p>
@@ -342,6 +356,9 @@ async function submitMaterial() {
             </label>
           </div>
           <div class="flex gap-2">
+            <button v-if="factCheckResult" type="button" class="btn btn-secondary" @click="editFactCheckInput">
+              {{ t('contrib_factcheck_edit') }}
+            </button>
             <button
               v-if="factCheckResult"
               type="button"

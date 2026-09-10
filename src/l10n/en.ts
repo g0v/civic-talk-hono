@@ -324,6 +324,7 @@ export const messages = {
   contrib_factcheck_checking: 'Checking…',
   contrib_factcheck_error: 'Fact-check failed. Please try again; material cannot be submitted until it completes.',
   contrib_factcheck_verdict: 'Fact-check verdict',
+  contrib_factcheck_edit: 'Edit again',
   contrib_factcheck_scores: 'Factuality: {factuality}　Confidence: {confidence}',
   contrib_factcheck_blocked_community: 'This result cannot be posted under the community guidelines (safety block, moderation block, or incomplete check result).',
   contrib_factcheck_blocked_factuality: 'This claim did not meet the factuality threshold, so it cannot be posted yet.',
