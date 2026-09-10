@@ -314,7 +314,7 @@ export const messages = {
   contrib_license: '我已確認此內容的授權、使用條款或合理引用範圍；若授權不明，我提交的是摘要而非未經授權的全文。',
   contrib_submit: '✅ 提交素材',
   contrib_factcheck_button: '先做事實查核',
-  contrib_factcheck_checking: '查核中…',
+  contrib_factcheck_checking: '查核中，請等待約60秒…',
   contrib_factcheck_error: '事實查核失敗，請重試；查核完成前不能提交素材。',
   contrib_factcheck_upstream_error: '查核上游暫時無法服務，請稍後再試。',
   contrib_factcheck_verdict: '查核判斷',
