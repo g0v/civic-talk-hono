@@ -195,7 +195,7 @@ Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑�
 | `PUT`    | `/api/issues/:id`                           | 編輯議題（admin）                                                                                                 |
 | `DELETE` | `/api/issues/:id`                           | 刪除議題（admin，級聯刪 materials/briefings/opinions）                                                            |
 | `GET`    | `/api/issues/:id/materials`                 | 素材列表（公開顯示 `author_name`，email 僅依 opt-in 顯示；管理員另拿完整作者快照）                                |
-| `POST`   | `/api/issues/:id/materials`                 | 投稿素材（**需登入**，#9；正常投稿 `collecting` → `summarizing`；自動審查違規會保存但暫時隱藏，且不觸發狀態轉換） |
+| `POST`   | `/api/issues/:id/materials`                 | 投稿素材（**需登入**，#9；前端投稿表單須先完成 `check.vtaiwan.tw` 事實查核且結果允許；伺服器仍照常執行 moderation；正常投稿 `collecting` → `summarizing`；自動審查違規會保存但暫時隱藏，且不觸發狀態轉換） |
 | `DELETE` | `/api/materials/:id`                        | 刪除素材（admin）                                                                                                 |
 | `GET`    | `/api/issues/:id/briefing`                  | 取得說明頁（公開顯示 `author_name`，email 僅依 opt-in；管理員另拿完整作者快照）                                   |
 | `POST`   | `/api/issues/:id/briefing`                  | 新增說明頁（**需登入**；版本遞增；正常投稿 → `published`；違規投稿保存但暫時隱藏且不觸發狀態轉換）                |

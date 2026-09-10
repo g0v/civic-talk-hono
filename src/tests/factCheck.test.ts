@@ -1,0 +1,61 @@
+import { describe, expect, it } from 'vite-plus/test'
+import { buildFactCheckUrl, factCheckAllowsPosting, factCheckBlockReason, parseFactCheckResult, type FactCheckResult } from '../lib/factCheck'
+
+const allowed: FactCheckResult = {
+  status: 'completed',
+  moderation: { decision: 'allow' },
+  verdict: 'mostly_supported',
+  factuality: 0.5,
+  confidence: 0.5,
+  feedback: 'feedback',
+}
+
+describe('事實查核請求 URL', () => {
+  it('trim 文字，且只有非空來源網址才加入 url', () => {
+    expect(buildFactCheckUrl('  主張內容  ', '  https://example.com/a?x=1  ')).toBe(
+      'https://check.vtaiwan.tw/api/fact-check?text=%E4%B8%BB%E5%BC%B5%E5%85%A7%E5%AE%B9&url=https%3A%2F%2Fexample.com%2Fa%3Fx%3D1',
+    )
+    expect(buildFactCheckUrl('  主張內容  ', '   ')).toBe('https://check.vtaiwan.tw/api/fact-check?text=%E4%B8%BB%E5%BC%B5%E5%85%A7%E5%AE%B9')
+  })
+})
+
+describe('事實查核張貼判斷', () => {
+  it('只在明確通過時允許，且保留邊界 0.5/0.5 的允許行為', () => {
+    expect(factCheckAllowsPosting(allowed)).toBe(true)
+    expect(factCheckAllowsPosting({ ...allowed, factuality: 0.49, confidence: 0.51 })).toBe(false)
+    expect(factCheckAllowsPosting({ ...allowed, factuality: 0.49, confidence: 0.5 })).toBe(true)
+    expect(factCheckAllowsPosting({ ...allowed, factuality: 0 })).toBe(false)
+  })
+
+  it('partial 可繼續判斷，error/blocked/未知狀態一律不能張貼', () => {
+    expect(factCheckAllowsPosting({ ...allowed, status: 'partial' })).toBe(true)
+    expect(factCheckAllowsPosting({ ...allowed, status: 'blocked' })).toBe(false)
+    expect(parseFactCheckResult({ ...allowed, status: 'error' })).toBeNull()
+    expect(parseFactCheckResult({ ...allowed, status: 'unknown' })).toBeNull()
+    expect(factCheckAllowsPosting({ ...allowed, moderation: { decision: 'block' } })).toBe(false)
+    expect(factCheckAllowsPosting({ ...allowed, verdict: null })).toBe(false)
+    expect(factCheckAllowsPosting({ ...allowed, factuality: null })).toBe(false)
+    expect(factCheckAllowsPosting({ ...allowed, confidence: null })).toBe(false)
+  })
+  it('將社群守則封鎖與事實性不足分開分類', () => {
+    expect(factCheckBlockReason({ ...allowed, status: 'blocked' })).toBe('community_guidelines')
+    expect(factCheckBlockReason({ ...allowed, factuality: null })).toBe('community_guidelines')
+    expect(factCheckBlockReason({ ...allowed, factuality: 0.49, confidence: 0.51 })).toBe('factuality')
+  })
+
+  it('拒絕缺漏或未知的 response 欄位，避免錯誤回應開放張貼', () => {
+    expect(parseFactCheckResult({ status: 'completed', verdict: 'supported', factuality: 0.9, confidence: 0.9, feedback: 'ok' })).toBeNull()
+    expect(parseFactCheckResult({ status: 'completed', moderation: { decision: 'weird' }, verdict: 'supported', factuality: 0.9, confidence: 0.9, feedback: 'ok' })).toBeNull()
+    expect(parseFactCheckResult({ status: 'completed', moderation: { decision: 'allow' }, verdict: 'weird', factuality: 0.9, confidence: 0.9, feedback: 'ok' })).toBeNull()
+    expect(parseFactCheckResult({ status: 'completed', moderation: { decision: 'allow' }, verdict: 'supported', factuality: 1.1, confidence: 0.9, feedback: 'ok' })).toBeNull()
+    expect(parseFactCheckResult({ status: 'completed', moderation: { decision: 'allow' }, verdict: 'supported', factuality: 0.9, confidence: Number.NaN, feedback: 'ok' })).toBeNull()
+    expect(parseFactCheckResult({ status: 'completed', moderation: { decision: 'allow' }, verdict: 'supported', factuality: 0.9, confidence: 0.9 })).toBeNull()
+  })
+  it('接受權威 response 的完整欄位與 null blocked 分數', () => {
+    expect(parseFactCheckResult({ ...allowed })).toMatchObject({ status: 'completed', verdict: 'mostly_supported' })
+    expect(parseFactCheckResult({ status: 'blocked', moderation: { decision: 'block' }, verdict: null, factuality: null, confidence: null, feedback: 'blocked' })).toMatchObject({
+      status: 'blocked',
+      verdict: null,
+    })
+  })
+})
