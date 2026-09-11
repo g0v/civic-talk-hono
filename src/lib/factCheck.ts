@@ -89,7 +89,7 @@ export function factCheckBlockReason(result: FactCheckResult): FactCheckBlockRea
   if (result.status !== 'completed' && result.status !== 'partial') return 'community_guidelines'
   if (result.moderation?.decision === 'block') return 'community_guidelines'
   if (result.verdict === null || result.factuality === null || result.confidence === null) return 'community_guidelines'
-  if (result.factuality === 0 || (result.factuality < 0.5 && result.confidence > 0.5)) return 'factuality'
+  if (result.factuality < 0.5 && result.confidence > 0.5) return 'factuality'
   return null
 }
 
