@@ -5,8 +5,8 @@ const allowed: FactCheckResult = {
   status: 'completed',
   moderation: { decision: 'allow' },
   verdict: 'mostly_supported',
-  factuality: 0.5,
-  confidence: 0.5,
+  factuality: 0.9,
+  confidence: 0.9,
   feedback: 'feedback',
 }
 
@@ -28,11 +28,16 @@ describe('事實查核請求 body', () => {
 })
 
 describe('事實查核張貼判斷', () => {
-  it('只在明確通過時允許，且保留邊界 0.5/0.5 的允許行為', () => {
+  it('只在「事實性 < 0.5 且信心 > 0.5」時擋下，信心不足一律放行（#89）', () => {
     expect(factCheckAllowsPosting(allowed)).toBe(true)
     expect(factCheckAllowsPosting({ ...allowed, factuality: 0.49, confidence: 0.51 })).toBe(false)
     expect(factCheckAllowsPosting({ ...allowed, factuality: 0.49, confidence: 0.5 })).toBe(true)
-    expect(factCheckAllowsPosting({ ...allowed, factuality: 0 })).toBe(false)
+    expect(factCheckAllowsPosting({ ...allowed, factuality: 0, confidence: 0.7 })).toBe(false)
+    // 查無正反證據：事實性 0 但信心也 0 或不超過 0.5，只靠模型常識判假，一律放行（#89）
+    expect(factCheckAllowsPosting({ ...allowed, factuality: 0, confidence: 0 })).toBe(true)
+    expect(factCheckAllowsPosting({ ...allowed, factuality: 0, confidence: 0.5 })).toBe(true)
+    // 邊界 0.5/0.5：兩邊都不滿足嚴格比較，放行
+    expect(factCheckAllowsPosting({ ...allowed, factuality: 0.5, confidence: 0.5 })).toBe(true)
   })
 
   it('partial 可繼續判斷，error/blocked/未知狀態一律不能張貼', () => {
