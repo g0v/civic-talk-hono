@@ -964,6 +964,9 @@
   .underline {
     text-decoration-line: underline;
   }
+  .opacity-60 {
+    opacity: 60%;
+  }
   .shadow-md {
     --tw-shadow: 0 4px 16px -4px var(--tw-shadow-color, rgba(0, 0, 0, 0.1));
     box-shadow: var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);
