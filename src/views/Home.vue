@@ -35,7 +35,7 @@ const moderationNotice = ref<{ appealType: 'rejected_submission' | 'account_ban'
 
 const searchQuery = ref('')
 const sortOrder = ref<SortOrder>('newest')
-// 檢視者角色（#77）：citizen（預設）不顯示素材收集中的議題；volunteer 顯示全部且收集中的排最前
+// 檢視者角色（#77、#90）：citizen（預設）不顯示素材收集中的議題，依「已發佈 → 彙整中」排序；volunteer 顯示全部，依「彙整中 → 素材收集中 → 已發佈」排序
 const viewerRole = ref<ViewerRole>('citizen')
 
 // 建立議題表單：標題相近的既有議題提示（僅供參考，不擋送出、不做審核判斷，見 #36）
