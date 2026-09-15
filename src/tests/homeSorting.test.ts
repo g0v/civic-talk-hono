@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite'
 import { describe, expect, it } from 'vite-plus/test'
-import { createBriefing, createMaterial, createOpinion, listIssues, updateLatestBriefing, type IssueListItem } from '../db/queries'
+import { createBriefing, createMaterial, createOpinion, listIssues, updateLatestBriefing, type IssueListItem, type IssueStatus } from '../db/queries'
 import { filterAndSortHomeIssues, filterByRole, sortByOrder } from '../lib/homeSorting'
 
 // ── listIssues 的 last_activity_at（#77）───────────────────────────────────
@@ -240,7 +240,7 @@ describe('sortByOrder（#77）', () => {
   })
 })
 
-describe('filterAndSortHomeIssues（#77）', () => {
+describe('filterAndSortHomeIssues（#77、#90）', () => {
   it('citizen：過濾 collecting，newest 依 last_activity_at', () => {
     const list = [
       item(1, { last_activity_at: '2026-08-01 00:00:00' }),
@@ -250,19 +250,54 @@ describe('filterAndSortHomeIssues（#77）', () => {
     expect(filterAndSortHomeIssues(list, 'citizen', 'newest').map(i => i.id)).toEqual([3, 1])
   })
 
-  it('volunteer：collecting 固定排最前（第一階），階內套使用者排序', () => {
-    const list = [
-      item(1, { last_activity_at: '2026-08-20 00:00:00' }),
-      item(2, { status: 'collecting', last_activity_at: '2026-08-05 00:00:00' }),
-      item(3, { status: 'collecting', last_activity_at: '2026-08-10 00:00:00' }),
-      item(4, { last_activity_at: '2026-08-01 00:00:00' }),
-    ]
-    expect(filterAndSortHomeIssues(list, 'volunteer', 'newest').map(i => i.id)).toEqual([3, 2, 1, 4])
+  it('citizen：已發佈排在彙整中之前，即使彙整中比較新（#90）', () => {
+    const list = [item(1, { status: 'summarizing', last_activity_at: '2026-09-01 00:00:00' }), item(2, { status: 'published', last_activity_at: '2026-08-01 00:00:00' })]
+    expect(filterAndSortHomeIssues(list, 'citizen', 'newest').map(i => i.id)).toEqual([2, 1])
   })
 
-  it('volunteer + most：collecting 仍固定在最前，階內依關注數', () => {
-    const list = [item(1, { material_count: 10, opinion_count: 0 }), item(2, { status: 'collecting', material_count: 0, opinion_count: 0 })]
-    expect(filterAndSortHomeIssues(list, 'volunteer', 'most').map(i => i.id)).toEqual([2, 1])
+  it('citizen：階內仍套使用者選的排序（#90）', () => {
+    const list = [
+      item(1, { status: 'summarizing', last_activity_at: '2026-08-01 00:00:00' }),
+      item(2, { status: 'published', last_activity_at: '2026-08-01 00:00:00' }),
+      item(3, { status: 'published', last_activity_at: '2026-09-01 00:00:00' }),
+      item(4, { status: 'summarizing', last_activity_at: '2026-09-05 00:00:00' }),
+    ]
+    expect(filterAndSortHomeIssues(list, 'citizen', 'newest').map(i => i.id)).toEqual([3, 2, 4, 1])
+  })
+
+  it('volunteer：彙整中 → 素材收集中 → 已發佈（#90）', () => {
+    const list = [
+      item(1, { status: 'published', last_activity_at: '2026-09-10 00:00:00' }),
+      item(2, { status: 'collecting', last_activity_at: '2026-08-05 00:00:00' }),
+      item(3, { status: 'summarizing', last_activity_at: '2026-08-01 00:00:00' }),
+    ]
+    expect(filterAndSortHomeIssues(list, 'volunteer', 'newest').map(i => i.id)).toEqual([3, 2, 1])
+  })
+
+  it('volunteer：階內套使用者排序，階與階之間不混（#90）', () => {
+    const list = [
+      item(1, { status: 'published', last_activity_at: '2026-08-20 00:00:00' }),
+      item(2, { status: 'collecting', last_activity_at: '2026-08-05 00:00:00' }),
+      item(3, { status: 'collecting', last_activity_at: '2026-08-10 00:00:00' }),
+      item(4, { status: 'published', last_activity_at: '2026-08-01 00:00:00' }),
+      item(5, { status: 'summarizing', last_activity_at: '2026-07-01 00:00:00' }),
+      item(6, { status: 'summarizing', last_activity_at: '2026-07-10 00:00:00' }),
+    ]
+    expect(filterAndSortHomeIssues(list, 'volunteer', 'newest').map(i => i.id)).toEqual([6, 5, 3, 2, 1, 4])
+  })
+
+  it('volunteer + most：階序不受關注數影響，階內依關注數（#90）', () => {
+    const list = [
+      item(1, { status: 'published', material_count: 10, opinion_count: 0 }),
+      item(2, { status: 'collecting', material_count: 0, opinion_count: 0 }),
+      item(3, { status: 'summarizing', material_count: 1, opinion_count: 0 }),
+    ]
+    expect(filterAndSortHomeIssues(list, 'volunteer', 'most').map(i => i.id)).toEqual([3, 2, 1])
+  })
+
+  it('未列在優先序中的狀態排在最後，不會從列表中消失（防呆）', () => {
+    const list = [item(1, { status: 'future_status' as IssueStatus }), item(2, { status: 'published' })]
+    expect(filterAndSortHomeIssues(list, 'citizen', 'newest').map(i => i.id)).toEqual([2, 1])
   })
 
   it('citizen + 搜尋：先過濾 collecting 再比對標題／簡介', () => {
