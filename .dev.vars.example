@@ -20,4 +20,5 @@ GITHUB_CLIENT_SECRET=
 OPEN_ROUTER_API_KEY=
 
 # Civic Talk API 應用程式憑證
+# `/api/fact-check` 短效 token 的簽章密鑰（本範例檔只放假值）
 CIVIC_TALK_API_KEY=

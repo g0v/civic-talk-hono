@@ -21,6 +21,16 @@ export type AppBindings = {
   GITHUB_CLIENT_SECRET: string
   /** OpenRouter API key；只供 issue #29 投稿安全審查使用，內容生成不得呼叫模型。 */
   OPEN_ROUTER_API_KEY?: string
+  /**
+   * fact-check-core 的 Service Binding（#92）。core 沒有公開 route，本站只能這樣呼叫；
+   * 由 `wrangler.jsonc` 的 `services` 提供。宣告成 optional：缺少時端點回 503 而不是崩潰。
+   */
+  FACT_CHECK_CORE?: Fetcher
+  /**
+   * 簽發／驗證 /api/fact-check 短效 token 的密鑰（#92）。原始值只留在 Worker 內——
+   * SSR 注入前端的只有以它簽出的 `v1.<payload>.<signature>`，見 src/lib/factCheckToken.ts。
+   */
+  CIVIC_TALK_API_KEY?: string
   /** 用於執行時讀取 public/rules/community-guidelines.md */
   ASSETS?: {
     fetch: (request: RequestInfo | URL, init?: RequestInit) => Promise<Response>

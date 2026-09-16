@@ -21,6 +21,12 @@ import {
 const props = defineProps<{
   issueId: number
   issueTitle?: string
+  /**
+   * /api/fact-check 的短效 token（#92），SSR 當下簽發、隨頁面注入。
+   * 前端切換到站內 /api/fact-check 時，照原樣放進 `X-Civic-Talk-Token` 標頭即可——
+   * 那個切換是後續 PR（fact-check-api#31 的清單），目前查核仍打 check.vtaiwan.tw。
+   */
+  factCheckToken?: string
 }>()
 
 const { t } = useI18n()

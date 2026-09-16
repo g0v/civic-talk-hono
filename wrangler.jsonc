@@ -8,6 +8,9 @@
   "compatibility_flags": ["nodejs_compat"],
   // 刻意不寫死 account_id：與 ../vTaiwan-hono 一致，交給 wrangler 登入的帳號決定
   "assets": { "directory": "./public/", "binding": "ASSETS" },
+  // 事實查核核心（#92）：core 沒有公開 route（workers_dev: false），只能由本站以
+  // Service Binding 呼叫；`remote` 只影響本機開發（本機 dev 轉送到已部署的 core）。
+  "services": [{ "binding": "FACT_CHECK_CORE", "service": "fact-check-core", "remote": true }],
   "observability": {
     "enabled": true,
   },

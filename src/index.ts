@@ -1,6 +1,9 @@
 import { Hono } from 'hono'
 import { registerApiRoutes } from './api/routes'
 import { registerAuthRoutes } from './api/auth'
+import { registerFactCheckRoutes } from './api/factCheck'
+import { tryGetAuthContext } from './auth/authorization'
+import { issueFactCheckToken } from './lib/factCheckToken'
 import type { AppBindings } from './api/types'
 import { listIssues, getIssue, getIssueDetail, getMaterialWithIssue, getOpinionWithIssue } from './db/queries'
 import { handleRss } from './rss'
@@ -40,8 +43,10 @@ async function notFoundHtml(origin: string): Promise<string> {
   })
 }
 
-// 先掛 auth：/api/auth/* 與 /api/me 要在 registerApiRoutes 的 /api/* 泛用處理之前命中
+// 先掛 auth 與 fact-check：/api/auth/*、/api/me 與 /api/fact-check 的預檢都必須在
+// registerApiRoutes 的 `/api/*` 泛用處理之前命中，否則同源限制會被那條規則繞過。
 registerAuthRoutes(app)
+registerFactCheckRoutes(app)
 registerApiRoutes(app)
 
 // ── 舊網址導向（只能新增、不能刪除）──────────────────────────
@@ -134,13 +139,28 @@ app.get('/contribute/:id', async c => {
   const origin = new URL(c.req.url).origin
   const issue = await getIssue(c.env.DB, id)
   if (!issue) return c.html(await notFoundHtml(origin), 404)
-  const html = await renderPage(ContributeView, { issueId: id, issueTitle: issue.title ?? '' }, headForContribute(issue.title ?? '', id, origin), {
-    hydrate: {
-      page: 'contribute',
-      state: { issueId: id, issueTitle: issue.title ?? '' },
-    },
+
+  // /api/fact-check 的短效 token（#92）：只在「已登入、未停權、密鑰已設定」時簽發，
+  // `sub` 綁這位登入者的 user.id——API 端點驗 token 時拿同一個 session 比對，
+  // 別人（未登入或不同帳號）偷走 token 也用不了。沒有 session 就給空字串，
+  // 前端自然不會帶 token，打端點時由 API 層回 401。
+  const authContext = await tryGetAuthContext(c.env, c.req.raw.headers)
+  const factCheckToken =
+    c.env.CIVIC_TALK_API_KEY && authContext && !authContext.banned
+      ? await issueFactCheckToken(c.env.CIVIC_TALK_API_KEY, authContext.user.id)
+      : ''
+
+  const state = {
+    issueId: id,
+    issueTitle: issue.title ?? '',
+    factCheckToken,
+  }
+  const html = await renderPage(ContributeView, state, headForContribute(issue.title ?? '', id, origin), {
+    hydrate: { page: 'contribute', state },
   })
-  return c.html(html)
+  // 這頁的內容依登入者而異（token 綁 session），絕不能被任何快取共用——
+  // 只在這條路由掛 private, no-store，其他 SSR 頁不受影響。
+  return c.html(html, 200, { 'Cache-Control': 'private, no-store' })
 })
 
 app.get('/admin', async c => {

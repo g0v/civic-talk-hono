@@ -35,7 +35,7 @@ https://civic.vtaiwan.tw/api/auth/callback/github
 
 ### 1.3 正式環境的機密
 
-`.dev.vars` **只有本機吃得到**，不會隨 deploy 上傳。以下六個值必須另外設進 Worker（正式站已設好，這裡是輪替金鑰或建新環境時的清單）：
+`.dev.vars` **只有本機吃得到**，不會隨 deploy 上傳。以下七個值必須另外設進 Worker（本段供輪替金鑰或建新環境時使用）：
 
 | 名稱                   | 說明                                                                                   | 建議設法              |
 | ---------------------- | -------------------------------------------------------------------------------------- | --------------------- |
@@ -45,6 +45,7 @@ https://civic.vtaiwan.tw/api/auth/callback/github
 | `GITHUB_CLIENT_ID`     | 與 vTaiwan-hono 共用                                                                   | `wrangler secret put` |
 | `GITHUB_CLIENT_SECRET` | 與 vTaiwan-hono 共用                                                                   | `wrangler secret put` |
 | `BETTER_AUTH_URL`      | **本站自己的 origin**（正式站是 `https://civic.vtaiwan.tw`），不要從 vTaiwan-hono 複製 | 見下方說明            |
+| `CIVIC_TALK_API_KEY`  | `/api/fact-check` 簽發短效 token 的 HMAC 簽章密鑰；未設定時端點回 `503 FACT_CHECK_NOT_CONFIGURED`，前端切換到站內端點後投稿查核會失效 | `wrangler secret put` |
 
 ```bash
 npx wrangler secret put BETTER_AUTH_SECRET     # 逐一設定，值用貼的、不要放進指令歷史
@@ -52,6 +53,7 @@ npx wrangler secret put GOOGLE_CLIENT_ID
 npx wrangler secret put GOOGLE_CLIENT_SECRET
 npx wrangler secret put GITHUB_CLIENT_ID
 npx wrangler secret put GITHUB_CLIENT_SECRET
+npx wrangler secret put CIVIC_TALK_API_KEY
 ```
 
 **`BETTER_AUTH_URL` 不是機密**，可以改放進 `wrangler.jsonc` 的 `vars`（進版控、部署時自動帶上、不會有人忘了設）：
@@ -63,6 +65,12 @@ npx wrangler secret put GITHUB_CLIENT_SECRET
 目前設定檔**沒有** `vars` 這一段，所以正式站的 `BETTER_AUTH_URL` 只能是設在 Worker 上（儀表板或 `wrangler secret put`）——`src/auth/createAuth.ts` 直接把它當 `baseURL`，值不對（例如還留著 localhost）就會在登入時導到錯的網域。要改成寫進設定檔前先讀下面那條 `keep_vars` 警告。本機開發時 `.dev.vars` 的值仍會覆蓋它，所以不影響 `vp run dev`。
 
 ⚠️ **若你打算在 Cloudflare 儀表板上手動設定 vars**：wrangler 預設把設定檔當成唯一真相，**deploy 會覆蓋或刪除儀表板上的 vars**。要保留儀表板設定得在 `wrangler.jsonc` 加 `"keep_vars": true`（vTaiwan-hono 就有這一行，本專案沒有）。用 `wrangler secret put` 設的機密不寫在設定檔裡，不受這條規則影響——這也是建議走 secret 的原因之一。
+
+### 1.4 fact-check-core Service Binding
+
+`wrangler.jsonc` 的 `services` 會以 `FACT_CHECK_CORE` binding 呼叫 Worker `fact-check-core`。部署 `civic-talk` 前，`fact-check-core` **必須已存在於同一個 Cloudflare 帳號**；否則 civic-talk 會因 Service Binding 找不到目標 Worker 而部署失敗。若遇到 binding 找不到，先用 `npx wrangler whoami` 確認登入帳號，再確認該帳號已有 `fact-check-core`。
+
+`fact-check-core` 刻意設定為沒有公開 route（`workers_dev: false`），只能由 civic-talk 透過 Service Binding 呼叫，不要另外把它暴露成公開 HTTP endpoint。
 
 ---
 
@@ -117,6 +125,7 @@ vp run deploy    # = vp run build + wrangler deploy
   ```bash
   npx wrangler d1 migrations apply vtaiwan-civic-talks --remote
   ```
+- 部署前必須先套用 `0012_fact_check_rate_limit.sql`（遠端套用需使用者授權），否則 rate limit 會因缺表而 fail-open，等於沒有保護。
 
 ---
 

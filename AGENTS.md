@@ -38,7 +38,7 @@
 5. **API 相容契約不得片面變更。** 既有 endpoint 的路徑、方法與 JSON 形狀（見「API 契約」）只能擴充、不能改名或改語意。要破壞相容性，先問使用者。
    - **例外（已由 [#5](https://github.com/g0v/civic-talk-hono/issues/5) 授權）：管理端授權方式改為角色制。** 管理權限改看登入使用者的角色是不是 `admin`／`super-admin`（Better Auth session），**不再依賴 `ADMIN_PASSWORD` 環境變數與 `X-Admin-Token` 標頭**。這一項授權**只涵蓋授權機制**：業務 endpoint 的路徑、方法與成功回應形狀照舊，未經授權時回 `401`（未登入）／`403`（已登入但無權限）。
    - **例外（已由 [#9](https://github.com/g0v/civic-talk-hono/issues/9) 與使用者裁示授權）：投稿與志願者工具需要登入。** `POST /api/issues`（建立議題）、`POST /api/issues/:id/materials`（投稿素材）、`POST /api/issues/:id/opinions`（投稿意見）、`POST /api/issues/:id/briefing`（志願者送出彙整／說明頁）及 `GET /api/issues/:id/prompt`（產生志願者 prompt）未登入一律回 `401`——這是既有 endpoint 的語意變更，目的為內容品質與濫用可追溯。**角色一律不看**，任何未停權的登入者都能使用。
-6. **機密不進 git。** `.dev.vars` 等憑證只留本地；不寫進任何 tracked 檔案、commit 訊息或 log 輸出。目前涵蓋 `ADMIN_PASSWORD`（將隨 #5 淘汰）、`BETTER_AUTH_SECRET`、`GOOGLE_CLIENT_SECRET`、`GITHUB_CLIENT_SECRET` 等。新增設定值時同步更新 `.dev.vars.example`，但只放假值。
+6. **機密不進 git。** `.dev.vars` 等憑證只留本地；不寫進任何 tracked 檔案、commit 訊息或 log 輸出。目前涵蓋 `ADMIN_PASSWORD`（將隨 #5 淘汰）、`BETTER_AUTH_SECRET`、`GOOGLE_CLIENT_SECRET`、`GITHUB_CLIENT_SECRET`、`CIVIC_TALK_API_KEY` 等。新增設定值時同步更新 `.dev.vars.example`，但只放假值。
 7. **遠端 D1 需授權。** migration 預設只套用到本機（`--local`）。套用 `--remote`、建立或刪除資料庫、跑任何會寫入正式資料的指令前，**必須先問使用者**。本專案有兩個 D1 綁定：業務庫 `DB` → `vtaiwan-civic-talks`，共用認證庫 `DB_AUTH` → `vtaiwan-auth`。**本 repo 只對 `DB` 做 migration**；`DB_AUTH` 見不變量 11。
    - ⚠️ **`wrangler d1 migrations apply vtaiwan-auth` 是活陷阱**：`DB_AUTH` 沒寫 `migrations_dir`，但 wrangler 會自動填入預設的 `./migrations`，等於把本專案的 `ct_*` 建表 SQL 套進 vTaiwan 的正式認證庫。🚫 不要跑，詳見 [`deploy_notes.md`](./deploy_notes.md)。
 8. **生成物不手改。** `dist/`、`public/js/*.js`（client bundle）、`worker-configuration.d.ts` 皆為建置產物——改源頭重新生成。Tailwind 導入後 `public/styles.css` 也會變成生成物（見「樣式」）。
@@ -54,14 +54,17 @@
 
 Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑起來（尚未切到 `vue-router`）：
 
-- `src/index.ts` — 乾淨路由 `/`、`/issues/:id`、`/issues/:id/source/:materialId`、`/issues/:id/comment/:opinionId`、`/contribute/:id`、`/about`、`/admin`；舊 `.html` 導向；掛上 `registerApiRoutes`；fallback `ASSETS`。
+- `src/index.ts` — 乾淨路由 `/`、`/issues/:id`、`/issues/:id/source/:materialId`、`/issues/:id/comment/:opinionId`、`/contribute/:id`、`/about`、`/admin`；舊 `.html` 導向；依序掛上 `registerAuthRoutes`、`registerFactCheckRoutes`、`registerApiRoutes`（其中 `/api/fact-check` 必須在泛用 `/api/*` 預檢之前）；`/contribute/:id` 在已登入頁面 SSR state 注入 `factCheckToken`，並回應 `Cache-Control: private, no-store` 避免短效 token 被快取；fallback `ASSETS`。
 - `src/api/routes.ts` + `src/db/queries.ts` — 舊 Pages Functions API 的型別化移植，SQL 只碰 `ct_*`。
+- `src/api/factCheck.ts` — `/api/fact-check` 的同源檢查、短效 token 驗證、登入／停權守門、以 D1 固定視窗執行每位登入者每 60 秒最多 60 次的防洪速率限制，以及 `FACT_CHECK_CORE` Service Binding 轉送。
+- `src/lib/factCheckToken.ts` — 以 `CIVIC_TALK_API_KEY` HMAC-SHA256 簽發／驗證 `v1.<payload>.<signature>`；token payload 含 `aud`、`exp`、`n`、`sub`，有效期 900 秒。
 - `migrations/0001_init.sql` — `ct_issues`／`ct_materials`／`ct_briefings`／`ct_opinions`（含 FK、索引、約束、示範資料）。
 - `migrations/0002_material_author.sql` — `ct_materials` 加上 `author_id`／`author_name`（#9 的投稿者記錄）。本機與遠端皆已套用；#27 起 name 公開、ID 仍只給管理端。
 - `migrations/0003_issue_opinion_author.sql` — `ct_issues` 與 `ct_opinions` 也加上 `author_id`／`author_name`。本機與遠端皆已套用；公開規則同上。
 - `migrations/0004_briefing_author.sql` — `ct_briefings` 加上 `author_id`（志願者送出 briefing 的帳號）。本機與遠端皆已套用；公開顯示規則同其他內容。
 - `migrations/0005_author_email.sql` — 四種內容補齊投稿當下的作者快照；`author_email` 一律保存，`show_email`（0／1）只控制前台是否公開。本機與遠端皆已套用。遠端先前另有舊檔名 `0004_author_email.sql`（只加三表 `author_email`），因此遠端是補齊 `show_email` 與 briefing 快照後再標記 0005 已套用。
 - `migrations/0006_submission_consent.sql` — 議題、素材與意見保存伺服器端確認的 `terms_version`／`terms_accepted_at`。本機與遠端皆已套用。
+- `migrations/0012_fact_check_rate_limit.sql` — 建立 `ct_fact_check_rate_limits` 固定視窗表，供 `/api/fact-check` 執行每位登入者每 60 秒最多 60 次的防洪速率限制。
 - `src/ssr/render.ts` — SSR + 注入 `window.__PAGE__`／`__SSR_STATE__` + `/js/civic.js`（dev 走 `/src/client/civic-entry.ts`）。
 - `src/views/` — `Home`／`Issue`／`Contribute`／`About`／`Admin`／`MaterialDetail`／`OpinionDetail`；共用 `AppHeader`／`AppFooter`／`StatusBadge`／`IssueCard`／`Toast`。
 - `src/composables/useAuth.ts` — 全站共用的登入狀態（`authState`／`session`／`ensureAuthSession`／`signOutAndReload`）。模組層級的 ref，同一頁的 `AppHeader` 與表單共用同一次 `/api/me`；**只在瀏覽器端寫入**（`ensureAuthSession()` 開頭擋掉 SSR），所以 SSR 永遠是 `'loading'`。
@@ -69,7 +72,7 @@ Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑�
 - `src/components/LongTextContent.vue` — 長文折疊（#65）：超過 `threshold`（預設 1000 字，以 code point 計數）時**完全不輸出原文**，只顯示字數與展開／收合鈕。🚫 **不得改成截短預覽或摘要**——素材多為 CC BY-NC-ND 授權，截短等同改作。目前用於 `Issue.vue` 的素材卡；`MaterialDetail.vue`（專屬頁本來就是看全文）與 `Admin.vue`（管理員需審閱）維持全文顯示。
 - `src/l10n/` — 自製 i18n composable（`zh-TW`／`en` 雙檔 key 同步）；SSR 固定 `zh-TW`，`localStorage.civic_lang` 只在 hydration 後讀寫。
 - `src/styles/app.css` — Tailwind v4 `@theme static`（vTaiwan 色彩、字型、字級、間距、圓角、陰影與動效 token）；`vp run css` 產出 `public/styles.css`（**生成物，勿手改**）。
-- `wrangler.jsonc` — `ASSETS` + D1 `DB` → `vtaiwan-civic-talks` + D1 `DB_AUTH` → `vtaiwan-auth`（兩者都標 `remote: true`，只影響本機開發模式）；`compatibility_flags: ["nodejs_compat"]`。**不寫 `account_id`**（與 `../vTaiwan-hono` 一致，由 wrangler 登入的帳號決定）——不要為了「比較保險」把它加回來。
+- `wrangler.jsonc` — `ASSETS` + D1 `DB` → `vtaiwan-civic-talks` + D1 `DB_AUTH` → `vtaiwan-auth` + `services` 的 `FACT_CHECK_CORE` → `fact-check-core`（`remote: true`；core 沒有公開 route，只能由本站以 Service Binding 呼叫）。D1 的 `remote: true` 只影響本機開發模式；`compatibility_flags: ["nodejs_compat"]`。**不寫 `account_id`**（與 `../vTaiwan-hono` 一致，由 wrangler 登入的帳號決定）——不要為了「比較保險」把它加回來。
 - `src/auth/` — `createAuth.ts`（Better Auth 實例：Google／GitHub provider、同 email accountLinking、**不開 admin plugin**、以 `additionalFields` 唯讀取 `role`）與 `authorization.ts`（`AppRole`／`resolveRole`／`isAdminRole`／`getAuthContext`／`tryGetAuthContext`）。
 - `src/api/auth.ts` — `/api/auth/*` 轉交 `auth.handler()`、`/api/me` 回登入者；`/api/auth/admin/*` 一律 404。
 - `src/api/types.ts` — `AppBindings`／`App` 型別（原本在 `routes.ts`，抽出來避免 auth 與 routes 互相 import）。
@@ -185,17 +188,19 @@ Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑�
 
 ## API 契約（移植自舊站）
 
-以型別化 Hono handlers 重寫 `../civic-talk/functions/api/[[route]].js`，**路徑與語意保持相容**：
+舊站 API 以型別化 Hono handlers 重寫 `../civic-talk/functions/api/[[route]].js`，**路徑與語意保持相容**；issue #92 另新增站內 `/api/fact-check`，由本站 gateway 轉送至 `fact-check-core`：
 
 | 方法     | 路徑                                        | 說明                                                                                                                                                                                                       |
 | -------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `OPTIONS` | `/api/fact-check`                         | 同源預檢；同源時回 CORS 標頭與 `204`，缺少或不同源 `Origin` 回 `403 { error: 'FORBIDDEN_ORIGIN' }`                                                                                                          |
+| `POST`    | `/api/fact-check`                         | 站內事實查核入口；以 Service Binding 串流轉送至 `fact-check-core`（需同源、短效 token 與登入；每位登入者每 60 秒最多 60 次）                                                                                           |
 | `GET`    | `/api/issues`                               | 議題列表                                                                                                                                                                                                   |
 | `POST`   | `/api/issues`                               | 新增議題（**需登入**，#9 延伸）                                                                                                                                                                            |
 | `GET`    | `/api/issues/:id`                           | 議題詳情                                                                                                                                                                                                   |
 | `PUT`    | `/api/issues/:id`                           | 編輯議題（admin）                                                                                                                                                                                          |
 | `DELETE` | `/api/issues/:id`                           | 刪除議題（admin，級聯刪 materials/briefings/opinions）                                                                                                                                                     |
 | `GET`    | `/api/issues/:id/materials`                 | 素材列表（公開顯示 `author_name`，email 僅依 opt-in 顯示；管理員另拿完整作者快照）                                                                                                                         |
-| `POST`   | `/api/issues/:id/materials`                 | 投稿素材（**需登入**，#9；前端投稿表單須先完成 `check.vtaiwan.tw` 事實查核且結果允許；伺服器仍照常執行 moderation；正常投稿 `collecting` → `summarizing`；自動審查違規會保存但暫時隱藏，且不觸發狀態轉換） |
+| `POST`   | `/api/issues/:id/materials`                 | 投稿素材（**需登入**，#9；前端目前仍直接打 `https://check.vtaiwan.tw/api/fact-check`，站內 `/api/fact-check` 已存在但前端切換待後續 PR；查核結果允許後才能張貼；伺服器仍照常執行 moderation；正常投稿 `collecting` → `summarizing`；自動審查違規會保存但暫時隱藏，且不觸發狀態轉換） |
 | `DELETE` | `/api/materials/:id`                        | 刪除素材（admin）                                                                                                                                                                                          |
 | `GET`    | `/api/issues/:id/briefing`                  | 取得說明頁（公開顯示 `author_name`，email 僅依 opt-in；管理員另拿完整作者快照）                                                                                                                            |
 | `POST`   | `/api/issues/:id/briefing`                  | 新增說明頁（**需登入**；版本遞增；正常投稿 → `published`；違規投稿保存但暫時隱藏且不觸發狀態轉換）                                                                                                         |
@@ -216,6 +221,20 @@ Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑�
 - 統一 JSON 錯誤形狀 `{ error: string }`，並補齊輸入驗證與 `400` / `401` / `404` 回應。
 - 議題狀態機（照舊站語意）：正常 POST material 把 `collecting` 推到 `summarizing`；正常 POST briefing 從 `collecting` 或 `summarizing` 推到 `published`；`abuse_flagged = 3` 的素材／說明頁寫入不觸發任何狀態轉換，日後誤報解除也不補推。
   ✅ **#29 投稿安全審查已完成。** 四個投稿端點在 `requireUser()` 之後呼叫 OpenRouter 審查：判定違規仍寫入原投稿列並在 INSERT 時帶 `abuse_flagged = 3`，同時建立指向該列的 `source = 'ai'` 回報，端點維持原本成功狀態碼與回應形狀，另外附帶 `moderation.hidden`、分類、理由、回報 ID 與申訴資格。公開查詢以 placeholder 呈現，管理員可複核並依記錄停權；沒有自動停權或自動隱藏門檻。OpenRouter 基礎設施故障採 fail-open 放行並記錄結構化錯誤。
+
+### `/api/fact-check` 守門與錯誤碼
+
+兩個方法都先檢查同源 `Origin`：`Origin` 必須等於請求本身的 origin；缺少或不同源一律回 `403 { error: 'FORBIDDEN_ORIGIN' }`。`OPTIONS` 通過後只回 `204` 與同源 CORS 標頭，不要求登入或 token。
+
+`POST` 依序在本站閘道完成以下檢查：
+
+1. `CIVIC_TALK_API_KEY` 未設定：`503 { error: 'FACT_CHECK_NOT_CONFIGURED' }`。
+2. Better Auth session：未登入 `401 { error: 'UNAUTHORIZED' }`；已登入但停權 `403 { error: 'FORBIDDEN' }`。
+3. `X-Civic-Talk-Token`：無效或不是目前登入者的 token `401 { error: 'INVALID_TOKEN' }`；過期 `401 { error: 'TOKEN_EXPIRED' }`。
+4. D1 固定視窗速率限制：以登入者為 key，每 60 秒最多 60 次；超限回 `429 { error: 'RATE_LIMITED' }` 並帶 `Retry-After`（本視窗剩餘秒數）。D1 故障時記結構化錯誤 log 後 fail-open 放行；這是防洪而非配額。
+5. `FACT_CHECK_CORE` Service Binding：缺少 binding `503 { error: 'FACT_CHECK_UNAVAILABLE' }`；呼叫 binding 例外 `502 { error: 'FACT_CHECK_UNAVAILABLE' }`。
+
+通過後，本站把 request body 原封不動串流給 `https://fact-check-core/fact-check`；輸入驗證與大小上限由 core 單一負責。成功或 core 錯誤回應都保留 core 的 response headers（包括 `X-Request-Id`、`X-Fact-Check-Cache`、`Cache-Control: no-store`），並補同源 CORS 標頭。D1 固定視窗速率限制已實作，但 D1 故障時會記結構化錯誤 log 並 fail-open，故障期間等於沒有速率保護；短效 token 可由已登入帳號即時取得，仍可在 15 分鐘內重放；邊緣層 rate limit／Turnstile 仍是最外層的防線。
 
 ### 授權方式（#5 帶來的變更）
 
