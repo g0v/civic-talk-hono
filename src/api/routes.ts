@@ -50,6 +50,23 @@ function error(msg: string, status = 400): Response {
   return json({ error: msg }, status)
 }
 
+function factCheckUnavailable(): Response {
+  return new Response(
+    JSON.stringify({
+      status: 'error',
+      error: 'UPSTREAM_UNAVAILABLE',
+      message: 'Fact-check service is temporarily unavailable',
+    }),
+    {
+      status: 503,
+      headers: {
+        'Content-Type': 'application/json; charset=UTF-8',
+        'Cache-Control': 'no-store',
+      },
+    }
+  )
+}
+
 /**
  * 管理權限守衛：通過回 null，否則回該擋下的 Response。
  *
@@ -222,6 +239,35 @@ async function recordModerationViolation(
 
 export function registerApiRoutes(app: App): void {
   app.options('/api/*', () => withCors(new Response(null, { status: 204 })))
+
+  // 瀏覽器只呼叫同源 Civic Talk API；真正的查核核心沒有公開 route，改由
+  // Cloudflare Service Binding 直接轉送。Service Binding 本身就是對核心 Worker 的
+  // capability，因此不另發前端 token，也不把 Cookie／Authorization 轉交給核心。
+  app.post('/api/fact-check', async c => {
+    const auth = await requireUser(c.req.raw, c.env)
+    if ('denied' in auth) return auth.denied
+
+    try {
+      return await c.env.FACT_CHECK_CORE.fetch('https://fact-check-core/fact-check', {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': c.req.header('Content-Type') || 'application/json',
+        },
+        body: c.req.raw.body,
+        redirect: 'manual',
+        signal: c.req.raw.signal,
+      })
+    } catch (caught) {
+      console.error(
+        JSON.stringify({
+          event: 'fact_check_core_unavailable',
+          error: caught instanceof Error ? caught.name : 'unknown',
+        })
+      )
+      return factCheckUnavailable()
+    }
+  })
 
   // POST /api/admin/login 已隨密碼制一併移除（#5）：管理身分改由 Better Auth session
   // 決定，登入入口是 /api/auth/sign-in/social。前端 Admin.vue 已不再呼叫它。

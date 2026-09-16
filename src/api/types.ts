@@ -21,6 +21,8 @@ export type AppBindings = {
   GITHUB_CLIENT_SECRET: string
   /** OpenRouter API key；只供 issue #29 投稿安全審查使用，內容生成不得呼叫模型。 */
   OPEN_ROUTER_API_KEY?: string
+  /** 私有事實查核核心；只透過 Cloudflare Service Binding 呼叫，不經公開網址。 */
+  FACT_CHECK_CORE: Fetcher
   /** 用於執行時讀取 public/rules/community-guidelines.md */
   ASSETS?: {
     fetch: (request: RequestInfo | URL, init?: RequestInit) => Promise<Response>

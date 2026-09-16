@@ -18,6 +18,3 @@ GITHUB_CLIENT_SECRET=
 
 # Open Router API 應用程式憑證
 OPEN_ROUTER_API_KEY=
-
-# Civic Talk API 應用程式憑證
-CIVIC_TALK_API_KEY=
