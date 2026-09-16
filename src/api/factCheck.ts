@@ -1,5 +1,6 @@
 import type { App } from './types'
-import { FACT_CHECK_TOKEN_HEADER, verifyFactCheckToken } from '../lib/factCheckToken'
+import { FACT_CHECK_TOKEN_HEADER } from '../lib/factCheck'
+import { verifyFactCheckToken } from '../lib/factCheckToken'
 import { checkFactCheckRateLimit } from '../lib/factCheckRateLimit'
 import { tryGetAuthContext } from '../auth/authorization'
 

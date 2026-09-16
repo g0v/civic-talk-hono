@@ -10,6 +10,7 @@ import { useAuth } from '../composables/useAuth'
 import {
   buildFactCheckRequestBody,
   FACT_CHECK_ENDPOINT,
+  FACT_CHECK_TOKEN_HEADER,
   factCheckAllowsPosting,
   factCheckBlockReason,
   factCheckErrorKind,
@@ -18,13 +19,14 @@ import {
   type FactCheckErrorKind,
   type FactCheckResult,
 } from '../lib/factCheck'
+
 const props = defineProps<{
   issueId: number
   issueTitle?: string
   /**
-   * /api/fact-check 的短效 token（#92），SSR 當下簽發、隨頁面注入。
-   * 前端切換到站內 /api/fact-check 時，照原樣放進 `X-Civic-Talk-Token` 標頭即可——
-   * 那個切換是後續 PR（fact-check-api#31 的清單），目前查核仍打 check.vtaiwan.tw。
+   * /api/fact-check 的短效 token（#92），SSR 當下簽發、隨頁面注入。查核請求改打站內
+   * `/api/fact-check`（issue #92），照原樣放進 `X-Civic-Talk-Token` 標頭；未登入時是
+   * 空字串，此時不送這個標頭。token 過期只能重新載入頁面換新。
    */
   factCheckToken?: string
 }>()
@@ -44,6 +46,8 @@ const submitting = ref(false)
 const factChecking = ref(false)
 const factCheckResult = ref<FactCheckResult | null>(null)
 const factCheckError = ref<FactCheckErrorKind | null>(null)
+// 429 回應帶的 Retry-After 秒數（有讀到才顯示在 rate limited 文案裡）。
+const factCheckRetryAfter = ref<number | null>(null)
 const checkedFactCheckKey = ref('')
 const factCheckRequestId = ref(0)
 let factCheckController: AbortController | null = null
@@ -96,6 +100,7 @@ async function editFactCheckInput() {
   factChecking.value = false
   factCheckResult.value = null
   factCheckError.value = null
+  factCheckRetryAfter.value = null
   checkedFactCheckKey.value = ''
   await nextTick()
   contentInput.value?.focus()
@@ -110,6 +115,7 @@ watch(
     factChecking.value = false
     factCheckResult.value = null
     factCheckError.value = null
+    factCheckRetryAfter.value = null
     checkedFactCheckKey.value = ''
   },
   { flush: 'sync' }
@@ -132,36 +138,36 @@ async function checkFact() {
   const requestId = ++factCheckRequestId.value
   factChecking.value = true
   factCheckError.value = null
+  factCheckRetryAfter.value = null
   factCheckResult.value = null
   checkedFactCheckKey.value = ''
   const timeout = window.setTimeout(() => controller.abort(), 30_000)
   try {
+    // 站內查核端點（issue #92）：同源相對路徑；有 SSR 注入的 token 才帶標頭。
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    if (props.factCheckToken) headers[FACT_CHECK_TOKEN_HEADER] = props.factCheckToken
     const res = await fetch(FACT_CHECK_ENDPOINT, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify(buildFactCheckRequestBody(content.value, sourceUrl.value)),
       signal: controller.signal,
     })
+    // 429 帶 Retry-After（視窗剩餘秒數）；有讀到才在文案顯示。
+    const retryAfter = Number(res.headers.get('Retry-After'))
+    if (Number.isFinite(retryAfter) && retryAfter > 0) factCheckRetryAfter.value = Math.round(retryAfter)
     let body: unknown = null
     try {
       body = await res.json()
     } catch {
-      if (!res.ok) {
-        factCheckError.value = 'generic'
-        return
-      }
-      throw new Error('fact-check-invalid')
+      // 非 JSON 回應：502／503 視為上游故障，其他狀態維持 generic。
+      factCheckError.value = factCheckErrorKind(body, res.status)
+      return
     }
     if (requestId !== factCheckRequestId.value) return
-    const errorKind = factCheckErrorKind(body)
-    if (errorKind === 'upstream_unavailable') {
-      factCheckError.value = errorKind
-      return
-    }
-    if (!res.ok) {
-      factCheckError.value = 'generic'
-      return
-    }
+    factCheckError.value = factCheckErrorKind(body, res.status)
+    // 查核時發現 session 過期：沿用投稿 401 的做法——表單與內容留在原地，補一列重新登入提示。
+    if (factCheckError.value === 'session_expired') sessionExpired.value = true
+    if (factCheckError.value !== 'generic') return
     const parsed = parseFactCheckResult(body)
     if (!parsed) throw new Error('fact-check-invalid')
     if (requestId !== factCheckRequestId.value) return
@@ -367,6 +373,9 @@ async function submitMaterial() {
               {{ factChecking ? t('contrib_factcheck_checking') : t('contrib_factcheck_button') }}
             </button>
             <p v-if="factCheckError === 'upstream_unavailable'" class="mt-2 mb-0 text-sm text-red">{{ t('contrib_factcheck_upstream_error') }}</p>
+            <p v-else-if="factCheckError === 'session_expired'" class="mt-2 mb-0 text-sm text-red">{{ t('login_expired_toast') }}</p>
+            <p v-else-if="factCheckError === 'token_expired'" class="mt-2 mb-0 text-sm text-red">{{ t('contrib_factcheck_token_expired') }}</p>
+            <p v-else-if="factCheckError === 'rate_limited'" class="mt-2 mb-0 text-sm text-red">{{ factCheckRetryAfter ? t('contrib_factcheck_rate_limited', { seconds: factCheckRetryAfter }) : t('contrib_factcheck_rate_limited_generic') }}</p>
             <p v-else-if="factCheckError" class="mt-2 mb-0 text-sm text-red">{{ t('contrib_factcheck_error') }}</p>
             <div v-else-if="factCheckResult" class="alert mt-3" :class="factCheckAllowsPosting(factCheckResult) ? 'alert-info' : 'alert-warn'">
               <p class="mt-0 mb-2 font-medium">{{ t('contrib_factcheck_verdict') }}：{{ factCheckVerdictLabel }}</p>

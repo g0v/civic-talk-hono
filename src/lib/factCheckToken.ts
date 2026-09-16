@@ -1,3 +1,5 @@
+import { FACT_CHECK_TOKEN_HEADER } from './factCheck'
+
 /**
  * /api/fact-check 的同源短效 token（issue #92）。
  *
@@ -27,14 +29,14 @@ const TOKEN_VERSION = 'v1'
 /** 用途標記，避免同一把密鑰簽給其他用途的 token 在這裡通用。 */
 const TOKEN_AUDIENCE = 'fact-check'
 
-/** 前端回傳 token 時使用的標頭名稱。 */
-export const FACT_CHECK_TOKEN_HEADER = 'X-Civic-Talk-Token'
-
 /** token 有效期（秒）。頁面重新載入會取得新 token，逾時後一律回 `TOKEN_EXPIRED`。 */
 export const FACT_CHECK_TOKEN_TTL_SECONDS = 900
 
 /** `missing`／`invalid` 都回 401，`expired` 另回 `TOKEN_EXPIRED` 讓前端能提示重新載入。 */
 export type FactCheckTokenStatus = 'ok' | 'missing' | 'invalid' | 'expired'
+
+export { FACT_CHECK_TOKEN_HEADER }
+
 function toBase64Url(bytes: Uint8Array): string {
   let binary = ''
   for (const byte of bytes) binary += String.fromCharCode(byte)

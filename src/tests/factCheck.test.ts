@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test'
-import { buildFactCheckRequestBody, factCheckAllowsPosting, factCheckBlockReason, factCheckErrorKind, factCheckInputKey, parseFactCheckResult, type FactCheckResult } from '../lib/factCheck'
+import { buildFactCheckRequestBody, factCheckAllowsPosting, factCheckBlockReason, factCheckErrorKind, factCheckInputKey, FACT_CHECK_ENDPOINT, parseFactCheckResult, type FactCheckResult } from '../lib/factCheck'
 
 const allowed: FactCheckResult = {
   status: 'completed',
@@ -74,14 +74,34 @@ describe('事實查核張貼判斷', () => {
 })
 describe('事實查核錯誤分類', () => {
   const upstreamBody = { status: 'error', error: 'UPSTREAM_UNAVAILABLE', message: '上游訊息' }
-  it('200 與 503 的相同 JSON body 都分類為上游故障', async () => {
+  it('core 的 {status:error, error:UPSTREAM_UNAVAILABLE} 形狀分類為上游故障（不看 HTTP 狀態）', async () => {
     const responses = [new Response(JSON.stringify(upstreamBody), { status: 200 }), new Response(JSON.stringify(upstreamBody), { status: 503 })]
     for (const response of responses) {
-      expect(factCheckErrorKind(await response.json())).toBe('upstream_unavailable')
+      expect(factCheckErrorKind(await response.json(), response.status)).toBe('upstream_unavailable')
     }
   })
-  it('普通 error 與非 JSON 維持 generic', () => {
-    expect(factCheckErrorKind({ status: 'error', error: 'INVALID_INPUT' })).toBe('generic')
-    expect(factCheckErrorKind('<html>bad gateway</html>')).toBe('generic')
+  it('本站 {error:CODE} 形狀各守門錯誤對應到不同種類', () => {
+    expect(factCheckErrorKind({ error: 'UNAUTHORIZED' }, 401)).toBe('session_expired')
+    expect(factCheckErrorKind({ error: 'FORBIDDEN' }, 403)).toBe('generic')
+    expect(factCheckErrorKind({ error: 'TOKEN_EXPIRED' }, 401)).toBe('token_expired')
+    expect(factCheckErrorKind({ error: 'INVALID_TOKEN' }, 401)).toBe('token_expired')
+    expect(factCheckErrorKind({ error: 'RATE_LIMITED' }, 429)).toBe('rate_limited')
+    expect(factCheckErrorKind({ error: 'FACT_CHECK_NOT_CONFIGURED' }, 503)).toBe('upstream_unavailable')
+    expect(factCheckErrorKind({ error: 'FACT_CHECK_UNAVAILABLE' }, 502)).toBe('upstream_unavailable')
+    expect(factCheckErrorKind({ error: 'FACT_CHECK_UNAVAILABLE' }, 503)).toBe('upstream_unavailable')
+  })
+  it('非 JSON 回應只靠 HTTP 狀態碼分類：502／503 是上游故障，其他維持 generic', () => {
+    expect(factCheckErrorKind(null, 502)).toBe('upstream_unavailable')
+    expect(factCheckErrorKind(null, 503)).toBe('upstream_unavailable')
+    expect(factCheckErrorKind('<html>bad gateway</html>', 500)).toBe('generic')
+    expect(factCheckErrorKind(undefined)).toBe('generic')
+  })
+  it('普通 error 與未知形狀維持 generic', () => {
+    expect(factCheckErrorKind({ status: 'error', error: 'INVALID_INPUT' }, 400)).toBe('generic')
+    expect(factCheckErrorKind('<html>bad gateway</html>', 400)).toBe('generic')
+  })
+  it('端點必須同源：以 URL 解析驗證不會落到外部 origin', () => {
+    expect(new URL(FACT_CHECK_ENDPOINT, 'https://civic.vtaiwan.tw').origin).toBe('https://civic.vtaiwan.tw')
+    expect(new URL(FACT_CHECK_ENDPOINT, 'http://localhost:8787').origin).toBe('http://localhost:8787')
   })
 })

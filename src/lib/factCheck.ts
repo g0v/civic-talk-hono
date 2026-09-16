@@ -14,12 +14,22 @@ export interface FactCheckResult {
   confidence: number | null
   feedback: string
 }
-export type FactCheckErrorKind = 'upstream_unavailable' | 'generic'
+export type FactCheckErrorKind = 'session_expired' | 'token_expired' | 'rate_limited' | 'upstream_unavailable' | 'generic'
 
-export function factCheckErrorKind(body: unknown): FactCheckErrorKind {
-  if (!body || typeof body !== 'object') return 'generic'
-  const record = body as Record<string, unknown>
-  if (record.status === 'error' && record.error === 'UPSTREAM_UNAVAILABLE') return 'upstream_unavailable'
+/**
+ * 把 /api/fact-check 的錯誤回應分類成前端可對應到不同文案的種類。本站守門錯誤是
+ * `{ error: 'CODE' }`，core 的錯誤是 `{ status: 'error', error: 'UPSTREAM_UNAVAILABLE', ... }`。
+ * `status` 是 HTTP 狀態碼：body 不是 JSON（例如 HTML 錯誤頁）時，502／503 仍要歸為上游故障。
+ */
+export function factCheckErrorKind(body: unknown, status?: number): FactCheckErrorKind {
+  if (body && typeof body === 'object') {
+    const record = body as Record<string, unknown>
+    if (record.error === 'UNAUTHORIZED') return 'session_expired'
+    if (record.error === 'TOKEN_EXPIRED' || record.error === 'INVALID_TOKEN') return 'token_expired'
+    if (record.error === 'RATE_LIMITED') return 'rate_limited'
+    if (record.status === 'error' && record.error === 'UPSTREAM_UNAVAILABLE') return 'upstream_unavailable'
+  }
+  if (status === 502 || status === 503) return 'upstream_unavailable'
   return 'generic'
 }
 
@@ -55,11 +65,17 @@ export function parseFactCheckResult(value: unknown): FactCheckResult | null {
 }
 
 /**
- * 上游查核 API。改用 POST 把參數放進 JSON body（PR #88 檢閱建議）——素材內容可以很長，
- * 放在 query string 會撞上網址長度上限。上游已對 `https://civic.vtaiwan.tw` 開放
- * POST 與 `Content-Type` 的 CORS preflight。
+ * 站內查核 API（issue #92）：同源相對路徑，由 `/api/fact-check` 以 Service Binding
+ * 轉送至 `fact-check-core`。刻意用相對路徑而非寫死正式網域——不論在正式站或預覽
+ * 網址開啟，呼叫都會落在同一個 origin，不會踩到站內端點的同源 `Origin` 檢查。
  */
-export const FACT_CHECK_ENDPOINT = 'https://check.vtaiwan.tw/api/fact-check'
+export const FACT_CHECK_ENDPOINT = '/api/fact-check'
+
+/**
+ * 前端回傳短效 token 時使用的標頭名稱（#92）。定義在這個 client 安全的模組（無 crypto），
+ * 伺服器端模組 `factCheckToken.ts` 與 `api/factCheck.ts` 都 import 它，全專案只有一份。
+ */
+export const FACT_CHECK_TOKEN_HEADER = 'X-Civic-Talk-Token'
 
 export interface FactCheckRequestBody {
   text: string
