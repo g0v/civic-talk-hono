@@ -1,7 +1,8 @@
 import { Hono } from 'hono'
 import { describe, expect, it, vi } from 'vite-plus/test'
 import { registerFactCheckRoutes } from '../api/factCheck'
-import { FACT_CHECK_TOKEN_HEADER, FACT_CHECK_TOKEN_TTL_SECONDS, issueFactCheckToken, verifyFactCheckToken } from '../lib/factCheckToken'
+import { FACT_CHECK_TOKEN_HEADER } from '../lib/factCheck'
+import { FACT_CHECK_TOKEN_TTL_SECONDS, issueFactCheckToken, verifyFactCheckToken } from '../lib/factCheckToken'
 import { FACT_CHECK_RATE_LIMIT } from '../lib/factCheckRateLimit'
 
 const SECRET = 'test-civic-talk-key'

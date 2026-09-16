@@ -14,7 +14,7 @@ import {
   factCheckAllowsPosting,
   factCheckBlockReason,
   factCheckErrorKind,
-  factCheckInputKey,
+  factCheckResponseOutcome,
   parseFactCheckResult,
   type FactCheckErrorKind,
   type FactCheckResult,
@@ -156,18 +156,24 @@ async function checkFact() {
     const retryAfter = Number(res.headers.get('Retry-After'))
     if (Number.isFinite(retryAfter) && retryAfter > 0) factCheckRetryAfter.value = Math.round(retryAfter)
     let body: unknown = null
+    let parseFailed = false
     try {
       body = await res.json()
     } catch {
-      // 非 JSON 回應：502／503 視為上游故障，其他狀態維持 generic。
-      factCheckError.value = factCheckErrorKind(body, res.status)
-      return
+      // 非 JSON 回應（例如 HTML 錯誤頁）一律當成失敗分類；成功路徑不需要 JSON 解析例外。
+      parseFailed = true
     }
     if (requestId !== factCheckRequestId.value) return
-    factCheckError.value = factCheckErrorKind(body, res.status)
-    // 查核時發現 session 過期：沿用投稿 401 的做法——表單與內容留在原地，補一列重新登入提示。
-    if (factCheckError.value === 'session_expired') sessionExpired.value = true
-    if (factCheckError.value !== 'generic') return
+    // 只在失敗時分類（!res.ok 或 body 明確是錯誤形狀）；成功 200 絕不會產生 generic 錯誤，
+    // 不然 factCheckError 殘留會蓋掉查核結果。回 'generic' 在這裡代表「沒有已知錯誤」，
+    // 所以通用錯誤文案只在『解析也失敗』時才顯示，不是「generic 即失敗」。
+    const outcome = parseFailed ? ({ kind: 'error', error: factCheckErrorKind(body, res.status) } as const) : factCheckResponseOutcome(res.status, body)
+    if (outcome.kind === 'error') {
+      factCheckError.value = outcome.error
+      // 查核時發現 session 過期：沿用投稿 401 的做法——表單與內容留在原地，補一列重新登入提示。
+      if (outcome.error === 'session_expired') sessionExpired.value = true
+      return
+    }
     const parsed = parseFactCheckResult(body)
     if (!parsed) throw new Error('fact-check-invalid')
     if (requestId !== factCheckRequestId.value) return
@@ -372,12 +378,8 @@ async function submitMaterial() {
             <button v-if="!factCheckResult" type="button" class="btn btn-secondary" :disabled="factChecking" @click="checkFact">
               {{ factChecking ? t('contrib_factcheck_checking') : t('contrib_factcheck_button') }}
             </button>
-            <p v-if="factCheckError === 'upstream_unavailable'" class="mt-2 mb-0 text-sm text-red">{{ t('contrib_factcheck_upstream_error') }}</p>
-            <p v-else-if="factCheckError === 'session_expired'" class="mt-2 mb-0 text-sm text-red">{{ t('login_expired_toast') }}</p>
-            <p v-else-if="factCheckError === 'token_expired'" class="mt-2 mb-0 text-sm text-red">{{ t('contrib_factcheck_token_expired') }}</p>
-            <p v-else-if="factCheckError === 'rate_limited'" class="mt-2 mb-0 text-sm text-red">{{ factCheckRetryAfter ? t('contrib_factcheck_rate_limited', { seconds: factCheckRetryAfter }) : t('contrib_factcheck_rate_limited_generic') }}</p>
-            <p v-else-if="factCheckError" class="mt-2 mb-0 text-sm text-red">{{ t('contrib_factcheck_error') }}</p>
-            <div v-else-if="factCheckResult" class="alert mt-3" :class="factCheckAllowsPosting(factCheckResult) ? 'alert-info' : 'alert-warn'">
+            <!-- 結果區塊排在錯誤文案之前：有結果就不會被（任何殘留的）錯誤文案蓋掉。 -->
+            <div v-if="factCheckResult" class="alert mt-3" :class="factCheckAllowsPosting(factCheckResult) ? 'alert-info' : 'alert-warn'">
               <p class="mt-0 mb-2 font-medium">{{ t('contrib_factcheck_verdict') }}：{{ factCheckVerdictLabel }}</p>
               <p class="mb-2 text-sm">
                 {{ t('contrib_factcheck_scores', { factuality: factCheckResult.factuality ?? '—', confidence: factCheckResult.confidence ?? '—' }) }}
@@ -386,6 +388,12 @@ async function submitMaterial() {
               <p v-if="factCheckReason === 'community_guidelines'" class="mt-2 mb-0 text-sm">{{ t('contrib_factcheck_blocked_community') }}</p>
               <p v-else-if="factCheckReason === 'factuality'" class="mt-2 mb-0 text-sm">{{ t('contrib_factcheck_blocked_factuality') }}</p>
             </div>
+            <p v-if="factCheckError === 'upstream_unavailable'" class="mt-2 mb-0 text-sm text-red">{{ t('contrib_factcheck_upstream_error') }}</p>
+            <p v-else-if="factCheckError === 'session_expired'" class="mt-2 mb-0 text-sm text-red">{{ t('login_expired_toast') }}</p>
+            <p v-else-if="factCheckError === 'token_expired'" class="mt-2 mb-0 text-sm text-red">{{ t('contrib_factcheck_token_expired') }}</p>
+            <p v-else-if="factCheckError === 'rate_limited'" class="mt-2 mb-0 text-sm text-red">{{ factCheckRetryAfter ? t('contrib_factcheck_rate_limited', { seconds: factCheckRetryAfter }) : t('contrib_factcheck_rate_limited_generic') }}</p>
+            <!-- generic = 沒有已知錯誤（分類器的 fallback），會走到這裡表示回應形狀整個無法解析。 -->
+            <p v-else-if="factCheckError" class="mt-2 mb-0 text-sm text-red">{{ t('contrib_factcheck_error') }}</p>
           </div>
           <div class="form-group">
             <label class="flex items-start gap-2 font-normal">

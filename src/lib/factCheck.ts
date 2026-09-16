@@ -33,6 +33,24 @@ export function factCheckErrorKind(body: unknown, status?: number): FactCheckErr
   return 'generic'
 }
 
+/** 查核回應的結果：不是可解析的成功結果，就是已分類的錯誤（成功 200 絕不會被當成錯誤）。 */
+export type FactCheckResponseOutcome = { kind: 'result' } | { kind: 'error'; error: FactCheckErrorKind }
+
+/**
+ * 判定 /api/fact-check 回應是成功結果還是錯誤。只在失敗時分類：HTTP 失敗（`!res.ok`）
+ * 或 body 明確是錯誤形狀（core 的 `{ status: 'error', ... }`，或本站守門的 `{ error: 'CODE' }`）
+ * 才回 `kind: 'error'`；成功 200 的 body 不含這些標記，一律 `kind: 'result'`，
+ * 讓呼叫端直接走 `parseFactCheckResult()`。抽成純函式是為了測得到「成功不得被當成錯誤」。
+ */
+export function factCheckResponseOutcome(status: number, body: unknown): FactCheckResponseOutcome {
+  const record = body && typeof body === 'object' ? (body as Record<string, unknown>) : null
+  const isBodyError = record?.status === 'error' || typeof record?.error === 'string'
+  if (!status || status < 200 || status >= 300 || isBodyError) {
+    return { kind: 'error', error: factCheckErrorKind(body, status) }
+  }
+  return { kind: 'result' }
+}
+
 const FACT_CHECK_STATUSES: readonly FactCheckStatus[] = ['completed', 'partial', 'blocked']
 const MODERATION_DECISIONS: readonly FactCheckModerationDecision[] = ['allow', 'review', 'block', 'skipped']
 const VERDICTS: readonly FactCheckVerdict[] = ['supported', 'mostly_supported', 'mixed', 'mostly_refuted', 'refuted', 'insufficient_evidence']

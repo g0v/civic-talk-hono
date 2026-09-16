@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test'
-import { buildFactCheckRequestBody, factCheckAllowsPosting, factCheckBlockReason, factCheckErrorKind, factCheckInputKey, FACT_CHECK_ENDPOINT, parseFactCheckResult, type FactCheckResult } from '../lib/factCheck'
+import { buildFactCheckRequestBody, factCheckAllowsPosting, factCheckBlockReason, factCheckErrorKind, factCheckInputKey, factCheckResponseOutcome, FACT_CHECK_ENDPOINT, parseFactCheckResult, type FactCheckResult } from '../lib/factCheck'
 
 const allowed: FactCheckResult = {
   status: 'completed',
@@ -103,5 +103,33 @@ describe('事實查核錯誤分類', () => {
   it('端點必須同源：以 URL 解析驗證不會落到外部 origin', () => {
     expect(new URL(FACT_CHECK_ENDPOINT, 'https://civic.vtaiwan.tw').origin).toBe('https://civic.vtaiwan.tw')
     expect(new URL(FACT_CHECK_ENDPOINT, 'http://localhost:8787').origin).toBe('http://localhost:8787')
+  })
+})
+
+describe('事實查核回應判定（factCheckResponseOutcome）', () => {
+  it('成功 200 的完整成功 body 是 result，絕不被當成錯誤（#92 regression 守門）', () => {
+    const successBody = { status: 'completed', moderation: { decision: 'allow' }, verdict: 'supported', factuality: 0.9, confidence: 0.9, feedback: 'ok' }
+    expect(factCheckResponseOutcome(200, successBody)).toEqual({ kind: 'result' })
+    expect(factCheckResponseOutcome(200, successBody)).not.toEqual({ kind: 'error', error: 'generic' })
+  })
+  it('成功 200 不論 body 形狀（含部分成功、未知欄位）都不產生錯誤分類', () => {
+    // parseFactCheckResult 會在結果不完整時擋下；判定層只負責「不是錯誤回應就不擋」。
+    expect(factCheckResponseOutcome(200, { status: 'completed' })).toEqual({ kind: 'result' })
+    expect(factCheckResponseOutcome(200, { unexpected: true })).toEqual({ kind: 'result' })
+  })
+  it('HTTP 失敗或錯誤形狀 body 各自對應正確種類', () => {
+    expect(factCheckResponseOutcome(401, { error: 'UNAUTHORIZED' })).toEqual({ kind: 'error', error: 'session_expired' })
+    expect(factCheckResponseOutcome(401, { error: 'TOKEN_EXPIRED' })).toEqual({ kind: 'error', error: 'token_expired' })
+    expect(factCheckResponseOutcome(429, { error: 'RATE_LIMITED' })).toEqual({ kind: 'error', error: 'rate_limited' })
+    expect(factCheckResponseOutcome(503, { error: 'FACT_CHECK_NOT_CONFIGURED' })).toEqual({ kind: 'error', error: 'upstream_unavailable' })
+    expect(factCheckResponseOutcome(503, { status: 'error', error: 'UPSTREAM_UNAVAILABLE', message: 'x' })).toEqual({ kind: 'error', error: 'upstream_unavailable' })
+  })
+  it('body 錯誤形狀（status:error 或 error 字串）即使 HTTP 200 也是錯誤', () => {
+    expect(factCheckResponseOutcome(200, { status: 'error', error: 'UPSTREAM_UNAVAILABLE', message: 'x' })).toEqual({ kind: 'error', error: 'upstream_unavailable' })
+    expect(factCheckResponseOutcome(200, { error: 'UNAUTHORIZED' })).toEqual({ kind: 'error', error: 'session_expired' })
+  })
+  it('非 JSON 回應：5xx 上游故障、其他狀態是 generic 錯誤', () => {
+    expect(factCheckResponseOutcome(502, null)).toEqual({ kind: 'error', error: 'upstream_unavailable' })
+    expect(factCheckResponseOutcome(500, '<html>bad gateway</html>')).toEqual({ kind: 'error', error: 'generic' })
   })
 })

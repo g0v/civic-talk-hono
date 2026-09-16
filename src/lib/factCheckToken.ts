@@ -1,5 +1,3 @@
-import { FACT_CHECK_TOKEN_HEADER } from './factCheck'
-
 /**
  * /api/fact-check 的同源短效 token（issue #92）。
  *
@@ -34,8 +32,6 @@ export const FACT_CHECK_TOKEN_TTL_SECONDS = 900
 
 /** `missing`／`invalid` 都回 401，`expired` 另回 `TOKEN_EXPIRED` 讓前端能提示重新載入。 */
 export type FactCheckTokenStatus = 'ok' | 'missing' | 'invalid' | 'expired'
-
-export { FACT_CHECK_TOKEN_HEADER }
 
 function toBase64Url(bytes: Uint8Array): string {
   let binary = ''
