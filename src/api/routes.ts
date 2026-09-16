@@ -22,9 +22,9 @@ import { moderationReasonForPolicy, moderateSubmission, moderateSubmissionWithDi
 import type { App, AppBindings } from './types'
 
 // 公開讀取端點維持開放跨來源；管理端則刻意「不可跨來源」——
-// 授權改看 cookie session 之後，帶 cookie 的跨來源請求需要
-// Access-Control-Allow-Credentials: true，而那又不能搭配 Allow-Origin: *。
-// 我們兩者都不給：跨來源請求不會帶到 session cookie，管理端一律回 401。
+// 授權改看 cookie session 之後，我們不回 Access-Control-Allow-Credentials，
+// 所以瀏覽器不會把帶憑證的跨來源回應暴露給呼叫端。但 CORS 不保證請求
+// 本身永遠不會送出；必須同源的高成本端點另外在 server 端驗證 Origin。
 const CORS_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
@@ -65,6 +65,35 @@ function factCheckUnavailable(): Response {
       },
     }
   )
+}
+
+function factCheckSameOriginDenied(): Response {
+  return new Response(JSON.stringify({ error: 'Forbidden: same-origin request required' }), {
+    status: 403,
+    headers: {
+      'Content-Type': 'application/json; charset=UTF-8',
+      'Cache-Control': 'no-store',
+    },
+  })
+}
+
+/**
+ * Fact-check 會消耗核心 Worker 與外部查核資源，只供 Civic Talk 同源前端使用。
+ *
+ * SameSite cookie 只區分 site，不區分 sibling subdomain 的 origin；CORS 也主要
+ * 控制回應能否被讀取，不能取代 server-side 來源驗證。因此這裡同時要求：
+ * - Origin 必須存在且與目標 origin 完全一致；
+ * - 瀏覽器有送 Sec-Fetch-Site 時只接受 same-origin。
+ *
+ * 這支 API 沒有 server-to-server 或第三方 client 契約，所以缺 Origin 時 fail closed。
+ */
+function requireFactCheckSameOrigin(request: Request): Response | null {
+  const origin = request.headers.get('Origin')
+  if (origin !== new URL(request.url).origin) return factCheckSameOriginDenied()
+
+  const fetchSite = request.headers.get('Sec-Fetch-Site')
+  if (fetchSite !== null && fetchSite !== 'same-origin') return factCheckSameOriginDenied()
+  return null
 }
 
 /**
@@ -238,12 +267,18 @@ async function recordModerationViolation(
 }
 
 export function registerApiRoutes(app: App): void {
+  // Same-origin 請求不需要 preflight。先於萬用 /api/* OPTIONS 註冊，
+  // 避免跨來源呼叫者得到允許 fact-check 的 CORS 回應。
+  app.options('/api/fact-check', c => requireFactCheckSameOrigin(c.req.raw) ?? new Response(null, { status: 204 }))
   app.options('/api/*', () => withCors(new Response(null, { status: 204 })))
 
   // 瀏覽器只呼叫同源 Civic Talk API；真正的查核核心沒有公開 route，改由
   // Cloudflare Service Binding 直接轉送。Service Binding 本身就是對核心 Worker 的
   // capability，因此不另發前端 token，也不把 Cookie／Authorization 轉交給核心。
   app.post('/api/fact-check', async c => {
+    const sameOriginDenied = requireFactCheckSameOrigin(c.req.raw)
+    if (sameOriginDenied) return sameOriginDenied
+
     const auth = await requireUser(c.req.raw, c.env)
     if ('denied' in auth) return auth.denied
 
