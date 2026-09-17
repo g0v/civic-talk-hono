@@ -136,6 +136,19 @@ async function checkFact() {
       body: JSON.stringify(buildFactCheckRequestBody(content.value, sourceUrl.value)),
       signal: controller.signal,
     })
+    // 查核 endpoint 需要登入；保留表單內容，改顯示重新登入提示。
+    if (res.status === 401) {
+      if (requestId !== factCheckRequestId.value) return
+      sessionExpired.value = true
+      toast.value?.show(t('login_expired_toast'))
+      return
+    }
+    if (res.status === 403) {
+      if (requestId !== factCheckRequestId.value) return
+      moderationNotice.value = { appealType: 'account_ban' }
+      toast.value?.show(t('banned_toast'))
+      return
+    }
     let body: unknown = null
     try {
       body = await res.json()

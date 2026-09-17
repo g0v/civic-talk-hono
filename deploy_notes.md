@@ -64,6 +64,14 @@ npx wrangler secret put GITHUB_CLIENT_SECRET
 
 ⚠️ **若你打算在 Cloudflare 儀表板上手動設定 vars**：wrangler 預設把設定檔當成唯一真相，**deploy 會覆蓋或刪除儀表板上的 vars**。要保留儀表板設定得在 `wrangler.jsonc` 加 `"keep_vars": true`（vTaiwan-hono 就有這一行，本專案沒有）。用 `wrangler secret put` 設的機密不寫在設定檔裡，不受這條規則影響——這也是建議走 secret 的原因之一。
 
+### 1.4 事實查核 Service Binding
+
+`FACT_CHECK_CORE` 綁到同一個 Cloudflare 帳號內的 Worker `fact-check-core`。核心 Worker 必須先部署，並維持 `workers_dev: false`、不配置公開 route；Civic Talk 透過 Service Binding 呼叫其 `POST /fact-check`。
+
+- 不需要設定 `CIVIC_TALK_API_KEY` 或其他 shared secret；Service Binding 本身就是呼叫核心 Worker 的 capability。
+- 瀏覽器只呼叫同源 `POST /api/fact-check`，登入與停權檢查留在 Civic Talk，session cookie 不會轉送給核心。
+- 本機要連已部署的核心 Worker，使用 `vp run dev:remote`；一般 `vp run dev` 關閉 remote bindings。
+
 ---
 
 ## 2. 絕對不要做的事
@@ -134,6 +142,8 @@ vp run deploy    # = vp run build + wrangler deploy
 | `GET /api/admin/stats`（未登入） | 401                                                                             | 2026-08-11 |
 | `GET /index.html`                | 301 → `/`                                                                       | 2026-08-11 |
 | `GET /privacy`、`GET /terms`     | 200                                                                             | 2026-08-11 |
+| `POST /api/fact-check`（未登入） | 401，且不呼叫 `fact-check-core`                                                 | —          |
+| 登入後執行素材事實查核           | 200；回應保留 `X-Request-Id`、`X-Fact-Check-Cache` 與 `Cache-Control: no-store` | —          |
 | `GET /issue.html?id=1`           | 302 → `/issues/1`                                                               | —          |
 | 瀏覽器開 `/admin`                | 顯示 Google／GitHub 登入卡片                                                    | 2026-08-11 |
 | 用 Google 登入                   | 導回 `/admin`；角色是 `admin`／`super-admin` 就進後台，否則顯示「沒有管理權限」 | 2026-08-11 |
