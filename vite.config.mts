@@ -4,6 +4,10 @@ import vue from '@vitejs/plugin-vue'
 import * as vueCompiler from '@vue/compiler-sfc'
 
 export default defineConfig(({ mode }) => ({
+  server: {
+    // 不讓 dev server 代替 Worker 回 CORS，確保本機與正式路由行為一致。
+    cors: false,
+  },
   fmt: {
     semi: false,
     singleQuote: true,

@@ -21,33 +21,29 @@ import { TERMS_VERSION } from '../legal/terms'
 import { moderationReasonForPolicy, moderateSubmission, moderateSubmissionWithDiagnostics, type ModerationDecision, type ModerationSubmission } from '../moderation/service'
 import type { App, AppBindings } from './types'
 
-// 公開讀取端點維持開放跨來源；管理端則刻意「不可跨來源」——
-// 授權改看 cookie session 之後，我們不回 Access-Control-Allow-Credentials，
-// 所以瀏覽器不會把帶憑證的跨來源回應暴露給呼叫端。但 CORS 不保證請求
-// 本身永遠不會送出；必須同源的高成本端點另外在 server 端驗證 Origin。
-const CORS_HEADERS: Record<string, string> = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
-}
-
-function withCors(res: Response): Response {
-  const headers = new Headers(res.headers)
-  for (const [k, v] of Object.entries(CORS_HEADERS)) headers.set(k, v)
-  return new Response(res.body, { status: res.status, statusText: res.statusText, headers })
-}
-
 function json(data: unknown, status = 200): Response {
-  return withCors(
-    new Response(JSON.stringify(data), {
-      status,
-      headers: { 'Content-Type': 'application/json' },
-    })
-  )
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  })
+}
+
+/** 公開唯讀資料允許第三方瀏覽器取用；不開 credentials，也不套用到登入或管理端資料。 */
+function publicJson(data: unknown, status = 200): Response {
+  const response = json(data, status)
+  response.headers.set('Access-Control-Allow-Origin', '*')
+  response.headers.set('Cache-Control', 'private, no-store')
+  response.headers.set('X-Content-Type-Options', 'nosniff')
+  response.headers.set('Vary', 'Cookie')
+  return response
 }
 
 function error(msg: string, status = 400): Response {
   return json({ error: msg }, status)
+}
+
+function publicError(msg: string, status = 400): Response {
+  return publicJson({ error: msg }, status)
 }
 
 function factCheckUnavailable(): Response {
@@ -65,35 +61,6 @@ function factCheckUnavailable(): Response {
       },
     }
   )
-}
-
-function factCheckSameOriginDenied(): Response {
-  return new Response(JSON.stringify({ error: 'Forbidden: same-origin request required' }), {
-    status: 403,
-    headers: {
-      'Content-Type': 'application/json; charset=UTF-8',
-      'Cache-Control': 'no-store',
-    },
-  })
-}
-
-/**
- * Fact-check 會消耗核心 Worker 與外部查核資源，只供 Civic Talk 同源前端使用。
- *
- * SameSite cookie 只區分 site，不區分 sibling subdomain 的 origin；CORS 也主要
- * 控制回應能否被讀取，不能取代 server-side 來源驗證。因此這裡同時要求：
- * - Origin 必須存在且與目標 origin 完全一致；
- * - 瀏覽器有送 Sec-Fetch-Site 時只接受 same-origin。
- *
- * 這支 API 沒有 server-to-server 或第三方 client 契約，所以缺 Origin 時 fail closed。
- */
-function requireFactCheckSameOrigin(request: Request): Response | null {
-  const origin = request.headers.get('Origin')
-  if (origin !== new URL(request.url).origin) return factCheckSameOriginDenied()
-
-  const fetchSite = request.headers.get('Sec-Fetch-Site')
-  if (fetchSite !== null && fetchSite !== 'same-origin') return factCheckSameOriginDenied()
-  return null
 }
 
 /**
@@ -267,18 +234,10 @@ async function recordModerationViolation(
 }
 
 export function registerApiRoutes(app: App): void {
-  // Same-origin 請求不需要 preflight。先於萬用 /api/* OPTIONS 註冊，
-  // 避免跨來源呼叫者得到允許 fact-check 的 CORS 回應。
-  app.options('/api/fact-check', c => requireFactCheckSameOrigin(c.req.raw) ?? new Response(null, { status: 204 }))
-  app.options('/api/*', () => withCors(new Response(null, { status: 204 })))
-
   // 瀏覽器只呼叫同源 Civic Talk API；真正的查核核心沒有公開 route，改由
   // Cloudflare Service Binding 直接轉送。Service Binding 本身就是對核心 Worker 的
   // capability，因此不另發前端 token，也不把 Cookie／Authorization 轉交給核心。
   app.post('/api/fact-check', async c => {
-    const sameOriginDenied = requireFactCheckSameOrigin(c.req.raw)
-    if (sameOriginDenied) return sameOriginDenied
-
     const auth = await requireUser(c.req.raw, c.env)
     if ('denied' in auth) return auth.denied
 
@@ -339,9 +298,7 @@ export function registerApiRoutes(app: App): void {
   app.get('/api/issues', async c => {
     const context = await tryGetAuthContext(c.env, c.req.raw.headers)
     const issues: IssueListItem[] | IssueListItemWithAuthor[] = canReadAdminSnapshots(context) ? await db.listIssuesWithAuthor(c.env.DB) : await db.listIssues(c.env.DB)
-    const res = json(issues)
-    res.headers.set('Vary', 'Cookie')
-    return res
+    return publicJson(issues)
   })
 
   // 建立議題同樣需要登入（#9 的延伸，使用者裁示）：議題是所有素材與意見的容器，
@@ -413,10 +370,10 @@ export function registerApiRoutes(app: App): void {
 
   app.get('/api/issues/:id', async c => {
     const id = parseId(c.req.param('id'))
-    if (!id) return error('Invalid id')
+    if (!id) return publicError('Invalid id')
     const detail = await db.getIssueDetail(c.env.DB, id)
-    if (!detail) return error('Issue not found', 404)
-    return json(detail)
+    if (!detail) return publicError('Issue not found', 404)
+    return publicJson(detail)
   })
 
   app.put('/api/issues/:id', async c => {
@@ -459,15 +416,10 @@ export function registerApiRoutes(app: App): void {
   // 一般讀取公開顯示名稱與 opt-in email；管理員另拿完整快照與條款同意記錄。
   app.get('/api/issues/:id/materials', async c => {
     const id = parseId(c.req.param('id'))
-    if (!id) return error('Invalid id')
+    if (!id) return publicError('Invalid id')
     const context = await tryGetAuthContext(c.env, c.req.raw.headers)
     const materials: Material[] | MaterialWithAuthor[] = canReadAdminSnapshots(context) ? await db.listMaterialsWithAuthor(c.env.DB, id) : await db.listMaterials(c.env.DB, id)
-    const res = json(materials)
-    // 回應內容依 cookie（登入身分）而異——標 Vary 讓任何快取層不會把管理員版本
-    // 餵給一般讀者。目前 Worker 回應沒設 Cache-Control 所以不會被邊緣快取，
-    // 這是「靠設計成立」而非「靠沒設定成立」。
-    res.headers.set('Vary', 'Cookie')
-    return res
+    return publicJson(materials)
   })
 
   // #9：素材投稿必須登入（品質把關 + 濫用時可追溯）。這是不變量 5 的授權例外之一，
@@ -528,12 +480,10 @@ export function registerApiRoutes(app: App): void {
 
   app.get('/api/issues/:id/briefing', async c => {
     const id = parseId(c.req.param('id'))
-    if (!id) return error('Invalid id')
+    if (!id) return publicError('Invalid id')
     const context = await tryGetAuthContext(c.env, c.req.raw.headers)
     const briefing: Briefing | BriefingWithAuthor | null = canReadAdminSnapshots(context) ? await db.getLatestBriefingWithAuthor(c.env.DB, id) : await db.getLatestBriefing(c.env.DB, id)
-    const res = json(briefing)
-    res.headers.set('Vary', 'Cookie')
-    return res
+    return publicJson(briefing)
   })
 
   app.post('/api/issues/:id/briefing', async c => {
@@ -613,12 +563,10 @@ export function registerApiRoutes(app: App): void {
   // 一般讀取公開顯示名稱與 opt-in email；管理員另拿完整快照與條款同意記錄。
   app.get('/api/issues/:id/opinions', async c => {
     const id = parseId(c.req.param('id'))
-    if (!id) return error('Invalid id')
+    if (!id) return publicError('Invalid id')
     const context = await tryGetAuthContext(c.env, c.req.raw.headers)
     const opinions: Opinion[] | OpinionWithAuthor[] = canReadAdminSnapshots(context) ? await db.listOpinionsWithAuthor(c.env.DB, id) : await db.listOpinions(c.env.DB, id)
-    const res = json(opinions)
-    res.headers.set('Vary', 'Cookie')
-    return res
+    return publicJson(opinions)
   })
 
   // 意見投稿同樣需要登入（#9 的延伸，使用者裁示），並記錄完整作者快照以便問責。
@@ -983,4 +931,6 @@ export function registerApiRoutes(app: App): void {
 
     return json({ ok: true })
   })
+
+  app.all('/api/*', () => error('Not found', 404))
 }
