@@ -245,7 +245,7 @@ Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑�
 - **`/api/me` 只回 `role`，不要複製 vTaiwan 的 `permissions`。** vTaiwan-hono 的 `Permission` 詞彙是 `meeting.join`／`meeting.moderate`／`transcription.update`／`topic.manage`——全是它的業務語彙，搬過來只會是四個永遠用不到的字串。Civic Talk 一律用 `isAdminRole()` 判角色；真的需要更細的權限模型，**先問使用者**再定義本站自己的詞彙。
 - **`/api/auth/admin/*` 是 `/api/auth/*` 整段轉交的唯一例外**——見「身分驗證與權限」的角色制 Admin 條目。
 - **`POST /api/admin/login` 廢除**：改角色制後這支沒有意義。**不要靜默移除**——同一批改動裡把 `src/views/Admin.vue` 的密碼登入 UI 一併換掉，確認前端不再呼叫後才刪路由；`ADMIN_PASSWORD` 與 `checkAdmin()` 同批清乾淨，別留半套（一半看 token、一半看角色）的授權路徑。
-- **API 不依賴 CORS 做存取控制**：`src/api/routes.ts` 不得輸出 `Access-Control-Allow-Credentials`，也不得對管理端或寫入端點輸出 `Access-Control-Allow-*`。公開唯讀端點可輸出 `Access-Control-Allow-Origin: *`，供第三方瀏覽器取用公開資料。CORS 只限制瀏覽器**讀取**跨源回應，擋不住不需 preflight 的簡單請求送達伺服器。
+- **API 不依賴 CORS 做存取控制**：`src/api/routes.ts` 不得輸出 `Access-Control-Allow-Credentials`，也不得對管理端或寫入端點輸出 `Access-Control-Allow-*`。公開唯讀端點可輸出 `Access-Control-Allow-Origin: *`，供第三方瀏覽器取用公開資料，但必須同時輸出 `Cache-Control: private, no-store`、`X-Content-Type-Options: nosniff` 與 `Vary: Cookie`，避免公開／管理員投影被快取混用。CORS 只限制瀏覽器**讀取**跨源回應，擋不住不需 preflight 的簡單請求送達伺服器。
 - **跨站／跨子網域寫入防護由 `/api/*` 的 `hono/csrf` 中介層負責**（`src/index.ts`，必須註冊在所有 `/api` 路由之前），與 `../vTaiwan-hono` 一致。🚫 不得改成逐端點自行檢查 `Origin`，也不得移除這層中介層——session cookie 是 `SameSite=Lax`，同站 sibling origin（`*.vtaiwan.tw`）的簡單請求會帶著 cookie 抵達。
 - 登入、停權、角色守衛回答的是「**是哪位使用者**」，csrf 回答的是「**請求是不是本站頁面發起**」，兩者不可互相取代。
 

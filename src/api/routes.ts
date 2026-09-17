@@ -32,6 +32,9 @@ function json(data: unknown, status = 200): Response {
 function publicJson(data: unknown, status = 200): Response {
   const response = json(data, status)
   response.headers.set('Access-Control-Allow-Origin', '*')
+  response.headers.set('Cache-Control', 'private, no-store')
+  response.headers.set('X-Content-Type-Options', 'nosniff')
+  response.headers.set('Vary', 'Cookie')
   return response
 }
 
@@ -295,9 +298,7 @@ export function registerApiRoutes(app: App): void {
   app.get('/api/issues', async c => {
     const context = await tryGetAuthContext(c.env, c.req.raw.headers)
     const issues: IssueListItem[] | IssueListItemWithAuthor[] = canReadAdminSnapshots(context) ? await db.listIssuesWithAuthor(c.env.DB) : await db.listIssues(c.env.DB)
-    const res = publicJson(issues)
-    res.headers.set('Vary', 'Cookie')
-    return res
+    return publicJson(issues)
   })
 
   // 建立議題同樣需要登入（#9 的延伸，使用者裁示）：議題是所有素材與意見的容器，
@@ -418,12 +419,7 @@ export function registerApiRoutes(app: App): void {
     if (!id) return publicError('Invalid id')
     const context = await tryGetAuthContext(c.env, c.req.raw.headers)
     const materials: Material[] | MaterialWithAuthor[] = canReadAdminSnapshots(context) ? await db.listMaterialsWithAuthor(c.env.DB, id) : await db.listMaterials(c.env.DB, id)
-    const res = publicJson(materials)
-    // 回應內容依 cookie（登入身分）而異——標 Vary 讓任何快取層不會把管理員版本
-    // 餵給一般讀者。目前 Worker 回應沒設 Cache-Control 所以不會被邊緣快取，
-    // 這是「靠設計成立」而非「靠沒設定成立」。
-    res.headers.set('Vary', 'Cookie')
-    return res
+    return publicJson(materials)
   })
 
   // #9：素材投稿必須登入（品質把關 + 濫用時可追溯）。這是不變量 5 的授權例外之一，
@@ -487,9 +483,7 @@ export function registerApiRoutes(app: App): void {
     if (!id) return publicError('Invalid id')
     const context = await tryGetAuthContext(c.env, c.req.raw.headers)
     const briefing: Briefing | BriefingWithAuthor | null = canReadAdminSnapshots(context) ? await db.getLatestBriefingWithAuthor(c.env.DB, id) : await db.getLatestBriefing(c.env.DB, id)
-    const res = publicJson(briefing)
-    res.headers.set('Vary', 'Cookie')
-    return res
+    return publicJson(briefing)
   })
 
   app.post('/api/issues/:id/briefing', async c => {
@@ -572,9 +566,7 @@ export function registerApiRoutes(app: App): void {
     if (!id) return publicError('Invalid id')
     const context = await tryGetAuthContext(c.env, c.req.raw.headers)
     const opinions: Opinion[] | OpinionWithAuthor[] = canReadAdminSnapshots(context) ? await db.listOpinionsWithAuthor(c.env.DB, id) : await db.listOpinions(c.env.DB, id)
-    const res = publicJson(opinions)
-    res.headers.set('Vary', 'Cookie')
-    return res
+    return publicJson(opinions)
   })
 
   // 意見投稿同樣需要登入（#9 的延伸，使用者裁示），並記錄完整作者快照以便問責。

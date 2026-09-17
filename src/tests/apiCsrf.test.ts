@@ -166,6 +166,9 @@ describe('公開 GET CORS 邊界', () => {
       expect(response.status).toBe(status)
       expect(response.headers.get('Access-Control-Allow-Origin')).toBe('*')
       expect(response.headers.get('Access-Control-Allow-Credentials')).toBeNull()
+      expect(response.headers.get('Cache-Control')).toBe('private, no-store')
+      expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff')
+      expect(response.headers.get('Vary')).toBe('Cookie')
     })
   }
 
