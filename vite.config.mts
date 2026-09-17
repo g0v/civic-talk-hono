@@ -4,6 +4,9 @@ import vue from '@vitejs/plugin-vue'
 import * as vueCompiler from '@vue/compiler-sfc'
 
 export default defineConfig(({ mode }) => ({
+  server: {
+    cors: false
+  },
   fmt: {
     semi: false,
     singleQuote: true,

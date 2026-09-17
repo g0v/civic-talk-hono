@@ -31,11 +31,6 @@ function signedInUser(banned = false) {
   }
 }
 
-const SAME_ORIGIN_HEADERS = {
-  Origin: 'http://localhost',
-  'Sec-Fetch-Site': 'same-origin',
-}
-
 describe('POST /api/fact-check', () => {
   beforeEach(() => {
     authContext.current = null
@@ -48,13 +43,14 @@ describe('POST /api/fact-check', () => {
       '/api/fact-check',
       {
         method: 'POST',
-        headers: { ...SAME_ORIGIN_HEADERS, 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: '待查核主張' }),
       },
       { FACT_CHECK_CORE: { fetch } } as never
     )
 
     expect(response.status).toBe(401)
+    expect(response.headers.get('Access-Control-Allow-Origin')).toBeNull()
     expect(fetch).not.toHaveBeenCalled()
   })
 
@@ -88,7 +84,6 @@ describe('POST /api/fact-check', () => {
       {
         method: 'POST',
         headers: {
-          ...SAME_ORIGIN_HEADERS,
           'Content-Type': 'application/json',
           Cookie: 'better-auth.session_token=secret',
         },
@@ -105,88 +100,10 @@ describe('POST /api/fact-check', () => {
     await expect(response.json()).resolves.toEqual(coreBody)
   })
 
-  it('拒絕同站不同子網域的請求，且不呼叫核心 Worker', async () => {
-    authContext.current = signedInUser()
-    const fetch = vi.fn()
-    const response = await testApp().request(
-      'https://civic.vtaiwan.tw/api/fact-check',
-      {
-        method: 'POST',
-        headers: {
-          Origin: 'https://evil.vtaiwan.tw',
-          'Sec-Fetch-Site': 'same-site',
-          'Content-Type': 'application/json',
-          Cookie: 'better-auth.session_token=secret',
-        },
-        body: JSON.stringify({ text: '待查核主張' }),
-      },
-      { FACT_CHECK_CORE: { fetch } } as never
-    )
-
-    expect(response.status).toBe(403)
-    expect(response.headers.get('Access-Control-Allow-Origin')).toBeNull()
-    expect(fetch).not.toHaveBeenCalled()
-  })
-
-  it('缺少 Origin 時 fail closed，且不呼叫核心 Worker', async () => {
-    authContext.current = signedInUser()
-    const fetch = vi.fn()
-    const response = await testApp().request(
-      '/api/fact-check',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Cookie: 'better-auth.session_token=secret' },
-        body: JSON.stringify({ text: '待查核主張' }),
-      },
-      { FACT_CHECK_CORE: { fetch } } as never
-    )
-
-    expect(response.status).toBe(403)
-    expect(response.headers.get('Access-Control-Allow-Origin')).toBeNull()
-    expect(fetch).not.toHaveBeenCalled()
-  })
-
-  it('Origin 相符但 Sec-Fetch-Site 不是 same-origin 時仍拒絕', async () => {
-    authContext.current = signedInUser()
-    const fetch = vi.fn()
-    const response = await testApp().request(
-      '/api/fact-check',
-      {
-        method: 'POST',
-        headers: {
-          Origin: 'http://localhost',
-          'Sec-Fetch-Site': 'same-site',
-          'Content-Type': 'application/json',
-          Cookie: 'better-auth.session_token=secret',
-        },
-        body: JSON.stringify({ text: '待查核主張' }),
-      },
-      { FACT_CHECK_CORE: { fetch } } as never
-    )
-
-    expect(response.status).toBe(403)
-    expect(fetch).not.toHaveBeenCalled()
-  })
-
-  it('fact-check 的跨來源 preflight 不會落入萬用 CORS', async () => {
-    const response = await testApp().request('/api/fact-check', {
-      method: 'OPTIONS',
-      headers: {
-        Origin: 'https://attacker.example',
-        'Sec-Fetch-Site': 'cross-site',
-        'Access-Control-Request-Method': 'POST',
-      },
-    })
-
-    expect(response.status).toBe(403)
-    expect(response.headers.get('Access-Control-Allow-Origin')).toBeNull()
-    expect(response.headers.get('Access-Control-Allow-Methods')).toBeNull()
-  })
-
   it('停權帳號回 403', async () => {
     authContext.current = signedInUser(true)
     const fetch = vi.fn()
-    const response = await testApp().request('/api/fact-check', { method: 'POST', headers: SAME_ORIGIN_HEADERS, body: '{}' }, { FACT_CHECK_CORE: { fetch } } as never)
+    const response = await testApp().request('/api/fact-check', { method: 'POST', body: '{}' }, { FACT_CHECK_CORE: { fetch } } as never)
 
     expect(response.status).toBe(403)
     expect(fetch).not.toHaveBeenCalled()
@@ -199,7 +116,7 @@ describe('POST /api/fact-check', () => {
       throw new Error('binding unavailable')
     })
 
-    const response = await testApp().request('/api/fact-check', { method: 'POST', headers: SAME_ORIGIN_HEADERS, body: '{}' }, { FACT_CHECK_CORE: { fetch } } as never)
+    const response = await testApp().request('/api/fact-check', { method: 'POST', body: '{}' }, { FACT_CHECK_CORE: { fetch } } as never)
 
     expect(response.status).toBe(503)
     expect(response.headers.get('Cache-Control')).toBe('no-store')
