@@ -28,8 +28,19 @@ function json(data: unknown, status = 200): Response {
   })
 }
 
+/** 公開唯讀資料允許第三方瀏覽器取用；不開 credentials，也不套用到登入或管理端資料。 */
+function publicJson(data: unknown, status = 200): Response {
+  const response = json(data, status)
+  response.headers.set('Access-Control-Allow-Origin', '*')
+  return response
+}
+
 function error(msg: string, status = 400): Response {
   return json({ error: msg }, status)
+}
+
+function publicError(msg: string, status = 400): Response {
+  return publicJson({ error: msg }, status)
 }
 
 function factCheckUnavailable(): Response {
@@ -284,7 +295,7 @@ export function registerApiRoutes(app: App): void {
   app.get('/api/issues', async c => {
     const context = await tryGetAuthContext(c.env, c.req.raw.headers)
     const issues: IssueListItem[] | IssueListItemWithAuthor[] = canReadAdminSnapshots(context) ? await db.listIssuesWithAuthor(c.env.DB) : await db.listIssues(c.env.DB)
-    const res = json(issues)
+    const res = publicJson(issues)
     res.headers.set('Vary', 'Cookie')
     return res
   })
@@ -358,10 +369,10 @@ export function registerApiRoutes(app: App): void {
 
   app.get('/api/issues/:id', async c => {
     const id = parseId(c.req.param('id'))
-    if (!id) return error('Invalid id')
+    if (!id) return publicError('Invalid id')
     const detail = await db.getIssueDetail(c.env.DB, id)
-    if (!detail) return error('Issue not found', 404)
-    return json(detail)
+    if (!detail) return publicError('Issue not found', 404)
+    return publicJson(detail)
   })
 
   app.put('/api/issues/:id', async c => {
@@ -404,10 +415,10 @@ export function registerApiRoutes(app: App): void {
   // 一般讀取公開顯示名稱與 opt-in email；管理員另拿完整快照與條款同意記錄。
   app.get('/api/issues/:id/materials', async c => {
     const id = parseId(c.req.param('id'))
-    if (!id) return error('Invalid id')
+    if (!id) return publicError('Invalid id')
     const context = await tryGetAuthContext(c.env, c.req.raw.headers)
     const materials: Material[] | MaterialWithAuthor[] = canReadAdminSnapshots(context) ? await db.listMaterialsWithAuthor(c.env.DB, id) : await db.listMaterials(c.env.DB, id)
-    const res = json(materials)
+    const res = publicJson(materials)
     // 回應內容依 cookie（登入身分）而異——標 Vary 讓任何快取層不會把管理員版本
     // 餵給一般讀者。目前 Worker 回應沒設 Cache-Control 所以不會被邊緣快取，
     // 這是「靠設計成立」而非「靠沒設定成立」。
@@ -473,10 +484,10 @@ export function registerApiRoutes(app: App): void {
 
   app.get('/api/issues/:id/briefing', async c => {
     const id = parseId(c.req.param('id'))
-    if (!id) return error('Invalid id')
+    if (!id) return publicError('Invalid id')
     const context = await tryGetAuthContext(c.env, c.req.raw.headers)
     const briefing: Briefing | BriefingWithAuthor | null = canReadAdminSnapshots(context) ? await db.getLatestBriefingWithAuthor(c.env.DB, id) : await db.getLatestBriefing(c.env.DB, id)
-    const res = json(briefing)
+    const res = publicJson(briefing)
     res.headers.set('Vary', 'Cookie')
     return res
   })
@@ -558,10 +569,10 @@ export function registerApiRoutes(app: App): void {
   // 一般讀取公開顯示名稱與 opt-in email；管理員另拿完整快照與條款同意記錄。
   app.get('/api/issues/:id/opinions', async c => {
     const id = parseId(c.req.param('id'))
-    if (!id) return error('Invalid id')
+    if (!id) return publicError('Invalid id')
     const context = await tryGetAuthContext(c.env, c.req.raw.headers)
     const opinions: Opinion[] | OpinionWithAuthor[] = canReadAdminSnapshots(context) ? await db.listOpinionsWithAuthor(c.env.DB, id) : await db.listOpinions(c.env.DB, id)
-    const res = json(opinions)
+    const res = publicJson(opinions)
     res.headers.set('Vary', 'Cookie')
     return res
   })
@@ -929,5 +940,5 @@ export function registerApiRoutes(app: App): void {
     return json({ ok: true })
   })
 
-  app.all('/api/*', c => c.notFound())
+  app.all('/api/*', () => error('Not found', 404))
 }

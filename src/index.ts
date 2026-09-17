@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { registerApiRoutes } from './api/routes'
 import { registerAuthRoutes } from './api/auth'
+import { apiCsrf } from './api/csrf'
 import type { AppBindings } from './api/types'
 import { listIssues, getIssue, getIssueDetail, getMaterialWithIssue, getOpinionWithIssue } from './db/queries'
 import { handleRss } from './rss'
@@ -40,7 +41,11 @@ async function notFoundHtml(origin: string): Promise<string> {
   })
 }
 
-// 先掛 auth：/api/auth/* 與 /api/me 要在 registerApiRoutes 的 /api/* 泛用處理之前命中
+// ⚠️ 必須先於所有 /api 路由註冊。Hono 依註冊順序組 handler chain；若寫在後面，
+// 已註冊的路由回應後便不會進入這層，跨站寫入防護會靜默失效。
+app.use('/api/*', apiCsrf)
+
+// 先掛 auth：/api/auth/* 與 /api/me 要在 registerApiRoutes 的 /api/* 泛用處理之前命中。
 registerAuthRoutes(app)
 registerApiRoutes(app)
 
