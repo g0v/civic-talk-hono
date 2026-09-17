@@ -2,6 +2,7 @@ export const messages = {
   site_tagline: 'Public Deliberation Platform',
   back_to_issues: '← All Issues',
   loading: 'Loading…',
+  submitting_pending: 'Processing, please wait…',
   cancel: 'Cancel',
   save: 'Save',
   delete: 'Delete',

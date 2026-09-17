@@ -2,6 +2,8 @@ export const messages = {
   site_tagline: '公共議題審議平台',
   back_to_issues: '← 所有議題',
   loading: '載入中…',
+  // 送出鈕在請求進行中的共用文案（#97）
+  submitting_pending: '資料處理中，請稍候…',
   cancel: '取消',
   save: '儲存',
   delete: '刪除',

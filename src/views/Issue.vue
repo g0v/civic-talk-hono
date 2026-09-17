@@ -9,6 +9,7 @@ import StatusBadge from '../components/StatusBadge.vue'
 import Toast from '../components/Toast.vue'
 import ModerationAppealNotice from '../components/ModerationAppealNotice.vue'
 import { useAuth } from '../composables/useAuth'
+import { useSubmitGuard } from '../composables/useSubmitGuard'
 import type { Briefing, Issue, Material, Opinion } from '../db/queries'
 import { formatDate, useI18n } from '../l10n'
 import { renderSafeMarkdown } from '../markdown/renderSafeMarkdown'
@@ -62,6 +63,8 @@ const disputes = ref('')
 const positions = ref('')
 const narrative = ref('')
 const opinionInput = ref('')
+// 送出防重入（#97）：意見送出請求進行中，重複點擊直接忽略
+const { pending: opinionSubmitting, run: runOpinionSubmit } = useSubmitGuard()
 // ToS 同意 checkbox（#27）
 const opinionTosAgreed = ref(false)
 // Email 公開選項（#27）
@@ -810,8 +813,8 @@ async function submitOpinion() {
                     >
                   </label>
                 </div>
-                <button type="button" class="btn btn-primary" @click="submitOpinion">
-                  {{ t('op_submit_btn') }}
+                <button type="button" class="btn btn-primary" :disabled="opinionSubmitting" @click="runOpinionSubmit(submitOpinion)">
+                  {{ opinionSubmitting ? t('submitting_pending') : t('op_submit_btn') }}
                 </button>
               </template>
             </div>
