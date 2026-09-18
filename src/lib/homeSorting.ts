@@ -3,9 +3,8 @@
  * 只做純資料運算，不碰任何瀏覽器 API（SSR 安全）。
  */
 import type { IssueListItem, IssueStatus } from '../db/queries'
+import type { ViewerRole } from '../composables/useViewerRole'
 
-/** 檢視者角色：公民（預設）看不到「素材收集中」的議題；志願者看得到全部 */
-export type ViewerRole = 'citizen' | 'volunteer'
 export type SortOrder = 'newest' | 'most' | 'least'
 
 /**

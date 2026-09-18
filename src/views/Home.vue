@@ -8,8 +8,9 @@ import Toast from '../components/Toast.vue'
 import ModerationAppealNotice from '../components/ModerationAppealNotice.vue'
 import { useI18n } from '../l10n'
 import { useAuth } from '../composables/useAuth'
+import { useViewerRole } from '../composables/useViewerRole'
 import type { IssueListItem } from '../db/queries'
-import { filterAndSortHomeIssues, type SortOrder, type ViewerRole } from '../lib/homeSorting'
+import { filterAndSortHomeIssues, type SortOrder } from '../lib/homeSorting'
 
 const props = defineProps<{
   initialIssues?: IssueListItem[]
@@ -35,8 +36,8 @@ const moderationNotice = ref<{ appealType: 'rejected_submission' | 'account_ban'
 
 const searchQuery = ref('')
 const sortOrder = ref<SortOrder>('newest')
-// 檢視者角色（#77、#90）：citizen（預設）不顯示素材收集中的議題，依「已發佈 → 彙整中」排序；volunteer 顯示全部，依「彙整中 → 素材收集中 → 已發佈」排序
-const viewerRole = ref<ViewerRole>('citizen')
+// 全站檢視角色（#77、#90、#99）：navbar 切換後，首頁清單立即依角色更新。
+const { viewerRole } = useViewerRole()
 
 // 建立議題表單：標題相近的既有議題提示（僅供參考，不擋送出、不做審核判斷，見 #36）
 const similarIssues = computed(() => {
@@ -241,12 +242,6 @@ async function copyRssUrl() {
             class="flex-1 min-w-40 rounded border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-vt-democratic-red/40"
             :placeholder="t('idx_search_ph')"
           />
-          <div class="flex items-center gap-1 shrink-0">
-            <span class="text-sm text-muted">{{ t('idx_role_label') }}</span>
-            <button v-for="r in ['citizen', 'volunteer'] as const" :key="r" type="button" class="btn btn-sm" :class="viewerRole === r ? 'btn-primary' : 'btn-secondary'" @click="viewerRole = r">
-              {{ t(r === 'citizen' ? 'idx_role_citizen' : 'idx_role_volunteer') }}
-            </button>
-          </div>
           <div class="flex gap-1 shrink-0">
             <button v-for="s in ['newest', 'most', 'least'] as const" :key="s" type="button" class="btn btn-sm" :class="sortOrder === s ? 'btn-primary' : 'btn-secondary'" @click="sortOrder = s">
               {{ t(s === 'newest' ? 'idx_sort_newest' : s === 'most' ? 'idx_sort_most' : 'idx_sort_least') }}

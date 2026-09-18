@@ -564,6 +564,9 @@
   .gap-1 {
     gap: var(--spacing);
   }
+  .gap-1\.5 {
+    gap: calc(var(--spacing) * 1.5);
+  }
   .gap-2 {
     gap: calc(var(--spacing) * 2);
   }
@@ -662,11 +665,17 @@
       border-color: color-mix(in oklab, var(--color-teal) 20%, transparent);
     }
   }
+  .border-vt-border {
+    border-color: var(--color-vt-border);
+  }
   .border-vt-border\/75 {
     border-color: color-mix(in srgb, #e0e0e0 75%, transparent);
     @supports (color: color-mix(in lab, red, red)) {
       border-color: color-mix(in oklab, var(--color-vt-border) 75%, transparent);
     }
+  }
+  .border-vt-democratic-red {
+    border-color: var(--color-vt-democratic-red);
   }
   .bg-amber-100 {
     background-color: var(--color-amber-100);
@@ -715,6 +724,9 @@
   }
   .bg-vt-border {
     background-color: var(--color-vt-border);
+  }
+  .bg-vt-democratic-red {
+    background-color: var(--color-vt-democratic-red);
   }
   .fill-amber {
     fill: var(--color-amber);
@@ -769,6 +781,12 @@
   }
   .p-4 {
     padding: calc(var(--spacing) * 4);
+  }
+  .px-1\.5 {
+    padding-inline: calc(var(--spacing) * 1.5);
+  }
+  .px-2\.5 {
+    padding-inline: calc(var(--spacing) * 2.5);
   }
   .px-3 {
     padding-inline: calc(var(--spacing) * 3);
@@ -871,6 +889,9 @@
     font-size: var(--text-xs);
     line-height: var(--tw-leading, var(--text-xs--line-height));
   }
+  .text-\[11px\] {
+    font-size: 11px;
+  }
   .text-\[13px\] {
     font-size: 13px;
   }
@@ -958,6 +979,9 @@
   .text-vt-fg-3 {
     color: var(--color-vt-fg-3);
   }
+  .text-white {
+    color: var(--color-white);
+  }
   .no-underline {
     text-decoration-line: none;
   }
@@ -985,6 +1009,11 @@
   }
   .transition {
     transition-property: color, background-color, border-color, outline-color, text-decoration-color, fill, stroke, --tw-gradient-from, --tw-gradient-via, --tw-gradient-to, opacity, box-shadow, transform, translate, scale, rotate, filter, -webkit-backdrop-filter, backdrop-filter, display, content-visibility, overlay, pointer-events;
+    transition-timing-function: var(--tw-ease, var(--default-transition-timing-function));
+    transition-duration: var(--tw-duration, var(--default-transition-duration));
+  }
+  .transition-colors {
+    transition-property: color, background-color, border-color, outline-color, text-decoration-color, fill, stroke, --tw-gradient-from, --tw-gradient-via, --tw-gradient-to;
     transition-timing-function: var(--tw-ease, var(--default-transition-timing-function));
     transition-duration: var(--tw-duration, var(--default-transition-duration));
   }
@@ -1066,13 +1095,30 @@
     --tw-outline-style: none;
     outline-style: none;
   }
+  .focus-visible\:outline-2:focus-visible {
+    outline-style: var(--tw-outline-style);
+    outline-width: 2px;
+  }
+  .focus-visible\:outline-offset-2:focus-visible {
+    outline-offset: 2px;
+  }
+  .focus-visible\:outline-vt-democratic-red:focus-visible {
+    outline-color: var(--color-vt-democratic-red);
+  }
   @media (width >= 40rem) {
     .sm\:grid-cols-2 {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
+    .sm\:px-2 {
+      padding-inline: calc(var(--spacing) * 2);
+    }
     .sm\:text-sm {
       font-size: var(--text-sm);
       line-height: var(--tw-leading, var(--text-sm--line-height));
+    }
+    .sm\:text-xs {
+      font-size: var(--text-xs);
+      line-height: var(--tw-leading, var(--text-xs--line-height));
     }
   }
   @media (width >= 48rem) {
@@ -1867,6 +1913,11 @@ html.dark .alert-warn {
   initial-value: "";
   inherits: false;
 }
+@property --tw-outline-style {
+  syntax: "*";
+  inherits: false;
+  initial-value: solid;
+}
 @keyframes pulse {
   50% {
     opacity: 0.5;
@@ -1909,6 +1960,7 @@ html.dark .alert-warn {
       --tw-backdrop-saturate: initial;
       --tw-backdrop-sepia: initial;
       --tw-content: "";
+      --tw-outline-style: solid;
     }
   }
 }

@@ -4,8 +4,11 @@ import { useI18n, useLocaleLabel, type Locale } from '../l10n'
 import { isAdminSession } from '../client/auth-session'
 import { useAuth } from '../composables/useAuth'
 import { useDarkMode } from '../composables/useDarkMode'
+import { useViewerRole } from '../composables/useViewerRole'
 import SignInButtons from './SignInButtons.vue'
+import ViewerRoleSwitch from './ViewerRoleSwitch.vue'
 const darkMode = useDarkMode()
+const { initViewerRole } = useViewerRole()
 
 const props = withDefaults(
   defineProps<{
@@ -57,6 +60,7 @@ onMounted(() => {
   }
   ready.value = true
   darkMode.init()
+  initViewerRole()
   // 登入狀態同樣是 hydration 後才知道；useAuth 會跟頁面上的表單共用同一次 /api/me
   void ensureAuthSession()
 })
@@ -97,18 +101,19 @@ function handleNewIssue() {
         <a
           v-else
           href="/"
-          class="rounded-pill px-3 py-1.5 text-[15px] text-vt-fg-2 no-underline hover:bg-black/5 dark:hover:bg-white/10"
-          :class="{ 'font-semibold text-vt-democratic-red': current === 'home' }"
+          class="rounded-pill px-3 py-1.5 text-[15px] text-vt-fg-2 hover:bg-black/5 dark:hover:bg-white/10"
+          :class="current === 'home' ? 'font-semibold text-vt-democratic-red underline' : 'no-underline'"
         >
           {{ t('nav_issues') }}
         </a>
         <a
           href="/about"
-          class="rounded-pill px-3 py-1.5 text-[15px] text-vt-fg-2 no-underline hover:bg-black/5 dark:hover:bg-white/10"
-          :class="{ 'font-semibold text-vt-democratic-red': current === 'about' }"
+          class="rounded-pill px-3 py-1.5 text-[15px] text-vt-fg-2 hover:bg-black/5 dark:hover:bg-white/10"
+          :class="current === 'about' ? 'font-semibold text-vt-democratic-red underline' : 'no-underline'"
         >
           {{ t('nav_about') }}
         </a>
+        <ViewerRoleSwitch />
         <a
           v-if="hasAdminAccess"
           href="/admin"
@@ -193,7 +198,10 @@ function handleNewIssue() {
       </nav>
 
       <!-- ── 手機右側：avatar（已登入時）＋ 漢堡按鈕 ── -->
-      <div class="flex items-center gap-2 md:hidden">
+      <div class="flex items-center gap-1.5 md:hidden">
+        <!-- 角色會影響所有頁面的內容排序，手機版也固定顯示，不收進漢堡選單。 -->
+        <ViewerRoleSwitch compact />
+
         <!-- 已登入時在 bar 右側露出小 avatar，讓使用者知道自己有登入 -->
         <a v-if="authState === 'signed-in'" href="/profile" class="rounded-full" :title="t('profile_title')">
           <div class="avatar" aria-hidden="true">

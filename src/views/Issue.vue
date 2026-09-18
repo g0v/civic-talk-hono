@@ -10,6 +10,7 @@ import Toast from '../components/Toast.vue'
 import ModerationAppealNotice from '../components/ModerationAppealNotice.vue'
 import { useAuth } from '../composables/useAuth'
 import { useSubmitGuard } from '../composables/useSubmitGuard'
+import { useViewerRole } from '../composables/useViewerRole'
 import type { Briefing, Issue, Material, Opinion } from '../db/queries'
 import { formatDate, useI18n } from '../l10n'
 import { renderSafeMarkdown } from '../markdown/renderSafeMarkdown'
@@ -27,6 +28,7 @@ const props = defineProps<{
 }>()
 
 const { t, locale } = useI18n()
+const { viewerRole } = useViewerRole()
 const toast = ref<{ show: (msg: string) => void } | null>(null)
 
 const issue = ref<Issue | null>(props.initialDetail?.issue ?? null)
@@ -180,12 +182,15 @@ async function submitBrokenLinkReport(materialId: number) {
   }
 }
 
-const tabs = computed(() => [
-  { id: 'briefing' as const, label: t('tab_briefing') },
-  { id: 'materials' as const, label: t('tab_materials') },
-  { id: 'volunteer' as const, label: t('tab_volunteer') },
-  { id: 'opinions' as const, label: t('tab_opinions') },
-])
+const tabs = computed(() => {
+  const briefing = { id: 'briefing' as const, label: t('tab_briefing') }
+  const materials = { id: 'materials' as const, label: t('tab_materials') }
+  const volunteer = { id: 'volunteer' as const, label: t('tab_volunteer') }
+  const opinions = { id: 'opinions' as const, label: t('tab_opinions') }
+
+  // 公民優先閱讀說明與參與意見；志願者維持素材、工具優先的工作流程。
+  return viewerRole.value === 'citizen' ? [briefing, opinions, materials, volunteer] : [briefing, materials, volunteer, opinions]
+})
 
 function stanceLabel(s: string) {
   if (s === 'pro') return t('stance_pro')
