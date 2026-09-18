@@ -237,6 +237,10 @@ watch(
   }
 )
 
+watch(activeTab, () => {
+  if (typeof window !== 'undefined') window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+})
+
 function renderPolis() {
   if (typeof document === 'undefined') return
   const el = document.getElementById('polis-section')
@@ -378,7 +382,7 @@ async function submitNarrative() {
   } else toast.value?.show(t('vol_toast_save_fail'))
 }
 
-function downloadOpinionMd() {
+function buildOpinionMd(): string {
   const isEn = locale.value === 'en'
   const b = briefing.value
   const iss = issue.value
@@ -440,12 +444,29 @@ ${briefingText}
 *生成於 ${new Date().toLocaleDateString('zh-TW')}｜civic.vtaiwan.tw*
 `
 
+  return md
+}
+
+function downloadOpinionMd() {
+  const md = buildOpinionMd()
+
   const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' })
   const a = document.createElement('a')
-  a.href = URL.createObjectURL(blob)
+  const objectUrl = URL.createObjectURL(blob)
+  a.href = objectUrl
   a.download = `OPINION_${props.issueId}.md`
   a.click()
+  URL.revokeObjectURL(objectUrl)
   toast.value?.show(t('op_toast_download_ok'))
+}
+
+async function copyOpinionMd() {
+  try {
+    await navigator.clipboard.writeText(buildOpinionMd())
+    toast.value?.show(t('op_toast_copy_ok'))
+  } catch {
+    toast.value?.show(t('op_toast_copy_fail'))
+  }
 }
 
 async function submitOpinion() {
@@ -765,7 +786,10 @@ async function submitOpinion() {
           <section v-show="activeTab === 'opinions'">
             <h2 class="m-0 font-serif text-xl">{{ t('op_title') }}</h2>
             <div class="alert alert-info mb-4" v-html="t('op_alert')" />
-            <button type="button" class="btn btn-secondary btn-sm mb-6" @click="downloadOpinionMd">{{ t('op_download_btn') }}</button>
+            <div class="mb-6 flex flex-wrap gap-2">
+              <button type="button" class="btn btn-secondary btn-sm" @click="downloadOpinionMd">{{ t('op_download_btn') }}</button>
+              <button type="button" class="btn btn-secondary btn-sm" @click="copyOpinionMd">{{ t('op_copy_btn') }}</button>
+            </div>
             <div class="card mb-6">
               <h3 class="mt-0 mb-3 text-base">{{ t('op_submit_title') }}</h3>
               <template v-if="authState === 'loading'">
