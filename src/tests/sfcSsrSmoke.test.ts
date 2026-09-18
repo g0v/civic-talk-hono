@@ -10,6 +10,7 @@ import ModerationAppealNotice from '../components/ModerationAppealNotice.vue'
 import SignInButtons from '../components/SignInButtons.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import Toast from '../components/Toast.vue'
+import ViewerRoleSwitch from '../components/ViewerRoleSwitch.vue'
 import { provideI18n } from '../l10n'
 import AboutView from '../views/About.vue'
 import AdminView from '../views/Admin.vue'
@@ -146,6 +147,7 @@ describe('shared component SSR smoke tests', () => {
     { name: 'sign-in buttons', component: SignInButtons, props: { callbackUrl: '/' } },
     { name: 'status badge', component: StatusBadge, props: { status: 'collecting' } },
     { name: 'toast', component: Toast },
+    { name: 'viewer role switch', component: ViewerRoleSwitch },
   ]
 
   for (const testCase of cases) {
@@ -154,6 +156,24 @@ describe('shared component SSR smoke tests', () => {
       expect(html.length).toBeGreaterThan(0)
     })
   }
+})
+
+describe('desktop navbar current route', () => {
+  it('underlines the active issues/about link and leaves the other link without an underline', async () => {
+    const homeHtml = await render(AppHeader, { current: 'home' })
+    const homeIssuesLink = homeHtml.match(/<a href="\/" class="([^"]*)"[^>]*>\s*所有議題/)?.[1] ?? ''
+    const homeAboutLink = homeHtml.match(/<a href="\/about" class="([^"]*)"[^>]*>\s*關於/)?.[1] ?? ''
+    expect(homeIssuesLink.split(' ')).toContain('underline')
+    expect(homeIssuesLink.split(' ')).not.toContain('no-underline')
+    expect(homeAboutLink.split(' ')).toContain('no-underline')
+
+    const aboutHtml = await render(AppHeader, { current: 'about' })
+    const aboutIssuesLink = aboutHtml.match(/<a href="\/" class="([^"]*)"[^>]*>\s*所有議題/)?.[1] ?? ''
+    const aboutLink = aboutHtml.match(/<a href="\/about" class="([^"]*)"[^>]*>\s*關於/)?.[1] ?? ''
+    expect(aboutIssuesLink.split(' ')).toContain('no-underline')
+    expect(aboutLink.split(' ')).toContain('underline')
+    expect(aboutLink.split(' ')).not.toContain('no-underline')
+  })
 })
 
 describe('long text collapsing (#65)', () => {

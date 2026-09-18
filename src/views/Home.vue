@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppFooter from '../components/AppFooter.vue'
 import IssueCard from '../components/IssueCard.vue'
@@ -8,8 +8,9 @@ import Toast from '../components/Toast.vue'
 import ModerationAppealNotice from '../components/ModerationAppealNotice.vue'
 import { useI18n } from '../l10n'
 import { useAuth } from '../composables/useAuth'
+import { useViewerRole, type ViewerRole } from '../composables/useViewerRole'
 import type { IssueListItem } from '../db/queries'
-import { filterAndSortHomeIssues, type SortOrder, type ViewerRole } from '../lib/homeSorting'
+import { filterAndSortHomeIssues, type SortOrder } from '../lib/homeSorting'
 
 const props = defineProps<{
   initialIssues?: IssueListItem[]
@@ -35,8 +36,46 @@ const moderationNotice = ref<{ appealType: 'rejected_submission' | 'account_ban'
 
 const searchQuery = ref('')
 const sortOrder = ref<SortOrder>('newest')
-// 檢視者角色（#77）：citizen（預設）不顯示素材收集中的議題；volunteer 顯示全部且收集中的排最前
-const viewerRole = ref<ViewerRole>('citizen')
+// 全站檢視角色（#77、#90、#99）：navbar 切換後，首頁清單立即依角色更新。
+const { viewerRole, preferredViewerRole, initViewerRole, setViewerRole } = useViewerRole()
+
+// 首頁歡迎提示：角色偏好與「不再顯示」是兩個互相獨立的 localStorage 設定。
+const WELCOME_PROMPT_HIDDEN_KEY = 'civic_welcome_prompt_hidden'
+const showWelcomePrompt = ref(false)
+const welcomeRole = ref<ViewerRole | null>(null)
+const rememberWelcomeRole = ref(false)
+const hideWelcomePromptNextTime = ref(false)
+const welcomeDialog = ref<HTMLElement | null>(null)
+
+function isWelcomePromptHidden(): boolean {
+  if (typeof window === 'undefined') return false
+  try {
+    return window.localStorage.getItem(WELCOME_PROMPT_HIDDEN_KEY) === 'true'
+  } catch {
+    return false
+  }
+}
+
+function saveWelcomePromptVisibility(): void {
+  try {
+    if (hideWelcomePromptNextTime.value) window.localStorage.setItem(WELCOME_PROMPT_HIDDEN_KEY, 'true')
+    else window.localStorage.removeItem(WELCOME_PROMPT_HIDDEN_KEY)
+  } catch {
+    /* localStorage 不可用時，只關閉目前這次提示。 */
+  }
+}
+
+function confirmWelcomeRole(): void {
+  if (!welcomeRole.value) return
+  setViewerRole(welcomeRole.value, { remember: rememberWelcomeRole.value })
+  saveWelcomePromptVisibility()
+  showWelcomePrompt.value = false
+}
+
+function skipWelcomePrompt(): void {
+  saveWelcomePromptVisibility()
+  showWelcomePrompt.value = false
+}
 
 // 建立議題表單：標題相近的既有議題提示（僅供參考，不擋送出、不做審核判斷，見 #36）
 const similarIssues = computed(() => {
@@ -60,6 +99,11 @@ async function loadIssues() {
 onMounted(() => {
   if (!props.initialIssues) void loadIssues()
   void ensureAuthSession()
+  initViewerRole()
+  welcomeRole.value = preferredViewerRole.value
+  rememberWelcomeRole.value = preferredViewerRole.value !== null
+  showWelcomePrompt.value = !isWelcomePromptHidden()
+  if (showWelcomePrompt.value) void nextTick(() => welcomeDialog.value?.focus())
 })
 
 async function createIssue() {
@@ -140,6 +184,69 @@ async function copyRssUrl() {
 <template>
   <div>
     <AppHeader current="home" show-new-issue @new-issue="showForm = true" />
+
+    <div v-if="showWelcomePrompt" class="fixed inset-0 z-[1000] flex items-center justify-center overflow-y-auto bg-black/55 p-4" @click.self="skipWelcomePrompt" @keydown.esc="skipWelcomePrompt">
+      <section
+        ref="welcomeDialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="welcome-title"
+        tabindex="-1"
+        class="relative my-auto max-h-[calc(100vh-2rem)] w-full max-w-3xl overflow-y-auto rounded-xl border border-vt-border bg-vt-bg-1 p-5 shadow-xl outline-none sm:p-7"
+      >
+        <button
+          type="button"
+          class="absolute top-3 right-3 flex h-9 w-9 items-center justify-center rounded-full text-2xl leading-none text-vt-fg-2 hover:bg-black/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-vt-democratic-red dark:hover:bg-white/10"
+          :aria-label="t('welcome_close')"
+          @click="skipWelcomePrompt"
+        >
+          <span aria-hidden="true">×</span>
+        </button>
+
+        <div class="mb-5 pr-10">
+          <div class="section-label mb-2">WELCOME</div>
+          <h2 id="welcome-title" class="mt-0 mb-2 font-serif text-2xl font-bold text-vt-fg-1">{{ t('welcome_title') }}</h2>
+          <p class="m-0 text-vt-fg-2">{{ t('welcome_intro') }}</p>
+        </div>
+
+        <div class="mb-5 grid gap-3 sm:grid-cols-2">
+          <label
+            v-for="role in ['citizen', 'volunteer'] as const"
+            :key="role"
+            class="cursor-pointer rounded-xl border-2 p-4 text-left transition-colors focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-vt-democratic-red"
+            :class="welcomeRole === role ? 'border-vt-democratic-red bg-vt-democratic-red/5' : 'border-vt-border bg-vt-bg-1 hover:border-vt-democratic-red/50'"
+          >
+            <input v-model="welcomeRole" type="radio" name="welcome-role" :value="role" class="sr-only" />
+            <span class="mb-2 block text-2xl" aria-hidden="true">{{ role === 'citizen' ? '💬' : '🤝' }}</span>
+            <span class="mb-1 block font-serif text-lg font-bold text-vt-fg-1">{{ t(role === 'citizen' ? 'idx_role_citizen' : 'idx_role_volunteer') }}</span>
+            <span class="block text-sm leading-relaxed text-vt-fg-2">{{ t(role === 'citizen' ? 'welcome_citizen_desc' : 'welcome_volunteer_desc') }}</span>
+            <span class="mt-2 block text-sm font-medium text-vt-democratic-red">{{ t(role === 'citizen' ? 'welcome_citizen_priority' : 'welcome_volunteer_priority') }}</span>
+          </label>
+        </div>
+
+        <div class="mb-5 space-y-3 rounded-lg bg-vt-bg-2 p-4">
+          <label class="flex cursor-pointer items-start gap-2.5">
+            <input v-model="rememberWelcomeRole" type="checkbox" class="mt-1 w-auto" />
+            <span>
+              <span class="block font-medium text-vt-fg-1">{{ t('welcome_remember_role') }}</span>
+              <span class="block text-sm text-vt-fg-3">{{ t('welcome_remember_role_hint') }}</span>
+            </span>
+          </label>
+          <label class="flex cursor-pointer items-start gap-2.5">
+            <input v-model="hideWelcomePromptNextTime" type="checkbox" class="mt-1 w-auto" />
+            <span>
+              <span class="block font-medium text-vt-fg-1">{{ t('welcome_hide_prompt') }}</span>
+              <span class="block text-sm text-vt-fg-3">{{ t('welcome_hide_prompt_hint') }}</span>
+            </span>
+          </label>
+        </div>
+
+        <div class="flex flex-wrap justify-end gap-2">
+          <button type="button" class="btn btn-secondary" @click="skipWelcomePrompt">{{ t('welcome_later') }}</button>
+          <button type="button" class="btn btn-primary" :disabled="welcomeRole === null" @click="confirmWelcomeRole">{{ t('welcome_start') }}</button>
+        </div>
+      </section>
+    </div>
 
     <div class="vt-hero">
       <div class="vt-hero-inner">
@@ -241,12 +348,6 @@ async function copyRssUrl() {
             class="flex-1 min-w-40 rounded border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-vt-democratic-red/40"
             :placeholder="t('idx_search_ph')"
           />
-          <div class="flex items-center gap-1 shrink-0">
-            <span class="text-sm text-muted">{{ t('idx_role_label') }}</span>
-            <button v-for="r in ['citizen', 'volunteer'] as const" :key="r" type="button" class="btn btn-sm" :class="viewerRole === r ? 'btn-primary' : 'btn-secondary'" @click="viewerRole = r">
-              {{ t(r === 'citizen' ? 'idx_role_citizen' : 'idx_role_volunteer') }}
-            </button>
-          </div>
           <div class="flex gap-1 shrink-0">
             <button v-for="s in ['newest', 'most', 'least'] as const" :key="s" type="button" class="btn btn-sm" :class="sortOrder === s ? 'btn-primary' : 'btn-secondary'" @click="sortOrder = s">
               {{ t(s === 'newest' ? 'idx_sort_newest' : s === 'most' ? 'idx_sort_most' : 'idx_sort_least') }}

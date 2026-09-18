@@ -64,6 +64,14 @@ npx wrangler secret put GITHUB_CLIENT_SECRET
 
 ⚠️ **若你打算在 Cloudflare 儀表板上手動設定 vars**：wrangler 預設把設定檔當成唯一真相，**deploy 會覆蓋或刪除儀表板上的 vars**。要保留儀表板設定得在 `wrangler.jsonc` 加 `"keep_vars": true`（vTaiwan-hono 就有這一行，本專案沒有）。用 `wrangler secret put` 設的機密不寫在設定檔裡，不受這條規則影響——這也是建議走 secret 的原因之一。
 
+### 1.4 事實查核 Service Binding
+
+`FACT_CHECK_CORE` 綁到同一個 Cloudflare 帳號內的 Worker `fact-check-core`。核心 Worker 必須先部署，並維持 `workers_dev: false`、不配置公開 route；Civic Talk 透過 Service Binding 呼叫其 `POST /fact-check`。
+
+- 不需要設定 `CIVIC_TALK_API_KEY` 或其他 shared secret；Service Binding 本身就是呼叫核心 Worker 的 capability。
+- 瀏覽器只呼叫同源 `POST /api/fact-check`，登入與停權檢查留在 Civic Talk，session cookie 不會轉送給核心。
+- 本機要連已部署的核心 Worker，使用 `vp run dev:remote`；一般 `vp run dev` 關閉 remote bindings。
+
 ---
 
 ## 2. 絕對不要做的事
@@ -134,6 +142,8 @@ vp run deploy    # = vp run build + wrangler deploy
 | `GET /api/admin/stats`（未登入） | 401                                                                             | 2026-08-11 |
 | `GET /index.html`                | 301 → `/`                                                                       | 2026-08-11 |
 | `GET /privacy`、`GET /terms`     | 200                                                                             | 2026-08-11 |
+| `POST /api/fact-check`（未登入） | 401，且不呼叫 `fact-check-core`                                                 | —          |
+| 登入後執行素材事實查核           | 200；回應保留 `X-Request-Id`、`X-Fact-Check-Cache` 與 `Cache-Control: no-store` | —          |
 | `GET /issue.html?id=1`           | 302 → `/issues/1`                                                               | —          |
 | 瀏覽器開 `/admin`                | 顯示 Google／GitHub 登入卡片                                                    | 2026-08-11 |
 | 用 Google 登入                   | 導回 `/admin`；角色是 `admin`／`super-admin` 就進後台，否則顯示「沒有管理權限」 | 2026-08-11 |
@@ -157,4 +167,5 @@ vp run deploy    # = vp run build + wrangler deploy
 
 - **登入主流程已實測**（Google／GitHub 登入、admin 進後台、登入後投稿，2026-08-11）；**尚未實證**：同一個 email 換 provider 登入是否落到同一個帳號、說明頁寫入的作者快照與管理端完整快照。
 - **有自動化測試但沒有 CI**：`src/tests/` 有三個 Vitest 檔（i18n key 同步、作者隱私投影、markdown 安全渲染），跑 `vp test`；但沒有任何 CI 會自動跑，上述煙霧測試也全靠人工。
-- **管理端不支援跨來源呼叫**：session 走 cookie，而回應刻意不給 `Access-Control-Allow-Credentials`，因此跨來源請求帶不到 cookie，一律得到 401。公開的讀取端點仍維持 `Access-Control-Allow-Origin: *`。
+- **公開唯讀 API 支援跨來源讀取**：`GET /api/issues`、`GET /api/issues/:id` 及其 `materials`／`briefing`／`opinions` 子資源維持 `Access-Control-Allow-Origin: *`，但不提供 `Access-Control-Allow-Credentials`。這些回應一律帶 `Cache-Control: private, no-store`、`X-Content-Type-Options: nosniff` 與 `Vary: Cookie`，避免公開／管理員投影被快取混用。管理端、需登入資料與所有寫入端點都不輸出 CORS 放行標頭。
+- **跨站寫入由 csrf 防護，不靠 CORS 或登入守衛**：缺少 `Access-Control-Allow-Credentials` 只會阻止瀏覽器把 credentialed response 交給跨來源程式碼，不代表 cookie 不會隨請求送出。`src/index.ts` 在所有 `/api/*` 路由之前掛上 `hono/csrf`，阻擋跨站與同站 sibling origin 的簡單寫入請求；登入、停權與角色守衛回答「是哪位使用者」，csrf 則回答「請求是不是本站頁面發起」。

@@ -9,6 +9,8 @@ import StatusBadge from '../components/StatusBadge.vue'
 import Toast from '../components/Toast.vue'
 import ModerationAppealNotice from '../components/ModerationAppealNotice.vue'
 import { useAuth } from '../composables/useAuth'
+import { useSubmitGuard } from '../composables/useSubmitGuard'
+import { useViewerRole } from '../composables/useViewerRole'
 import type { Briefing, Issue, Material, Opinion } from '../db/queries'
 import { formatDate, useI18n } from '../l10n'
 import { renderSafeMarkdown } from '../markdown/renderSafeMarkdown'
@@ -26,6 +28,7 @@ const props = defineProps<{
 }>()
 
 const { t, locale } = useI18n()
+const { viewerRole } = useViewerRole()
 const toast = ref<{ show: (msg: string) => void } | null>(null)
 
 const issue = ref<Issue | null>(props.initialDetail?.issue ?? null)
@@ -62,6 +65,8 @@ const disputes = ref('')
 const positions = ref('')
 const narrative = ref('')
 const opinionInput = ref('')
+// 送出防重入（#97）：意見送出請求進行中，重複點擊直接忽略
+const { pending: opinionSubmitting, run: runOpinionSubmit } = useSubmitGuard()
 // ToS 同意 checkbox（#27）
 const opinionTosAgreed = ref(false)
 // Email 公開選項（#27）
@@ -177,12 +182,15 @@ async function submitBrokenLinkReport(materialId: number) {
   }
 }
 
-const tabs = computed(() => [
-  { id: 'briefing' as const, label: t('tab_briefing') },
-  { id: 'materials' as const, label: t('tab_materials') },
-  { id: 'volunteer' as const, label: t('tab_volunteer') },
-  { id: 'opinions' as const, label: t('tab_opinions') },
-])
+const tabs = computed(() => {
+  const briefing = { id: 'briefing' as const, label: t('tab_briefing') }
+  const materials = { id: 'materials' as const, label: t('tab_materials') }
+  const volunteer = { id: 'volunteer' as const, label: t('tab_volunteer') }
+  const opinions = { id: 'opinions' as const, label: t('tab_opinions') }
+
+  // 公民優先閱讀說明與參與意見；志願者維持素材、工具優先的工作流程。
+  return viewerRole.value === 'citizen' ? [briefing, opinions, materials, volunteer] : [briefing, materials, volunteer, opinions]
+})
 
 function stanceLabel(s: string) {
   if (s === 'pro') return t('stance_pro')
@@ -233,6 +241,10 @@ watch(
     if (activeTab.value === 'briefing') void nextTick(() => renderPolis())
   }
 )
+
+watch(activeTab, () => {
+  if (typeof window !== 'undefined') window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+})
 
 function renderPolis() {
   if (typeof document === 'undefined') return
@@ -375,7 +387,7 @@ async function submitNarrative() {
   } else toast.value?.show(t('vol_toast_save_fail'))
 }
 
-function downloadOpinionMd() {
+function buildOpinionMd(): string {
   const isEn = locale.value === 'en'
   const b = briefing.value
   const iss = issue.value
@@ -437,12 +449,29 @@ ${briefingText}
 *生成於 ${new Date().toLocaleDateString('zh-TW')}｜civic.vtaiwan.tw*
 `
 
+  return md
+}
+
+function downloadOpinionMd() {
+  const md = buildOpinionMd()
+
   const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' })
   const a = document.createElement('a')
-  a.href = URL.createObjectURL(blob)
+  const objectUrl = URL.createObjectURL(blob)
+  a.href = objectUrl
   a.download = `OPINION_${props.issueId}.md`
   a.click()
+  URL.revokeObjectURL(objectUrl)
   toast.value?.show(t('op_toast_download_ok'))
+}
+
+async function copyOpinionMd() {
+  try {
+    await navigator.clipboard.writeText(buildOpinionMd())
+    toast.value?.show(t('op_toast_copy_ok'))
+  } catch {
+    toast.value?.show(t('op_toast_copy_fail'))
+  }
 }
 
 async function submitOpinion() {
@@ -762,7 +791,10 @@ async function submitOpinion() {
           <section v-show="activeTab === 'opinions'">
             <h2 class="m-0 font-serif text-xl">{{ t('op_title') }}</h2>
             <div class="alert alert-info mb-4" v-html="t('op_alert')" />
-            <button type="button" class="btn btn-secondary btn-sm mb-6" @click="downloadOpinionMd">{{ t('op_download_btn') }}</button>
+            <div class="mb-6 flex flex-wrap gap-2">
+              <button type="button" class="btn btn-secondary btn-sm" @click="downloadOpinionMd">{{ t('op_download_btn') }}</button>
+              <button type="button" class="btn btn-secondary btn-sm" @click="copyOpinionMd">{{ t('op_copy_btn') }}</button>
+            </div>
             <div class="card mb-6">
               <h3 class="mt-0 mb-3 text-base">{{ t('op_submit_title') }}</h3>
               <template v-if="authState === 'loading'">
@@ -810,8 +842,8 @@ async function submitOpinion() {
                     >
                   </label>
                 </div>
-                <button type="button" class="btn btn-primary" @click="submitOpinion">
-                  {{ t('op_submit_btn') }}
+                <button type="button" class="btn btn-primary" :disabled="opinionSubmitting" @click="runOpinionSubmit(submitOpinion)">
+                  {{ opinionSubmitting ? t('submitting_pending') : t('op_submit_btn') }}
                 </button>
               </template>
             </div>

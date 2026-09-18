@@ -55,11 +55,10 @@ export function parseFactCheckResult(value: unknown): FactCheckResult | null {
 }
 
 /**
- * 上游查核 API。改用 POST 把參數放進 JSON body（PR #88 檢閱建議）——素材內容可以很長，
- * 放在 query string 會撞上網址長度上限。上游已對 `https://civic.vtaiwan.tw` 開放
- * POST 與 `Content-Type` 的 CORS preflight。
+ * 同源查核 endpoint。由 civic-talk Worker 透過 Service Binding 呼叫 fact-check-core，
+ * 需要登入，但不向瀏覽器透出任何金鑰。
  */
-export const FACT_CHECK_ENDPOINT = 'https://check.vtaiwan.tw/api/fact-check'
+export const FACT_CHECK_ENDPOINT = '/api/fact-check'
 
 export interface FactCheckRequestBody {
   text: string

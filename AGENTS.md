@@ -24,6 +24,7 @@
 
 1. **所有資料表一律 `ct_` 前綴。** 遠端 D1 `vtaiwan-civic-talks` 位於 vTaiwan 命名空間、可能與其他專案共用，未加前綴的 `issues`／`materials`／`briefings`／`opinions` 會撞名並造成不可逆的資料破壞。所有 DDL、SQL、型別一律只碰 `ct_*`；migration 套用後查 `sqlite_master` 確認只新增 `ct_` 開頭的業務表。
 2. **內容生成與投稿安全審查分開。** 素材彙整／說明頁等**內容生成**仍由志願者使用自己的 AI token 完成，平台只產出 prompt 並收回結果；伺服器端不得代為呼叫生成模型。**例外（issue #29，使用者明確授權）**：四個投稿入口可在 Worker 內呼叫 OpenRouter 的 `openai/gpt-oss-safeguard-20b` 做投稿安全審查。審查採 **fail-open**：OpenRouter 缺 key、逾時或 5xx 等基礎設施故障時記錄結構化錯誤並放行投稿，不把故障誤判成濫用，也不因外部服務故障擋住全站投稿。
+   - **素材事實查核不是內容生成。** `POST /api/fact-check` 經登入／停權守門後，以 `FACT_CHECK_CORE` Service Binding 串流轉送到沒有公開 route 的 `fact-check-core`。Service Binding 已是核心 Worker 的 capability；不要再加入前端 API key、HMAC token 或把 session cookie 轉送給核心。
 3. **SSR 路徑絕不碰瀏覽器 API。** 任何在 SSR 期間執行的程式碼（元件 `setup`、模組頂層、共用工廠）不得使用 `window`／`document`／`localStorage`／`navigator`——需要時用 `typeof window === 'undefined'` 守衛或放到 `onMounted`。每請求新建獨立的 app 實例，嚴禁跨請求共享可變狀態。
 4. **舊網址永不失效。** 下列舊路徑必須以 301／302 導向新的乾淨路由，且此對應表只能新增、不能刪除：
 
@@ -69,7 +70,7 @@ Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑�
 - `src/components/LongTextContent.vue` — 長文折疊（#65）：超過 `threshold`（預設 1000 字，以 code point 計數）時**完全不輸出原文**，只顯示字數與展開／收合鈕。🚫 **不得改成截短預覽或摘要**——素材多為 CC BY-NC-ND 授權，截短等同改作。目前用於 `Issue.vue` 的素材卡；`MaterialDetail.vue`（專屬頁本來就是看全文）與 `Admin.vue`（管理員需審閱）維持全文顯示。
 - `src/l10n/` — 自製 i18n composable（`zh-TW`／`en` 雙檔 key 同步）；SSR 固定 `zh-TW`，`localStorage.civic_lang` 只在 hydration 後讀寫。
 - `src/styles/app.css` — Tailwind v4 `@theme static`（vTaiwan 色彩、字型、字級、間距、圓角、陰影與動效 token）；`vp run css` 產出 `public/styles.css`（**生成物，勿手改**）。
-- `wrangler.jsonc` — `ASSETS` + D1 `DB` → `vtaiwan-civic-talks` + D1 `DB_AUTH` → `vtaiwan-auth`（兩者都標 `remote: true`，只影響本機開發模式）；`compatibility_flags: ["nodejs_compat"]`。**不寫 `account_id`**（與 `../vTaiwan-hono` 一致，由 wrangler 登入的帳號決定）——不要為了「比較保險」把它加回來。
+- `wrangler.jsonc` — `ASSETS` + D1 `DB` → `vtaiwan-civic-talks` + D1 `DB_AUTH` → `vtaiwan-auth` + Service Binding `FACT_CHECK_CORE` → `fact-check-core`（這些 binding 的 `remote: true` 只影響本機開發模式）；`compatibility_flags: ["nodejs_compat"]`。**不寫 `account_id`**（與 `../vTaiwan-hono` 一致，由 wrangler 登入的帳號決定）——不要為了「比較保險」把它加回來。
 - `src/auth/` — `createAuth.ts`（Better Auth 實例：Google／GitHub provider、同 email accountLinking、**不開 admin plugin**、以 `additionalFields` 唯讀取 `role`）與 `authorization.ts`（`AppRole`／`resolveRole`／`isAdminRole`／`getAuthContext`／`tryGetAuthContext`）。
 - `src/api/auth.ts` — `/api/auth/*` 轉交 `auth.handler()`、`/api/me` 回登入者；`/api/auth/admin/*` 一律 404。
 - `src/api/types.ts` — `AppBindings`／`App` 型別（原本在 `routes.ts`，抽出來避免 auth 與 routes 互相 import）。
@@ -187,29 +188,30 @@ Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑�
 
 以型別化 Hono handlers 重寫 `../civic-talk/functions/api/[[route]].js`，**路徑與語意保持相容**：
 
-| 方法     | 路徑                                        | 說明                                                                                                                                                                                                       |
-| -------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET`    | `/api/issues`                               | 議題列表                                                                                                                                                                                                   |
-| `POST`   | `/api/issues`                               | 新增議題（**需登入**，#9 延伸）                                                                                                                                                                            |
-| `GET`    | `/api/issues/:id`                           | 議題詳情                                                                                                                                                                                                   |
-| `PUT`    | `/api/issues/:id`                           | 編輯議題（admin）                                                                                                                                                                                          |
-| `DELETE` | `/api/issues/:id`                           | 刪除議題（admin，級聯刪 materials/briefings/opinions）                                                                                                                                                     |
-| `GET`    | `/api/issues/:id/materials`                 | 素材列表（公開顯示 `author_name`，email 僅依 opt-in 顯示；管理員另拿完整作者快照）                                                                                                                         |
-| `POST`   | `/api/issues/:id/materials`                 | 投稿素材（**需登入**，#9；前端投稿表單須先完成 `check.vtaiwan.tw` 事實查核且結果允許；伺服器仍照常執行 moderation；正常投稿 `collecting` → `summarizing`；自動審查違規會保存但暫時隱藏，且不觸發狀態轉換） |
-| `DELETE` | `/api/materials/:id`                        | 刪除素材（admin）                                                                                                                                                                                          |
-| `GET`    | `/api/issues/:id/briefing`                  | 取得說明頁（公開顯示 `author_name`，email 僅依 opt-in；管理員另拿完整作者快照）                                                                                                                            |
-| `POST`   | `/api/issues/:id/briefing`                  | 新增說明頁（**需登入**；版本遞增；正常投稿 → `published`；違規投稿保存但暫時隱藏且不觸發狀態轉換）                                                                                                         |
-| `PUT`    | `/api/issues/:id/briefing`                  | 編輯說明頁（admin）                                                                                                                                                                                        |
-| `GET`    | `/api/issues/:id/opinions`                  | 意見列表                                                                                                                                                                                                   |
-| `POST`   | `/api/issues/:id/opinions`                  | 投稿意見（**需登入**，#9 延伸；違規投稿仍回成功狀態但暫時隱藏）                                                                                                                                            |
-| `DELETE` | `/api/opinions/:id`                         | 刪除意見（admin）                                                                                                                                                                                          |
-| `GET`    | `/api/issues/:id/prompt`                    | 產生 prompt（**需登入**），`?type=summarize\|narrative\|synthesis`（預設 `summarize`）                                                                                                                     |
-| `GET`    | `/api/admin/stats`                          | 管理統計                                                                                                                                                                                                   |
-| `POST`   | `/api/appeals`                              | 暫時隱藏投稿或帳號停權申訴（需登入；停權帳號仍可使用）                                                                                                                                                     |
-| `GET`    | `/api/admin/moderation/preview`             | 管理端以文字測試自動審查（需 admin；純模型診斷，不寫 D1）                                                                                                                                                  |
-| `GET`    | `/api/admin/moderation/appeals`             | 管理端查看投稿安全審查申訴（admin）                                                                                                                                                                        |
-| `PATCH`  | `/api/admin/moderation/appeals/:id/resolve` | 管理端維持／推翻申訴（admin；帳號停權處置透過 Better Auth）                                                                                                                                                |
-| `GET`    | `/api/admin/users/:userId`                  | 管理端查詢投稿者目前 Better Auth 帳號／停權狀態（admin）                                                                                                                                                   |
+| 方法     | 路徑                                        | 說明                                                                                                                                                                                                      |
+| -------- | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET`    | `/api/issues`                               | 議題列表                                                                                                                                                                                                  |
+| `POST`   | `/api/issues`                               | 新增議題（**需登入**，#9 延伸）                                                                                                                                                                           |
+| `GET`    | `/api/issues/:id`                           | 議題詳情                                                                                                                                                                                                  |
+| `PUT`    | `/api/issues/:id`                           | 編輯議題（admin）                                                                                                                                                                                         |
+| `DELETE` | `/api/issues/:id`                           | 刪除議題（admin，級聯刪 materials/briefings/opinions）                                                                                                                                                    |
+| `GET`    | `/api/issues/:id/materials`                 | 素材列表（公開顯示 `author_name`，email 僅依 opt-in 顯示；管理員另拿完整作者快照）                                                                                                                        |
+| `POST`   | `/api/fact-check`                           | 素材事實查核（**需登入**；Civic Talk 以 Service Binding 轉送私有 `fact-check-core`，不使用前端 token）                                                                                                    |
+| `POST`   | `/api/issues/:id/materials`                 | 投稿素材（**需登入**，#9；前端投稿表單須先完成同源 `/api/fact-check` 查核且結果允許；伺服器仍照常執行 moderation；正常投稿 `collecting` → `summarizing`；自動審查違規會保存但暫時隱藏，且不觸發狀態轉換） |
+| `DELETE` | `/api/materials/:id`                        | 刪除素材（admin）                                                                                                                                                                                         |
+| `GET`    | `/api/issues/:id/briefing`                  | 取得說明頁（公開顯示 `author_name`，email 僅依 opt-in；管理員另拿完整作者快照）                                                                                                                           |
+| `POST`   | `/api/issues/:id/briefing`                  | 新增說明頁（**需登入**；版本遞增；正常投稿 → `published`；違規投稿保存但暫時隱藏且不觸發狀態轉換）                                                                                                        |
+| `PUT`    | `/api/issues/:id/briefing`                  | 編輯說明頁（admin）                                                                                                                                                                                       |
+| `GET`    | `/api/issues/:id/opinions`                  | 意見列表                                                                                                                                                                                                  |
+| `POST`   | `/api/issues/:id/opinions`                  | 投稿意見（**需登入**，#9 延伸；違規投稿仍回成功狀態但暫時隱藏）                                                                                                                                           |
+| `DELETE` | `/api/opinions/:id`                         | 刪除意見（admin）                                                                                                                                                                                         |
+| `GET`    | `/api/issues/:id/prompt`                    | 產生 prompt（**需登入**），`?type=summarize\|narrative\|synthesis`（預設 `summarize`）                                                                                                                    |
+| `GET`    | `/api/admin/stats`                          | 管理統計                                                                                                                                                                                                  |
+| `POST`   | `/api/appeals`                              | 暫時隱藏投稿或帳號停權申訴（需登入；停權帳號仍可使用）                                                                                                                                                    |
+| `GET`    | `/api/admin/moderation/preview`             | 管理端以文字測試自動審查（需 admin；純模型診斷，不寫 D1）                                                                                                                                                 |
+| `GET`    | `/api/admin/moderation/appeals`             | 管理端查看投稿安全審查申訴（admin）                                                                                                                                                                       |
+| `PATCH`  | `/api/admin/moderation/appeals/:id/resolve` | 管理端維持／推翻申訴（admin；帳號停權處置透過 Better Auth）                                                                                                                                               |
+| `GET`    | `/api/admin/users/:userId`                  | 管理端查詢投稿者目前 Better Auth 帳號／停權狀態（admin）                                                                                                                                                  |
 
 > `POST /api/admin/login`（以 `ADMIN_PASSWORD` 換 token）**已於 #5 移除**——這是不變量 5 明列的授權例外。舊網址不必保留：它從來只是管理員自己用的登入端點，不是公開契約。
 
@@ -243,10 +245,9 @@ Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑�
 - **`/api/me` 只回 `role`，不要複製 vTaiwan 的 `permissions`。** vTaiwan-hono 的 `Permission` 詞彙是 `meeting.join`／`meeting.moderate`／`transcription.update`／`topic.manage`——全是它的業務語彙，搬過來只會是四個永遠用不到的字串。Civic Talk 一律用 `isAdminRole()` 判角色；真的需要更細的權限模型，**先問使用者**再定義本站自己的詞彙。
 - **`/api/auth/admin/*` 是 `/api/auth/*` 整段轉交的唯一例外**——見「身分驗證與權限」的角色制 Admin 條目。
 - **`POST /api/admin/login` 廢除**：改角色制後這支沒有意義。**不要靜默移除**——同一批改動裡把 `src/views/Admin.vue` 的密碼登入 UI 一併換掉，確認前端不再呼叫後才刪路由；`ADMIN_PASSWORD` 與 `checkAdmin()` 同批清乾淨，別留半套（一半看 token、一半看角色）的授權路徑。
-- **CORS 要跟著改**：現行 `src/api/routes.ts` 是 `Access-Control-Allow-Origin: '*'` + `Allow-Headers: 'Content-Type, X-Admin-Token'`。session 走 **cookie**，跨來源要帶 cookie 就必須 `Access-Control-Allow-Credentials: true`，而**帶 credentials 時 `Allow-Origin` 不得為 `*`**——必須回具體 origin。改法（先問使用者選哪一種）：
-  1. **管理端不開放跨來源**（建議）：`/api/auth/*`、`/api/me` 與管理端點不掛 CORS，只有公開讀取端點維持 `*`；或
-  2. 維持跨來源：改成 allowlist 回具體 origin + `Allow-Credentials: true`。
-     無論哪種，`X-Admin-Token` 都要從 `Allow-Headers` 移除。
+- **API 不依賴 CORS 做存取控制**：`src/api/routes.ts` 不得輸出 `Access-Control-Allow-Credentials`，也不得對管理端或寫入端點輸出 `Access-Control-Allow-*`。公開唯讀端點可輸出 `Access-Control-Allow-Origin: *`，供第三方瀏覽器取用公開資料，但必須同時輸出 `Cache-Control: private, no-store`、`X-Content-Type-Options: nosniff` 與 `Vary: Cookie`，避免公開／管理員投影被快取混用。CORS 只限制瀏覽器**讀取**跨源回應，擋不住不需 preflight 的簡單請求送達伺服器。
+- **跨站／跨子網域寫入防護由 `/api/*` 的 `hono/csrf` 中介層負責**（`src/index.ts`，必須註冊在所有 `/api` 路由之前），與 `../vTaiwan-hono` 一致。🚫 不得改成逐端點自行檢查 `Origin`，也不得移除這層中介層——session cookie 是 `SameSite=Lax`，同站 sibling origin（`*.vtaiwan.tw`）的簡單請求會帶著 cookie 抵達。
+- 登入、停權、角色守衛回答的是「**是哪位使用者**」，csrf 回答的是「**請求是不是本站頁面發起**」，兩者不可互相取代。
 
 ## 技術棧與工具鏈
 
@@ -428,16 +429,16 @@ npx wrangler d1 migrations apply vtaiwan-civic-talks --remote   # 🚫 需先取
 
 分支 **`feat/better-auth`**（issue 內文寫 `feat-better/auth`，但兩個 repo 實際用的都是 `feat/better-auth`，以實際分支為準）。狀態一律以「程式碼是否真的在 repo 裡」為準，**不要憑 commit 訊息或 issue 勾選臆測完成度**。
 
-| #   | 項目               | 狀態               | 內容                                                                                                                                                                                                              |
-| --- | ------------------ | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 5-0 | `env-vars`         | ✅ 完成            | `.dev.vars.example` 已備妥 Better Auth／Google／GitHub 變數（commit `cfe56b4`）                                                                                                                                   |
-| 5-1 | `better-auth-init` | ✅ 完成            | `better-auth` ^1.6.25、`src/auth/`、`/api/auth/*`＋`/api/me`、`nodejs_compat`、`dev:remote`。dev server 起得來，路由煙霧測試過                                                                                    |
-| 5-2 | `shared-auth-db`   | ✅ 完成            | `DB_AUTH` → `vtaiwan-auth`（`remote: true`，無 `migrations_dir`）；**沿用既有 user table，本 repo 不建表**                                                                                                        |
-| 5-3 | `google-login`     | ✅ 完成            | provider 已設定；**正式站端到端登入已實測成功**（使用者確認 2026-08-11）                                                                                                                                          |
-| 5-4 | `github-login`     | ✅ 完成            | 同上，正式站已實測成功                                                                                                                                                                                            |
-| 5-5 | `account-linking`  | 🚧 code 進、待實測 | `trustedProviders: ['google', 'github']` 已設；兩個 provider 各自都能登入，但**「同一個 email 落到同一個 `user.id`」仍未實證**（要在正式站用同 email 兩種方式登入並比對帳號）                                     |
-| 5-6 | `role-based-admin` | ✅ 完成            | `requireAdmin()` 判角色（401／403）；`ADMIN_PASSWORD`／`X-Admin-Token`／`POST /api/admin/login` 全數移除；CORS 拿掉 `X-Admin-Token` 且不給 `Allow-Credentials`；Admin 頁改 Google／GitHub 登入；i18n 雙檔同步     |
-| 5-7 | `verify`           | 🚧 幾乎完成        | 已驗：未登入打管理端點 401、`/api/admin/login` 404、公開端點不受影響、`/admin` SSR 無 mismatch；**正式站 Google／GitHub 登入成功、`admin` 角色進得了後台**（2026-08-11）。**尚未驗**：同 email 帳號整合（見 5-5） |
+| #   | 項目               | 狀態               | 內容                                                                                                                                                                                                                   |
+| --- | ------------------ | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 5-0 | `env-vars`         | ✅ 完成            | `.dev.vars.example` 已備妥 Better Auth／Google／GitHub 變數（commit `cfe56b4`）                                                                                                                                        |
+| 5-1 | `better-auth-init` | ✅ 完成            | `better-auth` ^1.6.25、`src/auth/`、`/api/auth/*`＋`/api/me`、`nodejs_compat`、`dev:remote`。dev server 起得來，路由煙霧測試過                                                                                         |
+| 5-2 | `shared-auth-db`   | ✅ 完成            | `DB_AUTH` → `vtaiwan-auth`（`remote: true`，無 `migrations_dir`）；**沿用既有 user table，本 repo 不建表**                                                                                                             |
+| 5-3 | `google-login`     | ✅ 完成            | provider 已設定；**正式站端到端登入已實測成功**（使用者確認 2026-08-11）                                                                                                                                               |
+| 5-4 | `github-login`     | ✅ 完成            | 同上，正式站已實測成功                                                                                                                                                                                                 |
+| 5-5 | `account-linking`  | 🚧 code 進、待實測 | `trustedProviders: ['google', 'github']` 已設；兩個 provider 各自都能登入，但**「同一個 email 落到同一個 `user.id`」仍未實證**（要在正式站用同 email 兩種方式登入並比對帳號）                                          |
+| 5-6 | `role-based-admin` | ✅ 完成            | `requireAdmin()` 判角色（401／403）；`ADMIN_PASSWORD`／`X-Admin-Token`／`POST /api/admin/login` 全數移除；管理與寫入 API 不輸出 CORS 放行標頭，跨站寫入由全域 csrf 防護；Admin 頁改 Google／GitHub 登入；i18n 雙檔同步 |
+| 5-7 | `verify`           | 🚧 幾乎完成        | 已驗：未登入打管理端點 401、`/api/admin/login` 404、公開端點不受影響、`/admin` SSR 無 mismatch；**正式站 Google／GitHub 登入成功、`admin` 角色進得了後台**（2026-08-11）。**尚未驗**：同 email 帳號整合（見 5-5）      |
 
 > 已裁示的設定（不開 `admin` plugin、`account_id` 不寫死、`nodejs_compat` 實測必要、`BETTER_AUTH_SECRET` 與 vTaiwan-hono 共用）見「身分驗證與權限」一節。OAuth callback 網址與 `BETTER_AUTH_URL` 在本機與正式站都已設好（登入實測通過即為證明）；**換網域或建新環境時這兩項要重設**，做法見 [`deploy_notes.md`](./deploy_notes.md)。
 

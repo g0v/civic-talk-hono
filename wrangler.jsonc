@@ -11,6 +11,17 @@
   "observability": {
     "enabled": true,
   },
+  "services": [
+    {
+      // 事實查核核心（#92）：fact-check-core 沒有公開網址（workers_dev: false），
+      // 只有配置了 binding 的 Worker 能呼叫它；全程不需要任何 secret／token。
+      // remote 只影響本機開發；本專案的 Vite 設定只在 `vp run dev:remote`
+      // 啟用 remote bindings，屆時會直接呼叫已部署的 fact-check-core。
+      "binding": "FACT_CHECK_CORE",
+      "service": "fact-check-core",
+      "remote": true,
+    },
+  ],
   "d1_databases": [
     {
       // remote 只影響本機開發：npm run dev 用本機模擬，npm run dev:remote 才連遠端

@@ -31,6 +31,10 @@ describe('Issue SSR', () => {
 
     expect(html).toContain('測試議題')
     expect(html).toContain('2026')
+    expect(html).toContain('下載 OPINION.md')
+    expect(html).toContain('複製 OPINION.md 到剪貼簿')
+    expect(html.indexOf('💬 公民意見')).toBeLessThan(html.indexOf('📚 素材庫'))
+    expect(html.indexOf('💬 公民意見')).toBeLessThan(html.indexOf('🤝 志願者工具'))
   })
   it('renders opted-in author emails as mailto links only (#60)', async () => {
     const app = createSSRApp(IssueView, {
