@@ -74,19 +74,19 @@ function factCheckUnavailable(c: Context): Response {
  * 401 與 403 要分清楚：未登入是 401（前端該引導登入），已登入但權限不足是 403
  * （前端該說「這個帳號沒有權限」，引導再登入一次只會繞圈）。
  */
-async function requireAdmin(c: Context, request: Request, env: AppBindings): Promise<Response | null> {
-  const context = await tryGetAuthContext(env, request.headers)
+async function requireAdmin(c: Context): Promise<Response | null> {
+  const context = await tryGetAuthContext(c.env, c.req.raw.headers)
   if (!context) return error(c, 'Unauthorized', 401)
   // 停權帳號即使有 admin 角色也不得操作：先判 banned，再判角色（#11）
   if (context.banned) return error(c, 'Forbidden: account is banned', 403)
   if (!isAdminRole(context.role)) return error(c, 'Forbidden', 403)
   return null
 }
-async function adminBanUser(c: Context, request: Request, env: AppBindings, userId: string, banReason: string): Promise<Response | null> {
+async function adminBanUser(c: Context, userId: string, banReason: string): Promise<Response | null> {
   try {
-    await createAuth(env).api.banUser({
+    await createAuth(c.env).api.banUser({
       body: { userId, banReason },
-      headers: request.headers,
+      headers: c.req.raw.headers,
     })
     return null
   } catch (banErr) {
@@ -98,11 +98,11 @@ async function adminBanUser(c: Context, request: Request, env: AppBindings, user
   }
 }
 
-async function adminUnbanUser(c: Context, request: Request, env: AppBindings, userId: string): Promise<Response | null> {
+async function adminUnbanUser(c: Context, userId: string): Promise<Response | null> {
   try {
-    await createAuth(env).api.unbanUser({
+    await createAuth(c.env).api.unbanUser({
       body: { userId },
-      headers: request.headers,
+      headers: c.req.raw.headers,
     })
     return null
   } catch (unbanErr) {
@@ -120,8 +120,8 @@ async function adminUnbanUser(c: Context, request: Request, env: AppBindings, us
  * #9 用它把素材投稿限縮成「登入才能投」——目的是素材品質與濫用時的可追溯性，
  * 不是權限分級，所以一般 user 角色就夠，不要在這裡誤用 isAdminRole()。
  */
-async function requireUser(c: Context, request: Request, env: AppBindings): Promise<{ context: AuthContext } | { denied: Response }> {
-  const context = await tryGetAuthContext(env, request.headers)
+async function requireUser(c: Context): Promise<{ context: AuthContext } | { denied: Response }> {
+  const context = await tryGetAuthContext(c.env, c.req.raw.headers)
   if (!context) return { denied: error(c, 'Unauthorized', 401) }
   // 停權帳號不得執行任何寫入動作（#11）
   if (context.banned) return { denied: error(c, 'Forbidden: account is banned', 403) }
@@ -132,8 +132,8 @@ async function requireUser(c: Context, request: Request, env: AppBindings): Prom
  * 申訴守衛只要求仍有有效 session，不檢查 banned；
  * 被停權的人仍可送出申訴。這支只用在申訴端點，不可拿來寫投稿。
  */
-async function requireAppealUser(c: Context, request: Request, env: AppBindings): Promise<{ context: AuthContext } | { denied: Response }> {
-  const context = await tryGetAuthContext(env, request.headers)
+async function requireAppealUser(c: Context): Promise<{ context: AuthContext } | { denied: Response }> {
+  const context = await tryGetAuthContext(c.env, c.req.raw.headers)
   if (!context) return { denied: error(c, 'Unauthorized', 401) }
   return { context }
 }
@@ -240,7 +240,7 @@ export function registerApiRoutes(app: App): void {
   // Cloudflare Service Binding 直接轉送。Service Binding 本身就是對核心 Worker 的
   // capability，因此不另發前端 token，也不把 Cookie／Authorization 轉交給核心。
   app.post('/api/fact-check', async c => {
-    const auth = await requireUser(c, c.req.raw, c.env)
+    const auth = await requireUser(c)
     if ('denied' in auth) return auth.denied
 
     try {
@@ -269,21 +269,21 @@ export function registerApiRoutes(app: App): void {
   // 決定，登入入口是 /api/auth/sign-in/social。前端 Admin.vue 已不再呼叫它。
 
   app.get('/api/admin/stats', async c => {
-    const denied = await requireAdmin(c, c.req.raw, c.env)
+    const denied = await requireAdmin(c)
     if (denied) return denied
     const stats = await db.getAdminStats(c.env.DB)
     return c.json(stats)
   })
   // GET /api/me/moderation-reports — 只回傳目前登入者待複核的 AI 回報。
   app.get('/api/me/moderation-reports', async c => {
-    const auth = await requireUser(c, c.req.raw, c.env)
+    const auth = await requireUser(c)
     if ('denied' in auth) return auth.denied
     return c.json(await db.listPendingAiModerationReportsForUser(c.env.DB, auth.context.user.id))
   })
   // GET /api/me/appealable-moderation-items — 新的集中式「濫用與申訴」頁面資料。
   // 與投稿守衛不同，停權者必須能讀到帳號停權項目並提出申訴。
   app.get('/api/me/appealable-moderation-items', async c => {
-    const auth = await requireAppealUser(c, c.req.raw, c.env)
+    const auth = await requireAppealUser(c)
     if ('denied' in auth) return auth.denied
     const userId = auth.context.user.id
     const [reports, accountBanAppealPending] = await Promise.all([
@@ -306,7 +306,7 @@ export function registerApiRoutes(app: App): void {
   // 建立議題同樣需要登入（#9 的延伸，使用者裁示）：議題是所有素材與意見的容器，
   // 開放匿名建立等於開一扇沒有守門的門。
   app.post('/api/issues', async c => {
-    const auth = await requireUser(c, c.req.raw, c.env)
+    const auth = await requireUser(c)
     if ('denied' in auth) return auth.denied
     let body: { title?: string; description?: string; polis_id?: string | null } & SubmissionOptions
     try {
@@ -353,7 +353,7 @@ export function registerApiRoutes(app: App): void {
   })
 
   app.delete('/api/materials/:id', async c => {
-    const denied = await requireAdmin(c, c.req.raw, c.env)
+    const denied = await requireAdmin(c)
     if (denied) return denied
     const id = parseId(c.req.param('id'))
     if (!id) return error(c, 'Invalid id')
@@ -362,7 +362,7 @@ export function registerApiRoutes(app: App): void {
   })
 
   app.delete('/api/opinions/:id', async c => {
-    const denied = await requireAdmin(c, c.req.raw, c.env)
+    const denied = await requireAdmin(c)
     if (denied) return denied
     const id = parseId(c.req.param('id'))
     if (!id) return error(c, 'Invalid id')
@@ -379,7 +379,7 @@ export function registerApiRoutes(app: App): void {
   })
 
   app.put('/api/issues/:id', async c => {
-    const denied = await requireAdmin(c, c.req.raw, c.env)
+    const denied = await requireAdmin(c)
     if (denied) return denied
     const id = parseId(c.req.param('id'))
     if (!id) return error(c, 'Invalid id')
@@ -407,7 +407,7 @@ export function registerApiRoutes(app: App): void {
   })
 
   app.delete('/api/issues/:id', async c => {
-    const denied = await requireAdmin(c, c.req.raw, c.env)
+    const denied = await requireAdmin(c)
     if (denied) return denied
     const id = parseId(c.req.param('id'))
     if (!id) return error(c, 'Invalid id')
@@ -427,7 +427,7 @@ export function registerApiRoutes(app: App): void {
   // #9：素材投稿必須登入（品質把關 + 濫用時可追溯）。這是不變量 5 的授權例外之一，
   // 由 issue #9 明確授權：路徑、方法與成功回應形狀照舊，只是未登入改回 401。
   app.post('/api/issues/:id/materials', async c => {
-    const auth = await requireUser(c, c.req.raw, c.env)
+    const auth = await requireUser(c)
     if ('denied' in auth) return auth.denied
     const id = parseId(c.req.param('id'))
     if (!id) return error(c, 'Invalid id')
@@ -491,7 +491,7 @@ export function registerApiRoutes(app: App): void {
   app.post('/api/issues/:id/briefing', async c => {
     // 志願者工具會產生 prompt 並回寫彙整／說明頁；與其他投稿一樣要求登入，
     // 才能確保工具使用與內容異動都有可追溯的帳號。
-    const auth = await requireUser(c, c.req.raw, c.env)
+    const auth = await requireUser(c)
     if ('denied' in auth) return auth.denied
     const id = parseId(c.req.param('id'))
     if (!id) return error(c, 'Invalid id')
@@ -542,7 +542,7 @@ export function registerApiRoutes(app: App): void {
   })
 
   app.put('/api/issues/:id/briefing', async c => {
-    const denied = await requireAdmin(c, c.req.raw, c.env)
+    const denied = await requireAdmin(c)
     if (denied) return denied
     const id = parseId(c.req.param('id'))
     if (!id) return error(c, 'Invalid id')
@@ -573,7 +573,7 @@ export function registerApiRoutes(app: App): void {
 
   // 意見投稿同樣需要登入（#9 的延伸，使用者裁示），並記錄完整作者快照以便問責。
   app.post('/api/issues/:id/opinions', async c => {
-    const auth = await requireUser(c, c.req.raw, c.env)
+    const auth = await requireUser(c)
     if ('denied' in auth) return auth.denied
     const id = parseId(c.req.param('id'))
     if (!id) return error(c, 'Invalid id')
@@ -615,7 +615,7 @@ export function registerApiRoutes(app: App): void {
 
   app.get('/api/issues/:id/prompt', async c => {
     // Prompt 是志願者工具的一部分，不對匿名使用者提供。
-    const auth = await requireUser(c, c.req.raw, c.env)
+    const auth = await requireUser(c)
     if ('denied' in auth) return auth.denied
     const id = parseId(c.req.param('id'))
     if (!id) return error(c, 'Invalid id')
@@ -649,7 +649,7 @@ export function registerApiRoutes(app: App): void {
 
   // POST /api/abuse-reports — 登入者回報濫用（需登入，不看角色）
   app.post('/api/abuse-reports', async c => {
-    const auth = await requireUser(c, c.req.raw, c.env)
+    const auth = await requireUser(c)
     if ('denied' in auth) return auth.denied
 
     let body: {
@@ -700,7 +700,7 @@ export function registerApiRoutes(app: App): void {
 
   // POST /api/appeals — 被拒投稿／帳號停權的申訴；停權者仍可使用。
   app.post('/api/appeals', async c => {
-    const auth = await requireAppealUser(c, c.req.raw, c.env)
+    const auth = await requireAppealUser(c)
     if ('denied' in auth) return auth.denied
 
     let body: { abuse_report_id?: unknown; appeal_type?: unknown; content_snapshot?: unknown; message?: unknown }
@@ -744,13 +744,13 @@ export function registerApiRoutes(app: App): void {
 
   // GET /api/admin/moderation/appeals — 管理端查看拒絕／帳號停權申訴。
   app.get('/api/admin/moderation/appeals', async c => {
-    const denied = await requireAdmin(c, c.req.raw, c.env)
+    const denied = await requireAdmin(c)
     if (denied) return denied
     return c.json(await db.listModerationAppeals(c.env.DB))
   })
 
   app.get('/api/admin/moderation/preview', async c => {
-    const denied = await requireAdmin(c, c.req.raw, c.env)
+    const denied = await requireAdmin(c)
     if (denied) return denied
 
     const text = c.req.query('text')?.trim() ?? ''
@@ -778,7 +778,7 @@ export function registerApiRoutes(app: App): void {
   // PATCH /api/admin/moderation/appeals/:id/resolve — 維持或推翻申訴。
   // 帳號停權申訴的 uphold/overturn 會先透過 Better Auth ban/unban，再更新本地記錄。
   app.patch('/api/admin/moderation/appeals/:id/resolve', async c => {
-    const denied = await requireAdmin(c, c.req.raw, c.env)
+    const denied = await requireAdmin(c)
     if (denied) return denied
     const id = parseId(c.req.param('id'))
     if (!id) return error(c, 'Invalid ID', 400)
@@ -804,10 +804,10 @@ export function registerApiRoutes(app: App): void {
         return error(c, 'User not found', 404)
       }
       if (body.action === 'uphold' && !targetBanned) {
-        const banError = await adminBanUser(c, c.req.raw, c.env, appeal.user_id, '帳號申訴維持：管理員確認停權')
+        const banError = await adminBanUser(c, appeal.user_id, '帳號申訴維持：管理員確認停權')
         if (banError) return banError
       } else if (body.action === 'overturn' && targetBanned) {
-        const unbanError = await adminUnbanUser(c, c.req.raw, c.env, appeal.user_id)
+        const unbanError = await adminUnbanUser(c, appeal.user_id)
         if (unbanError) return unbanError
       }
     }
@@ -831,7 +831,7 @@ export function registerApiRoutes(app: App): void {
   // 使用 Better Auth admin plugin getUser，不對 DB_AUTH 下自訂 SQL（不變量 11）。
   // 用途：確認某投稿者提交後是否改名換 email，或目前是否已被停權。
   app.get('/api/admin/users/:userId', async c => {
-    const denied = await requireAdmin(c, c.req.raw, c.env)
+    const denied = await requireAdmin(c)
     if (denied) return denied
 
     const userId = c.req.param('userId')
@@ -859,7 +859,7 @@ export function registerApiRoutes(app: App): void {
 
   // GET /api/admin/abuse-reports — 管理端查看所有濫用回報
   app.get('/api/admin/abuse-reports', async c => {
-    const denied = await requireAdmin(c, c.req.raw, c.env)
+    const denied = await requireAdmin(c)
     if (denied) return denied
     const reports = await db.listAbuseReports(c.env.DB)
     return c.json(reports)
@@ -874,7 +874,7 @@ export function registerApiRoutes(app: App): void {
   // admin role（userAc）會得到 FORBIDDEN（403）。APIError 在此 catch 後直接轉譯 status + message，
   // 避免錯誤被 Hono 攔截成 500（例如「You cannot ban yourself」原本就是 400）。
   app.patch('/api/admin/abuse-reports/:id/resolve', async c => {
-    const denied = await requireAdmin(c, c.req.raw, c.env)
+    const denied = await requireAdmin(c)
     if (denied) return denied
 
     const id = parseId(c.req.param('id'))
