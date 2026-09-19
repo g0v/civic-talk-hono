@@ -19,47 +19,49 @@ import { isAdminRole, tryGetAuthContext, type AuthContext } from '../auth/author
 import { createAuth } from '../auth/createAuth'
 import { TERMS_VERSION } from '../legal/terms'
 import { moderationReasonForPolicy, moderateSubmission, moderateSubmissionWithDiagnostics, type ModerationDecision, type ModerationSubmission } from '../moderation/service'
+import type { Context } from 'hono'
+import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import type { App, AppBindings } from './types'
 
-function json(data: unknown, status = 200): Response {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { 'Content-Type': 'application/json' },
-  })
+const CONTENTFUL_STATUS_CODES = [
+  100, 102, 103,
+  200, 201, 202, 203, 206, 207, 208, 226,
+  300, 301, 302, 303, 305, 306, 307, 308,
+  400, 401, 402, 403, 404, 405, 406, 407, 408, 409, 410, 411, 412, 413, 414, 415, 416, 417, 418, 421, 422, 423, 424, 425, 426, 428, 429, 431, 451,
+  500, 501, 502, 503, 504, 505, 506, 507, 508, 510, 511,
+] as const satisfies readonly ContentfulStatusCode[]
+
+function contentfulStatusCode(value: unknown): ContentfulStatusCode {
+  return CONTENTFUL_STATUS_CODES.find(status => status === value) ?? 500
 }
 
 /** 公開唯讀資料允許第三方瀏覽器取用；不開 credentials，也不套用到登入或管理端資料。 */
-function publicJson(data: unknown, status = 200): Response {
-  const response = json(data, status)
-  response.headers.set('Access-Control-Allow-Origin', '*')
-  response.headers.set('Cache-Control', 'private, no-store')
-  response.headers.set('X-Content-Type-Options', 'nosniff')
-  response.headers.set('Vary', 'Cookie')
-  return response
+function publicJson(c: Context, data: object | null, status: ContentfulStatusCode = 200): Response {
+  return c.json(data, status, {
+    'Access-Control-Allow-Origin': '*',
+    'Cache-Control': 'private, no-store',
+    'X-Content-Type-Options': 'nosniff',
+    Vary: 'Cookie',
+  })
 }
 
-function error(msg: string, status = 400): Response {
-  return json({ error: msg }, status)
+function error(c: Context, msg: string, status: ContentfulStatusCode = 400): Response {
+  return c.json({ error: msg }, status)
 }
 
-function publicError(msg: string, status = 400): Response {
-  return publicJson({ error: msg }, status)
+function publicError(c: Context, msg: string, status: ContentfulStatusCode = 400): Response {
+  return publicJson(c, { error: msg }, status)
 }
 
-function factCheckUnavailable(): Response {
-  return new Response(
-    JSON.stringify({
+function factCheckUnavailable(c: Context): Response {
+  return c.json(
+    {
       status: 'error',
       error: 'UPSTREAM_UNAVAILABLE',
       message: 'Fact-check service is temporarily unavailable',
-    }),
-    {
-      status: 503,
-      headers: {
-        'Content-Type': 'application/json; charset=UTF-8',
-        'Cache-Control': 'no-store',
-      },
-    }
+    },
+    503,
+    { 'Cache-Control': 'no-store' }
   )
 }
 
@@ -72,43 +74,43 @@ function factCheckUnavailable(): Response {
  * 401 與 403 要分清楚：未登入是 401（前端該引導登入），已登入但權限不足是 403
  * （前端該說「這個帳號沒有權限」，引導再登入一次只會繞圈）。
  */
-async function requireAdmin(request: Request, env: AppBindings): Promise<Response | null> {
-  const context = await tryGetAuthContext(env, request.headers)
-  if (!context) return error('Unauthorized', 401)
+async function requireAdmin(c: Context): Promise<Response | null> {
+  const context = await tryGetAuthContext(c.env, c.req.raw.headers)
+  if (!context) return error(c, 'Unauthorized', 401)
   // 停權帳號即使有 admin 角色也不得操作：先判 banned，再判角色（#11）
-  if (context.banned) return error('Forbidden: account is banned', 403)
-  if (!isAdminRole(context.role)) return error('Forbidden', 403)
+  if (context.banned) return error(c, 'Forbidden: account is banned', 403)
+  if (!isAdminRole(context.role)) return error(c, 'Forbidden', 403)
   return null
 }
-async function adminBanUser(request: Request, env: AppBindings, userId: string, banReason: string): Promise<Response | null> {
+async function adminBanUser(c: Context, userId: string, banReason: string): Promise<Response | null> {
   try {
-    await createAuth(env).api.banUser({
+    await createAuth(c.env).api.banUser({
       body: { userId, banReason },
-      headers: request.headers,
+      headers: c.req.raw.headers,
     })
     return null
   } catch (banErr) {
     const apiErr = banErr as { statusCode?: number; body?: { message?: string } }
-    const status = typeof apiErr.statusCode === 'number' ? apiErr.statusCode : 500
+    const status = contentfulStatusCode(apiErr.statusCode)
     const message = apiErr.body?.message ?? 'Ban failed'
     console.error('banUser failed', { userId, caught: banErr })
-    return error(message, status)
+    return error(c, message, status)
   }
 }
 
-async function adminUnbanUser(request: Request, env: AppBindings, userId: string): Promise<Response | null> {
+async function adminUnbanUser(c: Context, userId: string): Promise<Response | null> {
   try {
-    await createAuth(env).api.unbanUser({
+    await createAuth(c.env).api.unbanUser({
       body: { userId },
-      headers: request.headers,
+      headers: c.req.raw.headers,
     })
     return null
   } catch (unbanErr) {
     const apiErr = unbanErr as { statusCode?: number; body?: { message?: string } }
-    const status = typeof apiErr.statusCode === 'number' ? apiErr.statusCode : 500
+    const status = contentfulStatusCode(apiErr.statusCode)
     const message = apiErr.body?.message ?? 'Unban failed'
     console.error('unbanUser failed', { userId, caught: unbanErr })
-    return error(message, status)
+    return error(c, message, status)
   }
 }
 
@@ -118,11 +120,11 @@ async function adminUnbanUser(request: Request, env: AppBindings, userId: string
  * #9 用它把素材投稿限縮成「登入才能投」——目的是素材品質與濫用時的可追溯性，
  * 不是權限分級，所以一般 user 角色就夠，不要在這裡誤用 isAdminRole()。
  */
-async function requireUser(request: Request, env: AppBindings): Promise<{ context: AuthContext } | { denied: Response }> {
-  const context = await tryGetAuthContext(env, request.headers)
-  if (!context) return { denied: error('Unauthorized', 401) }
+async function requireUser(c: Context): Promise<{ context: AuthContext } | { denied: Response }> {
+  const context = await tryGetAuthContext(c.env, c.req.raw.headers)
+  if (!context) return { denied: error(c, 'Unauthorized', 401) }
   // 停權帳號不得執行任何寫入動作（#11）
-  if (context.banned) return { denied: error('Forbidden: account is banned', 403) }
+  if (context.banned) return { denied: error(c, 'Forbidden: account is banned', 403) }
   return { context }
 }
 
@@ -130,9 +132,9 @@ async function requireUser(request: Request, env: AppBindings): Promise<{ contex
  * 申訴守衛只要求仍有有效 session，不檢查 banned；
  * 被停權的人仍可送出申訴。這支只用在申訴端點，不可拿來寫投稿。
  */
-async function requireAppealUser(request: Request, env: AppBindings): Promise<{ context: AuthContext } | { denied: Response }> {
-  const context = await tryGetAuthContext(env, request.headers)
-  if (!context) return { denied: error('Unauthorized', 401) }
+async function requireAppealUser(c: Context): Promise<{ context: AuthContext } | { denied: Response }> {
+  const context = await tryGetAuthContext(c.env, c.req.raw.headers)
+  if (!context) return { denied: error(c, 'Unauthorized', 401) }
   return { context }
 }
 
@@ -165,8 +167,8 @@ type SubmissionOptions = {
 }
 
 export function validateSubmissionOptions(body: SubmissionOptions): Response | null {
-  if (body.terms_accepted !== true) return error('terms_accepted must be true')
-  if (body.show_email !== undefined && typeof body.show_email !== 'boolean') return error('show_email must be a boolean')
+  if (body.terms_accepted !== true) return Response.json({ error: 'terms_accepted must be true' }, { status: 400 })
+  if (body.show_email !== undefined && typeof body.show_email !== 'boolean') return Response.json({ error: 'show_email must be a boolean' }, { status: 400 })
   return null
 }
 
@@ -238,7 +240,7 @@ export function registerApiRoutes(app: App): void {
   // Cloudflare Service Binding 直接轉送。Service Binding 本身就是對核心 Worker 的
   // capability，因此不另發前端 token，也不把 Cookie／Authorization 轉交給核心。
   app.post('/api/fact-check', async c => {
-    const auth = await requireUser(c.req.raw, c.env)
+    const auth = await requireUser(c)
     if ('denied' in auth) return auth.denied
 
     try {
@@ -259,7 +261,7 @@ export function registerApiRoutes(app: App): void {
           error: caught instanceof Error ? caught.name : 'unknown',
         })
       )
-      return factCheckUnavailable()
+      return factCheckUnavailable(c)
     }
   })
 
@@ -267,28 +269,28 @@ export function registerApiRoutes(app: App): void {
   // 決定，登入入口是 /api/auth/sign-in/social。前端 Admin.vue 已不再呼叫它。
 
   app.get('/api/admin/stats', async c => {
-    const denied = await requireAdmin(c.req.raw, c.env)
+    const denied = await requireAdmin(c)
     if (denied) return denied
     const stats = await db.getAdminStats(c.env.DB)
-    return json(stats)
+    return c.json(stats)
   })
   // GET /api/me/moderation-reports — 只回傳目前登入者待複核的 AI 回報。
   app.get('/api/me/moderation-reports', async c => {
-    const auth = await requireUser(c.req.raw, c.env)
+    const auth = await requireUser(c)
     if ('denied' in auth) return auth.denied
-    return json(await db.listPendingAiModerationReportsForUser(c.env.DB, auth.context.user.id))
+    return c.json(await db.listPendingAiModerationReportsForUser(c.env.DB, auth.context.user.id))
   })
   // GET /api/me/appealable-moderation-items — 新的集中式「濫用與申訴」頁面資料。
   // 與投稿守衛不同，停權者必須能讀到帳號停權項目並提出申訴。
   app.get('/api/me/appealable-moderation-items', async c => {
-    const auth = await requireAppealUser(c.req.raw, c.env)
+    const auth = await requireAppealUser(c)
     if ('denied' in auth) return auth.denied
     const userId = auth.context.user.id
     const [reports, accountBanAppealPending] = await Promise.all([
       db.listAppealableAiModerationReportsForUser(c.env.DB, userId),
       auth.context.banned ? db.findPendingModerationAppeal(c.env.DB, userId, null, 'account_ban') : Promise.resolve(false),
     ])
-    return json({
+    return c.json({
       account_ban: auth.context.banned && !accountBanAppealPending,
       reports,
     })
@@ -298,21 +300,21 @@ export function registerApiRoutes(app: App): void {
   app.get('/api/issues', async c => {
     const context = await tryGetAuthContext(c.env, c.req.raw.headers)
     const issues: IssueListItem[] | IssueListItemWithAuthor[] = canReadAdminSnapshots(context) ? await db.listIssuesWithAuthor(c.env.DB) : await db.listIssues(c.env.DB)
-    return publicJson(issues)
+    return publicJson(c, issues)
   })
 
   // 建立議題同樣需要登入（#9 的延伸，使用者裁示）：議題是所有素材與意見的容器，
   // 開放匿名建立等於開一扇沒有守門的門。
   app.post('/api/issues', async c => {
-    const auth = await requireUser(c.req.raw, c.env)
+    const auth = await requireUser(c)
     if ('denied' in auth) return auth.denied
     let body: { title?: string; description?: string; polis_id?: string | null } & SubmissionOptions
     try {
       body = await c.req.json()
     } catch {
-      return error('Invalid JSON')
+      return error(c, 'Invalid JSON')
     }
-    if (!body.title?.trim()) return error('title is required')
+    if (!body.title?.trim()) return error(c, 'title is required')
     const invalidOptions = validateSubmissionOptions(body)
     if (invalidOptions) return invalidOptions
     const moderation = await moderateSubmissionForWrite(c.req.raw, c.env, {
@@ -333,7 +335,7 @@ export function registerApiRoutes(app: App): void {
       },
       { moderationHidden: moderation.hidden }
     )
-    if (!moderation.hidden || moderation.decision.outcome !== 'violation') return json({ id, title: body.title.trim() }, 201)
+    if (!moderation.hidden || moderation.decision.outcome !== 'violation') return c.json({ id, title: body.title.trim() }, 201)
     const reportId = await recordModerationViolation(
       c.env,
       auth.context,
@@ -347,42 +349,42 @@ export function registerApiRoutes(app: App): void {
       moderation.decision,
       { issue_id: id, material_id: null, briefing_id: null, opinion_id: null }
     )
-    return json({ id, title: body.title.trim(), moderation: moderationMetadata(moderation.decision, reportId) }, 201)
+    return c.json({ id, title: body.title.trim(), moderation: moderationMetadata(moderation.decision, reportId) }, 201)
   })
 
   app.delete('/api/materials/:id', async c => {
-    const denied = await requireAdmin(c.req.raw, c.env)
+    const denied = await requireAdmin(c)
     if (denied) return denied
     const id = parseId(c.req.param('id'))
-    if (!id) return error('Invalid id')
+    if (!id) return error(c, 'Invalid id')
     await db.deleteMaterial(c.env.DB, id)
-    return json({ ok: true })
+    return c.json({ ok: true })
   })
 
   app.delete('/api/opinions/:id', async c => {
-    const denied = await requireAdmin(c.req.raw, c.env)
+    const denied = await requireAdmin(c)
     if (denied) return denied
     const id = parseId(c.req.param('id'))
-    if (!id) return error('Invalid id')
+    if (!id) return error(c, 'Invalid id')
     await db.deleteOpinion(c.env.DB, id)
-    return json({ ok: true })
+    return c.json({ ok: true })
   })
 
   app.get('/api/issues/:id', async c => {
     const id = parseId(c.req.param('id'))
-    if (!id) return publicError('Invalid id')
+    if (!id) return publicError(c, 'Invalid id')
     const detail = await db.getIssueDetail(c.env.DB, id)
-    if (!detail) return publicError('Issue not found', 404)
-    return publicJson(detail)
+    if (!detail) return publicError(c, 'Issue not found', 404)
+    return publicJson(c, detail)
   })
 
   app.put('/api/issues/:id', async c => {
-    const denied = await requireAdmin(c.req.raw, c.env)
+    const denied = await requireAdmin(c)
     if (denied) return denied
     const id = parseId(c.req.param('id'))
-    if (!id) return error('Invalid id')
+    if (!id) return error(c, 'Invalid id')
     const existing = await db.getIssue(c.env.DB, id)
-    if (!existing) return error('Issue not found', 404)
+    if (!existing) return error(c, 'Issue not found', 404)
     let body: {
       title?: string
       description?: string
@@ -392,45 +394,45 @@ export function registerApiRoutes(app: App): void {
     try {
       body = await c.req.json()
     } catch {
-      return error('Invalid JSON')
+      return error(c, 'Invalid JSON')
     }
-    if (!body.title?.trim()) return error('title is required')
+    if (!body.title?.trim()) return error(c, 'title is required')
     await db.updateIssue(c.env.DB, id, {
       title: body.title.trim(),
       description: body.description ?? '',
       status: body.status ?? 'collecting',
       polis_id: body.polis_id ?? null,
     })
-    return json({ ok: true })
+    return c.json({ ok: true })
   })
 
   app.delete('/api/issues/:id', async c => {
-    const denied = await requireAdmin(c.req.raw, c.env)
+    const denied = await requireAdmin(c)
     if (denied) return denied
     const id = parseId(c.req.param('id'))
-    if (!id) return error('Invalid id')
+    if (!id) return error(c, 'Invalid id')
     await db.deleteIssueCascade(c.env.DB, id)
-    return json({ ok: true })
+    return c.json({ ok: true })
   })
 
   // 一般讀取公開顯示名稱與 opt-in email；管理員另拿完整快照與條款同意記錄。
   app.get('/api/issues/:id/materials', async c => {
     const id = parseId(c.req.param('id'))
-    if (!id) return publicError('Invalid id')
+    if (!id) return publicError(c, 'Invalid id')
     const context = await tryGetAuthContext(c.env, c.req.raw.headers)
     const materials: Material[] | MaterialWithAuthor[] = canReadAdminSnapshots(context) ? await db.listMaterialsWithAuthor(c.env.DB, id) : await db.listMaterials(c.env.DB, id)
-    return publicJson(materials)
+    return publicJson(c, materials)
   })
 
   // #9：素材投稿必須登入（品質把關 + 濫用時可追溯）。這是不變量 5 的授權例外之一，
   // 由 issue #9 明確授權：路徑、方法與成功回應形狀照舊，只是未登入改回 401。
   app.post('/api/issues/:id/materials', async c => {
-    const auth = await requireUser(c.req.raw, c.env)
+    const auth = await requireUser(c)
     if ('denied' in auth) return auth.denied
     const id = parseId(c.req.param('id'))
-    if (!id) return error('Invalid id')
+    if (!id) return error(c, 'Invalid id')
     const issue = await db.getIssue(c.env.DB, id)
-    if (!issue) return error('Issue not found', 404)
+    if (!issue) return error(c, 'Issue not found', 404)
     let body: {
       content?: string
       source_name?: string
@@ -440,9 +442,9 @@ export function registerApiRoutes(app: App): void {
     try {
       body = await c.req.json()
     } catch {
-      return error('Invalid JSON')
+      return error(c, 'Invalid JSON')
     }
-    if (!body.content?.trim()) return error('content is required')
+    if (!body.content?.trim()) return error(c, 'content is required')
     const invalidOptions = validateSubmissionOptions(body)
     if (invalidOptions) return invalidOptions
     const submission: ModerationSubmission = {
@@ -468,33 +470,33 @@ export function registerApiRoutes(app: App): void {
       },
       { moderationHidden: moderation.hidden, skipStatusTransition: moderation.hidden }
     )
-    if (!moderation.hidden || moderation.decision.outcome !== 'violation') return json({ id: materialId }, 201)
+    if (!moderation.hidden || moderation.decision.outcome !== 'violation') return c.json({ id: materialId }, 201)
     const reportId = await recordModerationViolation(c.env, auth.context, submission, moderation.decision, {
       issue_id: null,
       material_id: materialId,
       briefing_id: null,
       opinion_id: null,
     })
-    return json({ id: materialId, moderation: moderationMetadata(moderation.decision, reportId) }, 201)
+    return c.json({ id: materialId, moderation: moderationMetadata(moderation.decision, reportId) }, 201)
   })
 
   app.get('/api/issues/:id/briefing', async c => {
     const id = parseId(c.req.param('id'))
-    if (!id) return publicError('Invalid id')
+    if (!id) return publicError(c, 'Invalid id')
     const context = await tryGetAuthContext(c.env, c.req.raw.headers)
     const briefing: Briefing | BriefingWithAuthor | null = canReadAdminSnapshots(context) ? await db.getLatestBriefingWithAuthor(c.env.DB, id) : await db.getLatestBriefing(c.env.DB, id)
-    return publicJson(briefing)
+    return publicJson(c, briefing)
   })
 
   app.post('/api/issues/:id/briefing', async c => {
     // 志願者工具會產生 prompt 並回寫彙整／說明頁；與其他投稿一樣要求登入，
     // 才能確保工具使用與內容異動都有可追溯的帳號。
-    const auth = await requireUser(c.req.raw, c.env)
+    const auth = await requireUser(c)
     if ('denied' in auth) return auth.denied
     const id = parseId(c.req.param('id'))
-    if (!id) return error('Invalid id')
+    if (!id) return error(c, 'Invalid id')
     const issue = await db.getIssue(c.env.DB, id)
-    if (!issue) return error('Issue not found', 404)
+    if (!issue) return error(c, 'Issue not found', 404)
     let body: {
       consensus?: string
       disputes?: string
@@ -506,9 +508,9 @@ export function registerApiRoutes(app: App): void {
     try {
       body = await c.req.json()
     } catch {
-      return error('Invalid JSON')
+      return error(c, 'Invalid JSON')
     }
-    if (body.show_email !== undefined && typeof body.show_email !== 'boolean') return error('show_email must be a boolean')
+    if (body.show_email !== undefined && typeof body.show_email !== 'boolean') return error(c, 'show_email must be a boolean')
     const submission: ModerationSubmission = {
       type: 'briefing',
       fields: {
@@ -525,7 +527,7 @@ export function registerApiRoutes(app: App): void {
       moderationHidden: moderation.hidden,
       skipStatusTransition: moderation.hidden,
     })
-    if (!moderation.hidden || moderation.decision.outcome !== 'violation') return json({ version }, 201)
+    if (!moderation.hidden || moderation.decision.outcome !== 'violation') return c.json({ version }, 201)
     const briefingId = await db.getBriefingIdByVersion(c.env.DB, id, version)
     const reportId =
       briefingId === null
@@ -536,14 +538,14 @@ export function registerApiRoutes(app: App): void {
             briefing_id: briefingId,
             opinion_id: null,
           })
-    return json({ version, moderation: moderationMetadata(moderation.decision, reportId) }, 201)
+    return c.json({ version, moderation: moderationMetadata(moderation.decision, reportId) }, 201)
   })
 
   app.put('/api/issues/:id/briefing', async c => {
-    const denied = await requireAdmin(c.req.raw, c.env)
+    const denied = await requireAdmin(c)
     if (denied) return denied
     const id = parseId(c.req.param('id'))
-    if (!id) return error('Invalid id')
+    if (!id) return error(c, 'Invalid id')
     let body: {
       consensus?: string
       disputes?: string
@@ -553,37 +555,37 @@ export function registerApiRoutes(app: App): void {
     try {
       body = await c.req.json()
     } catch {
-      return error('Invalid JSON')
+      return error(c, 'Invalid JSON')
     }
     const ok = await db.updateLatestBriefing(c.env.DB, id, body)
-    if (!ok) return error('No briefing found', 404)
-    return json({ ok: true })
+    if (!ok) return error(c, 'No briefing found', 404)
+    return c.json({ ok: true })
   })
 
   // 一般讀取公開顯示名稱與 opt-in email；管理員另拿完整快照與條款同意記錄。
   app.get('/api/issues/:id/opinions', async c => {
     const id = parseId(c.req.param('id'))
-    if (!id) return publicError('Invalid id')
+    if (!id) return publicError(c, 'Invalid id')
     const context = await tryGetAuthContext(c.env, c.req.raw.headers)
     const opinions: Opinion[] | OpinionWithAuthor[] = canReadAdminSnapshots(context) ? await db.listOpinionsWithAuthor(c.env.DB, id) : await db.listOpinions(c.env.DB, id)
-    return publicJson(opinions)
+    return publicJson(c, opinions)
   })
 
   // 意見投稿同樣需要登入（#9 的延伸，使用者裁示），並記錄完整作者快照以便問責。
   app.post('/api/issues/:id/opinions', async c => {
-    const auth = await requireUser(c.req.raw, c.env)
+    const auth = await requireUser(c)
     if ('denied' in auth) return auth.denied
     const id = parseId(c.req.param('id'))
-    if (!id) return error('Invalid id')
+    if (!id) return error(c, 'Invalid id')
     const issue = await db.getIssue(c.env.DB, id)
-    if (!issue) return error('Issue not found', 404)
+    if (!issue) return error(c, 'Issue not found', 404)
     let body: { summary?: string } & SubmissionOptions
     try {
       body = await c.req.json()
     } catch {
-      return error('Invalid JSON')
+      return error(c, 'Invalid JSON')
     }
-    if (!body.summary?.trim()) return error('summary is required')
+    if (!body.summary?.trim()) return error(c, 'summary is required')
     const invalidOptions = validateSubmissionOptions(body)
     if (invalidOptions) return invalidOptions
     const submission: ModerationSubmission = {
@@ -601,27 +603,27 @@ export function registerApiRoutes(app: App): void {
       },
       { moderationHidden: moderation.hidden }
     )
-    if (!moderation.hidden || moderation.decision.outcome !== 'violation') return json({ id: opinionId }, 201)
+    if (!moderation.hidden || moderation.decision.outcome !== 'violation') return c.json({ id: opinionId }, 201)
     const reportId = await recordModerationViolation(c.env, auth.context, submission, moderation.decision, {
       issue_id: null,
       material_id: null,
       briefing_id: null,
       opinion_id: opinionId,
     })
-    return json({ id: opinionId, moderation: moderationMetadata(moderation.decision, reportId) }, 201)
+    return c.json({ id: opinionId, moderation: moderationMetadata(moderation.decision, reportId) }, 201)
   })
 
   app.get('/api/issues/:id/prompt', async c => {
     // Prompt 是志願者工具的一部分，不對匿名使用者提供。
-    const auth = await requireUser(c.req.raw, c.env)
+    const auth = await requireUser(c)
     if ('denied' in auth) return auth.denied
     const id = parseId(c.req.param('id'))
-    if (!id) return error('Invalid id')
+    if (!id) return error(c, 'Invalid id')
     const type = c.req.query('type') ?? 'summarize'
     const materials = await db.listMaterialsForPrompt(c.env.DB, id)
     const issue: Issue | null = await db.getIssue(c.env.DB, id)
-    if (!issue) return error('Issue not found', 404)
-    if (materials.length === 0) return error('尚無素材，請先新增素材再生成 Prompt。')
+    if (!issue) return error(c, 'Issue not found', 404)
+    if (materials.length === 0) return error(c, '尚無素材，請先新增素材再生成 Prompt。')
 
     const materialsText = materials.map((m, i) => `【素材 ${i + 1}】來源：${m.source_name || '未知'}（${m.source_url || '無連結'}）\n立場：${m.stance}\n內容：\n${m.content}`).join('\n\n---\n\n')
 
@@ -630,24 +632,24 @@ export function registerApiRoutes(app: App): void {
       prompt = `你是一位公民審議助理。請根據以下關於「${issue.title}」的素材，整理出：\n\n1. **共識**：大多數立場都同意的事實或前提（2-4 點）\n2. **爭點**：各方有明顯分歧的核心問題（2-4 點）\n3. **立場地圖**：誰在乎哪些面向、各自的論據是什麼（分立場描述）\n\n要求：忠實呈現原始素材的內容，不添加立場判斷。格式使用繁體中文 Markdown。\n\n以下是素材：\n\n${materialsText}`
     } else if (type === 'narrative') {
       const briefing = await db.getLatestBriefing(c.env.DB, id)
-      if (!briefing) return error('請先完成彙整再生成說明頁。')
+      if (!briefing) return error(c, '請先完成彙整再生成說明頁。')
       prompt = `你是一位公民議題編輯。請根據以下彙整結果，寫一份一頁式說明（800字以內，繁體中文）：\n\n議題：${issue.title}\n共識：${briefing.consensus}\n爭點：${briefing.disputes}\n立場地圖：${briefing.positions}`
     } else if (type === 'synthesis') {
       const opinions = await db.listOpinionSummaries(c.env.DB, id, 50)
       const briefing = await db.getLatestBriefing(c.env.DB, id)
-      if (opinions.length === 0) return error('尚無公民意見。')
+      if (opinions.length === 0) return error(c, '尚無公民意見。')
       const opinionsText = opinions.map((o, i) => `【意見 ${i + 1}】\n${o.summary}`).join('\n\n---\n\n')
       prompt = `你是一位公民審議助理。請把以下公民個人意見整合進既有彙整，產出**更新後的完整三個區塊**，讓志願者可以直接貼回相應欄位。\n\n議題：${issue.title}\n\n---\n\n## 一、素材（有來源可查證的一手依據，共 ${materials.length} 筆）\n\n${materialsText}\n\n---\n\n## 二、既有彙整\n\n**共識**：\n${briefing?.consensus ?? '（尚無）'}\n\n**爭點**：\n${briefing?.disputes ?? '（尚無）'}\n\n**立場地圖**：\n${briefing?.positions ?? '（尚無）'}\n\n---\n\n## 三、公民個人意見（共 ${opinions.length} 份）\n\n${opinionsText}\n\n---\n\n## 輸出要求\n\n### 素材與意見的權重\n\n- **素材**（第一節）是有來源、可查證的一手依據（新聞、法條、報告、NGO 聲明等），權重高於個人意見。\n- **公民意見**（第三節）是個人觀點，未經查證。意見的作用是**補充素材尚未涵蓋的面向**，不是覆蓋或稀釋素材的結論。\n- 當素材與意見衝突時，**以素材為準**；意見中與素材矛盾的論點請降低優先度，但可以在立場地圖中如實呈現為「部分公民的主張」。\n\n### 雷同意見的處理\n\n- 先把內容或論點**高度相似**的意見合併為同一個觀點，合併後只計為**一份**權重，不因出現次數多就提高重要性。\n- 判斷某個觀點是否值得進入立場地圖，看的是**論點本身是否成立、是否有素材支撐**，不是有多少人這樣說。\n- 若發現異常大量的雷同意見，請在三個區塊之後附上「**【志願者注意】**」段落，說明「有 N 份意見內容高度相似，已合併為一個觀點，請評估是否有帶風向的情形」。此段**不屬於要貼回欄位的三個區塊**，僅供志願者參考。\n\n### 輸出格式\n\n請依序輸出以下三個區塊（格式與「既有彙整」相同）：\n\n1. **共識**：整合後完整的共識內容（若無新增，保留原文）\n2. **爭點**：整合後完整的爭點內容（若無新增，保留原文）\n3. **立場地圖**：整合後完整的立場地圖（若有新立場或論據，補充進去；若無變化，保留原文）\n\n要求：忠實呈現素材與意見，不添加立場判斷；每個區塊都必須輸出完整內容，不可省略；格式使用繁體中文 Markdown。`
     } else {
-      return error('Invalid prompt type')
+      return error(c, 'Invalid prompt type')
     }
 
-    return json({ prompt, type, material_count: materials.length })
+    return c.json({ prompt, type, material_count: materials.length })
   })
 
   // POST /api/abuse-reports — 登入者回報濫用（需登入，不看角色）
   app.post('/api/abuse-reports', async c => {
-    const auth = await requireUser(c.req.raw, c.env)
+    const auth = await requireUser(c)
     if ('denied' in auth) return auth.denied
 
     let body: {
@@ -660,23 +662,23 @@ export function registerApiRoutes(app: App): void {
     try {
       body = await c.req.json()
     } catch {
-      return error('Invalid JSON')
+      return error(c, 'Invalid JSON')
     }
 
     const materialId = typeof body.material_id === 'number' && body.material_id > 0 ? body.material_id : null
     const briefingId = typeof body.briefing_id === 'number' && body.briefing_id > 0 ? body.briefing_id : null
     const opinionId = typeof body.opinion_id === 'number' && body.opinion_id > 0 ? body.opinion_id : null
     const nonNullCount = [materialId, briefingId, opinionId].filter(v => v !== null).length
-    if (nonNullCount !== 1) return error('Exactly one of material_id, briefing_id, opinion_id must be a positive number')
+    if (nonNullCount !== 1) return error(c, 'Exactly one of material_id, briefing_id, opinion_id must be a positive number')
 
     const validReasons: AbuseReportReason[] = ['spam', 'hate_speech', 'defamation', 'misinformation', 'other', 'broken_link']
     if (!body.reason || !validReasons.includes(body.reason as AbuseReportReason)) {
-      return error('reason must be one of: ' + validReasons.join(', '))
+      return error(c, 'reason must be one of: ' + validReasons.join(', '))
     }
 
     // broken_link 回報只允許 material_id（素材才有 source_url）
     if (body.reason === 'broken_link' && (briefingId !== null || opinionId !== null)) {
-      return error('broken_link reports only support material_id')
+      return error(c, 'broken_link reports only support material_id')
     }
 
     const descriptionRaw = typeof body.description === 'string' ? body.description.trim() : null
@@ -691,40 +693,40 @@ export function registerApiRoutes(app: App): void {
       briefing_id: briefingId,
       opinion_id: opinionId,
     })
-    if (reportId === null) return error('此內容已有待審核的回報，請等待管理員處理後再回報', 409)
+    if (reportId === null) return error(c, '此內容已有待審核的回報，請等待管理員處理後再回報', 409)
 
-    return json({ ok: true }, 201)
+    return c.json({ ok: true }, 201)
   })
 
   // POST /api/appeals — 被拒投稿／帳號停權的申訴；停權者仍可使用。
   app.post('/api/appeals', async c => {
-    const auth = await requireAppealUser(c.req.raw, c.env)
+    const auth = await requireAppealUser(c)
     if ('denied' in auth) return auth.denied
 
     let body: { abuse_report_id?: unknown; appeal_type?: unknown; content_snapshot?: unknown; message?: unknown }
     try {
       body = await c.req.json()
     } catch {
-      return error('Invalid JSON')
+      return error(c, 'Invalid JSON')
     }
     if (body.appeal_type !== 'rejected_submission' && body.appeal_type !== 'account_ban') {
-      return error('appeal_type must be "rejected_submission" or "account_ban"')
+      return error(c, 'appeal_type must be "rejected_submission" or "account_ban"')
     }
     const reportId = typeof body.abuse_report_id === 'number' && body.abuse_report_id > 0 ? body.abuse_report_id : null
-    if (body.appeal_type === 'rejected_submission' && reportId === null) return error('abuse_report_id is required for rejected submission appeals')
+    if (body.appeal_type === 'rejected_submission' && reportId === null) return error(c, 'abuse_report_id is required for rejected submission appeals')
 
     const report = reportId === null ? null : await db.getAiAbuseReportForUser(c.env.DB, reportId, auth.context.user.id)
-    if (reportId !== null && !report) return error('Moderation report not found', 404)
-    if (body.appeal_type === 'account_ban' && !auth.context.banned) return error('No active account ban to appeal', 409)
+    if (reportId !== null && !report) return error(c, 'Moderation report not found', 404)
+    if (body.appeal_type === 'account_ban' && !auth.context.banned) return error(c, 'No active account ban to appeal', 409)
     if (report && report.review_status !== 'pending' && body.appeal_type === 'rejected_submission') {
-      return error('Moderation report already resolved', 409)
+      return error(c, 'Moderation report already resolved', 409)
     }
 
     const message = typeof body.message === 'string' ? body.message.trim() : ''
-    if (!message) return error('message is required')
-    if (message.length > 10_000) return error('message is too long')
+    if (!message) return error(c, 'message is required')
+    if (message.length > 10_000) return error(c, 'message is too long')
     if (await db.findPendingModerationAppeal(c.env.DB, auth.context.user.id, reportId, body.appeal_type)) {
-      return error('An appeal is already pending', 409)
+      return error(c, 'An appeal is already pending', 409)
     }
 
     const submittedSnapshot = typeof body.content_snapshot === 'string' ? body.content_snapshot.trim() : null
@@ -737,30 +739,30 @@ export function registerApiRoutes(app: App): void {
       content_snapshot: report?.content_snapshot ?? submittedSnapshot,
       message,
     })
-    return json({ id: appealId, status: 'pending' }, 201)
+    return c.json({ id: appealId, status: 'pending' }, 201)
   })
 
   // GET /api/admin/moderation/appeals — 管理端查看拒絕／帳號停權申訴。
   app.get('/api/admin/moderation/appeals', async c => {
-    const denied = await requireAdmin(c.req.raw, c.env)
+    const denied = await requireAdmin(c)
     if (denied) return denied
-    return json(await db.listModerationAppeals(c.env.DB))
+    return c.json(await db.listModerationAppeals(c.env.DB))
   })
 
   app.get('/api/admin/moderation/preview', async c => {
-    const denied = await requireAdmin(c.req.raw, c.env)
+    const denied = await requireAdmin(c)
     if (denied) return denied
 
     const text = c.req.query('text')?.trim() ?? ''
-    if (!text) return error('text is required')
+    if (!text) return error(c, 'text is required')
     const rawType = c.req.query('type') ?? 'opinion'
-    if (!isModerationSubmissionType(rawType)) return error('type must be "issue", "material", "opinion", or "briefing"')
+    if (!isModerationSubmissionType(rawType)) return error(c, 'type must be "issue", "material", "opinion", or "briefing"')
 
     const evaluation = await moderateSubmissionWithDiagnostics(c.env.OPEN_ROUTER_API_KEY, c.env.ASSETS, c.req.url, {
       type: rawType,
       fields: { [PREVIEW_FIELDS[rawType]]: text },
     })
-    return json({
+    return c.json({
       type: rawType,
       verdict: evaluation.model?.verdict ?? null,
       policy_code: evaluation.model?.policy_code ?? null,
@@ -776,22 +778,22 @@ export function registerApiRoutes(app: App): void {
   // PATCH /api/admin/moderation/appeals/:id/resolve — 維持或推翻申訴。
   // 帳號停權申訴的 uphold/overturn 會先透過 Better Auth ban/unban，再更新本地記錄。
   app.patch('/api/admin/moderation/appeals/:id/resolve', async c => {
-    const denied = await requireAdmin(c.req.raw, c.env)
+    const denied = await requireAdmin(c)
     if (denied) return denied
     const id = parseId(c.req.param('id'))
-    if (!id) return error('Invalid ID', 400)
+    if (!id) return error(c, 'Invalid ID', 400)
     let body: { action?: unknown; review_note?: unknown }
     try {
       body = await c.req.json()
     } catch {
-      return error('Invalid JSON')
+      return error(c, 'Invalid JSON')
     }
-    if (body.action !== 'uphold' && body.action !== 'overturn') return error('action must be "uphold" or "overturn"')
+    if (body.action !== 'uphold' && body.action !== 'overturn') return error(c, 'action must be "uphold" or "overturn"')
     const appeal = await db.getModerationAppeal(c.env.DB, id)
-    if (!appeal) return error('Appeal not found', 404)
-    if (appeal.status !== 'pending') return error('Appeal already resolved', 409)
+    if (!appeal) return error(c, 'Appeal not found', 404)
+    if (appeal.status !== 'pending') return error(c, 'Appeal already resolved', 409)
     const admin = await tryGetAuthContext(c.env, c.req.raw.headers)
-    if (!admin) return error('Unauthorized', 401)
+    if (!admin) return error(c, 'Unauthorized', 401)
 
     if (appeal.appeal_type === 'account_ban') {
       let targetBanned = false
@@ -799,20 +801,20 @@ export function registerApiRoutes(app: App): void {
         const target = await createAuth(c.env).api.getUser({ query: { id: appeal.user_id }, headers: c.req.raw.headers })
         targetBanned = target?.banned === true
       } catch {
-        return error('User not found', 404)
+        return error(c, 'User not found', 404)
       }
       if (body.action === 'uphold' && !targetBanned) {
-        const banError = await adminBanUser(c.req.raw, c.env, appeal.user_id, '帳號申訴維持：管理員確認停權')
+        const banError = await adminBanUser(c, appeal.user_id, '帳號申訴維持：管理員確認停權')
         if (banError) return banError
       } else if (body.action === 'overturn' && targetBanned) {
-        const unbanError = await adminUnbanUser(c.req.raw, c.env, appeal.user_id)
+        const unbanError = await adminUnbanUser(c, appeal.user_id)
         if (unbanError) return unbanError
       }
     }
 
     if (appeal.abuse_report_id !== null) {
       const report = await db.getAbuseReport(c.env.DB, appeal.abuse_report_id)
-      if (!report) return error('Moderation report not found', 404)
+      if (!report) return error(c, 'Moderation report not found', 404)
       await db.resolveAbuseReport(c.env.DB, appeal.abuse_report_id, body.action === 'uphold' ? 'resolved_abuse' : 'resolved_false')
       if (body.action === 'uphold') await db.confirmFlagContent(c.env.DB, report)
       else await db.unflagContent(c.env.DB, report)
@@ -824,25 +826,25 @@ export function registerApiRoutes(app: App): void {
       { id: admin.user.id, name: admin.user.name?.trim() || null },
       typeof body.review_note === 'string' ? body.review_note.trim() || null : null
     )
-    return json({ ok: true })
+    return c.json({ ok: true })
   })
   // 使用 Better Auth admin plugin getUser，不對 DB_AUTH 下自訂 SQL（不變量 11）。
   // 用途：確認某投稿者提交後是否改名換 email，或目前是否已被停權。
   app.get('/api/admin/users/:userId', async c => {
-    const denied = await requireAdmin(c.req.raw, c.env)
+    const denied = await requireAdmin(c)
     if (denied) return denied
 
     const userId = c.req.param('userId')
-    if (!userId) return error('userId is required', 400)
+    if (!userId) return error(c, 'userId is required', 400)
 
     try {
       const result = await createAuth(c.env).api.getUser({
         query: { id: userId },
         headers: c.req.raw.headers,
       })
-      if (!result) return error('User not found', 404)
+      if (!result) return error(c, 'User not found', 404)
       // 只回傳管理端需要的欄位，不把整個 session 物件洩漏出去
-      return json({
+      return c.json({
         id: result.id,
         name: result.name,
         email: result.email,
@@ -851,16 +853,16 @@ export function registerApiRoutes(app: App): void {
         banReason: result.banReason ?? null,
       })
     } catch {
-      return error('User not found', 404)
+      return error(c, 'User not found', 404)
     }
   })
 
   // GET /api/admin/abuse-reports — 管理端查看所有濫用回報
   app.get('/api/admin/abuse-reports', async c => {
-    const denied = await requireAdmin(c.req.raw, c.env)
+    const denied = await requireAdmin(c)
     if (denied) return denied
     const reports = await db.listAbuseReports(c.env.DB)
-    return json(reports)
+    return c.json(reports)
   })
 
   // 誤報 → 使用者回報時停權回報者；AI 回報誤報不處置任何人；→ 清除旗標 → resolved_false
@@ -872,25 +874,25 @@ export function registerApiRoutes(app: App): void {
   // admin role（userAc）會得到 FORBIDDEN（403）。APIError 在此 catch 後直接轉譯 status + message，
   // 避免錯誤被 Hono 攔截成 500（例如「You cannot ban yourself」原本就是 400）。
   app.patch('/api/admin/abuse-reports/:id/resolve', async c => {
-    const denied = await requireAdmin(c.req.raw, c.env)
+    const denied = await requireAdmin(c)
     if (denied) return denied
 
     const id = parseId(c.req.param('id'))
-    if (!id) return error('Invalid ID', 400)
+    if (!id) return error(c, 'Invalid ID', 400)
 
     let body: { action?: unknown }
     try {
       body = await c.req.json()
     } catch {
-      return error('Invalid JSON')
+      return error(c, 'Invalid JSON')
     }
     if (body.action !== 'false_report' && body.action !== 'confirmed_abuse' && body.action !== 'confirmed_broken') {
-      return error('action must be "false_report", "confirmed_abuse", or "confirmed_broken"')
+      return error(c, 'action must be "false_report", "confirmed_abuse", or "confirmed_broken"')
     }
 
     const report = await db.getAbuseReport(c.env.DB, id)
-    if (!report) return error('Report not found', 404)
-    if (report.review_status !== 'pending') return error('Report already resolved', 409)
+    if (!report) return error(c, 'Report not found', 404)
+    if (report.review_status !== 'pending') return error(c, 'Report already resolved', 409)
 
     // AI 回報的 reporter_id 是投稿者本人；確認誤報時絕不因同一個人被誤判而停權。
     // ban 先做，且只有 confirmed_abuse 或一般使用者誤報需要 ban。
@@ -909,10 +911,10 @@ export function registerApiRoutes(app: App): void {
           })
         } catch (banErr) {
           const apiErr = banErr as { statusCode?: number; body?: { message?: string } }
-          const status = typeof apiErr.statusCode === 'number' ? apiErr.statusCode : 500
+          const status = contentfulStatusCode(apiErr.statusCode)
           const message = apiErr.body?.message ?? 'Ban failed'
           console.error('banUser failed', { reportId: id, action: body.action, caught: banErr })
-          return error(message, status)
+          return error(c, message, status)
         }
       }
     }
@@ -929,8 +931,8 @@ export function registerApiRoutes(app: App): void {
       await db.confirmFlagContent(c.env.DB, report)
     }
 
-    return json({ ok: true })
+    return c.json({ ok: true })
   })
 
-  app.all('/api/*', () => error('Not found', 404))
+  app.all('/api/*', c => error(c, 'Not found', 404))
 }

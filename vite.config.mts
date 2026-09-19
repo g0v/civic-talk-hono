@@ -34,6 +34,9 @@ export default defineConfig(({ mode }) => ({
     // Cloudflare plugin 與 Vitest 不相容；測試時略過，由 vue plugin 單獨處理 .vue
     // 只有明確使用 `--mode remote` 時才連遠端綁定；一般 dev 使用本機模擬資源。
     ...(process.env['VITEST'] ? [] : [cloudflare({ remoteBindings: mode === 'remote' })]),
-    vue({ compiler: vueCompiler }),
+    vue({
+      compiler: vueCompiler,
+      template: { transformAssetUrls: false },
+    }),
   ]),
 }))
