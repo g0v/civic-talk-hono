@@ -531,7 +531,7 @@ async function submitOpinion() {
             <h1 class="mt-3 mb-2 font-serif text-3xl font-bold">
               {{ issue.abuse_flagged === 3 ? t('moderation_hidden_placeholder') : issue.title }}
             </h1>
-            <p v-if="issue.abuse_flagged !== 3 && issue.description" class="mt-0 mb-3 text-muted">{{ issue.description }}</p>
+            <p v-if="issue.abuse_flagged !== 3 && issue.description" class="mt-0 mb-3 whitespace-pre-line text-muted">{{ issue.description }}</p>
             <p class="m-0 text-sm text-muted">
               {{ t('issue_created') }} {{ formatDate(issue.created_at, locale) }} · {{ materials.length }} {{ t('issue_materials_unit') }} · {{ t('issue_author_label') }}：{{
                 issue.author_name || t('author_system')

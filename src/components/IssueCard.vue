@@ -26,7 +26,7 @@ const date = computed(() => formatDate(props.issue.created_at, locale.value))
     <h2 class="m-0 font-serif text-xl font-bold">
       <a :href="href" class="text-ink no-underline hover:no-underline after:absolute after:inset-0">{{ issue.title }}</a>
     </h2>
-    <p v-if="issue.description" class="mt-2 mb-0 text-sm text-muted">
+    <p v-if="issue.description" class="mt-2 mb-0 whitespace-pre-line text-sm text-muted">
       {{ issue.description }}
     </p>
     <p class="mt-3 mb-0 text-sm text-muted">
