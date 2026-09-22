@@ -3,6 +3,7 @@ import { onMounted, ref } from 'vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppFooter from '../components/AppFooter.vue'
 import AuthorEmailLink from '../components/AuthorEmailLink.vue'
+import OpinionVote from '../components/OpinionVote.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import { formatDate, useI18n } from '../l10n'
 import { useAuth } from '../composables/useAuth'
@@ -18,7 +19,7 @@ const props = defineProps<{
 }>()
 
 const { t, locale } = useI18n()
-const { ensureAuthSession } = useAuth()
+const { authState, ensureAuthSession } = useAuth()
 
 const opinion = ref<Opinion | null>(props.initialData?.opinion ?? null)
 const issue = ref<Issue | null>(props.initialData?.issue ?? null)
@@ -51,9 +52,22 @@ async function load() {
   }
 }
 
-onMounted(() => {
-  if (!props.initialData) void load()
-  void ensureAuthSession()
+async function loadViewerOpinion() {
+  const res = await fetch(`/api/issues/${props.issueId}/opinions?sort=recent`)
+  if (!res.ok) return
+  const rows = (await res.json()) as Opinion[]
+  const found = rows.find(row => row.id === props.opinionId)
+  if (found) opinion.value = found
+}
+
+function updateOpinionVote(state: Record<string, unknown>) {
+  if (opinion.value) opinion.value = { ...opinion.value, ...state }
+}
+
+onMounted(async () => {
+  if (!props.initialData) await load()
+  await ensureAuthSession()
+  if (authState.value === 'signed-in') await loadViewerOpinion()
 })
 
 async function copyLink() {
@@ -114,6 +128,11 @@ async function copyLink() {
 
             <div v-if="opinion.abuse_flagged === 3" class="whitespace-pre-wrap leading-relaxed text-muted">{{ t('moderation_hidden_placeholder') }}</div>
             <div v-else class="whitespace-pre-wrap leading-relaxed">{{ opinion.summary }}</div>
+            <OpinionVote
+              :opinion="opinion"
+              :callback-url="`/issues/${issue.id}/comment/${opinion.id}`"
+              @update="updateOpinionVote"
+            />
           </div>
 
           <!-- 分享區塊 -->
