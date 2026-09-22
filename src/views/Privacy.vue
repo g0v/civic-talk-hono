@@ -42,6 +42,7 @@ const { t } = useI18n()
             <ul class="mb-3 list-disc pl-6 leading-relaxed text-gray-700">
               <li v-html="t('privacy_s3_li1')"></li>
               <li v-html="t('privacy_s3_li2')"></li>
+              <li v-html="t('privacy_s3_li3')"></li>
             </ul>
             <p class="leading-relaxed text-gray-700">{{ t('privacy_s3_p4') }}</p>
           </section>

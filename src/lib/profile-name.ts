@@ -1,4 +1,6 @@
 export const NAME_CHANGE_COOLDOWN_CODE = 'NAME_CHANGE_COOLDOWN' as const
+export const DUPLICATE_DISPLAY_NAME_CODE = 'DUPLICATE_DISPLAY_NAME' as const
+export const DUPLICATE_NAME_EMAIL_REQUIRED_CODE = 'DUPLICATE_NAME_EMAIL_REQUIRED' as const
 export const NAME_CHANGE_COOLDOWN_DAYS = 30
 export const NAME_CHANGE_COOLDOWN_MS = NAME_CHANGE_COOLDOWN_DAYS * 24 * 60 * 60 * 1000
 export const DISPLAY_NAME_MAX_LENGTH = 100
@@ -31,14 +33,26 @@ export function nameChangeCooldownRemainingDays(nameChangedAt: string | null, no
   const expiresAt = nameChangeCooldownExpiresAt(nameChangedAt, now)
   return expiresAt === null ? null : Math.ceil((expiresAt - now) / (24 * 60 * 60 * 1000))
 }
+function hasErrorCode(payload: unknown, code: string): payload is { code: string } | { error: { code: string } } {
+  if (!payload || typeof payload !== 'object') return false
+  if ('code' in payload && payload.code === code) return true
+  if (!('error' in payload)) return false
+
+  const nested = payload.error
+  return !!nested && typeof nested === 'object' && 'code' in nested && nested.code === code
+}
 
 /** Better Auth client 與 Worker 回傳的錯誤格式不同，兩種都辨識。 */
 export function isNameChangeCooldownPayload(payload: unknown): boolean {
-  if (!payload || typeof payload !== 'object') return false
+  return hasErrorCode(payload, NAME_CHANGE_COOLDOWN_CODE)
+}
 
-  const record = payload as { code?: unknown; error?: unknown }
-  if (record.code === NAME_CHANGE_COOLDOWN_CODE) return true
+/** 辨識伺服器要求再次確認重複名稱的 409 回應。 */
+export function isDuplicateDisplayNamePayload(payload: unknown): boolean {
+  return hasErrorCode(payload, DUPLICATE_DISPLAY_NAME_CODE)
+}
 
-  const nested = record.error
-  return !!nested && typeof nested === 'object' && (nested as { code?: unknown }).code === NAME_CHANGE_COOLDOWN_CODE
+/** 辨識投稿當下出現同名、必須先明確同意公開 email 的 409 回應。 */
+export function isDuplicateNameEmailRequiredPayload(payload: unknown): boolean {
+  return hasErrorCode(payload, DUPLICATE_NAME_EMAIL_REQUIRED_CODE)
 }

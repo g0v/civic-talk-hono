@@ -15,20 +15,18 @@ import type {
   ModerationSubmissionType,
 } from '../db/queries'
 import * as db from '../db/queries'
-import { isAdminRole, tryGetAuthContext, type AuthContext } from '../auth/authorization'
+import { hasDuplicateDisplayName, isAdminRole, tryGetAuthContext, type AuthContext } from '../auth/authorization'
 import { createAuth } from '../auth/createAuth'
 import { TERMS_VERSION } from '../legal/terms'
+import { DUPLICATE_NAME_EMAIL_REQUIRED_CODE } from '../lib/profile-name'
 import { moderationReasonForPolicy, moderateSubmission, moderateSubmissionWithDiagnostics, type ModerationDecision, type ModerationSubmission } from '../moderation/service'
 import type { Context } from 'hono'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import type { App, AppBindings } from './types'
 
 const CONTENTFUL_STATUS_CODES = [
-  100, 102, 103,
-  200, 201, 202, 203, 206, 207, 208, 226,
-  300, 301, 302, 303, 305, 306, 307, 308,
-  400, 401, 402, 403, 404, 405, 406, 407, 408, 409, 410, 411, 412, 413, 414, 415, 416, 417, 418, 421, 422, 423, 424, 425, 426, 428, 429, 431, 451,
-  500, 501, 502, 503, 504, 505, 506, 507, 508, 510, 511,
+  100, 102, 103, 200, 201, 202, 203, 206, 207, 208, 226, 300, 301, 302, 303, 305, 306, 307, 308, 400, 401, 402, 403, 404, 405, 406, 407, 408, 409, 410, 411, 412, 413, 414, 415, 416, 417, 418, 421,
+  422, 423, 424, 425, 426, 428, 429, 431, 451, 500, 501, 502, 503, 504, 505, 506, 507, 508, 510, 511,
 ] as const satisfies readonly ContentfulStatusCode[]
 
 function contentfulStatusCode(value: unknown): ContentfulStatusCode {
@@ -170,6 +168,13 @@ export function validateSubmissionOptions(body: SubmissionOptions): Response | n
   if (body.terms_accepted !== true) return Response.json({ error: 'terms_accepted must be true' }, { status: 400 })
   if (body.show_email !== undefined && typeof body.show_email !== 'boolean') return Response.json({ error: 'show_email must be a boolean' }, { status: 400 })
   return null
+}
+
+/** 僅在 email 未明確公開時查同名；同名則要求 client 取得本次投稿的明確同意後重送。 */
+async function requireDuplicateNameEmail(c: Context, context: AuthContext, showEmail: unknown): Promise<Response | null> {
+  if (showEmail === true) return null
+  const duplicate = await hasDuplicateDisplayName(c.env.DB_AUTH, context.user.id, context.user.name)
+  return duplicate ? c.json({ code: DUPLICATE_NAME_EMAIL_REQUIRED_CODE }, 409) : null
 }
 
 export function buildAuthorSnapshot(user: AuthContext['user'], showEmail: boolean): AuthorSnapshotInput {
@@ -317,6 +322,8 @@ export function registerApiRoutes(app: App): void {
     if (!body.title?.trim()) return error(c, 'title is required')
     const invalidOptions = validateSubmissionOptions(body)
     if (invalidOptions) return invalidOptions
+    const duplicateNameEmailPreflight = await requireDuplicateNameEmail(c, auth.context, body.show_email)
+    if (duplicateNameEmailPreflight) return duplicateNameEmailPreflight
     const moderation = await moderateSubmissionForWrite(c.req.raw, c.env, {
       type: 'issue',
       fields: {
@@ -324,6 +331,8 @@ export function registerApiRoutes(app: App): void {
         description: body.description ?? '',
       },
     })
+    const duplicateNameEmail = await requireDuplicateNameEmail(c, auth.context, body.show_email)
+    if (duplicateNameEmail) return duplicateNameEmail
     const id = await db.createIssue(
       c.env.DB,
       {
@@ -447,6 +456,8 @@ export function registerApiRoutes(app: App): void {
     if (!body.content?.trim()) return error(c, 'content is required')
     const invalidOptions = validateSubmissionOptions(body)
     if (invalidOptions) return invalidOptions
+    const duplicateNameEmailPreflight = await requireDuplicateNameEmail(c, auth.context, body.show_email)
+    if (duplicateNameEmailPreflight) return duplicateNameEmailPreflight
     const submission: ModerationSubmission = {
       type: 'material',
       fields: {
@@ -457,6 +468,8 @@ export function registerApiRoutes(app: App): void {
       },
     }
     const moderation = await moderateSubmissionForWrite(c.req.raw, c.env, submission)
+    const duplicateNameEmail = await requireDuplicateNameEmail(c, auth.context, body.show_email)
+    if (duplicateNameEmail) return duplicateNameEmail
     const materialId = await db.createMaterial(
       c.env.DB,
       id,
@@ -511,6 +524,8 @@ export function registerApiRoutes(app: App): void {
       return error(c, 'Invalid JSON')
     }
     if (body.show_email !== undefined && typeof body.show_email !== 'boolean') return error(c, 'show_email must be a boolean')
+    const duplicateNameEmailPreflight = await requireDuplicateNameEmail(c, auth.context, body.show_email)
+    if (duplicateNameEmailPreflight) return duplicateNameEmailPreflight
     const submission: ModerationSubmission = {
       type: 'briefing',
       fields: {
@@ -522,7 +537,8 @@ export function registerApiRoutes(app: App): void {
       },
     }
     const moderation = await moderateSubmissionForWrite(c.req.raw, c.env, submission)
-    // 說明頁公開顯示投稿當下名稱；email 僅在 show_email = true 時公開。
+    const duplicateNameEmail = await requireDuplicateNameEmail(c, auth.context, body.show_email)
+    if (duplicateNameEmail) return duplicateNameEmail
     const version = await db.createBriefing(c.env.DB, id, buildAuthorSnapshot(auth.context.user, body.show_email === true), body, {
       moderationHidden: moderation.hidden,
       skipStatusTransition: moderation.hidden,
@@ -588,11 +604,15 @@ export function registerApiRoutes(app: App): void {
     if (!body.summary?.trim()) return error(c, 'summary is required')
     const invalidOptions = validateSubmissionOptions(body)
     if (invalidOptions) return invalidOptions
+    const duplicateNameEmailPreflight = await requireDuplicateNameEmail(c, auth.context, body.show_email)
+    if (duplicateNameEmailPreflight) return duplicateNameEmailPreflight
     const submission: ModerationSubmission = {
       type: 'opinion',
       fields: { summary: body.summary.trim() },
     }
     const moderation = await moderateSubmissionForWrite(c.req.raw, c.env, submission)
+    const duplicateNameEmail = await requireDuplicateNameEmail(c, auth.context, body.show_email)
+    if (duplicateNameEmail) return duplicateNameEmail
     const opinionId = await db.createOpinion(
       c.env.DB,
       id,

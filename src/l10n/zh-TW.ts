@@ -22,6 +22,7 @@ export const messages = {
   profile_name_cooldown: '稱呼修改後 30 天內不得再次修改。',
   profile_name_cooldown_remaining: '還有 {days} 天才能再次修改稱呼。',
   profile_name_confirm: '修改稱呼後 {days} 天內不得再改名，確定要修改嗎？',
+  profile_name_duplicate_confirm: '已有其他使用者使用「{name}」。若仍使用此名稱，之後提交內容時會強制公開 email 以供辨識。確定繼續嗎？',
   profile_moderation_title: '我的待複核審查記錄',
   profile_moderation_empty: '目前沒有待複核的 AI 審查記錄。',
   profile_moderation_policy: '政策代碼：',
@@ -412,6 +413,8 @@ export const messages = {
   // Email 公開選項（#27）
   show_email_label: '公開我的 email：{email}',
   show_email_hint: '（選填；email 快照會保存，勾選後才會公開）',
+  duplicate_name_email_required: '目前有其他帳號使用相同的公開顯示名稱。依平台規則，這次提交將公開 email：{email}',
+  duplicate_name_submission_confirm: '送出前重新檢查時發現已有其他有效帳號使用相同名稱。為了區分署名，本次投稿必須公開 email：{email}。確定公開並繼續送出嗎？',
   author_email_link_title: '寄信給 {name}',
   // RSS 訂閱（#45）
   rss_subscribe_btn: '📡 訂閱 RSS',
@@ -427,7 +430,7 @@ export const messages = {
   terms_s3_p1:
     '<strong>建立議題、提交素材、發表意見、送出說明頁／彙整</strong>均為具名行為。提交後，您提交當下的公開顯示名稱快照將公開附在對應內容上，所有訪客均可查看；日後修改稱呼不會追溯變更既有內容的署名。',
   terms_s3_p2:
-    '提交時，您可以勾選「公開我的 email」選項。平台會保存提交當下的 email 快照；若選擇公開，該快照將隨顯示名稱公開顯示，若未選擇則不會出現在公開 API、頁面或 SSR 原始碼，僅供具管理權限者追溯濫用及在必要時配合調查（見「執法配合」）。',
+    '提交時，您通常可以自行選擇是否公開 email。平台會保存提交當下的 email 快照；若選擇公開，該快照將隨顯示名稱公開顯示，若未選擇則不會出現在公開 API、頁面或 SSR 原始碼，僅供具管理權限者追溯濫用及在必要時配合調查（見「執法配合」）。但若提交當下已有其他未停權帳號使用相同的公開顯示名稱，為提供可辨識的署名，該次及後續同名期間的新提交必須公開 email；既有內容不溯及變更。平台會在寫入前重新檢查；若填表期間才出現同名，會先提示並取得您的明確同意，不會靜默公開。',
   terms_s3_p3: '具名提交的目的是確保內容品質與可追溯性，讓每一份議題、素材與意見都有明確的提交者負責。請在提交前確認您願意以自己的名字為該內容負責。',
   terms_s4_h: '帳戶要求',
   terms_s4_p1: '建立議題、提交素材及發表意見均需以 Google 或 GitHub 帳號登入。登入帳號與 vTaiwan 平台共用。您有責任妥善保管您的帳號安全，不得讓他人使用您的帳號提交內容。',
@@ -473,11 +476,14 @@ export const messages = {
   privacy_s3_alert: '重要：在本平台建立議題、提交素材、發表意見均為具名行為',
   privacy_s3_p1: '為確保內容品質與可追溯性，上述行為提交後，您提交當下的公開顯示名稱將公開附在對應的議題、素材或意見上，所有訪客均可查看。日後修改稱呼不會追溯變更既有內容的署名。',
   privacy_s3_p2: '若帳號沒有提供或尚未設定顯示名稱，平台會顯示固定的「未提供顯示名稱」提示，不會以 email 代替。',
-  privacy_s3_p3: '提交時，您可以選擇是否公開您的 email：',
-  privacy_s3_li1: '<strong>選擇公開 email</strong>：提交當下的 email 快照將隨顯示名稱一同公開呈現在該筆內容上，供其他訪客查看。',
-  privacy_s3_li2: '<strong>不公開 email</strong>：email 快照仍會為濫用追溯而保存在業務資料庫，但公開 API、頁面與 SSR 原始碼不會回傳；僅限具管理權限者於必要時存取。',
+  privacy_s3_p3: '提交時的 email 公開規則如下：',
+  privacy_s3_li1: '<strong>自行選擇公開 email</strong>：提交當下的 email 快照將隨顯示名稱一同公開呈現在該筆內容上，供其他訪客查看。',
+  privacy_s3_li2:
+    '<strong>選擇不公開 email</strong>：若沒有其他帳號使用相同顯示名稱，email 快照仍會為濫用追溯而保存在業務資料庫，但公開 API、頁面與 SSR 原始碼不會回傳；僅限具管理權限者於必要時存取。',
+  privacy_s3_li3:
+    '<strong>同名時必須公開</strong>：平台會在寫入前重新檢查；若提交當下已有其他未停權帳號使用相同的公開顯示名稱，會先提示並取得您的明確同意，才以公開 email 的方式送出該筆新內容；不會靜默公開，也不溯及變更既有內容。永久停權及尚未到期的暫時停權帳號不占用名稱；暫時停權到期後會重新占用。',
   privacy_s3_p4:
-    'user ID 是 Better Auth 產生的平台內部識別碼，不是 Google 或 GitHub 的公開帳號名稱；一律不公開顯示。議題、素材、意見與說明頁都會公開顯示提交當下的顯示名稱；email 僅在該筆內容勾選公開時才顯示。',
+    'user ID 是 Better Auth 產生的平台內部識別碼，不是 Google 或 GitHub 的公開帳號名稱；一律不公開顯示。議題、素材、意見與說明頁都會公開顯示提交當下的顯示名稱；email 依上述自行選擇或同名強制公開規則顯示。',
   privacy_s4_h: '資料使用目的',
   privacy_s4_li1: '提供並維護平台服務（議題建立、素材收集、意見匯聚）',
   privacy_s4_li2: '確保內容品質：具名提交可降低惡意投稿的風險',
@@ -502,7 +508,7 @@ export const messages = {
   privacy_s8_github_label: 'GitHub：',
   privacy_s9_h: '政策更新',
   privacy_s9_p: '我們可能不時更新本隱私權政策。重大變更將在平台上公告。',
-  privacy_s9_date: '最後更新：2026 年 8 月',
+  privacy_s9_date: '最後更新：2026 年 9 月',
   // 濫用回報（#21）
   report_btn: '⚑ 回報濫用',
   report_modal_title: '回報濫用內容',

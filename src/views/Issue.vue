@@ -8,6 +8,7 @@ import SignInButtons from '../components/SignInButtons.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import Toast from '../components/Toast.vue'
 import ModerationAppealNotice from '../components/ModerationAppealNotice.vue'
+import { postSubmissionWithDuplicateNameCheck } from '../client/submission'
 import { useAuth } from '../composables/useAuth'
 import { useSubmitGuard } from '../composables/useSubmitGuard'
 import { useViewerRole } from '../composables/useViewerRole'
@@ -82,6 +83,7 @@ const synthesisDone = ref(false)
 
 // 全站共用的登入狀態（與 AppHeader 共用同一次 /api/me）；SSR 期間永遠是 'loading'
 const { authState, session, ensureAuthSession } = useAuth()
+const duplicateNameRequiresEmail = computed(() => session.value?.hasDuplicateDisplayName === true)
 // 送出時才發現 session 過期：意見框留著（別吃掉使用者打的字），只在上方補一列重新登入
 const sessionExpired = ref(false)
 // 志願者工具同樣需要登入；若操作時 session 過期，保留已填內容並引導重新登入。
@@ -91,6 +93,10 @@ const loginCallbackUrl = computed(() => `/issues/${props.issueId}`)
 type ModerationNotice = { appealType: 'rejected_submission' | 'account_ban'; reportId?: number; policyCode?: string; rationale?: string }
 const volunteerModerationNotice = ref<ModerationNotice | null>(null)
 const opinionModerationNotice = ref<ModerationNotice | null>(null)
+
+async function postIssueSubmission(path: string, body: Record<string, unknown>): Promise<Response | null> {
+  return postSubmissionWithDuplicateNameCheck(path, body, () => window.confirm(t('duplicate_name_submission_confirm', { email: session.value?.user.email || '' })))
+}
 
 async function handleModerationResult(res: Response, source: 'volunteer' | 'opinion'): Promise<boolean> {
   const notice = source === 'volunteer' ? volunteerModerationNotice : opinionModerationNotice
@@ -315,11 +321,11 @@ async function submitSummarize() {
     toast.value?.show(t('vol_toast_fill_one'))
     return
   }
-  const res = await fetch(`/api/issues/${props.issueId}/briefing`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...body, show_email: volunteerShowEmail.value }),
+  const res = await postIssueSubmission(`/api/issues/${props.issueId}/briefing`, {
+    ...body,
+    show_email: volunteerShowEmail.value,
   })
+  if (!res) return
   if (res.status === 401) {
     volunteerSessionExpired.value = true
     toast.value?.show(t('login_expired_toast'))
@@ -342,11 +348,11 @@ async function submitSynthesis() {
     toast.value?.show(t('vol_toast_fill_one'))
     return
   }
-  const res = await fetch(`/api/issues/${props.issueId}/briefing`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...body, show_email: volunteerShowEmail.value }),
+  const res = await postIssueSubmission(`/api/issues/${props.issueId}/briefing`, {
+    ...body,
+    show_email: volunteerShowEmail.value,
   })
+  if (!res) return
   if (res.status === 401) {
     volunteerSessionExpired.value = true
     toast.value?.show(t('login_expired_toast'))
@@ -368,11 +374,11 @@ async function submitNarrative() {
   }
   if (typeof window !== 'undefined' && !window.confirm(t('vol_confirm_submit_narrative'))) return
   const body = { narrative: text }
-  const res = await fetch(`/api/issues/${props.issueId}/briefing`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...body, show_email: volunteerShowEmail.value }),
+  const res = await postIssueSubmission(`/api/issues/${props.issueId}/briefing`, {
+    ...body,
+    show_email: volunteerShowEmail.value,
   })
+  if (!res) return
   if (res.status === 401) {
     volunteerSessionExpired.value = true
     toast.value?.show(t('login_expired_toast'))
@@ -488,15 +494,12 @@ async function submitOpinion() {
     toast.value?.show(t('tos_required_toast'))
     return
   }
-  const res = await fetch(`/api/issues/${props.issueId}/opinions`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      summary,
-      show_email: opinionShowEmail.value,
-      terms_accepted: opinionTosAgreed.value,
-    }),
+  const res = await postIssueSubmission(`/api/issues/${props.issueId}/opinions`, {
+    summary,
+    show_email: opinionShowEmail.value,
+    terms_accepted: opinionTosAgreed.value,
   })
+  if (!res) return
   // session 可能在打字期間過期——守門在伺服器端，前端接住 401 但保留已寫的意見
   if (res.status === 401) {
     sessionExpired.value = true
@@ -692,7 +695,10 @@ async function submitOpinion() {
                 :rationale="volunteerModerationNotice.rationale"
               />
               <p class="mb-6 text-sm text-muted">{{ t('vol_step1') }} → {{ t('vol_step2') }} → {{ t('vol_step3') }}</p>
-              <div class="form-group mb-6">
+              <div v-if="duplicateNameRequiresEmail" class="alert alert-info mb-6">
+                {{ t('duplicate_name_email_required', { email: session?.user.email || '' }) }}
+              </div>
+              <div v-else class="form-group mb-6">
                 <label class="flex items-start gap-2 font-normal">
                   <input v-model="volunteerShowEmail" type="checkbox" class="mt-1 w-auto" />
                   <span
@@ -834,7 +840,10 @@ async function submitOpinion() {
                     >
                   </label>
                 </div>
-                <div class="form-group">
+                <div v-if="duplicateNameRequiresEmail" class="alert alert-info">
+                  {{ t('duplicate_name_email_required', { email: session?.user.email || '' }) }}
+                </div>
+                <div v-else class="form-group">
                   <label class="flex items-start gap-2 font-normal">
                     <input v-model="opinionShowEmail" type="checkbox" class="mt-1 w-auto" />
                     <span
