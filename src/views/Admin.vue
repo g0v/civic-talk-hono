@@ -8,6 +8,7 @@ import Toast from '../components/Toast.vue'
 import { formatDate, useI18n } from '../l10n'
 import type { MessageKey } from '../l10n/zh-TW'
 import { useAuth } from '../composables/useAuth'
+import { postSubmissionWithDuplicateNameCheck } from '../client/submission'
 import { isAdminSession } from '../client/auth-session'
 import type { AbuseReport, BriefingWithAuthor, IssueListItemWithAuthor, IssueStatus, MaterialWithAuthor, ModerationAppeal, OpinionWithAuthor } from '../db/queries'
 
@@ -30,6 +31,7 @@ const adminView = computed<'loading' | 'anonymous' | 'forbidden' | 'admin'>(() =
   if (authState.value === 'anonymous' || !session.value) return 'anonymous'
   return isAdminSession(session.value) ? 'admin' : 'forbidden'
 })
+const duplicateNameRequiresEmail = computed(() => session.value?.hasDuplicateDisplayName === true)
 const activeTab = ref<AdminTab>('reports')
 const stats = ref({ issues: 0, materials: 0, opinions: 0, briefings: 0 })
 // 管理端讀到的議題／素材／意見都含建立者或投稿者（#9）；一般讀取者拿到的是公開形狀
@@ -54,6 +56,7 @@ const formDesc = ref('')
 const formStatus = ref<IssueStatus>('collecting')
 const formPolis = ref(false)
 const formTermsAgreed = ref(false)
+const formShowEmailConfirmed = ref(false)
 const briefConsensus = ref('')
 const briefDisputes = ref('')
 const briefPositions = ref('')
@@ -201,6 +204,7 @@ function openNew() {
   formDesc.value = ''
   formPolis.value = false
   formTermsAgreed.value = false
+  formShowEmailConfirmed.value = false
   modalNew.value = true
 }
 
@@ -234,17 +238,18 @@ async function createIssue() {
     toast.value?.show(t('tos_required_toast'))
     return
   }
-  const res = await fetch('/api/issues', {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify({
+  const res = await postSubmissionWithDuplicateNameCheck(
+    '/api/issues',
+    {
       title: formTitle.value.trim(),
       description: formDesc.value,
       polis_id: formPolis.value ? 'enabled' : null,
-      show_email: false,
+      show_email: formShowEmailConfirmed.value,
       terms_accepted: formTermsAgreed.value,
-    }),
-  })
+    },
+    () => window.confirm(t('duplicate_name_submission_confirm', { email: session.value?.user.email || '' }))
+  )
+  if (!res) return
   if (!res.ok) return
   toast.value?.show(t('adm_toast_create'))
   modalNew.value = false
@@ -294,11 +299,18 @@ async function saveBriefing() {
   }
   const existing = await fetch(`/api/issues/${briefingIssueId.value}/briefing`)
   const has = existing.ok && (await existing.json())
-  const res = await fetch(`/api/issues/${briefingIssueId.value}/briefing`, {
-    method: has ? 'PUT' : 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify(body),
-  })
+  const url = `/api/issues/${briefingIssueId.value}/briefing`
+  let res: Response | null
+  if (has) {
+    res = await fetch(url, {
+      method: 'PUT',
+      headers: authHeaders(),
+      body: JSON.stringify(body),
+    })
+  } else {
+    res = await postSubmissionWithDuplicateNameCheck(url, { ...body, show_email: false }, () => window.confirm(t('duplicate_name_submission_confirm', { email: session.value?.user.email || '' })))
+  }
+  if (!res) return
   if (!res.ok) return
   toast.value?.show(t('adm_toast_briefing_save'))
   modalBriefing.value = false
@@ -897,6 +909,9 @@ function snapshotSummary(snapshotJSON: string): string {
               >{{ t('tos_agree_suffix') }}</span
             >
           </label>
+        </div>
+        <div v-if="duplicateNameRequiresEmail" class="alert alert-info">
+          {{ t('duplicate_name_email_required', { email: session?.user.email || '' }) }}
         </div>
         <div class="flex gap-2">
           <button type="button" class="btn btn-primary" @click="createIssue">{{ t('adm_btn_create') }}</button>

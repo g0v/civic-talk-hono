@@ -5,7 +5,7 @@ import AppHeader from '../components/AppHeader.vue'
 import SignInButtons from '../components/SignInButtons.vue'
 import { updateProfileName } from '../client/auth-session'
 import { useAuth } from '../composables/useAuth'
-import { DISPLAY_NAME_MAX_LENGTH, isNameChangeCooldownPayload, NAME_CHANGE_COOLDOWN_DAYS, normalizeDisplayName } from '../lib/profile-name'
+import { DISPLAY_NAME_MAX_LENGTH, isDuplicateDisplayNamePayload, isNameChangeCooldownPayload, NAME_CHANGE_COOLDOWN_DAYS, normalizeDisplayName } from '../lib/profile-name'
 import { useI18n } from '../l10n'
 const { t } = useI18n()
 const { authState, session, ensureAuthSession, signOutAndReload, updateSessionName } = useAuth()
@@ -49,10 +49,17 @@ async function saveName() {
   try {
     saving.value = true
     errorMessage.value = ''
-    const { error } = await updateProfileName(name)
+    let duplicateNameConfirmed = false
+    let { error } = await updateProfileName(name)
+    if (isDuplicateDisplayNamePayload(error)) {
+      if (!window.confirm(t('profile_name_duplicate_confirm', { name }))) return
+      duplicateNameConfirmed = true
+      const retryResult = await updateProfileName(name, true)
+      error = retryResult.error
+    }
     if (error) throw error
 
-    updateSessionName(name)
+    updateSessionName(name, duplicateNameConfirmed)
     localCooldownDays.value = NAME_CHANGE_COOLDOWN_DAYS
     editing.value = false
   } catch (error) {

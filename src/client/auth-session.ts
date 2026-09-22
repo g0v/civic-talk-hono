@@ -34,6 +34,8 @@ export interface AuthSession {
   banned: boolean
   /** 名稱修改冷卻期剩餘天數；未在冷卻期時為 null。 */
   nameChangeCooldownDays: number | null
+  /** 目前是否有其他帳號使用相同公開顯示名稱；為 true 時新投稿必須公開 email。 */
+  hasDuplicateDisplayName: boolean
 }
 
 /**
@@ -59,6 +61,12 @@ export async function signOut(): Promise<void> {
   await getAuthClient().signOut()
 }
 
-export function updateProfileName(name: string) {
-  return getAuthClient().updateUser({ name })
+export async function updateProfileName(name: string, confirmDuplicateName = false): Promise<{ error: unknown }> {
+  const response = await fetch('/api/auth/update-user', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, confirm_duplicate_name: confirmDuplicateName }),
+  })
+  const payload = await response.json().catch(() => null)
+  return { error: response.ok ? null : (payload ?? { status: response.status }) }
 }

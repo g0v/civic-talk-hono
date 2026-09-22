@@ -43,12 +43,13 @@ describe('作者資料隱私守護', () => {
     expect(canReadAdminSnapshots(null)).toBe(false)
   })
 
-  it('名稱缺漏時不以 email 代替公開名稱', () => {
+  it('名稱缺漏時不以 email 代替公開名稱，且不會自行翻轉 email 公開選擇', () => {
     const user = {
       id: 'user-1',
       name: '   ',
       email: 'private@example.com',
-    } as AuthContext['user']
+      image: null,
+    }
 
     expect(buildAuthorSnapshot(user, false)).toEqual({
       author_id: 'user-1',

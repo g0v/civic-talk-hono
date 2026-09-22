@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vite-plus/test'
 import {
   DISPLAY_NAME_MAX_LENGTH,
+  isDuplicateDisplayNamePayload,
+  isDuplicateNameEmailRequiredPayload,
   isNameChangeCooldownPayload,
   NAME_CHANGE_COOLDOWN_DAYS,
   NAME_CHANGE_COOLDOWN_MS,
@@ -35,6 +37,18 @@ describe('個人名稱修改冷卻期', () => {
     expect(isNameChangeCooldownPayload({ code: 'NAME_CHANGE_COOLDOWN' })).toBe(true)
     expect(isNameChangeCooldownPayload({ error: { code: 'NAME_CHANGE_COOLDOWN' } })).toBe(true)
     expect(isNameChangeCooldownPayload({ code: 'OTHER_ERROR' })).toBe(false)
+  })
+
+  it('可辨識同名確認錯誤格式', () => {
+    expect(isDuplicateDisplayNamePayload({ code: 'DUPLICATE_DISPLAY_NAME' })).toBe(true)
+    expect(isDuplicateDisplayNamePayload({ error: { code: 'DUPLICATE_DISPLAY_NAME' } })).toBe(true)
+    expect(isDuplicateDisplayNamePayload({ code: 'OTHER_ERROR' })).toBe(false)
+  })
+
+  it('只辨識投稿同名 email 確認的專用錯誤碼', () => {
+    expect(isDuplicateNameEmailRequiredPayload({ code: 'DUPLICATE_NAME_EMAIL_REQUIRED' })).toBe(true)
+    expect(isDuplicateNameEmailRequiredPayload({ error: { code: 'DUPLICATE_NAME_EMAIL_REQUIRED' } })).toBe(true)
+    expect(isDuplicateNameEmailRequiredPayload({ code: 'DUPLICATE_DISPLAY_NAME' })).toBe(false)
   })
 })
 
