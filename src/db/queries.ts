@@ -330,6 +330,8 @@ export async function updateIssue(
 }
 
 export async function deleteIssueCascade(db: D1Database, id: number): Promise<void> {
+  // 票掛在意見上，必須先於 ct_opinions 刪除（#107）
+  await db.prepare('DELETE FROM ct_opinion_votes WHERE opinion_id IN (SELECT id FROM ct_opinions WHERE issue_id = ?)').bind(id).run()
   await db.prepare('DELETE FROM ct_opinions WHERE issue_id = ?').bind(id).run()
   await db.prepare('DELETE FROM ct_briefings WHERE issue_id = ?').bind(id).run()
   await db.prepare('DELETE FROM ct_materials WHERE issue_id = ?').bind(id).run()
@@ -567,6 +569,9 @@ export async function createOpinion(
 }
 
 export async function deleteOpinion(db: D1Database, id: number): Promise<void> {
+  // 先刪票再刪意見：本 repo 一律顯式逐表刪除，不倚賴 FK 的 ON DELETE CASCADE
+  // （D1 的外鍵強制執行不保證開啟，靠 cascade 會留下孤兒票）。
+  await db.prepare('DELETE FROM ct_opinion_votes WHERE opinion_id = ?').bind(id).run()
   await db.prepare('DELETE FROM ct_opinions WHERE id = ?').bind(id).run()
 }
 
@@ -940,4 +945,199 @@ export async function confirmFlagContent(db: D1Database, report: Pick<AbuseRepor
   } else if (report.opinion_id != null) {
     await db.prepare('UPDATE ct_opinions SET abuse_flagged = 2 WHERE id = ?').bind(report.opinion_id).run()
   }
+}
+
+// ---------------------------------------------------------------------------
+// 公民意見投票（issue #107）
+//
+// 票值沿用 pol.is／pocket-polis：1 同意、-1 不同意、0 略過。
+// 三條規則寫在這一層，不倚賴前端：
+//   1. 提議者的「當然贊成票」用算的（author_id 不為 NULL 就 +1），不寫進投票表。
+//   2. 投票前不揭露分布：未投票且非提議者時 tally 一律為 null。
+//   3. author_id 只在伺服器端用來判斷 is_author，絕不隨回應外流。
+// ---------------------------------------------------------------------------
+
+/** 1 同意、-1 不同意、0 略過 */
+export type VoteValue = 1 | 0 | -1
+
+export function isVoteValue(value: unknown): value is VoteValue {
+  return value === 1 || value === 0 || value === -1
+}
+
+export interface OpinionVoteState {
+  opinion_id: number
+  /** 自己投的票；沒投過為 null。提議者恆為 null（不得對自己的意見投票） */
+  my_vote: VoteValue | null
+  /** 你是這則意見的提議者：當然贊成一票，不可改投 */
+  is_author: boolean
+  /** 票數分布；尚未表態時為 null（#107 決策 5：投票後才揭露） */
+  tally: { agree: number; disagree: number; pass: number } | null
+}
+
+/** 投票守門需要的意見資訊；author_id 只在伺服器端使用，不得外流 */
+export interface OpinionVoteTarget {
+  id: number
+  issue_id: number
+  author_id: string | null
+  abuse_flagged: 0 | 1 | 2 | 3
+}
+
+export async function getOpinionVoteTarget(db: D1Database, opinionId: number): Promise<OpinionVoteTarget | null> {
+  return await db.prepare('SELECT id, issue_id, author_id, abuse_flagged FROM ct_opinions WHERE id = ?').bind(opinionId).first<OpinionVoteTarget>()
+}
+
+/**
+ * 寫入或更新一票。
+ *
+ * 一人一票由 PRIMARY KEY (opinion_id, voter_id) 保證：平行請求會同時通過任何
+ * 「先查再寫」的應用層檢查，只有資料庫的唯一性約束擋得住，所以這裡直接 upsert，
+ * 不先 SELECT。created_at 保留第一次投票的時間，updated_at 記錄最後一次改票。
+ */
+export async function upsertOpinionVote(db: D1Database, opinionId: number, voterId: string, value: VoteValue): Promise<void> {
+  await db
+    .prepare(
+      `INSERT INTO ct_opinion_votes (opinion_id, voter_id, value, created_at, updated_at)
+       VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+       ON CONFLICT(opinion_id, voter_id) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`
+    )
+    .bind(opinionId, voterId, value)
+    .run()
+}
+
+/** 收回自己的票（只刪自己的，voter_id 一律由 session 決定，不吃請求參數） */
+export async function deleteOpinionVote(db: D1Database, opinionId: number, voterId: string): Promise<void> {
+  await db.prepare('DELETE FROM ct_opinion_votes WHERE opinion_id = ? AND voter_id = ?').bind(opinionId, voterId).run()
+}
+
+export interface OpinionVoteAggregateRow {
+  opinion_id: number
+  author_id: string | null
+  agrees: number
+  disagrees: number
+  passes: number
+  /** 這位登入者自己的票；沒投過為 NULL。注意 0（略過）是合法值，判斷要用 === null */
+  my_vote: number | null
+}
+
+/**
+ * 彙總資料列 → 回給前端的投票狀態。整個功能最關鍵的三條規則都在這裡，
+ * 抽成純函式是為了能直接測試，不必架資料庫：
+ *
+ *   1. 提議者當然贊成（#107 決策 4）：author_id 不為 NULL 就加一票贊成，
+ *      不論這位讀者是誰。投稿時不補寫投票列，所以既有資料不必回填。
+ *   2. 投票前不揭露分布（#107 決策 5）：未表態時 tally 為 null。
+ *      這條一定要在伺服器端做——前端藏數字等於沒藏。
+ *   3. author_id 只用來算出 is_author，絕不進入回傳值。
+ */
+export function toOpinionVoteState(row: OpinionVoteAggregateRow, viewerId: string): OpinionVoteState {
+  const isAuthor = row.author_id !== null && row.author_id === viewerId
+  // 0（略過）是合法票值但在 JS 裡是 falsy，判斷一律用 isVoteValue／=== null
+  const myVote = isVoteValue(row.my_vote) ? row.my_vote : null
+  const agree = Number(row.agrees ?? 0) + (row.author_id !== null ? 1 : 0)
+  const revealed = isAuthor || myVote !== null
+  return {
+    opinion_id: row.opinion_id,
+    my_vote: myVote,
+    is_author: isAuthor,
+    tally: revealed ? { agree, disagree: Number(row.disagrees ?? 0), pass: Number(row.passes ?? 0) } : null,
+  }
+}
+
+/**
+ * 取某議題所有意見對「這位登入者」的投票狀態。
+ *
+ * 一次 LEFT JOIN + GROUP BY 把全部意見的票數算完，不逐則查詢——在 Worker 裡對 D1
+ * 逐筆往返，一頁 50 則意見就是 50 次來回。
+ */
+export async function listOpinionVoteStates(db: D1Database, issueId: number, viewerId: string): Promise<OpinionVoteState[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT o.id AS opinion_id,
+              o.author_id AS author_id,
+              SUM(CASE WHEN v.value =  1 THEN 1 ELSE 0 END) AS agrees,
+              SUM(CASE WHEN v.value = -1 THEN 1 ELSE 0 END) AS disagrees,
+              SUM(CASE WHEN v.value =  0 THEN 1 ELSE 0 END) AS passes,
+              MAX(CASE WHEN v.voter_id = ?1 THEN v.value END) AS my_vote
+         FROM ct_opinions o
+         LEFT JOIN ct_opinion_votes v ON v.opinion_id = o.id
+        WHERE o.issue_id = ?2
+        GROUP BY o.id
+        ORDER BY o.created_at DESC`
+    )
+    .bind(viewerId, issueId)
+    .all<OpinionVoteAggregateRow>()
+
+  return (results ?? []).map(row => toOpinionVoteState(row, viewerId))
+}
+
+/** CSV 匯出用：意見 + 票數（含提議者的當然贊成票）。只取公開可見的意見 */
+export interface OpinionExportRow {
+  id: number
+  summary: string | null
+  created_at: string | null
+  abuse_flagged: number
+  author_id: string | null
+  agrees: number
+  disagrees: number
+}
+
+export async function listOpinionsForExport(db: D1Database, issueId: number): Promise<OpinionExportRow[]> {
+  // abuse_flagged 2（確認違規）與 3（AI 判定違規）的內容不得外流，在查詢階段就排除
+  const { results } = await db
+    .prepare(
+      `SELECT o.id, o.summary, o.created_at, o.abuse_flagged, o.author_id,
+              SUM(CASE WHEN v.value =  1 THEN 1 ELSE 0 END) AS agrees,
+              SUM(CASE WHEN v.value = -1 THEN 1 ELSE 0 END) AS disagrees
+         FROM ct_opinions o
+         LEFT JOIN ct_opinion_votes v ON v.opinion_id = o.id
+        WHERE o.issue_id = ? AND o.abuse_flagged IN (0, 1)
+        GROUP BY o.id
+        ORDER BY o.created_at, o.id`
+    )
+    .bind(issueId)
+    .all<OpinionExportRow>()
+  return results ?? []
+}
+
+/** CSV 匯出用：逐票長格式。voter_id 由呼叫端匿名化成 p 序號後才輸出 */
+export interface VoteExportRow {
+  opinion_id: number
+  voter_id: string
+  value: number
+  updated_at: string | null
+}
+
+export async function listVotesForExport(db: D1Database, issueId: number): Promise<VoteExportRow[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT v.opinion_id, v.voter_id, v.value, v.updated_at
+         FROM ct_opinion_votes v
+         JOIN ct_opinions o ON o.id = v.opinion_id
+        WHERE o.issue_id = ? AND o.abuse_flagged IN (0, 1)
+        ORDER BY v.created_at, v.opinion_id, v.voter_id`
+    )
+    .bind(issueId)
+    .all<VoteExportRow>()
+  return results ?? []
+}
+
+/** 單則意見的投票狀態（投票／收回後回傳最新狀態用，不必重算整頁） */
+export async function getOpinionVoteState(db: D1Database, opinionId: number, viewerId: string): Promise<OpinionVoteState | null> {
+  const row = await db
+    .prepare(
+      `SELECT o.id AS opinion_id,
+              o.author_id AS author_id,
+              SUM(CASE WHEN v.value =  1 THEN 1 ELSE 0 END) AS agrees,
+              SUM(CASE WHEN v.value = -1 THEN 1 ELSE 0 END) AS disagrees,
+              SUM(CASE WHEN v.value =  0 THEN 1 ELSE 0 END) AS passes,
+              MAX(CASE WHEN v.voter_id = ?1 THEN v.value END) AS my_vote
+         FROM ct_opinions o
+         LEFT JOIN ct_opinion_votes v ON v.opinion_id = o.id
+        WHERE o.id = ?2
+        GROUP BY o.id`
+    )
+    .bind(viewerId, opinionId)
+    .first<OpinionVoteAggregateRow>()
+  if (!row) return null
+  return toOpinionVoteState(row, viewerId)
 }

@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppFooter from '../components/AppFooter.vue'
 import AuthorEmailLink from '../components/AuthorEmailLink.vue'
+import OpinionVote from '../components/OpinionVote.vue'
 import StatusBadge from '../components/StatusBadge.vue'
+import Toast from '../components/Toast.vue'
 import { formatDate, useI18n } from '../l10n'
 import { useAuth } from '../composables/useAuth'
-import type { Issue, Opinion } from '../db/queries'
+import type { Issue, Opinion, OpinionVoteState, VoteValue } from '../db/queries'
 
 const props = defineProps<{
   issueId: number
@@ -18,13 +20,66 @@ const props = defineProps<{
 }>()
 
 const { t, locale } = useI18n()
-const { ensureAuthSession } = useAuth()
+const { authState, ensureAuthSession } = useAuth()
 
 const opinion = ref<Opinion | null>(props.initialData?.opinion ?? null)
 const issue = ref<Issue | null>(props.initialData?.issue ?? null)
 const loading = ref(!props.initialData)
 const notFound = ref(false)
 const linkCopied = ref(false)
+const toast = ref<{ show: (msg: string) => void } | null>(null)
+
+// ---- 公民意見投票（#107）：與議題頁共用 OpinionVote 元件與同一組端點 ----
+const voteState = ref<OpinionVoteState | null>(null)
+const votePending = ref(false)
+
+async function loadVoteState() {
+  if (authState.value !== 'signed-in') {
+    voteState.value = null
+    return
+  }
+  const res = await fetch(`/api/issues/${props.issueId}/opinion-votes`)
+  if (!res.ok) return
+  const states = (await res.json()) as OpinionVoteState[]
+  voteState.value = states.find(state => state.opinion_id === props.opinionId) ?? null
+}
+
+async function sendVote(request: RequestInit) {
+  if (votePending.value) return
+  votePending.value = true
+  try {
+    const res = await fetch(`/api/opinions/${props.opinionId}/vote`, request)
+    if (!res.ok) {
+      toast.value?.show(t('vote_failed'))
+      return
+    }
+    const data = (await res.json()) as { state: OpinionVoteState | null }
+    voteState.value = data.state
+  } finally {
+    votePending.value = false
+  }
+}
+
+function castVote(_opinionId: number, value: VoteValue) {
+  void sendVote({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ value }) })
+}
+
+function retractVote() {
+  void sendVote({ method: 'DELETE' })
+}
+
+function promptVoteLogin() {
+  toast.value?.show(t('vote_login_required'))
+}
+
+// 登入狀態要等 /api/me 回來才確定，所以用 watch 而不是 onMounted 直接抓
+watch(
+  () => authState.value,
+  () => {
+    void loadVoteState()
+  },
+  { immediate: true }
+)
 
 async function load() {
   loading.value = true
@@ -114,6 +169,16 @@ async function copyLink() {
 
             <div v-if="opinion.abuse_flagged === 3" class="whitespace-pre-wrap leading-relaxed text-muted">{{ t('moderation_hidden_placeholder') }}</div>
             <div v-else class="whitespace-pre-wrap leading-relaxed">{{ opinion.summary }}</div>
+            <OpinionVote
+              v-if="opinion.abuse_flagged !== 2 && opinion.abuse_flagged !== 3"
+              :opinion-id="opinion.id"
+              :state="voteState"
+              :auth-state="authState"
+              :pending="votePending"
+              @vote="castVote"
+              @retract="retractVote"
+              @login-required="promptVoteLogin"
+            />
           </div>
 
           <!-- 分享區塊 -->
@@ -138,5 +203,6 @@ async function copyLink() {
     </main>
 
     <AppFooter />
+    <Toast ref="toast" />
   </div>
 </template>

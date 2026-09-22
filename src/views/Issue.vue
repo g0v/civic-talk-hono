@@ -8,10 +8,11 @@ import SignInButtons from '../components/SignInButtons.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import Toast from '../components/Toast.vue'
 import ModerationAppealNotice from '../components/ModerationAppealNotice.vue'
+import OpinionVote from '../components/OpinionVote.vue'
 import { useAuth } from '../composables/useAuth'
 import { useSubmitGuard } from '../composables/useSubmitGuard'
 import { useViewerRole } from '../composables/useViewerRole'
-import type { Briefing, Issue, Material, Opinion } from '../db/queries'
+import type { Briefing, Issue, Material, Opinion, OpinionVoteState, VoteValue } from '../db/queries'
 import { formatDate, useI18n } from '../l10n'
 import { renderSafeMarkdown } from '../markdown/renderSafeMarkdown'
 
@@ -82,6 +83,57 @@ const synthesisDone = ref(false)
 
 // 全站共用的登入狀態（與 AppHeader 共用同一次 /api/me）；SSR 期間永遠是 'loading'
 const { authState, session, ensureAuthSession } = useAuth()
+
+// ---- 公民意見投票（#107）----
+// 一頁一次請求：整頁的投票狀態放在同一張 Map，意見卡只負責顯示，
+// 否則 50 則意見就會發 50 個請求。
+const voteStates = ref<Map<number, OpinionVoteState>>(new Map())
+const pendingVoteId = ref<number | null>(null)
+
+/** 投票狀態因人而異，一律 client 端取得：不進 SSR，避免 hydration mismatch 與邊緣快取混用 */
+async function loadVoteStates() {
+  if (authState.value !== 'signed-in') {
+    voteStates.value = new Map()
+    return
+  }
+  const res = await fetch(`/api/issues/${props.issueId}/opinion-votes`)
+  if (!res.ok) return
+  const states = (await res.json()) as OpinionVoteState[]
+  voteStates.value = new Map(states.map(state => [state.opinion_id, state]))
+}
+
+async function sendVote(opinionId: number, request: RequestInit) {
+  if (pendingVoteId.value !== null) return
+  pendingVoteId.value = opinionId
+  try {
+    const res = await fetch(`/api/opinions/${opinionId}/vote`, request)
+    if (!res.ok) {
+      toast.value?.show(t('vote_failed'))
+      return
+    }
+    const data = (await res.json()) as { state: OpinionVoteState | null }
+    if (data.state) {
+      // 不整份重抓：只換掉這一則，其他意見的「投票前不顯示分布」狀態要保持原樣
+      const next = new Map(voteStates.value)
+      next.set(opinionId, data.state)
+      voteStates.value = next
+    }
+  } finally {
+    pendingVoteId.value = null
+  }
+}
+
+function castVote(opinionId: number, value: VoteValue) {
+  void sendVote(opinionId, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ value }) })
+}
+
+function retractVote(opinionId: number) {
+  void sendVote(opinionId, { method: 'DELETE' })
+}
+
+function promptVoteLogin() {
+  toast.value?.show(t('vote_login_required'))
+}
 // 送出時才發現 session 過期：意見框留著（別吃掉使用者打的字），只在上方補一列重新登入
 const sessionExpired = ref(false)
 // 志願者工具同樣需要登入；若操作時 session 過期，保留已填內容並引導重新登入。
@@ -234,6 +286,16 @@ onMounted(() => {
   void ensureAuthSession()
   void nextTick(() => renderPolis())
 })
+
+// 登入狀態要等 /api/me 回來才確定，所以用 watch 而不是在 onMounted 直接抓；
+// 意見清單變動（投稿成功後重載）時也要跟著更新，新意見才會有投票列。
+watch(
+  () => [authState.value, opinions.value.length] as const,
+  () => {
+    void loadVoteStates()
+  },
+  { immediate: true }
+)
 
 watch(
   () => [issue.value?.polis_id, issue.value?.id, activeTab.value, locale.value] as const,
@@ -795,6 +857,15 @@ async function submitOpinion() {
               <button type="button" class="btn btn-secondary btn-sm" @click="downloadOpinionMd">{{ t('op_download_btn') }}</button>
               <button type="button" class="btn btn-secondary btn-sm" @click="copyOpinionMd">{{ t('op_copy_btn') }}</button>
             </div>
+            <!-- 投票分布在表態前不顯示，但原始資料一律公開下載（#107 決策 5） -->
+            <div class="card mb-6">
+              <h3 class="mt-0 mb-2 text-base">{{ t('vote_export_title') }}</h3>
+              <p class="mt-0 mb-3 text-sm text-muted">{{ t('vote_export_desc') }}</p>
+              <div class="flex flex-wrap gap-2">
+                <a class="btn btn-ghost btn-sm" :href="`/api/issues/${issueId}/export/comments.csv`" download>{{ t('vote_export_comments') }}</a>
+                <a class="btn btn-ghost btn-sm" :href="`/api/issues/${issueId}/export/votes.csv`" download>{{ t('vote_export_votes') }}</a>
+              </div>
+            </div>
             <div class="card mb-6">
               <h3 class="mt-0 mb-3 text-base">{{ t('op_submit_title') }}</h3>
               <template v-if="authState === 'loading'">
@@ -889,6 +960,15 @@ async function submitOpinion() {
                     </button>
                   </p>
                   <div class="markdown-content text-base sm:text-sm" v-html="renderedOpinions.get(o.id) ?? ''" />
+                  <OpinionVote
+                    :opinion-id="o.id"
+                    :state="voteStates.get(o.id) ?? null"
+                    :auth-state="authState"
+                    :pending="pendingVoteId === o.id"
+                    @vote="castVote"
+                    @retract="retractVote"
+                    @login-required="promptVoteLogin"
+                  />
                 </template>
               </div>
             </template>

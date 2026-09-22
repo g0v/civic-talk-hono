@@ -18,17 +18,15 @@ import * as db from '../db/queries'
 import { isAdminRole, tryGetAuthContext, type AuthContext } from '../auth/authorization'
 import { createAuth } from '../auth/createAuth'
 import { TERMS_VERSION } from '../legal/terms'
+import { createParticipantIndex, formatCommentsCsv, formatVotesCsv, type VoteRow } from '../export/polisCsv'
 import { moderationReasonForPolicy, moderateSubmission, moderateSubmissionWithDiagnostics, type ModerationDecision, type ModerationSubmission } from '../moderation/service'
 import type { Context } from 'hono'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import type { App, AppBindings } from './types'
 
 const CONTENTFUL_STATUS_CODES = [
-  100, 102, 103,
-  200, 201, 202, 203, 206, 207, 208, 226,
-  300, 301, 302, 303, 305, 306, 307, 308,
-  400, 401, 402, 403, 404, 405, 406, 407, 408, 409, 410, 411, 412, 413, 414, 415, 416, 417, 418, 421, 422, 423, 424, 425, 426, 428, 429, 431, 451,
-  500, 501, 502, 503, 504, 505, 506, 507, 508, 510, 511,
+  100, 102, 103, 200, 201, 202, 203, 206, 207, 208, 226, 300, 301, 302, 303, 305, 306, 307, 308, 400, 401, 402, 403, 404, 405, 406, 407, 408, 409, 410, 411, 412, 413, 414, 415, 416, 417, 418, 421,
+  422, 423, 424, 425, 426, 428, 429, 431, 451, 500, 501, 502, 503, 504, 505, 506, 507, 508, 510, 511,
 ] as const satisfies readonly ContentfulStatusCode[]
 
 function contentfulStatusCode(value: unknown): ContentfulStatusCode {
@@ -932,6 +930,149 @@ export function registerApiRoutes(app: App): void {
     }
 
     return c.json({ ok: true })
+  })
+
+  // -------------------------------------------------------------------------
+  // 公民意見投票（issue #107）
+  //
+  // 票值沿用 pol.is：1 同意、-1 不同意、0 略過。守門規則：
+  //   - 需登入（requireUser 同時擋停權帳號），角色一律不看
+  //   - abuse_flagged 2／3 的意見不接受投票；1（使用者回報待審）仍可投
+  //   - 提議者不得對自己的意見投票：他本來就被計為一票贊成
+  // -------------------------------------------------------------------------
+
+  app.post('/api/opinions/:id/vote', async c => {
+    const auth = await requireUser(c)
+    if ('denied' in auth) return auth.denied
+    const id = parseId(c.req.param('id'))
+    if (!id) return error(c, 'Invalid id')
+
+    const target = await db.getOpinionVoteTarget(c.env.DB, id)
+    if (!target) return error(c, 'Opinion not found', 404)
+    // 被隱藏的意見連內容都不公開，自然不接受投票
+    if (target.abuse_flagged === 2 || target.abuse_flagged === 3) return error(c, 'Opinion is not open for voting', 403)
+    if (target.author_id !== null && target.author_id === auth.context.user.id) {
+      return error(c, 'Author already counts as one agree', 403)
+    }
+
+    const body = await c.req.json<{ value?: unknown }>().catch(() => ({}) as { value?: unknown })
+    if (!db.isVoteValue(body.value)) return error(c, 'value must be 1 (agree), -1 (disagree) or 0 (pass)')
+
+    await db.upsertOpinionVote(c.env.DB, id, auth.context.user.id, body.value)
+    const state = await db.getOpinionVoteState(c.env.DB, id, auth.context.user.id)
+    return c.json({ ok: true, state })
+  })
+
+  app.delete('/api/opinions/:id/vote', async c => {
+    const auth = await requireUser(c)
+    if ('denied' in auth) return auth.denied
+    const id = parseId(c.req.param('id'))
+    if (!id) return error(c, 'Invalid id')
+
+    const target = await db.getOpinionVoteTarget(c.env.DB, id)
+    if (!target) return error(c, 'Opinion not found', 404)
+    // 提議者的當然贊成票是算出來的，沒有票可以收回
+    if (target.author_id !== null && target.author_id === auth.context.user.id) {
+      return error(c, 'Author vote cannot be retracted', 403)
+    }
+
+    // 沒投過也回成功：收回是冪等操作，重送不該變成錯誤
+    await db.deleteOpinionVote(c.env.DB, id, auth.context.user.id)
+    const state = await db.getOpinionVoteState(c.env.DB, id, auth.context.user.id)
+    return c.json({ ok: true, state })
+  })
+
+  /**
+   * 這位登入者在該議題所有意見上的投票狀態。
+   *
+   * 刻意與公開的 GET /api/issues/:id/opinions 分開：投票狀態因人而異，混進公開端點
+   * 會讓 SSR 與邊緣快取要處理登入狀態。前端只在已登入時才呼叫這一支。
+   */
+  app.get('/api/issues/:id/opinion-votes', async c => {
+    const auth = await requireUser(c)
+    if ('denied' in auth) return auth.denied
+    const id = parseId(c.req.param('id'))
+    if (!id) return error(c, 'Invalid id')
+    const issue = await db.getIssue(c.env.DB, id)
+    if (!issue) return error(c, 'Issue not found', 404)
+    const states = await db.listOpinionVoteStates(c.env.DB, id, auth.context.user.id)
+    return c.json(states, 200, { 'Cache-Control': 'private, no-store', Vary: 'Cookie' })
+  })
+
+  // -------------------------------------------------------------------------
+  // pol.is 相容 CSV 匯出（issue #107）
+  //
+  // 公開下載，不需登入：UI 在投票前不揭露分布，但原始資料一律可取得——這是
+  // Bestian 在 #107 指定的設計，用意是不影響投票當下的判斷，而不是把資料藏起來。
+  // 投票者與投稿者一律匿名化成 p1、p2⋯，絕不輸出 Better Auth 的 user.id。
+  // -------------------------------------------------------------------------
+
+  function csvResponse(c: Context, csv: string, filename: string): Response {
+    return c.body(csv, 200, {
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Access-Control-Allow-Origin': '*',
+      'Cache-Control': 'private, no-store',
+      'X-Content-Type-Options': 'nosniff',
+      Vary: 'Cookie',
+    })
+  }
+
+  /**
+   * 兩份 CSV 共用同一套匿名代號：先依意見順序編投稿者，再依投票順序編投票者，
+   * 同一個人在 comments.csv 的 author-id 與 votes.csv 的 pN 因此會是同一個號碼。
+   */
+  async function loadExportData(env: AppBindings, issueId: number) {
+    const [opinions, votes] = await Promise.all([db.listOpinionsForExport(env.DB, issueId), db.listVotesForExport(env.DB, issueId)])
+    const index = createParticipantIndex()
+    for (const opinion of opinions) index.seqOf(opinion.author_id)
+    for (const vote of votes) index.seqOf(vote.voter_id)
+    return { opinions, votes, index }
+  }
+
+  app.get('/api/issues/:id/export/comments.csv', async c => {
+    const id = parseId(c.req.param('id'))
+    if (!id) return publicError(c, 'Invalid id')
+    const issue = await db.getIssue(c.env.DB, id)
+    if (!issue) return publicError(c, 'Issue not found', 404)
+
+    const { opinions, index } = await loadExportData(c.env, id)
+    const csv = formatCommentsCsv(
+      opinions.map(o => ({
+        id: o.id,
+        summary: o.summary,
+        created_at: o.created_at,
+        abuse_flagged: o.abuse_flagged,
+        author_seq: index.seqOf(o.author_id),
+        // 提議者的當然贊成票（#107）：與站上顯示的票數口徑一致
+        agrees: Number(o.agrees ?? 0) + (o.author_id !== null ? 1 : 0),
+        disagrees: Number(o.disagrees ?? 0),
+      }))
+    )
+    return csvResponse(c, csv, `civic-talk-issue-${id}-comments.csv`)
+  })
+
+  app.get('/api/issues/:id/export/votes.csv', async c => {
+    const id = parseId(c.req.param('id'))
+    if (!id) return publicError(c, 'Invalid id')
+    const issue = await db.getIssue(c.env.DB, id)
+    if (!issue) return publicError(c, 'Issue not found', 404)
+
+    const { opinions, votes, index } = await loadExportData(c.env, id)
+    const rows: VoteRow[] = votes.map(v => ({
+      participant_seq: index.seqOf(v.voter_id),
+      opinion_id: v.opinion_id,
+      value: db.isVoteValue(v.value) ? v.value : 0,
+      updated_at: v.updated_at,
+    }))
+    // 提議者的當然贊成票在資料表裡不存在，這裡補成一列，
+    // 否則 votes.csv 逐票加總會與 comments.csv 的 agrees 對不起來。
+    for (const opinion of opinions) {
+      if (opinion.author_id === null) continue
+      rows.push({ participant_seq: index.seqOf(opinion.author_id), opinion_id: opinion.id, value: 1, updated_at: opinion.created_at })
+    }
+    rows.sort((a, b) => a.participant_seq - b.participant_seq || a.opinion_id - b.opinion_id)
+    return csvResponse(c, formatVotesCsv(rows), `civic-talk-issue-${id}-votes.csv`)
   })
 
   app.all('/api/*', c => error(c, 'Not found', 404))
