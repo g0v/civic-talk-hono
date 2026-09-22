@@ -6,6 +6,9 @@
     {
       "path": "../fact-check-core",
     },
+    {
+      "path": "../pocket-polis"
+    }
   ],
   "settings": {},
 }
