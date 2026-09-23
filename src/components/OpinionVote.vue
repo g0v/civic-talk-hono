@@ -41,10 +41,7 @@ const error = ref('')
 const eligible = computed(() => props.opinion.abuse_flagged !== 2 && props.opinion.abuse_flagged !== 3 && (props.opinion.abuse_flagged !== 1 || props.expanded))
 const hasDistribution = computed(
   () =>
-    props.opinion.can_view_vote_distribution === true &&
-    typeof props.opinion.vote_agree === 'number' &&
-    typeof props.opinion.vote_disagree === 'number' &&
-    typeof props.opinion.vote_pass === 'number'
+    props.opinion.can_view_vote_distribution === true && typeof props.opinion.vote_agree === 'number' && typeof props.opinion.vote_disagree === 'number' && typeof props.opinion.vote_pass === 'number'
 )
 const canVote = computed(() => eligible.value && props.opinion.can_vote !== false)
 const isAuthor = computed(() => props.opinion.is_author === true)
@@ -68,13 +65,14 @@ async function choose(value: OpinionVoteValue) {
   pending.value = true
   try {
     const current = props.opinion.my_vote
-    const res = current === value
-      ? await fetch(`/api/opinions/${props.opinion.id}/vote`, { method: 'DELETE' })
-      : await fetch(`/api/opinions/${props.opinion.id}/vote`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ value }),
-        })
+    const res =
+      current === value
+        ? await fetch(`/api/opinions/${props.opinion.id}/vote`, { method: 'DELETE' })
+        : await fetch(`/api/opinions/${props.opinion.id}/vote`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ value }),
+          })
     if (res.status === 401) {
       signInVisible.value = true
       error.value = t('vote_session_expired')

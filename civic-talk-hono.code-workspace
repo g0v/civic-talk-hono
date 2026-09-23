@@ -7,8 +7,8 @@
       "path": "../fact-check-core",
     },
     {
-      "path": "../pocket-polis"
-    }
+      "path": "../pocket-polis",
+    },
   ],
   "settings": {},
 }

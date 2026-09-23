@@ -128,11 +128,7 @@ async function copyLink() {
 
             <div v-if="opinion.abuse_flagged === 3" class="whitespace-pre-wrap leading-relaxed text-muted">{{ t('moderation_hidden_placeholder') }}</div>
             <div v-else class="whitespace-pre-wrap leading-relaxed">{{ opinion.summary }}</div>
-            <OpinionVote
-              :opinion="opinion"
-              :callback-url="`/issues/${issue.id}/comment/${opinion.id}`"
-              @update="updateOpinionVote"
-            />
+            <OpinionVote :opinion="opinion" :callback-url="`/issues/${issue.id}/comment/${opinion.id}`" @update="updateOpinionVote" />
           </div>
 
           <!-- 分享區塊 -->

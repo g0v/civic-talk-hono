@@ -263,7 +263,6 @@ async function refreshViewerOpinions() {
   if (authState.value === 'signed-in') await loadOpinions()
 }
 
-
 onMounted(() => {
   if (!props.initialDetail) void loadIssue()
   void refreshViewerOpinions()
@@ -941,12 +940,7 @@ async function submitOpinion() {
                     </button>
                   </p>
                   <div class="markdown-content text-base sm:text-sm" v-html="renderedOpinions.get(o.id) ?? ''" />
-                  <OpinionVote
-                    :opinion="o"
-                    :expanded="o.abuse_flagged !== 1 || expandedFlagged.has(`opinion-${o.id}`)"
-                    :callback-url="loginCallbackUrl"
-                    @update="updateOpinionVote(o.id, $event)"
-                  />
+                  <OpinionVote :opinion="o" :expanded="o.abuse_flagged !== 1 || expandedFlagged.has(`opinion-${o.id}`)" :callback-url="loginCallbackUrl" @update="updateOpinionVote(o.id, $event)" />
                 </template>
               </div>
             </template>

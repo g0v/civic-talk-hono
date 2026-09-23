@@ -20,30 +20,38 @@ function fakeDb(firstRows: unknown[] = [], allRows: unknown[] = []) {
   }
   return {
     sql,
-    db: { prepare(query: string) { sql.push(query); return statement } } as unknown as D1Database,
+    db: {
+      prepare(query: string) {
+        sql.push(query)
+        return statement
+      },
+    } as unknown as D1Database,
   }
 }
 
 describe('opinion vote queries', () => {
   it('projects numeric vote state only through the viewer-aware aggregate query', async () => {
-    const { db, sql } = fakeDb([], [
-      {
-        id: 4,
-        issue_id: 2,
-        summary: 'opinion',
-        created_at: '2026-09-01 00:00:00',
-        author_name: 'Author',
-        author_email: null,
-        abuse_flagged: 0,
-        vote_agree: null,
-        vote_disagree: null,
-        vote_pass: null,
-        my_vote: null,
-        can_view_vote_distribution: 0,
-        can_vote: 1,
-        is_author: 0,
-      },
-    ])
+    const { db, sql } = fakeDb(
+      [],
+      [
+        {
+          id: 4,
+          issue_id: 2,
+          summary: 'opinion',
+          created_at: '2026-09-01 00:00:00',
+          author_name: 'Author',
+          author_email: null,
+          abuse_flagged: 0,
+          vote_agree: null,
+          vote_disagree: null,
+          vote_pass: null,
+          my_vote: null,
+          can_view_vote_distribution: 0,
+          can_vote: 1,
+          is_author: 0,
+        },
+      ]
+    )
     const [opinion] = await listOpinionsForViewer(db, 2, null, 'responses')
     expect(opinion).toMatchObject({ vote_agree: null, vote_disagree: null, vote_pass: null, my_vote: null, can_view_vote_distribution: false, can_vote: true, is_author: false })
     expect(sql[0]).toContain('vote_counts')
@@ -64,7 +72,7 @@ describe('opinion vote queries', () => {
           is_author: 0,
         },
       ],
-      [],
+      []
     )
     const result = await upsertOpinionVote(db, 4, 'voter', 1)
     expect(result).toEqual({ state: { vote_agree: 2, vote_disagree: 1, vote_pass: 0, my_vote: 1, can_view_vote_distribution: true, can_vote: true, is_author: false } })

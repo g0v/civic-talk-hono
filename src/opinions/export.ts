@@ -64,17 +64,6 @@ export function toCommentsCsvRows(rows: OpinionExportInput[]): CommentsCsvRow[] 
 }
 
 export function formatCommentsCsv(rows: CommentsCsvRow[]): string {
-  const lines = rows.map(row =>
-    [
-      Math.floor(timestampMs(row.createdAt) / 1000),
-      polisDatetime(row.createdAt),
-      row.id,
-      row.authorId,
-      row.agrees,
-      row.disagrees,
-      1,
-      csvQuote(row.body),
-    ].join(','),
-  )
+  const lines = rows.map(row => [Math.floor(timestampMs(row.createdAt) / 1000), polisDatetime(row.createdAt), row.id, row.authorId, row.agrees, row.disagrees, 1, csvQuote(row.body)].join(','))
   return [POLIS_COMMENTS_HEADER, ...lines].join('\n') + '\n'
 }

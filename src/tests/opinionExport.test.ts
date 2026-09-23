@@ -19,7 +19,7 @@ describe('comments.csv formatter', () => {
         '1788220800,Tue Sep 01 2026 00:00:00 GMT+0000 (Coordinated Universal Time),10,1,2,1,1,"known first"\n' +
         '1788220862,Tue Sep 01 2026 00:01:02 GMT+0000 (Coordinated Universal Time),11,2,0,0,1,"legacy, ""quoted""\nline"\n' +
         '1788220923,Tue Sep 01 2026 00:02:03 GMT+0000 (Coordinated Universal Time),12,1,3,0,1,"known again"\n' +
-        '1788220984,Tue Sep 01 2026 00:03:04 GMT+0000 (Coordinated Universal Time),13,3,1,2,1,"legacy again"\n',
+        '1788220984,Tue Sep 01 2026 00:03:04 GMT+0000 (Coordinated Universal Time),13,3,1,2,1,"legacy again"\n'
     )
   })
 })

@@ -204,12 +204,12 @@ Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑�
 | `GET`    | `/api/issues/:id/briefing`                  | 取得說明頁（公開顯示 `author_name`，email 僅依 opt-in；管理員另拿完整作者快照）                                                                                                                           |
 | `POST`   | `/api/issues/:id/briefing`                  | 新增說明頁（**需登入**；版本遞增；正常投稿 → `published`；違規投稿保存但暫時隱藏且不觸發狀態轉換）                                                                                                        |
 | `PUT`    | `/api/issues/:id/briefing`                  | 編輯說明頁（admin）                                                                                                                                                                                       |
-| `GET`    | `/api/issues/:id/opinions`                  | 意見列表；`sort=recent|responses`（預設 `recent`），回傳 viewer-aware vote state，投票前分布為 `null`                                                                                                                                              |
+| `GET`    | `/api/issues/:id/opinions`                  | 意見列表；`sort=recent                                                                                                                                                                                    | responses`（預設 `recent`），回傳 viewer-aware vote state，投票前分布為 `null` |
 | `POST`   | `/api/issues/:id/opinions`                  | 投稿意見（**需登入**，#9 延伸；違規投稿仍回成功狀態但暫時隱藏）                                                                                                                                           |
 | `DELETE` | `/api/opinions/:id`                         | 刪除意見（admin）                                                                                                                                                                                         |
-| `POST`   | `/api/opinions/:id/vote`                    | 對意見投 `1`（同意）、`-1`（不同意）或 `0`（略過）；**需登入**，作者及 status `2/3` 不可投                                                                                                                                     |
-| `DELETE` | `/api/opinions/:id/vote`                    | 收回目前登入者的票；成功後重新隱藏分布                                                                                                                                                                     |
-| `GET`    | `/api/issues/:id/opinions/comments.csv`    | **需登入**的 pol.is 相容 `comments.csv` 匯出；只輸出公開意見與匿名 author sequence，不輸出 voter identity                                                                                                    |
+| `POST`   | `/api/opinions/:id/vote`                    | 對意見投 `1`（同意）、`-1`（不同意）或 `0`（略過）；**需登入**，作者及 status `2/3` 不可投                                                                                                                |
+| `DELETE` | `/api/opinions/:id/vote`                    | 收回目前登入者的票；成功後重新隱藏分布                                                                                                                                                                    |
+| `GET`    | `/api/issues/:id/opinions/comments.csv`     | **需登入**的 pol.is 相容 `comments.csv` 匯出；只輸出公開意見與匿名 author sequence，不輸出 voter identity                                                                                                 |
 | `GET`    | `/api/issues/:id/prompt`                    | 產生 prompt（**需登入**），`?type=summarize\|narrative\|synthesis`（預設 `summarize`）                                                                                                                    |
 | `GET`    | `/api/admin/stats`                          | 管理統計                                                                                                                                                                                                  |
 | `POST`   | `/api/appeals`                              | 暫時隱藏投稿或帳號停權申訴（需登入；停權帳號仍可使用）                                                                                                                                                    |
@@ -234,7 +234,6 @@ Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑�
 
 - **完整作者快照**：`ct_issues`、`ct_materials`、`ct_opinions`、`ct_briefings` 最終都有 `author_id`、`author_name`、`author_email`、`show_email`。`author_id` 是 Better Auth `user.id`；name／email 是投稿當下快照，不隨帳號日後更新。`author_name` 缺漏時一律為 `NULL`，**禁止退回 email**，否則會繞過 email opt-in。
 - **儲存與公開分離**：`author_email` 無論使用者是否 opt-in 都保存，供管理端追溯；`show_email INTEGER NOT NULL DEFAULT 0 CHECK (show_email IN (0, 1))` 才是公開同意。建立議題、投稿素材與意見的 API 只接受 boolean `show_email`，並要求 `terms_accepted === true`；兩者都由伺服器端驗證，不能只靠 checkbox。驗證通過後由伺服器寫入 `TERMS_VERSION` 與 `CURRENT_TIMESTAMP`，不採信 client 自報的版本或時間。
-
 
 ### Issue #107 公民意見投票（程式碼已完成，尚未部署）
 
@@ -498,16 +497,15 @@ npx wrangler d1 migrations apply vtaiwan-civic-talks --remote   # 🚫 需先取
 
 分支 **`feat/issue-83-about-flow`**。
 
-| #    | 項目            | 狀態    | 內容                                                                                                                                                                                                                                                                                           |
-| ---- | --------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 83-1 | `five-steps` | ✅ 完成 | `About.vue`「我們怎麼運作？」改為五步驟導覽（關注議題 → 建立客觀討論基礎 → 參與討論 → 分享觀點 → 意見綜整）；步驟 3 的投票功能已完成程式碼，步驟 5 的「意見綜整器（Sensemaker）報告」仍標示「功能研發中」；步驟 5 第一段（綜整回說明頁）對應已上線的志願者再彙整 |
-| 83-2 | `illustrations` | ✅ 完成 | `src/components/AboutFlowIllustration.vue`：每步一張 inline SVG 插圖，顏色走 Tailwind `fill-*`／`stroke-*` token utilities，暗黑模式自動跟隨；`aria-hidden`，純裝飾。若日後要換成真實截圖，換掉這個元件即可                                                                                    |
-| 83-3 | `principle`     | ✅ 完成 | 「有一件事我們很堅持」改為「讓閒置算力變成公共資源」（#29 之後平台已會呼叫審查模型，舊文案「不呼叫任何 AI API」已不實）；結尾「歡迎到 GitHub 專案提 Issue 和 PR」以真實連結呈現（`abt_principle_note_prefix/link/suffix` 三段 key）                                                            |
-| 83-4 | `i18n`          | ✅ 完成 | 新增 `abt_step4_*`／`abt_step5_*`／`abt_wip_badge`；`abt_how_desc` 改五步驟；zh-TW／en 雙檔同步（`vp test` 通過）；步驟 3 不再顯示 WIP，步驟 5 仍保留 WIP；`headForAbout` description 同步改寫 |
-| 83-5 | `styles`        | ✅ 完成 | 流程版型 `.flow-list`／`.flow-step`／`.flow-num`／`.flow-wip` 放在 `src/styles/app.css` `@layer components`（原因見「樣式」一節的現況限制）                                                                                                                                                    |
+| #    | 項目            | 狀態    | 內容                                                                                                                                                                                                                                                             |
+| ---- | --------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 83-1 | `five-steps`    | ✅ 完成 | `About.vue`「我們怎麼運作？」改為五步驟導覽（關注議題 → 建立客觀討論基礎 → 參與討論 → 分享觀點 → 意見綜整）；步驟 3 的投票功能已完成程式碼，步驟 5 的「意見綜整器（Sensemaker）報告」仍標示「功能研發中」；步驟 5 第一段（綜整回說明頁）對應已上線的志願者再彙整 |
+| 83-2 | `illustrations` | ✅ 完成 | `src/components/AboutFlowIllustration.vue`：每步一張 inline SVG 插圖，顏色走 Tailwind `fill-*`／`stroke-*` token utilities，暗黑模式自動跟隨；`aria-hidden`，純裝飾。若日後要換成真實截圖，換掉這個元件即可                                                      |
+| 83-3 | `principle`     | ✅ 完成 | 「有一件事我們很堅持」改為「讓閒置算力變成公共資源」（#29 之後平台已會呼叫審查模型，舊文案「不呼叫任何 AI API」已不實）；結尾「歡迎到 GitHub 專案提 Issue 和 PR」以真實連結呈現（`abt_principle_note_prefix/link/suffix` 三段 key）                              |
+| 83-4 | `i18n`          | ✅ 完成 | 新增 `abt_step4_*`／`abt_step5_*`／`abt_wip_badge`；`abt_how_desc` 改五步驟；zh-TW／en 雙檔同步（`vp test` 通過）；步驟 3 不再顯示 WIP，步驟 5 仍保留 WIP；`headForAbout` description 同步改寫                                                                   |
+| 83-5 | `styles`        | ✅ 完成 | 流程版型 `.flow-list`／`.flow-step`／`.flow-num`／`.flow-wip` 放在 `src/styles/app.css` `@layer components`（原因見「樣式」一節的現況限制）                                                                                                                      |
 
 > 後續可選：切換到 `vue-router` 全站 hydration、自動化測試／CI——動工前先與使用者確認。
-
 
 ### 已完成：#25 素材與意見的獨立連結（專屬路由）
 

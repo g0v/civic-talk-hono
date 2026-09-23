@@ -604,9 +604,7 @@ export function registerApiRoutes(app: App): void {
     if (sortParam !== 'recent' && sortParam !== 'responses') return publicError(c, 'sort must be "recent" or "responses"')
     const context = await tryGetAuthContext(c.env, c.req.raw.headers)
     const viewerId = context?.user.id ?? null
-    const opinions = canReadAdminSnapshots(context)
-      ? await db.listOpinionsWithAuthorForViewer(c.env.DB, id, viewerId, sortParam)
-      : await db.listOpinionsForViewer(c.env.DB, id, viewerId, sortParam)
+    const opinions = canReadAdminSnapshots(context) ? await db.listOpinionsWithAuthorForViewer(c.env.DB, id, viewerId, sortParam) : await db.listOpinionsForViewer(c.env.DB, id, viewerId, sortParam)
     return publicJson(c, opinions)
   })
 
@@ -686,7 +684,6 @@ export function registerApiRoutes(app: App): void {
     if ('error' in result) return error(c, result.error === 'not_found' ? 'Opinion not found' : 'No vote to withdraw', result.error === 'not_found' ? 404 : 404)
     return c.json(result.state)
   })
-
 
   app.get('/api/issues/:id/prompt', async c => {
     // Prompt 是志願者工具的一部分，不對匿名使用者提供。
