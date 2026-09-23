@@ -204,6 +204,8 @@ npx wrangler d1 create my-civic-auth
 cp wrangler.jsonc wrangler.personal.jsonc
 ```
 
+> ⚠️ `wrangler d1 create` 完成後會問 **“Would you like Wrangler to add it on your behalf?”**。一律回答 **no**——回答 yes 會把綁定寫進 tracked 的 `wrangler.jsonc`，正是本節要避免的事。請自行把 `database_id` 填進 `wrangler.personal.jsonc`。
+
 編輯 `wrangler.personal.jsonc`，**四處都要改**：
 
 | 欄位                    | 改成什麼                                                                |
@@ -220,7 +222,22 @@ cp wrangler.jsonc wrangler.personal.jsonc
 npx wrangler d1 migrations apply <你的業務庫名稱> --remote --config wrangler.personal.jsonc
 ```
 
-> 🚫 **不要對自己的認證庫跑 `migrations apply`。** 本 repo 的 `migrations/` 全是 `ct_*` 業務表，套進認證庫只會建錯東西。auth schema 的唯一來源是 `../vTaiwan-hono/migrations/auth/`，請直接用 `npx wrangler d1 execute <你的認證庫> --remote --file=<那份 SQL> --config wrangler.personal.jsonc` 匯入。
+> 🚫 **不要對自己的認證庫跑 `migrations apply`。** 本 repo 的 `migrations/` 全是 `ct_*` 業務表，套進認證庫只會建錯東西。auth schema 的唯一來源是 `vTaiwan-hono` 的 `migrations/auth/`，用 `d1 execute --file` 匯入：
+>
+> ```bash
+> # 沒有 clone vTaiwan-hono 時，可直接取檔（放到 repo 外的暫存目錄，
+> # 依不變量 11，本 repo 不得出現 migrations/auth/）
+> mkdir -p /tmp/auth-schema && cd /tmp/auth-schema
+> gh api repos/g0v/vTaiwan-hono/contents/migrations/auth --jq '.[].download_url' \
+>   | xargs -n1 curl -sO
+>
+> cd -  # 回到 civic-talk-hono
+> for f in /tmp/auth-schema/*.sql; do
+>   npx wrangler d1 execute <你的認證庫> --remote --file "$f" --config wrangler.personal.jsonc
+> done
+> ```
+>
+> 匯入後應有 `user`、`session`、`account`、`verification` 四張表。
 >
 > 這個陷阱在個人環境同樣存在：`DB_AUTH` 即使沒寫 `migrations_dir`，wrangler 仍會自動填入預設的 `./migrations`（實測烘焙結果為 `"migrations_dir": "../../migrations"`）。詳見 2.1。
 
@@ -237,6 +254,17 @@ npx wrangler deploy --dry-run
 # 確認無誤後部署
 npx wrangler deploy
 ```
+
+> 首次在帳號內建立 `*.workers.dev` 子網域時，**TLS 憑證要幾分鐘才簽發**。這段期間連線會失敗並顯示 `SSL/TLS_ALERT_HANDSHAKE_FAILURE`，那**不是部署失敗**——`wrangler deploy` 已回報成功即代表 Worker 上線，等憑證就緒即可連上。
+
+部署成功後 wrangler 會印出網址（例如 `https://<worker>.<你的子網域>.workers.dev`）。**拿到網址才能設定登入相關密鑰**，因為 `BETTER_AUTH_URL` 必須等於該 origin：
+
+```bash
+openssl rand -base64 32 | npx wrangler secret put BETTER_AUTH_SECRET --config wrangler.personal.jsonc
+echo "https://<你的網址>" | npx wrangler secret put BETTER_AUTH_URL --config wrangler.personal.jsonc
+```
+
+Google／GitHub 的 OAuth 憑證要自行申請（見 6.7），callback 網址填 `https://<你的網址>/api/auth/callback/{google,github}`。未設定前公開頁面照常運作，只有登入功能不可用。
 
 ### 6.5 ⚠️ 環境變數的作用範圍只有「Vite 建置」
 
