@@ -183,6 +183,8 @@ export const messages = {
   vote_agree: 'Agree',
   vote_disagree: 'Disagree',
   vote_pass: 'Pass',
+  vote_withdraw_title: 'Withdraw your “{choice}” vote',
+  vote_change_title: 'Change your vote to “{choice}”',
   vote_author_implicit: 'Author agreement (locked)',
   vote_unavailable: 'Voting is unavailable',
   vote_your_choice: 'Your choice: {choice}',

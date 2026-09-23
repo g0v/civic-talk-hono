@@ -53,6 +53,12 @@ function voteLabel(value: OpinionVoteValue) {
   return t('vote_pass')
 }
 
+function voteActionTitle(value: OpinionVoteValue): string | undefined {
+  const current = props.opinion.my_vote
+  if (current === null || current === undefined) return undefined
+  return current === value ? t('vote_withdraw_title', { choice: voteLabel(value) }) : t('vote_change_title', { choice: voteLabel(value) })
+}
+
 async function choose(value: OpinionVoteValue) {
   error.value = ''
   if (authState.value === 'loading' || pending.value || !eligible.value) return
@@ -102,13 +108,21 @@ async function choose(value: OpinionVoteValue) {
     </div>
 
     <template v-else>
-      <p v-if="isAuthor" class="mb-2 text-sm text-muted">{{ t('vote_author_implicit') }}</p>
+      <div v-if="isAuthor" class="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
+        <span>{{ t('vote_author_implicit') }}</span>
+        <template v-if="hasDistribution">
+          <span>{{ voteLabel(1) }} {{ opinion.vote_agree }}</span>
+          <span>{{ voteLabel(-1) }} {{ opinion.vote_disagree }}</span>
+          <span>{{ voteLabel(0) }} {{ opinion.vote_pass }}</span>
+        </template>
+      </div>
       <div class="flex flex-wrap items-center gap-2">
         <button
           v-if="authState === 'anonymous' || canVote"
           type="button"
           class="btn btn-secondary btn-sm"
           :class="{ 'ring-2 ring-green-600': opinion.my_vote === 1 }"
+          :title="voteActionTitle(1)"
           :disabled="pending"
           @click="choose(1)"
         >
@@ -119,6 +133,7 @@ async function choose(value: OpinionVoteValue) {
           type="button"
           class="btn btn-secondary btn-sm"
           :class="{ 'ring-2 ring-red-600': opinion.my_vote === -1 }"
+          :title="voteActionTitle(-1)"
           :disabled="pending"
           @click="choose(-1)"
         >
@@ -129,6 +144,7 @@ async function choose(value: OpinionVoteValue) {
           type="button"
           class="btn btn-secondary btn-sm"
           :class="{ 'ring-2 ring-amber-600': opinion.my_vote === 0 }"
+          :title="voteActionTitle(0)"
           :disabled="pending"
           @click="choose(0)"
         >

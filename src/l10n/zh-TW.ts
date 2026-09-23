@@ -181,6 +181,8 @@ export const messages = {
   vote_agree: '同意',
   vote_disagree: '不同意',
   vote_pass: '略過',
+  vote_withdraw_title: '收回「{choice}」票',
+  vote_change_title: '改投「{choice}」',
   vote_author_implicit: '作者當然同意（鎖定）',
   vote_unavailable: '目前無法投票',
   vote_your_choice: '你的選擇：{choice}',
