@@ -9,12 +9,12 @@ import type {
   IssueStatus,
   Material,
   MaterialWithAuthor,
-  Opinion,
-  OpinionWithAuthor,
-  Stance,
+  OpinionVoteValue,
   ModerationSubmissionType,
+  Stance,
 } from '../db/queries'
 import * as db from '../db/queries'
+import { formatCommentsCsv, toCommentsCsvRows } from '../opinions/export'
 import { hasDuplicateDisplayName, isAdminRole, tryGetAuthContext, type AuthContext } from '../auth/authorization'
 import { createAuth } from '../auth/createAuth'
 import { TERMS_VERSION } from '../legal/terms'
@@ -578,12 +578,33 @@ export function registerApiRoutes(app: App): void {
     return c.json({ ok: true })
   })
 
+  app.get('/api/issues/:id/opinions/comments.csv', async c => {
+    const context = await tryGetAuthContext(c.env, c.req.raw.headers)
+    if (!context) return error(c, 'Unauthorized', 401)
+    const issueId = parseId(c.req.param('id'))
+    if (!issueId) return error(c, 'Invalid id')
+    const rows = await db.listOpinionsForExport(c.env.DB, issueId)
+    const csv = formatCommentsCsv(toCommentsCsvRows(rows))
+    return new Response(csv, {
+      headers: {
+        'Content-Type': 'text/csv; charset=utf-8',
+        'Content-Disposition': `attachment; filename=\"civic-talk-issue-${issueId}-comments.csv\"`,
+        'Cache-Control': 'private, no-store',
+        Vary: 'Cookie',
+        'X-Content-Type-Options': 'nosniff',
+      },
+    })
+  })
+
   // 一般讀取公開顯示名稱與 opt-in email；管理員另拿完整快照與條款同意記錄。
   app.get('/api/issues/:id/opinions', async c => {
     const id = parseId(c.req.param('id'))
     if (!id) return publicError(c, 'Invalid id')
+    const sortParam = c.req.query('sort') ?? 'recent'
+    if (sortParam !== 'recent' && sortParam !== 'responses') return publicError(c, 'sort must be "recent" or "responses"')
     const context = await tryGetAuthContext(c.env, c.req.raw.headers)
-    const opinions: Opinion[] | OpinionWithAuthor[] = canReadAdminSnapshots(context) ? await db.listOpinionsWithAuthor(c.env.DB, id) : await db.listOpinions(c.env.DB, id)
+    const viewerId = context?.user.id ?? null
+    const opinions = canReadAdminSnapshots(context) ? await db.listOpinionsWithAuthorForViewer(c.env.DB, id, viewerId, sortParam) : await db.listOpinionsForViewer(c.env.DB, id, viewerId, sortParam)
     return publicJson(c, opinions)
   })
 
@@ -631,6 +652,37 @@ export function registerApiRoutes(app: App): void {
       opinion_id: opinionId,
     })
     return c.json({ id: opinionId, moderation: moderationMetadata(moderation.decision, reportId) }, 201)
+  })
+
+  app.post('/api/opinions/:id/vote', async c => {
+    const auth = await requireUser(c)
+    if ('denied' in auth) return auth.denied
+    const opinionId = parseId(c.req.param('id'))
+    if (!opinionId) return error(c, 'Invalid id')
+    let body: { value?: unknown }
+    try {
+      body = await c.req.json()
+    } catch {
+      return error(c, 'Invalid JSON')
+    }
+    if (typeof body.value !== 'number' || !Number.isInteger(body.value) || !([-1, 0, 1] as number[]).includes(body.value)) return error(c, 'value must be -1, 0, or 1')
+    const result = await db.upsertOpinionVote(c.env.DB, opinionId, auth.context.user.id, body.value as OpinionVoteValue)
+    if ('error' in result) {
+      if (result.error === 'not_found') return error(c, 'Opinion not found', 404)
+      if (result.error === 'author') return error(c, 'Authors cannot vote on their own opinions')
+      return error(c, 'This opinion cannot be voted on')
+    }
+    return c.json(result.state)
+  })
+
+  app.delete('/api/opinions/:id/vote', async c => {
+    const auth = await requireUser(c)
+    if ('denied' in auth) return auth.denied
+    const opinionId = parseId(c.req.param('id'))
+    if (!opinionId) return error(c, 'Invalid id')
+    const result = await db.deleteOpinionVote(c.env.DB, opinionId, auth.context.user.id)
+    if ('error' in result) return error(c, result.error === 'not_found' ? 'Opinion not found' : 'No vote to withdraw', result.error === 'not_found' ? 404 : 404)
+    return c.json(result.state)
   })
 
   app.get('/api/issues/:id/prompt', async c => {

@@ -4,6 +4,7 @@ import AppHeader from '../components/AppHeader.vue'
 import AppFooter from '../components/AppFooter.vue'
 import AuthorEmailLink from '../components/AuthorEmailLink.vue'
 import LongTextContent from '../components/LongTextContent.vue'
+import OpinionVote from '../components/OpinionVote.vue'
 import SignInButtons from '../components/SignInButtons.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import Toast from '../components/Toast.vue'
@@ -36,6 +37,8 @@ const issue = ref<Issue | null>(props.initialDetail?.issue ?? null)
 const materials = ref<Material[]>(props.initialDetail?.materials ?? [])
 const briefing = ref<Briefing | null>(props.initialDetail?.briefing ?? null)
 const opinions = ref<Opinion[]>(props.initialDetail?.opinions ?? [])
+const opinionSort = ref<'recent' | 'responses'>('recent')
+const opinionsLoading = ref(false)
 const loading = ref(!props.initialDetail)
 const activeTab = ref<TabName>('briefing')
 const renderedBriefing = computed(() => {
@@ -233,11 +236,36 @@ async function loadIssue() {
   } finally {
     loading.value = false
   }
+  if (authState.value === 'signed-in') await loadOpinions()
+}
+
+async function loadOpinions(sort: 'recent' | 'responses' = opinionSort.value) {
+  opinionsLoading.value = true
+  try {
+    const res = await fetch(`/api/issues/${props.issueId}/opinions?sort=${sort}`)
+    if (!res.ok) return
+    opinions.value = (await res.json()) as Opinion[]
+  } finally {
+    opinionsLoading.value = false
+  }
+}
+
+function updateOpinionVote(id: number, state: Record<string, unknown>) {
+  opinions.value = opinions.value.map(opinion => (opinion.id === id ? { ...opinion, ...state } : opinion))
+}
+
+function changeOpinionSort() {
+  void loadOpinions(opinionSort.value)
+}
+
+async function refreshViewerOpinions() {
+  await ensureAuthSession()
+  if (authState.value === 'signed-in') await loadOpinions()
 }
 
 onMounted(() => {
   if (!props.initialDetail) void loadIssue()
-  void ensureAuthSession()
+  void refreshViewerOpinions()
   void nextTick(() => renderPolis())
 })
 
@@ -797,9 +825,23 @@ async function submitOpinion() {
           <section v-show="activeTab === 'opinions'">
             <h2 class="m-0 font-serif text-xl">{{ t('op_title') }}</h2>
             <div class="alert alert-info mb-4" v-html="t('op_alert')" />
-            <div class="mb-6 flex flex-wrap gap-2">
+            <div class="mb-6 flex flex-wrap items-center gap-2">
               <button type="button" class="btn btn-secondary btn-sm" @click="downloadOpinionMd">{{ t('op_download_btn') }}</button>
               <button type="button" class="btn btn-secondary btn-sm" @click="copyOpinionMd">{{ t('op_copy_btn') }}</button>
+              <a v-if="authState === 'signed-in'" :href="`/api/issues/${issueId}/opinions/comments.csv`" class="btn btn-secondary btn-sm" download>
+                {{ t('op_download_csv_btn') }}
+              </a>
+              <span v-else-if="authState === 'anonymous'" class="text-sm text-muted">{{ t('op_csv_login_required') }}</span>
+            </div>
+            <div class="mb-4 flex flex-wrap items-center gap-3">
+              <label class="flex items-center gap-2 text-sm text-muted">
+                <span>{{ t('op_sort_label') }}</span>
+                <select v-model="opinionSort" class="rounded border border-border bg-transparent px-2 py-1 text-sm" @change="changeOpinionSort">
+                  <option value="recent">{{ t('op_sort_recent') }}</option>
+                  <option value="responses">{{ t('op_sort_responses') }}</option>
+                </select>
+              </label>
+              <span v-if="opinionsLoading" class="text-sm text-muted">{{ t('loading') }}</span>
             </div>
             <div class="card mb-6">
               <h3 class="mt-0 mb-3 text-base">{{ t('op_submit_title') }}</h3>
@@ -898,6 +940,7 @@ async function submitOpinion() {
                     </button>
                   </p>
                   <div class="markdown-content text-base sm:text-sm" v-html="renderedOpinions.get(o.id) ?? ''" />
+                  <OpinionVote :opinion="o" :expanded="o.abuse_flagged !== 1 || expandedFlagged.has(`opinion-${o.id}`)" :callback-url="loginCallbackUrl" @update="updateOpinionVote(o.id, $event)" />
                 </template>
               </div>
             </template>
