@@ -35,7 +35,11 @@ export function polisDatetime(value: string | number): string {
 }
 
 export function csvQuote(value: string): string {
-  return `"${value.replaceAll('"', '""')}"`
+  // The opinion-synthesis importer reads one physical line as one comment.
+  // Keep paragraph boundaries as the two characters `\\n` so multiline
+  // Markdown cannot be mistaken for additional CSV records.
+  const singleLineValue = value.replace(/\r\n|\r|\n/g, '\\n')
+  return `"${singleLineValue.replaceAll('"', '""')}"`
 }
 
 export function toCommentsCsvRows(rows: OpinionExportInput[]): CommentsCsvRow[] {
