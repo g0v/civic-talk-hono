@@ -2,7 +2,7 @@
 
 給 AI coding agent 的工作指引。本檔聚焦「**agent 該怎麼在這個 repo 工作**」；一般的技術說明與部署步驟請看 [`README.md`](./README.md)。
 
-> ✅ Vue SSR 複刻計畫的六項 todo 已完成。下列「現況」反映移植後的真實結構；「目標架構」中尚未做的項目（例如切換到 `vue-router` 全站 hydration、[#5](https://github.com/g0v/civic-talk-hono/issues/5) 的 Better Auth 登入／權限）仍須先與使用者確認再動工。
+> ✅ Vue SSR 複刻計畫的六項 todo 與 Better Auth 登入／權限已完成。下列「現況」反映移植後的真實結構；「目標架構」中尚未做的項目（例如切換到 `vue-router` 全站 hydration）仍須先與使用者確認再動工。
 >
 > 🚀 **已部署於 <https://civic.vtaiwan.tw>**（Worker `civic-talk`，首次部署 2026-08-05）。**Google／GitHub 登入、`admin` 角色進後台、登入後投稿都已在正式站實測成功**（使用者確認 2026-08-11）；需要真人瀏覽器的驗證直接在正式站做，不必只靠 `dev:remote`。部署與環境設定見 [`deploy_notes.md`](./deploy_notes.md)。
 >
@@ -39,23 +39,24 @@
 5. **API 相容契約不得片面變更。** 既有 endpoint 的路徑、方法與 JSON 形狀（見「API 契約」）只能擴充、不能改名或改語意。要破壞相容性，先問使用者。
    - **例外（已由 [#5](https://github.com/g0v/civic-talk-hono/issues/5) 授權）：管理端授權方式改為角色制。** 管理權限改看登入使用者的角色是不是 `admin`／`super-admin`（Better Auth session），**不再依賴 `ADMIN_PASSWORD` 環境變數與 `X-Admin-Token` 標頭**。這一項授權**只涵蓋授權機制**：業務 endpoint 的路徑、方法與成功回應形狀照舊，未經授權時回 `401`（未登入）／`403`（已登入但無權限）。
    - **例外（已由 [#9](https://github.com/g0v/civic-talk-hono/issues/9) 與使用者裁示授權）：投稿與志願者工具需要登入。** `POST /api/issues`（建立議題）、`POST /api/issues/:id/materials`（投稿素材）、`POST /api/issues/:id/opinions`（投稿意見）、`POST /api/issues/:id/briefing`（志願者送出彙整／說明頁）及 `GET /api/issues/:id/prompt`（產生志願者 prompt）未登入一律回 `401`——這是既有 endpoint 的語意變更，目的為內容品質與濫用可追溯。**角色一律不看**，任何未停權的登入者都能使用。
-6. **機密不進 git。** `.dev.vars` 等憑證只留本地；不寫進任何 tracked 檔案、commit 訊息或 log 輸出。目前涵蓋 `ADMIN_PASSWORD`（將隨 #5 淘汰）、`BETTER_AUTH_SECRET`、`GOOGLE_CLIENT_SECRET`、`GITHUB_CLIENT_SECRET` 等。新增設定值時同步更新 `.dev.vars.example`，但只放假值。
+6. **機密不進 git。** `.dev.vars` 等憑證只留本地；不寫進任何 tracked 檔案、commit 訊息或 log 輸出。目前涵蓋 `BETTER_AUTH_SECRET`、`GOOGLE_CLIENT_SECRET`、`GITHUB_CLIENT_SECRET`、`OPEN_ROUTER_API_KEY` 等。新增設定值時同步更新 `.dev.vars.example`，但只放假值。
 7. **遠端 D1 需授權。** migration 預設只套用到本機（`--local`）。套用 `--remote`、建立或刪除資料庫、跑任何會寫入正式資料的指令前，**必須先問使用者**。本專案有兩個 D1 綁定：業務庫 `DB` → `vtaiwan-civic-talks`，共用認證庫 `DB_AUTH` → `vtaiwan-auth`。**本 repo 只對 `DB` 做 migration**；`DB_AUTH` 見不變量 11。
    - ⚠️ **`wrangler d1 migrations apply vtaiwan-auth` 是活陷阱**：`DB_AUTH` 沒寫 `migrations_dir`，但 wrangler 會自動填入預設的 `./migrations`，等於把本專案的 `ct_*` 建表 SQL 套進 vTaiwan 的正式認證庫。🚫 不要跑，詳見 [`deploy_notes.md`](./deploy_notes.md)。
 8. **生成物不手改。** `dist/`、`public/js/*.js`（client bundle）、`worker-configuration.d.ts` 皆為建置產物——改源頭重新生成。Tailwind 導入後 `public/styles.css` 也會變成生成物（見「樣式」）。
 9. **完成 = 全部綠燈。** `vp check --no-fmt --no-lint` 與 `vp run build` 都過、`vp test` 全部通過，才算改完。紅燈狀態不 commit。
 10. **不擅自 commit／push／deploy。** 界線與長程任務例外見「Git / Commit 慣例」。
-11. **共用認證資料庫的寫入限於 Better Auth admin plugin 的 ban/unban。** D1 `vtaiwan-auth` 是 `../vTaiwan-hono` 的正式資料庫，本專案是消費端。以下規則更新如下（#21 使用者授權）：
-    - 🚫 **不在本 repo 建立 `migrations/auth/`，不對 auth 資料表下任何 DDL**——schema 唯一來源是 `../vTaiwan-hono/migrations/auth/`。
-    - ✅ **允許透過 Better Auth admin plugin API（`auth.api.banUser` / `auth.api.unbanUser`）寫入 DB_AUTH**，用於濫用回報審核。**不走原始 SQL**——所有寫入必須經過 Better Auth 的授權檢查（呼叫端必須帶管理員 session headers）。
+11. **共用認證資料庫的業務寫入必須由 Better Auth 控制。** D1 `vtaiwan-auth` 是 `../vTaiwan-hono` 的正式資料庫，本專案是消費端。Better Auth 的正常認證生命週期會寫入 `user`／`account`／`session` 等資料，OAuth callback 也會同步使用者 `image`；除此之外，本站額外主動觸發的 auth 資料寫入只允許以下兩類，而且全部必須經 Better Auth：
+    - ✅ **濫用審核 ban/unban**：透過 Better Auth admin plugin API（`auth.api.banUser`／`auth.api.unbanUser`）寫入，呼叫端必須帶管理員 session headers。
+    - ✅ **登入者個人資料更新**：`POST /api/auth/update-user` 交給 Better Auth handler 寫入；目前本站 `/profile` UI 只送 `name`。請求含 `name` 時會先經本站正規化、同名確認與 30 天冷卻檢查；handler 仍可能接受 Better Auth 原生支援的其他欄位（例如 `image`），不得在文件中聲稱 API 已限制為 name-only，除非程式也同步收窄。
+    - 🚫 **不在本 repo 建立 `migrations/auth/`，不對 auth 資料表下任何 DDL**——schema（包含 `nameChangedAt` 與改名冷卻 triggers）的唯一來源是 `../vTaiwan-hono/migrations/auth/`。
     - 🚫 **不寫 `user.role`**——升降權、成員列表、變更日誌仍全部留在 vTaiwan-hono。
-    - 🚫 **不執行其他自訂 SQL 操作 DB_AUTH**（INSERT、UPDATE、DELETE 以外 ban/unban 的一切都不行）。
+    - 🚫 **不以原始 SQL 寫入 DB_AUTH**——允許為授權、同名與冷卻判斷執行參數化 `SELECT`；auth 資料的 `INSERT`／`UPDATE`／`DELETE` 一律交給 Better Auth API／handler。
 
 ## 現況（今天 repo 裡真的有什麼）
 
 Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑起來（尚未切到 `vue-router`）：
 
-- `src/index.ts` — 乾淨路由 `/`、`/issues/:id`、`/issues/:id/source/:materialId`、`/issues/:id/comment/:opinionId`、`/contribute/:id`、`/about`、`/admin`；舊 `.html` 導向；掛上 `registerApiRoutes`；fallback `ASSETS`。
+- `src/index.ts` — SSR 路由 `/`、`/issues/:id`、`/issues/:id/source/:materialId`、`/issues/:id/comment/:opinionId`、`/contribute/:id`、`/about`、`/profile`、`/appeals`、`/privacy`、`/terms`、`/admin`，另有 `/rss.xml`；舊 `.html` 導向；掛上 `registerApiRoutes`；fallback `ASSETS`。
 - `src/api/routes.ts` + `src/db/queries.ts` — 舊 Pages Functions API 的型別化移植，SQL 只碰 `ct_*`。
 - `migrations/0001_init.sql` — `ct_issues`／`ct_materials`／`ct_briefings`／`ct_opinions`（含 FK、索引、約束、示範資料）。
 - `migrations/0002_material_author.sql` — `ct_materials` 加上 `author_id`／`author_name`（#9 的投稿者記錄）。本機與遠端皆已套用；#27 起 name 公開、ID 仍只給管理端。
@@ -63,17 +64,17 @@ Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑�
 - `migrations/0004_briefing_author.sql` — `ct_briefings` 加上 `author_id`（志願者送出 briefing 的帳號）。本機與遠端皆已套用；公開顯示規則同其他內容。
 - `migrations/0005_author_email.sql` — 四種內容補齊投稿當下的作者快照；`author_email` 一律保存，`show_email`（0／1）只控制前台是否公開。本機與遠端皆已套用。遠端先前另有舊檔名 `0004_author_email.sql`（只加三表 `author_email`），因此遠端是補齊 `show_email` 與 briefing 快照後再標記 0005 已套用。
 - `migrations/0006_submission_consent.sql` — 議題、素材與意見保存伺服器端確認的 `terms_version`／`terms_accepted_at`。本機與遠端皆已套用。
-- `migrations/0012_opinion_votes.sql` — Issue #107 的三態投票表；本機套用與 schema 驗證須在本分支完成，遠端待上線前依序確認並套用，不能把程式碼完成誤記為已部署。
+- `migrations/0007_abuse_reports.sql`–`0013_query_indexes.sql` — 濫用／失效連結回報、AI 審查與申訴、投稿併發、議題活動時間、意見投票與查詢索引。**2026-09-24 使用者回報目前應已套用遠端 `0001`–`0013`；本次未查詢遠端**。部署前仍須以 remote pending 清單核對，不能只憑 repo 中的檔案或本紀錄推定遠端狀態。
 - `src/components/OpinionVote.vue` — 公民意見同意／不同意／略過控制；投票前隱藏分布，投票後或作者才顯示；匿名點擊保留意見內容並展開登入入口。
 - `src/ssr/render.ts` — SSR + 注入 `window.__PAGE__`／`__SSR_STATE__` + `/js/civic.js`（dev 走 `/src/client/civic-entry.ts`）。
-- `src/views/` — `Home`／`Issue`／`Contribute`／`About`／`Admin`／`MaterialDetail`／`OpinionDetail`；共用 `AppHeader`／`AppFooter`／`StatusBadge`／`IssueCard`／`Toast`。
+- `src/views/` — `Home`／`Issue`／`Contribute`／`About`／`Profile`／`Appeals`／`Privacy`／`Terms`／`Admin`／`MaterialDetail`／`OpinionDetail`／`NotFound`；共用 `AppHeader`／`AppFooter`／`StatusBadge`／`IssueCard`／`Toast`。
 - `src/composables/useAuth.ts` — 全站共用的登入狀態（`authState`／`session`／`ensureAuthSession`／`signOutAndReload`）。模組層級的 ref，同一頁的 `AppHeader` 與表單共用同一次 `/api/me`；**只在瀏覽器端寫入**（`ensureAuthSession()` 開頭擋掉 SSR），所以 SSR 永遠是 `'loading'`。
 - `src/components/SignInButtons.vue` — Google／GitHub 登入鈕（`/`、`/issues/:id`、`/contribute/:id`、`/admin` 與 `AppHeader` 共用）。
 - `src/components/LongTextContent.vue` — 長文折疊（#65）：超過 `threshold`（預設 1000 字，以 code point 計數）時**完全不輸出原文**，只顯示字數與展開／收合鈕。🚫 **不得改成截短預覽或摘要**——素材多為 CC BY-NC-ND 授權，截短等同改作。目前用於 `Issue.vue` 的素材卡；`MaterialDetail.vue`（專屬頁本來就是看全文）與 `Admin.vue`（管理員需審閱）維持全文顯示。
 - `src/l10n/` — 自製 i18n composable（`zh-TW`／`en` 雙檔 key 同步）；SSR 固定 `zh-TW`，`localStorage.civic_lang` 只在 hydration 後讀寫。
 - `src/styles/app.css` — Tailwind v4 `@theme static`（vTaiwan 色彩、字型、字級、間距、圓角、陰影與動效 token）；`vp run css` 產出 `public/styles.css`（**生成物，勿手改**）。
 - `wrangler.jsonc` — `ASSETS` + D1 `DB` → `vtaiwan-civic-talks` + D1 `DB_AUTH` → `vtaiwan-auth` + Service Binding `FACT_CHECK_CORE` → `fact-check-core`（這些 binding 的 `remote: true` 只影響本機開發模式）；`compatibility_flags: ["nodejs_compat"]`。**不寫 `account_id`**（與 `../vTaiwan-hono` 一致，由 wrangler 登入的帳號決定）——不要為了「比較保險」把它加回來。
-- `src/auth/` — `createAuth.ts`（Better Auth 實例：Google／GitHub provider、同 email accountLinking、**不開 admin plugin**、以 `additionalFields` 唯讀取 `role`）與 `authorization.ts`（`AppRole`／`resolveRole`／`isAdminRole`／`getAuthContext`／`tryGetAuthContext`）。
+- `src/auth/` — `createAuth.ts`（Better Auth 實例：Google／GitHub provider、同 email accountLinking、啟用 admin plugin 供 server 端 moderation ban/unban，並以 `additionalFields` 唯讀取角色與停權欄位）與 `authorization.ts`（`AppRole`／`resolveRole`／`isAdminRole`／`getAuthContext`／`tryGetAuthContext`）。
 - `src/api/auth.ts` — `/api/auth/*` 轉交 `auth.handler()`、`/api/me` 回登入者；`/api/auth/admin/*` 一律 404。
 - `src/api/types.ts` — `AppBindings`／`App` 型別（原本在 `routes.ts`，抽出來避免 auth 與 routes 互相 import）。
 
@@ -82,11 +83,12 @@ Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑�
 - ✅ **Better Auth 骨架已可運作**：`/api/auth/get-session` 回 200、`/api/me` 未登入回 401、`/api/auth/admin/list-users` 回 404。
 - ✅ **管理端已是角色制**：`src/api/routes.ts` 的 `requireAdmin()` 讀 session 判 `isAdminRole()`，未登入 401、非管理員 403。**`ADMIN_PASSWORD`、`X-Admin-Token`、`checkAdmin()`、`POST /api/admin/login` 都已移除**（連同 `'admin'` 這個危險的 fallback）。
 - ✅ **`/admin` 是登入入口**：`src/views/Admin.vue` 依 `/api/me` 分成 `loading`／`anonymous`（Google／GitHub 登入鈕）／`forbidden`（登入了但沒權限）／`admin` 四態。SSR 一律只出 `loading` 骨架，所以不會有 hydration mismatch，也不需要為登入狀態關快取。
+- ✅ **`/profile` 提供登入者自助改名**：目前 UI 只送 `name` 到 Better Auth 的 `POST /api/auth/update-user`；含 `name` 的請求先做名稱正規化、同名確認與 30 天冷卻檢查，實際寫入由 Better Auth handler 執行，不以原始 SQL 更新 DB_AUTH。
 - ⚠️ **本機 `vp run dev` 測不了登入**：auth 表只存在遠端，本機模擬庫是空的，打登入端點會得到 `no such table: verification`。要實測登入必須 `vp run dev:remote`。
 - ✅ **三個投稿入口都是登入牆（#9）**：`/contribute/:id` 的素材表單、`/` 的建立議題表單、`/issues/:id` 意見分頁的投稿框，都依 `useAuth()` 分成 `loading`／`anonymous`（`SignInButtons`）／`signed-in` 三態，SSR 一律只出 `loading` 骨架。
 - ✅ **全站標頭顯示登入狀態**：`AppHeader` 已登入時出「已登入：{name}」＋登出，未登入時出「登入」鈕（展開內嵌的 provider 面板，登入後導回當前頁）。`authState === 'loading'` 時什麼都不畫——伺服器端不猜登入狀態，所以不會 mismatch。
 
-**尚不存在**：`vue-router`、`vue-i18n` 套件、CI。已有自動化測試（`src/tests/`，`vp test` 執行）。
+**尚不存在**：`vue-router`、`vue-i18n` 套件。已有 `src/tests/` 自動化測試與 `.github/workflows/ci.yml`，CI 會執行 typecheck、`vp test` 及 build。
 
 **部署身分（已部署，別再當成未知）**：
 
@@ -112,27 +114,27 @@ Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑�
 - `src/db/queries.ts` 集中所有 D1 查詢與資料型別；SQL 不散落在路由裡。
 - 首屏由 Worker 查 D1 後 SSR，互動資料在 hydration 後由 client 打 `/api/*`。
 
-### 身分驗證與權限：Better Auth（issue #5，尚未動工）
+### 身分驗證與權限：Better Auth（issue #5，已完成）
 
-依 [#5](https://github.com/g0v/civic-talk-hono/issues/5)：登入改用 **Better Auth**，**與 `../vTaiwan-hono` 共用同一套認證資料庫與同一組 OAuth 應用程式**，Admin 權限改看角色。動工前先讀不變量 5、11 與本節，並到 `../vTaiwan-hono`（分支 `feat/better-auth`）讀真正的實作，**不要憑印象重寫**。
+依 [#5](https://github.com/g0v/civic-talk-hono/issues/5)，本站已改用 **Better Auth**，**與 `../vTaiwan-hono` 共用同一套認證資料庫與同一組 OAuth 應用程式**，Admin 權限改看角色。後續修改前先讀不變量 5、11 與本節，並對照 `../vTaiwan-hono` 的現行實作，**不要憑印象重寫**。
 
 **權威參考檔（照著抄，不要自創形狀）：**
 
-| 檔案                                                                   | 作用                                                                                     |
-| ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `../vTaiwan-hono/src/server/lib/createAuth.ts`                         | `betterAuth()` 設定：D1 database、socialProviders、accountLinking、admin plugin 與角色表 |
-| `../vTaiwan-hono/src/server/lib/authorization.ts`                      | `AppRole`／`resolveRole()`／`isAdminRole()`／`getAuthContext()`                          |
-| `../vTaiwan-hono/src/api/auth.ts`                                      | `GET`／`POST` `/api/auth/*` 交給 `auth.handler()`、`GET /api/me`                         |
-| `../vTaiwan-hono/src/client/authClient.ts`                             | client 端 `createAuthClient()`，角色表須與 server 對齊                                   |
-| `../vTaiwan-hono/src/client/auth-session.ts`                           | `loadAuthSession()`／`isAdminSession()` 等前端判定                                       |
-| `../vTaiwan-hono/migrations/auth/20260727_init_better_auth_tables.sql` | auth schema 的唯一來源（**本 repo 不複製、不套用**，見不變量 11）                        |
+| 檔案                                           | 作用                                                                                                   |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `../vTaiwan-hono/src/server/lib/createAuth.ts` | `betterAuth()` 設定：D1 database、socialProviders、accountLinking、admin plugin 與角色表               |
+| `../vTaiwan-hono/src/server/lib/authorization.ts` | `AppRole`／`resolveRole()`／`isAdminRole()`／`getAuthContext()`                                     |
+| `../vTaiwan-hono/src/server/api/auth.ts`       | `GET`／`POST` `/api/auth/*` 的子路由；其中 `app.get('/me')` 掛載後是 `GET /api/auth/me`，不同於本站獨立的 `GET /api/me` |
+| `../vTaiwan-hono/src/client/authClient.ts`     | client 端 `createAuthClient()`，角色表須與 server 對齊                                                 |
+| `../vTaiwan-hono/src/client/auth-session.ts`   | `loadAuthSession()`／`isAdminSession()` 等前端判定                                                     |
+| `../vTaiwan-hono/migrations/auth/`             | auth schema 的唯一來源（包含初始表與後續 schema 變更；**本 repo 不複製、不套用**，見不變量 11）       |
 
-**要做的（對應 #5 的 checkbox）：**
+**現行實作（對應 #5 的 checkbox）：**
 
 - **共用 auth DB**：`wrangler.jsonc` 新增第二個 D1 綁定 `DB_AUTH` → `vtaiwan-auth`（`database_id: e26edd14-d163-427d-8630-9304f815e9fa`，與 vTaiwan-hono 同一顆），`betterAuth({ database: env.DB_AUTH })`。使用者表就是 vTaiwan 的 `user` 表，兩站帳號天然共通。
 - **Google 登入**：沿用**同一組** `GOOGLE_CLIENT_ID`／`GOOGLE_CLIENT_SECRET`。
 - **GitHub 登入**：沿用**同一組** `GITHUB_CLIENT_ID`／`GITHUB_CLIENT_SECRET`。
-- **同 email 帳號整合**：照抄 vTaiwan-hono 的 `account.accountLinking.trustedProviders: ['google', 'github']`——同一個 email 用 Google 或 GitHub 登入都落到同一個 `user`。
+- **同 email 帳號整合**：對齊 vTaiwan-hono 的 `account.accountLinking.trustedProviders: ['google', 'github']`；設計上同一個 email 用 Google 或 GitHub 登入會落到同一個 `user`，但跨 provider 的端到端行為仍待實證。
 - **角色制 Admin**：角色沿用 vTaiwan 的 `user`／`admin`／`super-admin`（欄位就是 `user.role`）。Admin 頁與管理 API 一律用 `isAdminRole()`（`admin` 或 `super-admin`）把關。**本站只讀角色、不寫角色**。
   - ✅ **開 `admin` plugin 用於濫用審核（#21，使用者裁示）。** `createAuth.ts` 以 `adminRoles: ['super-admin', 'admin']` 與 vTaiwan-hono 一致的 `adminRoleAccess` 啟用 plugin。停權操作走 **server 端 `createAuth(env).api.banUser()`**（程式呼叫），**不經 HTTP 路由**。
   - ⚠️ **`/api/auth/admin/*` HTTP 端點整段封鎖（不維護黑名單）。** `auth.ts` 以一條 `app.all('/api/auth/admin/*', 404)` 擋掉全部——包含 `create-user`、`set-user-password`、`update-user`、`list-users`、`list-user-sessions` 等現有及未來新增的端點。server 端程式呼叫不走 Hono 路由，照常運作。**不得改為選擇性黑名單**——better-auth 每次改版都可能新增端點，黑名單必然落後。日後若要開放任何 HTTP 端點，必須先問使用者。
@@ -141,7 +143,7 @@ Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑�
 
 **明確不做的：**
 
-- 🚫 **不做權限管理後台**（升降權、停權、成員列表、變更日誌）——留給 vTaiwan-hono。本站只讀角色。
+- 🚫 **不做通用權限／會員管理後台**（升降權、成員列表、變更日誌）——留給 vTaiwan-hono。本站只在 moderation 申訴流程透過 Better Auth admin plugin 做已授權的 ban/unban，不寫 `user.role`。
 - 🚫 **不做二次驗證（step-up）**。vTaiwan-hono 有 `step-up.ts`／`StepUpAuth.vue`／`admin_audit_log`，那是它管理成員資料的需求；#5 沒有要求，**不要順手移植**。要加先問使用者。
 - 🚫 **不自建 email／密碼登入**——只做 Google 與 GitHub 兩個 social provider。
 
@@ -149,26 +151,26 @@ Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑�
 
 | 項目                 | 決定                                                                                                                                                                            |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `admin` plugin       | 🚫 **不開**（見上一節）                                                                                                                                                         |
+| `admin` plugin       | ✅ **已啟用**，只供 server 端 moderation ban/unban；`/api/auth/admin/*` HTTP 端點仍整段 404                                                                                           |
 | `account_id`         | **兩邊都不寫死**——本專案已移除 `wrangler.jsonc` 的 `account_id`，與 `../vTaiwan-hono` 一致，由 wrangler 登入的帳號決定                                                          |
 | Cloudflare 帳號      | 兩專案是**同一個帳號**（所以綁得到 `vtaiwan-auth`），但**不靠設定檔寫死來保證**——`wrangler whoami` 選錯帳號就會綁不到，遇到錯誤先查這個                                         |
 | `nodejs_compat`      | ✅ **已加（實測必要）**——better-auth 直接 import `node:crypto` 與 `node:async_hooks`，沒有這個 flag 連 dev server 都起不來。改 `wrangler.jsonc` 後記得 `vp exec wrangler types` |
 | `BETTER_AUTH_SECRET` | **與 vTaiwan-hono 共用同一個值**（仍只放 `.dev.vars`／Cloudflare secret，不進 git——不變量 6）                                                                                   |
 
-**仍需先確認的前置條件（🚫 不要臆測）：**
+**換網域或建立新環境時必須確認的前置條件（🚫 不要臆測）：**
 
-1. **OAuth callback 網址**：共用的 Google／GitHub OAuth 應用程式必須把 civic-talk 的 callback（`<origin>/api/auth/callback/google`、`/api/auth/callback/github`）加進允許清單。這是**只有使用者能在 Google Cloud／GitHub 主控台做的動作**，做不了就登不進去——先確認已加，再開始寫。
+1. **OAuth callback 網址**：共用的 Google／GitHub OAuth 應用程式必須把 civic-talk 的 callback（`<origin>/api/auth/callback/google`、`/api/auth/callback/github`）加進允許清單。正式站已完成並實測；換網域或建立新環境時仍只能由使用者在 Google Cloud／GitHub 主控台設定。
 2. **`BETTER_AUTH_URL` 逐環境不同**：本機是 `http://localhost:<port>`，正式是 civic-talk 自己的 origin，**不要從 vTaiwan-hono 複製**（跟 `BETTER_AUTH_SECRET` 不一樣，這個不共用）。
 
-> ⚠️ **「共用帳號、共用 secret」不等於「共用登入狀態」**：兩站共用的是 `user`／`account` 資料（同一個 email 在兩站是同一個 `user.id`）與簽章密鑰，但 **session cookie 綁 origin**——不同網域各自要登入一次，除非刻意設定 cookie `domain` 且兩站在同一個父網域下（要做先問使用者）。**不要預設「在 vTaiwan 登入過就自動登入 civic-talk」**，也不要拿共用 secret 當作單一登入已經成立的證據。
+> ⚠️ **「共用帳號、共用 secret」不等於「共用登入狀態」**：兩站共用 `user`／`account` 資料並設定 trusted provider account linking；同 email 應共用 `user.id`，但跨 provider 行為仍待端到端實證。**session cookie 綁 origin**，不同網域各自要登入一次，除非刻意設定 cookie `domain` 且兩站在同一個父網域下（要做先問使用者）。**不要預設「在 vTaiwan 登入過就自動登入 civic-talk」**，也不要拿共用 secret 當作單一登入已經成立的證據。
 
 **SSR 與 session**：session 由請求的 `Cookie` 標頭解析（`auth.api.getSession({ headers })`），這是**伺服器端行為，SSR 期間合法**，不違反不變量 3——不變量 3 禁的是 `localStorage`／`document`／`window`。前端的登入狀態一律走 `GET /api/me`，**不要**把使用者資料存進 `localStorage`。SSR 若要依登入狀態出不同內容，記得該頁不可被邊緣快取。
 
 ### 路由
 
-`/`、`/issues/:id`、`/contribute/:id`、`/about`、`/admin`，加上不變量 4 的舊網址導向。
+SSR／內容路由為 `/`、`/issues/:id`、`/issues/:id/source/:materialId`、`/issues/:id/comment/:opinionId`、`/contribute/:id`、`/about`、`/profile`、`/appeals`、`/privacy`、`/terms`、`/admin` 與 `/rss.xml`，另有不變量 4 的舊網址導向。
 
-導入 #5 後另有 Better Auth 自己的端點 `/api/auth/*`（見「API 契約」）——**這段路徑整段交給 `auth.handler()`，不要在上面自己疊業務路由**。唯一例外是 `/api/auth/admin/*`（若啟用 `admin` plugin 才會存在）**必須擋掉**，理由見「身分驗證與權限」。`/admin` 未登入或角色不足時導向登入，不直接 404。
+Better Auth 的端點位於 `/api/auth/*`（見「API 契約」），這段路徑交給 `auth.handler()`；唯一例外是已啟用 admin plugin 所提供的 `/api/auth/admin/*`，必須由前置路由整段擋成 404。server 端程式呼叫不經 HTTP 路由，照常可用。`/admin` 未登入或角色不足時顯示對應登入／權限狀態，不直接 404。
 
 ### 樣式：Tailwind v4 + design token
 
@@ -184,7 +186,7 @@ Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑�
 - 介面文字**一律走翻譯 key**，模板與程式不寫死字串。
 - **雙檔同步（硬性規定）**：`zh-TW` 與 `en` 的 key 集合必須完全一致，值各自翻譯。key 用點號分層（如 `header.home`、`issue.tabs.materials`）。舊站 `contribute` 頁缺的英文要補齊。
 - **語言偵測／持久化只在瀏覽器端**：`localStorage.civic_lang` 只能在 hydration 後讀寫；SSR 一律用預設 `zh-TW`。別把偵測邏輯拉進 SSR 路徑（違反不變量 3）。
-- **#5 會新增一批 key**（以 Google／GitHub 登入、登出、目前使用者、權限不足提示、Admin 登入入口等），一樣**兩個語言檔同步**。同時記得改既有的 `abt_tech_auth`——現在寫的是「Admin token（X-Admin-Token）」，改角色制後就不實了。
+- Better Auth 相關介面文字（Google／GitHub 登入、登出、目前使用者、權限不足提示、Admin 登入入口等）已納入雙語 key；後續新增或修改仍必須同步 `zh-TW`／`en`，不得讓 `abt_tech_auth` 等說明退回已淘汰的 Admin token 敘述。
 
 ## API 契約（移植自舊站）
 
@@ -235,28 +237,29 @@ Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑�
 - **完整作者快照**：`ct_issues`、`ct_materials`、`ct_opinions`、`ct_briefings` 最終都有 `author_id`、`author_name`、`author_email`、`show_email`。`author_id` 是 Better Auth `user.id`；name／email 是投稿當下快照，不隨帳號日後更新。`author_name` 缺漏時一律為 `NULL`，**禁止退回 email**，否則會繞過 email opt-in。
 - **儲存與公開分離**：`author_email` 無論使用者是否 opt-in 都保存，供管理端追溯；`show_email INTEGER NOT NULL DEFAULT 0 CHECK (show_email IN (0, 1))` 才是公開同意。建立議題、投稿素材與意見的 API 只接受 boolean `show_email`，並要求 `terms_accepted === true`；兩者都由伺服器端驗證，不能只靠 checkbox。驗證通過後由伺服器寫入 `TERMS_VERSION` 與 `CURRENT_TIMESTAMP`，不採信 client 自報的版本或時間。
 
-### Issue #107 公民意見投票（程式碼已完成，尚未部署）
+### Issue #107 公民意見投票（程式碼完成；正式部署待確認）
 
 - `GET /api/issues/:id/opinions?sort=recent|responses` 的每筆意見會附上 `vote_agree`／`vote_disagree`／`vote_pass`、`my_vote`、`can_view_vote_distribution`、`can_vote`、`is_author`；SSR 仍只注入不含投票欄位的公開 `Opinion`。
 - 投票前（匿名或已登入但尚未投票）伺服器直接以 `null` 遮蔽分布；投票後或作者才可見。作者是虛擬同意票，不寫入 `ct_opinion_votes`，也不可自投。收回後分布再次隱藏。
 - `abuse_flagged = 1` 僅在前端展開內容後提供控制，`2/3` 不可投。投票與收回均需登入，停權沿用 `requireUser()`。
 - `GET /api/issues/:id/opinions/comments.csv` 需登入，輸出 pol.is 相容欄位與匿名作者序號；不輸出 Better Auth id、email 或 voter identity。回應為 private/no-store，不視為公開快取資料。
-- 本次程式碼與 `migrations/0012_opinion_votes.sql` 尚未部署；上線前仍須先確認遠端 `0009`–`0011` 狀態，依序套用 pending migration，再套用 `0012`，並另行完成部署前 smoke test。不得把本節的程式碼完成寫成遠端已驗證。
+- **2026-09-24 使用者回報** `migrations/0012_opinion_votes.sql` 與後續 `0013` 應已套用遠端；本次未查詢 remote pending，也沒有新證據證明包含投票程式的 Worker 已部署。未來仍須先核對 migration，再部署 Worker；投票、收回、分布遮蔽與 CSV 只有完成 [`deploy_notes.md`](./deploy_notes.md) 的正式站 smoke test 才能標示已驗證。
 - **公開投影（#27 使用者已裁示）**：議題、素材、意見與說明頁公開顯示 `author_name`；公開 SQL 只能用 `CASE WHEN show_email = 1 THEN author_email ELSE NULL END AS author_email`，且不得回傳 `author_id`／`show_email`。`getIssueDetail()` 與獨立詳情頁都會進 SSR state，因此一律列舉公開欄位、禁止 `SELECT *`。管理端 `list*WithAuthor()`／`getLatestBriefingWithAuthor()` 才可取得完整快照；管理員版本標示 `Vary: Cookie`。
 - **需登入之前的舊資料** `author_*` 是 `NULL`，不回填；管理端顯示為「需登入之前的舊資料」。
 - 前端三處都是同一套三態（`loading`／`anonymous`／`signed-in`）：`/contribute/:id` 的素材表單、`/` 的建立議題表單、`/issues/:id` 意見分頁的投稿框。SSR 一律只出 `loading` 骨架，避免 hydration mismatch。
 - **送出時遇 `401` 不要把 `authState` 切回 `anonymous`**——那會把表單換成登入卡片、吃掉使用者剛打的內容。三處都改用獨立的 `sessionExpired` 旗標：表單留在原地，只在上方補一列重新登入與「先複製你打的內容」提示（共用 key `login_expired_toast`／`login_expired_hint`）。
 - **守門在伺服器端**——登入、停權、條款同意與 `show_email` 型別都由 API 驗證；前端隱藏表單與 checkbox 只是體驗，不是防線。
 
-| 方法          | 路徑          | 說明                                                                             |
-| ------------- | ------------- | -------------------------------------------------------------------------------- |
-| `GET`／`POST` | `/api/auth/*` | Better Auth 內建端點（登入、callback、登出、session）；整段交給 `auth.handler()` |
-| `GET`         | `/api/me`     | 回傳目前登入者 `{ user, role }`；未登入回 `401`                                  |
+| 方法          | 路徑                    | 說明                                                                                                                                           |
+| ------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET`／`POST` | `/api/auth/*`           | Better Auth 內建端點（登入、callback、登出、session、個人資料更新）；整段交給 `auth.handler()`，但 `/api/auth/admin/*` 例外封鎖                |
+| `POST`        | `/api/auth/update-user` | 登入者更新自己的 Better Auth 個人資料；目前本站 UI 只送 `name`，含 `name` 時另做正規化、同名確認與 30 天冷卻檢查                              |
+| `GET`         | `/api/me`               | 回目前登入者 `{ user, role, banned, nameChangeCooldownDays, hasDuplicateDisplayName }`；未登入回 `401`                                         |
 
-- 回應碼語意：**未登入 `401`、已登入但角色不足 `403`**（現行程式碼只有 `401`，改的時候要補 `403`）。
-- **`/api/me` 只回 `role`，不要複製 vTaiwan 的 `permissions`。** vTaiwan-hono 的 `Permission` 詞彙是 `meeting.join`／`meeting.moderate`／`transcription.update`／`topic.manage`——全是它的業務語彙，搬過來只會是四個永遠用不到的字串。Civic Talk 一律用 `isAdminRole()` 判角色；真的需要更細的權限模型，**先問使用者**再定義本站自己的詞彙。
+- 回應碼語意：**未登入 `401`、已登入但角色不足 `403`**。
+- **`/api/me` 不回傳 vTaiwan 的 `permissions`。** `role` 仍是本站管理權限判斷來源；`banned`、`nameChangeCooldownDays`、`hasDuplicateDisplayName` 則支援停權守門、個人頁與同名提示。vTaiwan-hono 的 `Permission` 詞彙全是它的業務語彙，不要搬來本站；真的需要更細權限模型，先問使用者。
 - **`/api/auth/admin/*` 是 `/api/auth/*` 整段轉交的唯一例外**——見「身分驗證與權限」的角色制 Admin 條目。
-- **`POST /api/admin/login` 廢除**：改角色制後這支沒有意義。**不要靜默移除**——同一批改動裡把 `src/views/Admin.vue` 的密碼登入 UI 一併換掉，確認前端不再呼叫後才刪路由；`ADMIN_PASSWORD` 與 `checkAdmin()` 同批清乾淨，別留半套（一半看 token、一半看角色）的授權路徑。
+- **`POST /api/admin/login` 已廢除**：不得恢復密碼制，也不得重新引入 `ADMIN_PASSWORD`、`X-Admin-Token` 或 `checkAdmin()`，避免出現一半看 token、一半看角色的授權路徑。
 - **API 不依賴 CORS 做存取控制**：`src/api/routes.ts` 不得輸出 `Access-Control-Allow-Credentials`，也不得對管理端或寫入端點輸出 `Access-Control-Allow-*`。公開唯讀端點可輸出 `Access-Control-Allow-Origin: *`，供第三方瀏覽器取用公開資料，但必須同時輸出 `Cache-Control: private, no-store`、`X-Content-Type-Options: nosniff` 與 `Vary: Cookie`，避免公開／管理員投影被快取混用。CORS 只限制瀏覽器**讀取**跨源回應，擋不住不需 preflight 的簡單請求送達伺服器。
 - **跨站／跨子網域寫入防護由 `/api/*` 的 `hono/csrf` 中介層負責**（`src/index.ts`，必須註冊在所有 `/api` 路由之前），與 `../vTaiwan-hono` 一致。🚫 不得改成逐端點自行檢查 `Origin`，也不得移除這層中介層——session cookie 是 `SameSite=Lax`，同站 sibling origin（`*.vtaiwan.tw`）的簡單請求會帶著 cookie 抵達。
 - 登入、停權、角色守衛回答的是「**是哪位使用者**」，csrf 回答的是「**請求是不是本站頁面發起**」，兩者不可互相取代。
@@ -285,7 +288,7 @@ Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑�
 ```bash
 npm install                         # 安裝依賴（套件管理仍走 npm）
 vp run dev                          # 先建置 CSS 再啟動開發伺服器，D1 用本機模擬
-vp run dev:remote                   # 先建置 CSS 再連遠端 D1；實測登入只能用這個
+vp run dev:remote                   # 先建置 CSS 再連遠端綁定；本機開發若要實測登入使用此模式
 vp run css:watch                    # 只監看 Tailwind CSS（dev 期間需另開終端機）
 vp run build                        # CSS + client bundle + server bundle
 vp preview                          # 預覽建置結果
@@ -299,7 +302,7 @@ vp run deploy                       # build + wrangler deploy（除非使用者�
 
 **CSS**：`vp run css`（Tailwind CLI：`src/styles/app.css` → `public/styles.css`）。`vp run dev` 在啟動伺服器前先跑一次 CSS 建置，**不**自動 watch；需要邊改 CSS 邊看效果時，另開終端機跑 `vp run css:watch`。`vp run build` 依序產出 CSS、client bundle，再建 server，避免 server build 收到舊的 `public/js/civic.js`。
 
-**測試**：`vp test` 跑 `src/tests/**/*.test.ts`，目前涵蓋 i18n key 同步（`l10n.test.ts`）。新測試放進 `src/tests/`，從 `vite-plus/test` import `describe`／`it`／`expect`。
+**測試**：`vp test` 跑 `src/tests/**/*.test.ts`，涵蓋 i18n、SSR、API 安全邊界、作者隱私、moderation、投稿併發、首頁排序與意見投票等。新測試放進 `src/tests/`，從 `vite-plus/test` import `describe`／`it`／`expect`；`.github/workflows/ci.yml` 會在 push 到 `main` 與 pull request 執行完整測試。
 
 D1 相關（導入後）：
 
@@ -308,7 +311,7 @@ npx wrangler d1 migrations apply vtaiwan-civic-talks --local    # 本機，預�
 npx wrangler d1 migrations apply vtaiwan-civic-talks --remote   # 🚫 需先取得使用者授權
 ```
 
-> **本 repo 沒有、也不該有 auth 資料庫的 migration 指令**（見不變量 11）。`vtaiwan-auth` 的 schema 由 `../vTaiwan-hono` 維護；本機開發若需要 auth 表，請直接跑 `DB_AUTH` 的 `--remote`（🚫 需授權）或請使用者提供本機 seed 方式，**不要**在這裡自己建表。
+> **本 repo 沒有、也不該有 auth 資料庫的 migration 指令**（見不變量 11）。`vtaiwan-auth` 的 schema 由 `../vTaiwan-hono` 維護；本機開發若需要真實 auth 表，使用 `vp run dev:remote` 連既有綁定，或請使用者提供明確的隔離環境方式，**不要**在本 repo 自建或套用 auth schema。
 
 ## 語言與溝通慣例
 
@@ -380,7 +383,7 @@ npx wrangler d1 migrations apply vtaiwan-civic-talks --remote   # 🚫 需先取
    - 中英切換、桌機／手機排版、Polis 條件載入、`OPINION.md` 下載
    - 舊網址導向確實生效
 
-> **尚未涵蓋**（需先與使用者確認再動工）：SSR 煙霧測試、連結完整性、hydration 一致性。i18n key 同步已由 `l10n.test.ts` 自動化。CI 仍未建立——驗收步驟不能跳。
+> **仍未自動涵蓋**：正式站 OAuth／遠端 D1／Service Binding 煙霧測試、連結完整性與真實瀏覽器 hydration 一致性。CI 已執行 typecheck、Vitest（含 SSR smoke）與 build，但不能取代部署後人工驗收。
 
 ## Git / Commit 慣例
 
@@ -420,7 +423,7 @@ npx wrangler d1 migrations apply vtaiwan-civic-talks --remote   # 🚫 需先取
 `../vTaiwan-hono` 的**兩種參考強度不同，別混為一談**：
 
 - **工程慣例（SSR 寫法等）＝ 僅參考**；Vite+（`vp`）工具鏈本專案已採用（issue #24），**不含** LemmaScript。
-- **Better Auth 登入／權限＝ 要對齊的實作**：#5 明確要求共用同一套 auth DB、user table 與 OAuth 憑證，所以 `createAuth.ts`／`authorization.ts`／auth schema 的形狀要照著來（見「身分驗證與權限」）。相關程式碼在該 repo 的 **`feat/better-auth`** 分支。
+- **Better Auth 登入／權限＝ 要對齊的實作**：#5 明確要求共用同一套 auth DB、user table 與 OAuth 憑證，所以 `createAuth.ts`／`authorization.ts`／auth schema 的形狀要與該 repo 的現行實作對齊（見「身分驗證與權限」），不要依賴歷史 feature branch 名稱判斷現況。
 
 要了解舊站行為時，直接讀 `../civic-talk` 對應檔案。
 
@@ -452,7 +455,7 @@ npx wrangler d1 migrations apply vtaiwan-civic-talks --remote   # 🚫 需先取
 | 5-6 | `role-based-admin` | ✅ 完成            | `requireAdmin()` 判角色（401／403）；`ADMIN_PASSWORD`／`X-Admin-Token`／`POST /api/admin/login` 全數移除；管理與寫入 API 不輸出 CORS 放行標頭，跨站寫入由全域 csrf 防護；Admin 頁改 Google／GitHub 登入；i18n 雙檔同步 |
 | 5-7 | `verify`           | 🚧 幾乎完成        | 已驗：未登入打管理端點 401、`/api/admin/login` 404、公開端點不受影響、`/admin` SSR 無 mismatch；**正式站 Google／GitHub 登入成功、`admin` 角色進得了後台**（2026-08-11）。**尚未驗**：同 email 帳號整合（見 5-5）      |
 
-> 已裁示的設定（不開 `admin` plugin、`account_id` 不寫死、`nodejs_compat` 實測必要、`BETTER_AUTH_SECRET` 與 vTaiwan-hono 共用）見「身分驗證與權限」一節。OAuth callback 網址與 `BETTER_AUTH_URL` 在本機與正式站都已設好（登入實測通過即為證明）；**換網域或建新環境時這兩項要重設**，做法見 [`deploy_notes.md`](./deploy_notes.md)。
+> 已裁示的設定（啟用 admin plugin 但封鎖全部 `/api/auth/admin/*` HTTP 端點、`account_id` 不寫死、`nodejs_compat` 實測必要、`BETTER_AUTH_SECRET` 與 vTaiwan-hono 共用）見「身分驗證與權限」一節。OAuth callback 網址與 `BETTER_AUTH_URL` 在本機與正式站都已設好（登入實測通過即為證明）；**換網域或建新環境時這兩項要重設**，做法見 [`deploy_notes.md`](./deploy_notes.md)。
 
 ### 進行中：#9 素材投稿需登入
 
@@ -485,13 +488,13 @@ npx wrangler d1 migrations apply vtaiwan-civic-talks --remote   # 🚫 需先取
 
 | #    | 項目                    | 狀態            | 內容                                                                                                                                                                              |
 | ---- | ----------------------- | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 29-1 | `migration`             | ✅ 完成         | 最終 schema 收斂在 `migrations/0009_ai_moderation.sql`（0009–0012 從未套用遠端）；本機完整重跑後確認業務表均為 `ct_*`，遠端 migration 尚未套用且依使用者指示暫不套用              |
+| 29-1 | `migration`             | ✅ 完成         | 最終 moderation schema 收斂在 `migrations/0009_ai_moderation.sql`；2026-09-24 使用者回報 `0001`–`0013` 應已套用遠端，本次未查詢遠端，未來部署仍以 remote pending 清單為準 |
 | 29-2 | `moderation-service`    | ✅ 完成         | `src/moderation/service.ts` 執行時讀 `ASSETS.fetch('/rules/community-guidelines.md')`，以 OpenRouter 結構化 JSON schema 判定；`AbortSignal.timeout()`、fail-open 與結構化錯誤 log |
 | 29-3 | `submission-moderation` | ✅ 完成         | 四個投稿端點維持成功回應；違規投稿 INSERT 時標記 `abuse_flagged = 3` 並建立指向該列的 `source = 'ai'` 回報，公開查詢只回 placeholder，且素材／說明頁違規不觸發議題狀態轉換        |
 | 29-4 | `appeals-api`           | ✅ 完成         | `POST /api/appeals`（`rejected_submission`／`account_ban`）；管理端申訴列表與 resolve 端點；帳號處置透過 Better Auth                                                              |
 | 29-5 | `appeals-ui`            | ✅ 完成         | `ModerationAppealForm.vue`、Home／Contribute／Issue 投稿表單保留輸入並提供申訴；Admin moderation 分頁可查看與處理；zh-TW／en key 集合同步                                         |
 | 29-6 | `preview`               | ✅ 完成         | `GET /api/admin/moderation/preview` 使用正式相同模型請求路徑，回傳判定、finish reason、usage 與 fail-open failure kind，不寫 D1                                                   |
-| 29-7 | `verify`                | ✅ 待本分支驗證 | typecheck、測試、build、本機 Worker smoke test 與真實模型預覽測試依本次變更重新執行；內容生成仍只提供志願者 prompt，未改成伺服器代打模型                                          |
+| 29-7 | `verify`                | ✅ 完成         | 已有 typecheck、測試、build 與本機路徑的回歸覆蓋；內容生成仍只提供志願者 prompt，未改成伺服器代打模型。正式站模型與完整互動仍依部署後 smoke test 驗證                                      |
 
 ### 已完成：#83 關於頁的平台導覽流程
 
@@ -505,7 +508,7 @@ npx wrangler d1 migrations apply vtaiwan-civic-talks --remote   # 🚫 需先取
 | 83-4 | `i18n`          | ✅ 完成 | 新增 `abt_step4_*`／`abt_step5_*`／`abt_wip_badge`；`abt_how_desc` 改五步驟；zh-TW／en 雙檔同步（`vp test` 通過）；步驟 3 不再顯示 WIP，步驟 5 仍保留 WIP；`headForAbout` description 同步改寫                                                                   |
 | 83-5 | `styles`        | ✅ 完成 | 流程版型 `.flow-list`／`.flow-step`／`.flow-num`／`.flow-wip` 放在 `src/styles/app.css` `@layer components`（原因見「樣式」一節的現況限制）                                                                                                                      |
 
-> 後續可選：切換到 `vue-router` 全站 hydration、自動化測試／CI——動工前先與使用者確認。
+> 後續可選：切換到 `vue-router` 全站 hydration、擴充真實瀏覽器 E2E 與部署後 smoke automation——動工前先與使用者確認。
 
 ### 已完成：#25 素材與意見的獨立連結（專屬路由）
 

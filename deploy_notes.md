@@ -35,16 +35,17 @@ https://civic.vtaiwan.tw/api/auth/callback/github
 
 ### 1.3 正式環境的機密
 
-`.dev.vars` **只有本機吃得到**，不會隨 deploy 上傳。以下六個值必須另外設進 Worker（正式站已設好，這裡是輪替金鑰或建新環境時的清單）：
+`.dev.vars` **只有本機吃得到**，不會隨 deploy 上傳。下列設定必須另外設進 Worker（正式站已設好，這裡是輪替金鑰或建新環境時的清單）：
 
-| 名稱                   | 說明                                                                                   | 建議設法              |
-| ---------------------- | -------------------------------------------------------------------------------------- | --------------------- |
-| `BETTER_AUTH_SECRET`   | 簽章密鑰，**與 vTaiwan-hono 用同一個值**                                               | `wrangler secret put` |
-| `GOOGLE_CLIENT_ID`     | 與 vTaiwan-hono 共用                                                                   | `wrangler secret put` |
-| `GOOGLE_CLIENT_SECRET` | 與 vTaiwan-hono 共用                                                                   | `wrangler secret put` |
-| `GITHUB_CLIENT_ID`     | 與 vTaiwan-hono 共用                                                                   | `wrangler secret put` |
-| `GITHUB_CLIENT_SECRET` | 與 vTaiwan-hono 共用                                                                   | `wrangler secret put` |
-| `BETTER_AUTH_URL`      | **本站自己的 origin**（正式站是 `https://civic.vtaiwan.tw`），不要從 vTaiwan-hono 複製 | 見下方說明            |
+| 名稱                   | 說明                                                                                                            | 建議設法              |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------- | --------------------- |
+| `BETTER_AUTH_SECRET`   | 簽章密鑰，**與 vTaiwan-hono 用同一個值**                                                                        | `wrangler secret put` |
+| `GOOGLE_CLIENT_ID`     | 與 vTaiwan-hono 共用                                                                                            | `wrangler secret put` |
+| `GOOGLE_CLIENT_SECRET` | 與 vTaiwan-hono 共用                                                                                            | `wrangler secret put` |
+| `GITHUB_CLIENT_ID`     | 與 vTaiwan-hono 共用                                                                                            | `wrangler secret put` |
+| `GITHUB_CLIENT_SECRET` | 與 vTaiwan-hono 共用                                                                                            | `wrangler secret put` |
+| `BETTER_AUTH_URL`      | **本站自己的 origin**（正式站是 `https://civic.vtaiwan.tw`），不要從 vTaiwan-hono 複製                          | 見下方說明            |
+| `OPEN_ROUTER_API_KEY`  | 四個投稿入口的安全審查；缺值時會 fail-open，雖不阻擋投稿，但正式環境應設定                                      | `wrangler secret put` |
 
 ```bash
 npx wrangler secret put BETTER_AUTH_SECRET     # 逐一設定，值用貼的、不要放進指令歷史
@@ -52,6 +53,7 @@ npx wrangler secret put GOOGLE_CLIENT_ID
 npx wrangler secret put GOOGLE_CLIENT_SECRET
 npx wrangler secret put GITHUB_CLIENT_ID
 npx wrangler secret put GITHUB_CLIENT_SECRET
+npx wrangler secret put OPEN_ROUTER_API_KEY
 ```
 
 **`BETTER_AUTH_URL` 不是機密**，可以改放進 `wrangler.jsonc` 的 `vars`（進版控、部署時自動帶上、不會有人忘了設）：
@@ -97,7 +99,7 @@ auth schema 的唯一來源是 `../vTaiwan-hono/migrations/auth/`；要改 schem
 
 ### 2.3 🚫 不要以為部署後 vTaiwan 的登入狀態會自動延續
 
-兩站共用 `user`／`account` 資料與 `BETTER_AUTH_SECRET`，所以**同一個 email 在兩站是同一個帳號**；但 session cookie 綁 origin，**兩個網域仍要各自登入一次**。除非兩站在同一個父網域下並刻意設定 cookie `domain`（要做先討論），否則不要對外宣稱「單一登入」。
+兩站共用 `user`／`account` 資料，並設定 Google／GitHub trusted provider account linking；**設計上**同一個 email 應落到同一個帳號，但跨 provider 的端到端行為仍待實證。session cookie 綁 origin，所以**兩個網域仍要各自登入一次**。除非兩站在同一個父網域下並刻意設定 cookie `domain`（要做先討論），否則不要對外宣稱「單一登入」。
 
 ---
 
@@ -121,10 +123,16 @@ vp run deploy    # = vp run build + wrangler deploy
 - **`wrangler.jsonc` 裡 D1 綁定的 `"remote": true` 只影響本機開發**（`vp run dev` 用本機模擬、`vp run dev:remote` 連遠端）。正式環境本來就是真的資料庫，這個欄位不改變部署行為。
 - **正式網域不在設定檔裡**（見 1.1）——`vp run deploy` 不會重建網域綁定，也不會因為設定檔沒寫就把它拆掉。
 - **`compatibility_flags: ["nodejs_compat"]` 不能拿掉**。better-auth 直接 import `node:crypto` 與 `node:async_hooks`，少了這個 flag 連本機 dev 都起不來。
-- 業務資料庫 `vtaiwan-civic-talks` 的 migration 需要另外跑，且 `--remote` 依不變量 7 **要先取得授權**：
+- 業務資料庫 `vtaiwan-civic-talks` 的 migration 必須與 Worker 程式一起規劃。**2026-09-24 使用者回報目前應已套用 `0001`–`0013`；本次未查詢遠端**。這項紀錄不能取代每次部署前的實際 pending 清單：
+  ```bash
+  npx wrangler whoami
+  npx wrangler d1 migrations list vtaiwan-civic-talks --remote
+  ```
+- 若仍有 pending migration，先核對檔案內容、相依順序與部署程式；`0009`–`0013` 不得跳號。取得使用者明確授權後才能套用，而且 migration 必須在依賴新 schema 的 Worker 部署前成功：
   ```bash
   npx wrangler d1 migrations apply vtaiwan-civic-talks --remote
   ```
+- 套用後要再確認 pending 清單為空，並檢查 `sqlite_master`：本 repo 新增的業務表只能是 `ct_*`。不能只因 repo 裡已有 `0013` 就推定遠端也已套用。
 
 ---
 
@@ -152,6 +160,10 @@ vp run deploy    # = vp run build + wrangler deploy
 | 登入後投稿素材／意見／議題       | 寫入成功，且該筆內容顯示投稿者名稱（email 只在勾選公開時才出現）                | 2026-08-11 |
 | 登入後送出說明頁                 | 寫入成功且記錄 `author_id`；管理端看得到完整作者快照                            | —          |
 | 登出後 `GET /api/me`             | 401                                                                             | —          |
+| `POST`／`DELETE /api/opinions/:id/vote`（未登入） | 401                                                                                                   | —          |
+| 登入後投票、改票、收回                           | 成功；投票後可見分布，收回後再次遮蔽；作者及 `abuse_flagged = 2/3` 不可投                              | —          |
+| `GET /api/issues/:id/opinions?sort=responses`     | 200；按回應數排序，未投票者仍看不到分布                                                               | —          |
+| `GET /api/issues/:id/opinions/comments.csv`       | 未登入 401；登入後回 pol.is 相容 CSV，且不含 Better Auth id、email 或 voter identity                   | —          |
 
 > ⚠️ **`/api/auth/get-session` 回 200 不代表登入設定正確**——沒有 cookie 時它跟 callback 網址設錯或 `BETTER_AUTH_URL` 設錯的情況長得一樣。登入相關的列只能靠人工在瀏覽器實測；改網域或換金鑰後要重跑。
 
@@ -166,7 +178,7 @@ vp run deploy    # = vp run build + wrangler deploy
 ## 5. 已知限制
 
 - **登入主流程已實測**（Google／GitHub 登入、admin 進後台、登入後投稿，2026-08-11）；**尚未實證**：同一個 email 換 provider 登入是否落到同一個帳號、說明頁寫入的作者快照與管理端完整快照。
-- **有自動化測試但沒有 CI**：`src/tests/` 有三個 Vitest 檔（i18n key 同步、作者隱私投影、markdown 安全渲染），跑 `vp test`；但沒有任何 CI 會自動跑，上述煙霧測試也全靠人工。
+- **已有自動化測試與 CI**：`src/tests/` 的 Vitest 測試涵蓋 i18n、SSR、API 安全邊界、作者隱私、moderation、投稿併發、首頁排序與意見投票等；`.github/workflows/ci.yml` 會在 push 到 `main` 與 pull request 執行 binding type generation、typecheck、`vp test` 及 build。正式站 OAuth、遠端 D1、Service Binding 與本節煙霧測試仍需人工驗證。
 - **公開唯讀 API 支援跨來源讀取**：`GET /api/issues`、`GET /api/issues/:id` 及其 `materials`／`briefing`／`opinions` 子資源維持 `Access-Control-Allow-Origin: *`，但不提供 `Access-Control-Allow-Credentials`。這些回應一律帶 `Cache-Control: private, no-store`、`X-Content-Type-Options: nosniff` 與 `Vary: Cookie`，避免公開／管理員投影被快取混用。管理端、需登入資料與所有寫入端點都不輸出 CORS 放行標頭。
 - **跨站寫入由 csrf 防護，不靠 CORS 或登入守衛**：缺少 `Access-Control-Allow-Credentials` 只會阻止瀏覽器把 credentialed response 交給跨來源程式碼，不代表 cookie 不會隨請求送出。`src/index.ts` 在所有 `/api/*` 路由之前掛上 `hono/csrf`，阻擋跨站與同站 sibling origin 的簡單寫入請求；登入、停權與角色守衛回答「是哪位使用者」，csrf 則回答「請求是不是本站頁面發起」。
 
@@ -174,7 +186,7 @@ vp run deploy    # = vp run build + wrangler deploy
 
 ## 6. 貢獻者自架測試環境（issue #112）
 
-`vp run dev` 的 D1 是本機模擬，**登入相關功能測不了**（auth 表只存在遠端）。登入流程、角色權限、Service Binding 與部署後行為只有真的部署起來才驗得到。這一節說明如何把專案部署到**自己的 Cloudflare 帳號**，在送 PR 前先自行驗證，而**不修改任何 tracked 檔案**。
+`vp run dev` 的 D1 是本機模擬，**登入相關功能測不了**（auth 表只存在遠端）。有權使用既有 vTaiwan 遠端資源時，可用 `vp run dev:remote` 驗證登入、角色與已部署的 Service Binding；沒有該權限或需要隔離環境的貢獻者，才需要依本節部署到**自己的 Cloudflare 帳號**。本節流程不修改任何 tracked 檔案。
 
 ### 6.1 原理：設定檔在「建置時」就被烘焙進產物
 
@@ -222,22 +234,44 @@ cp wrangler.jsonc wrangler.personal.jsonc
 npx wrangler d1 migrations apply <你的業務庫名稱> --remote --config wrangler.personal.jsonc
 ```
 
-> 🚫 **不要對自己的認證庫跑 `migrations apply`。** 本 repo 的 `migrations/` 全是 `ct_*` 業務表，套進認證庫只會建錯東西。auth schema 的唯一來源是 `vTaiwan-hono` 的 `migrations/auth/`，用 `d1 execute --file` 匯入：
+> 🚫 **不要對自己的認證庫跑 `migrations apply`。** 本 repo 的 `migrations/` 全是 `ct_*` 業務表，套進認證庫只會建錯東西。auth schema 的唯一來源是 `vTaiwan-hono` 的 `migrations/auth/`，用 `d1 execute --file` 匯入。
+>
+> 沒有 clone vTaiwan-hono 時，必須從已核對的 commit 下載，**不要抓會持續變動的預設分支**。目前固定在 [`a53ba918af5eeaeb0f3aac00c69ffdfb9775e357`](https://github.com/g0v/vTaiwan-hono/commit/a53ba918af5eeaeb0f3aac00c69ffdfb9775e357)，包含初始四表與名稱修改冷卻 migration；更新此 ref 前要先核對 Better Auth 版本與全部 auth migration：
 >
 > ```bash
-> # 沒有 clone vTaiwan-hono 時，可直接取檔（放到 repo 外的暫存目錄，
-> # 依不變量 11，本 repo 不得出現 migrations/auth/）
-> mkdir -p /tmp/auth-schema && cd /tmp/auth-schema
-> gh api repos/g0v/vTaiwan-hono/contents/migrations/auth --jq '.[].download_url' \
->   | xargs -n1 curl -sO
+> set -euo pipefail
+> AUTH_SCHEMA_REF=a53ba918af5eeaeb0f3aac00c69ffdfb9775e357
+> AUTH_SCHEMA_DIR=/tmp/civic-talk-auth-schema
 >
-> cd -  # 回到 civic-talk-hono
-> for f in /tmp/auth-schema/*.sql; do
+> rm -rf "$AUTH_SCHEMA_DIR"
+> mkdir -p "$AUTH_SCHEMA_DIR"
+>
+> gh api "repos/g0v/vTaiwan-hono/contents/migrations/auth?ref=$AUTH_SCHEMA_REF" \
+>   --jq '.[].download_url' |
+>   while IFS= read -r url; do
+>     filename="$(basename "${url%%\?*}")"
+>     curl --fail --location --silent --show-error \
+>       --output "$AUTH_SCHEMA_DIR/$filename" "$url"
+>   done
+>
+> for f in "$AUTH_SCHEMA_DIR"/*.sql; do
 >   npx wrangler d1 execute <你的認證庫> --remote --file "$f" --config wrangler.personal.jsonc
 > done
 > ```
 >
-> 匯入後應有 `user`、`session`、`account`、`verification` 四張表。
+> 匯入後要核對四張表、`user.nameChangedAt` 與兩個冷卻 trigger，不可只看到四張表就算完成：
+>
+> ```bash
+> npx wrangler d1 execute <你的認證庫> --remote \
+>   --command "SELECT type, name FROM sqlite_master WHERE (type = 'table' AND name IN ('user', 'session', 'account', 'verification')) OR (type = 'trigger' AND name IN ('user_name_change_cooldown', 'user_record_name_change')) ORDER BY type, name" \
+>   --config wrangler.personal.jsonc
+>
+> npx wrangler d1 execute <你的認證庫> --remote \
+>   --command "SELECT name FROM pragma_table_info('user') WHERE name = 'nameChangedAt'" \
+>   --config wrangler.personal.jsonc
+> ```
+>
+> 預期第一個查詢列出四張表與 `user_name_change_cooldown`、`user_record_name_change`；第二個查詢列出 `nameChangedAt`。
 >
 > 這個陷阱在個人環境同樣存在：`DB_AUTH` 即使沒寫 `migrations_dir`，wrangler 仍會自動填入預設的 `./migrations`（實測烘焙結果為 `"migrations_dir": "../../migrations"`）。詳見 2.1。
 
@@ -264,11 +298,21 @@ openssl rand -base64 32 | npx wrangler secret put BETTER_AUTH_SECRET --config wr
 echo "https://<你的網址>" | npx wrangler secret put BETTER_AUTH_URL --config wrangler.personal.jsonc
 ```
 
-Google／GitHub 的 OAuth 憑證要自行申請（見 6.7），callback 網址填 `https://<你的網址>/api/auth/callback/{google,github}`。未設定前公開頁面照常運作，只有登入功能不可用。
+Google／GitHub 的 OAuth 憑證要自行申請（見 6.7），callback 網址填 `https://<你的網址>/api/auth/callback/{google,github}`。取得憑證後還要逐一寫入個人 Worker；若要測投稿安全審查，再設定可選的 OpenRouter key：
+
+```bash
+npx wrangler secret put GOOGLE_CLIENT_ID --config wrangler.personal.jsonc
+npx wrangler secret put GOOGLE_CLIENT_SECRET --config wrangler.personal.jsonc
+npx wrangler secret put GITHUB_CLIENT_ID --config wrangler.personal.jsonc
+npx wrangler secret put GITHUB_CLIENT_SECRET --config wrangler.personal.jsonc
+npx wrangler secret put OPEN_ROUTER_API_KEY --config wrangler.personal.jsonc
+```
+
+未設定 OAuth 憑證前公開頁面照常運作，只有登入與所有需登入功能不可用。
 
 ### 6.5 ⚠️ 環境變數的作用範圍只有「Vite 建置」
 
-`CLOUDFLARE_VITE_WRANGLER_CONFIG_PATH` 只被 Vite plugin 讀取。**其他 wrangler 指令完全不看它**，預設會讀根目錄的 `wrangler.jsonc`，也就是正式環境。所有資源管理指令都必須自己帶 `--config`：
+`CLOUDFLARE_VITE_WRANGLER_CONFIG_PATH` 只被 Vite plugin 讀取。**例外是緊接在 build 後的 `wrangler deploy`／`wrangler deploy --dry-run`**：它們依 `.wrangler/deploy/config.json` 轉向建置產物，所以 6.4 刻意不帶 `--config`。secret、D1、tail 等其他 wrangler 指令不走這個 redirected deploy config，預設會讀根目錄的 `wrangler.jsonc`；操作個人資源時必須自己帶 `--config`：
 
 ```bash
 npx wrangler secret put BETTER_AUTH_SECRET --config wrangler.personal.jsonc
@@ -276,7 +320,7 @@ npx wrangler d1 execute <你的庫> --remote --command "SELECT 1" --config wrang
 npx wrangler tail --config wrangler.personal.jsonc
 ```
 
-漏掉 `--config` 的後果是寫到**正式環境**的 secret 或資料庫。
+上述非 deploy 指令漏掉 `--config`，可能寫到**正式環境**的 secret 或資料庫；deploy 則必須依 6.4／6.6 檢查最後一次 build 產生的 redirected config。
 
 ### 6.6 ⚠️ 決定部署目標的是「最後一次建置」
 
@@ -290,5 +334,5 @@ npx wrangler tail --config wrangler.personal.jsonc
 | Google／GitHub OAuth  | 正式環境的 OAuth 應用程式與 vTaiwan 共用，callback 白名單只有該主控台管理者能加；自架環境要**自行申請一組**  |
 | `BETTER_AUTH_URL`     | 設成自己 Worker 的 origin（例如 `https://<worker>.<subdomain>.workers.dev`），**不要**複製正式環境的值       |
 | `BETTER_AUTH_SECRET`  | 自行產生（`openssl rand -base64 32`），不要沿用正式環境的值                                                  |
-| `FACT_CHECK_CORE`     | `fact-check-core` Worker 不存在於其他帳號；已在 6.2 移除該綁定，代價是 `POST /api/fact-check` 在自架環境失效 |
-| `OPEN_ROUTER_API_KEY` | 未設定時投稿安全審查採 fail-open（放行並記錄錯誤），不影響其他功能                                           |
+| `FACT_CHECK_CORE`     | `fact-check-core` Worker 不存在於其他帳號；移除綁定後不只 `POST /api/fact-check` 失效，`Contribute.vue` 也拿不到「查核成功且允許」的結果，因此整條素材投稿流程無法完成 |
+| `OPEN_ROUTER_API_KEY` | 未設定時投稿安全審查採 fail-open（放行並記錄錯誤）；正式或要驗證 moderation 的自架環境應設定，不能把 fail-open 當成審查已通過                            |
