@@ -169,3 +169,126 @@ vp run deploy    # = vp run build + wrangler deploy
 - **有自動化測試但沒有 CI**：`src/tests/` 有三個 Vitest 檔（i18n key 同步、作者隱私投影、markdown 安全渲染），跑 `vp test`；但沒有任何 CI 會自動跑，上述煙霧測試也全靠人工。
 - **公開唯讀 API 支援跨來源讀取**：`GET /api/issues`、`GET /api/issues/:id` 及其 `materials`／`briefing`／`opinions` 子資源維持 `Access-Control-Allow-Origin: *`，但不提供 `Access-Control-Allow-Credentials`。這些回應一律帶 `Cache-Control: private, no-store`、`X-Content-Type-Options: nosniff` 與 `Vary: Cookie`，避免公開／管理員投影被快取混用。管理端、需登入資料與所有寫入端點都不輸出 CORS 放行標頭。
 - **跨站寫入由 csrf 防護，不靠 CORS 或登入守衛**：缺少 `Access-Control-Allow-Credentials` 只會阻止瀏覽器把 credentialed response 交給跨來源程式碼，不代表 cookie 不會隨請求送出。`src/index.ts` 在所有 `/api/*` 路由之前掛上 `hono/csrf`，阻擋跨站與同站 sibling origin 的簡單寫入請求；登入、停權與角色守衛回答「是哪位使用者」，csrf 則回答「請求是不是本站頁面發起」。
+
+---
+
+## 6. 貢獻者自架測試環境（issue #112）
+
+`vp run dev` 的 D1 是本機模擬，**登入相關功能測不了**（auth 表只存在遠端）。登入流程、角色權限、Service Binding 與部署後行為只有真的部署起來才驗得到。這一節說明如何把專案部署到**自己的 Cloudflare 帳號**，在送 PR 前先自行驗證，而**不修改任何 tracked 檔案**。
+
+### 6.1 原理：設定檔在「建置時」就被烘焙進產物
+
+`vite.config.mts` 呼叫的 `cloudflare()` plugin 會在建置時讀 wrangler 設定，把解析結果寫成 `dist/<worker 名>/wrangler.json`，再用 `.wrangler/deploy/config.json` 把 `wrangler deploy` 轉向到那一份：
+
+```
+Using redirected Wrangler configuration.
+ - Configuration being used: "dist/civic_talk/wrangler.json"
+ - Original user's configuration: "wrangler.jsonc"
+ - Deploy configuration file: ".wrangler/deploy/config.json"
+```
+
+因此**在部署那一步下 `-c my.jsonc` 沒有用**，設定必須在建置時就換掉。`@cloudflare/vite-plugin` 內建環境變數 `CLOUDFLARE_VITE_WRANGLER_CONFIG_PATH` 正是做這件事（v1.52.1 實測：`pluginConfig.configPath ?? prefixedEnv.CLOUDFLARE_VITE_WRANGLER_CONFIG_PATH`），**不需要修改 `vite.config.mts`**。
+
+### 6.2 建立個人環境
+
+```bash
+# 0. 確認登入的是自己的帳號
+npx wrangler login
+npx wrangler whoami
+
+# 1. 在自己帳號建立兩個 D1（名稱可自訂，記下回傳的 database_id）
+npx wrangler d1 create my-civic-talks
+npx wrangler d1 create my-civic-auth
+
+# 2. 複製設定檔（已列入 .gitignore，不會進版控）
+cp wrangler.jsonc wrangler.personal.jsonc
+```
+
+> ⚠️ `wrangler d1 create` 完成後會問 **“Would you like Wrangler to add it on your behalf?”**。一律回答 **no**——回答 yes 會把綁定寫進 tracked 的 `wrangler.jsonc`，正是本節要避免的事。請自行把 `database_id` 填進 `wrangler.personal.jsonc`。
+
+編輯 `wrangler.personal.jsonc`，**四處都要改**：
+
+| 欄位                    | 改成什麼                                                                |
+| ----------------------- | ----------------------------------------------------------------------- |
+| `name`                  | 自己的 Worker 名稱（**不可**沿用 `civic-talk`，否則會覆蓋正式環境）     |
+| `d1_databases[DB]`      | 步驟 1 建立的業務庫名稱與 `database_id`                                 |
+| `d1_databases[DB_AUTH]` | 步驟 1 建立的認證庫名稱與 `database_id`                                 |
+| `services`              | **整段刪除**——`fact-check-core` 只存在於 vTaiwan 帳號，帶著它會部署失敗 |
+
+### 6.3 套用 migration
+
+```bash
+# 業務庫：本 repo 的 migrations 就是給它用的
+npx wrangler d1 migrations apply <你的業務庫名稱> --remote --config wrangler.personal.jsonc
+```
+
+> 🚫 **不要對自己的認證庫跑 `migrations apply`。** 本 repo 的 `migrations/` 全是 `ct_*` 業務表，套進認證庫只會建錯東西。auth schema 的唯一來源是 `vTaiwan-hono` 的 `migrations/auth/`，用 `d1 execute --file` 匯入：
+>
+> ```bash
+> # 沒有 clone vTaiwan-hono 時，可直接取檔（放到 repo 外的暫存目錄，
+> # 依不變量 11，本 repo 不得出現 migrations/auth/）
+> mkdir -p /tmp/auth-schema && cd /tmp/auth-schema
+> gh api repos/g0v/vTaiwan-hono/contents/migrations/auth --jq '.[].download_url' \
+>   | xargs -n1 curl -sO
+>
+> cd -  # 回到 civic-talk-hono
+> for f in /tmp/auth-schema/*.sql; do
+>   npx wrangler d1 execute <你的認證庫> --remote --file "$f" --config wrangler.personal.jsonc
+> done
+> ```
+>
+> 匯入後應有 `user`、`session`、`account`、`verification` 四張表。
+>
+> 這個陷阱在個人環境同樣存在：`DB_AUTH` 即使沒寫 `migrations_dir`，wrangler 仍會自動填入預設的 `./migrations`（實測烘焙結果為 `"migrations_dir": "../../migrations"`）。詳見 2.1。
+
+### 6.4 建置、預檢、部署
+
+```bash
+# 用個人設定建置
+CLOUDFLARE_VITE_WRANGLER_CONFIG_PATH=./wrangler.personal.jsonc vp run build
+
+# 預檢：確認讀到的是個人設定，不是正式環境
+npx wrangler deploy --dry-run
+#   → Configuration being used: "dist/<你的 worker 名>/wrangler.json"
+
+# 確認無誤後部署
+npx wrangler deploy
+```
+
+> 首次在帳號內建立 `*.workers.dev` 子網域時，**TLS 憑證要幾分鐘才簽發**。這段期間連線會失敗並顯示 `SSL/TLS_ALERT_HANDSHAKE_FAILURE`，那**不是部署失敗**——`wrangler deploy` 已回報成功即代表 Worker 上線，等憑證就緒即可連上。
+
+部署成功後 wrangler 會印出網址（例如 `https://<worker>.<你的子網域>.workers.dev`）。**拿到網址才能設定登入相關密鑰**，因為 `BETTER_AUTH_URL` 必須等於該 origin：
+
+```bash
+openssl rand -base64 32 | npx wrangler secret put BETTER_AUTH_SECRET --config wrangler.personal.jsonc
+echo "https://<你的網址>" | npx wrangler secret put BETTER_AUTH_URL --config wrangler.personal.jsonc
+```
+
+Google／GitHub 的 OAuth 憑證要自行申請（見 6.7），callback 網址填 `https://<你的網址>/api/auth/callback/{google,github}`。未設定前公開頁面照常運作，只有登入功能不可用。
+
+### 6.5 ⚠️ 環境變數的作用範圍只有「Vite 建置」
+
+`CLOUDFLARE_VITE_WRANGLER_CONFIG_PATH` 只被 Vite plugin 讀取。**其他 wrangler 指令完全不看它**，預設會讀根目錄的 `wrangler.jsonc`，也就是正式環境。所有資源管理指令都必須自己帶 `--config`：
+
+```bash
+npx wrangler secret put BETTER_AUTH_SECRET --config wrangler.personal.jsonc
+npx wrangler d1 execute <你的庫> --remote --command "SELECT 1" --config wrangler.personal.jsonc
+npx wrangler tail --config wrangler.personal.jsonc
+```
+
+漏掉 `--config` 的後果是寫到**正式環境**的 secret 或資料庫。
+
+### 6.6 ⚠️ 決定部署目標的是「最後一次建置」
+
+`dist/civic_talk/` 與 `dist/<個人 worker 名>/` 會同時存在，真正決定 `wrangler deploy` 上傳哪一個的是 `.wrangler/deploy/config.json`，而它**只反映最後一次 build**。切換環境時務必重新建置，並用 `--dry-run` 確認後再部署。
+
+### 6.7 自架環境必須自備的外部相依
+
+| 項目                  | 說明                                                                                                         |
+| --------------------- | ------------------------------------------------------------------------------------------------------------ |
+| 認證資料庫            | `vtaiwan-auth` 在 vTaiwan 帳號，D1 綁定只能綁同帳號資源，必須自備（schema 來源見 6.3）                       |
+| Google／GitHub OAuth  | 正式環境的 OAuth 應用程式與 vTaiwan 共用，callback 白名單只有該主控台管理者能加；自架環境要**自行申請一組**  |
+| `BETTER_AUTH_URL`     | 設成自己 Worker 的 origin（例如 `https://<worker>.<subdomain>.workers.dev`），**不要**複製正式環境的值       |
+| `BETTER_AUTH_SECRET`  | 自行產生（`openssl rand -base64 32`），不要沿用正式環境的值                                                  |
+| `FACT_CHECK_CORE`     | `fact-check-core` Worker 不存在於其他帳號；已在 6.2 移除該綁定，代價是 `POST /api/fact-check` 在自架環境失效 |
+| `OPEN_ROUTER_API_KEY` | 未設定時投稿安全審查採 fail-open（放行並記錄錯誤），不影響其他功能                                           |

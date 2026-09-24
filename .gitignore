@@ -8,6 +8,10 @@ dist
 .DS_Store
 worker-configuration.d.ts
 
+# 貢獻者自架 Cloudflare 環境用的個人 wrangler 設定（#112）
+# 內含個人帳號的 Worker 名稱與 D1 database_id，不進版控
+wrangler.personal.jsonc
+
 # Ignore all files in the public/js directory (built artifacts)
 /public/js
 
