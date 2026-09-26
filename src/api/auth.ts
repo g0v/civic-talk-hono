@@ -1,7 +1,7 @@
 import type { Context } from 'hono'
 import { createAuth } from '../auth/createAuth'
-import { getAuthContext } from '../auth/authorization'
-import { DISPLAY_NAME_MAX_LENGTH, nameChangeCooldownExpiresAt, NAME_CHANGE_COOLDOWN_CODE, normalizeDisplayName } from '../lib/profile-name'
+import { getAuthContext, hasDuplicateDisplayName } from '../auth/authorization'
+import { DISPLAY_NAME_MAX_LENGTH, DUPLICATE_DISPLAY_NAME_CODE, nameChangeCooldownExpiresAt, NAME_CHANGE_COOLDOWN_CODE, normalizeDisplayName } from '../lib/profile-name'
 import type { App, AppBindings } from './types'
 
 type AppEnv = { Bindings: AppBindings }
@@ -13,6 +13,7 @@ type UserNameChangeRow = {
 
 type NameUpdateRequest = {
   name: string
+  confirmDuplicateName: boolean
   request: Request
 }
 
@@ -22,19 +23,26 @@ async function normalizeNameUpdateRequest(request: Request): Promise<NameUpdateR
 
   try {
     const body = (await request.clone().json()) as unknown
-    if (!body || typeof body !== 'object' || Array.isArray(body) || !Object.hasOwn(body, 'name')) return null
+    if (!body || typeof body !== 'object' || Array.isArray(body) || !('name' in body)) return null
 
-    const name = normalizeDisplayName((body as { name?: unknown }).name)
+    const name = normalizeDisplayName(body.name)
     if (!name) return null
 
-    // Better Auth 不會替 update-user 的 name 做正規化；用新 Request 交給它，
-    // 才能保證直接呼叫 API 與個人資料頁寫入的是同一個名稱。
+    // `confirm_duplicate_name` 是本站在 Better Auth 外層使用的確認旗標；轉交前移除，
+    // 避免把 Better Auth 不認得的欄位送進 update-user。
+    let confirmDuplicateName = false
+    const forwardBody: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(body)) {
+      if (key === 'confirm_duplicate_name') confirmDuplicateName = value === true
+      else forwardBody[key] = value
+    }
     const headers = new Headers(request.headers)
     headers.set('Content-Type', 'application/json')
     headers.delete('Content-Length')
     return {
       name,
-      request: new Request(request, { method: 'POST', body: JSON.stringify({ ...(body as Record<string, unknown>), name }), headers }),
+      confirmDuplicateName,
+      request: new Request(request, { method: 'POST', body: JSON.stringify({ ...forwardBody, name }), headers }),
     }
   } catch {
     // 格式錯誤交給 Better Auth 依既有行為回應。
@@ -65,8 +73,15 @@ async function enforceNameChangeCooldown(c: Context<AppEnv>): Promise<Response |
   }
 
   const user = await c.env.DB_AUTH.prepare('SELECT "name", "nameChangedAt" FROM "user" WHERE "id" = ?').bind(context.user.id).first<UserNameChangeRow>()
-  if (user && user.name !== update.name && nameChangeCooldownExpiresAt(user.nameChangedAt) !== null) {
-    return c.json({ code: NAME_CHANGE_COOLDOWN_CODE }, 429)
+  if (user && user.name !== update.name) {
+    if (nameChangeCooldownExpiresAt(user.nameChangedAt) !== null) {
+      return c.json({ code: NAME_CHANGE_COOLDOWN_CODE }, 429)
+    }
+
+    const duplicate = await hasDuplicateDisplayName(c.env.DB_AUTH, context.user.id, update.name)
+    if (duplicate && !update.confirmDuplicateName) {
+      return c.json({ code: DUPLICATE_DISPLAY_NAME_CODE }, 409)
+    }
   }
 
   return update
@@ -92,10 +107,11 @@ export function registerAuthRoutes(app: App): void {
     return createAuth(c.env).handler(c.req.raw)
   })
 
-  // 前端登入狀態的單一來源。
+  // 前端登入狀態的單一來源；同名狀態只在這裡按需查詢，不灌進所有授權路徑。
   app.get('/api/me', async c => {
     const context = await getAuthContext(c.env, c.req.raw.headers)
     if (!context) return c.json({ error: 'Unauthorized' }, 401)
-    return c.json(context)
+    const duplicate = await hasDuplicateDisplayName(c.env.DB_AUTH, context.user.id, context.user.name)
+    return c.json({ ...context, hasDuplicateDisplayName: duplicate })
   })
 }

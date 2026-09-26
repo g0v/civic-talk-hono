@@ -6,6 +6,7 @@ import SignInButtons from '../components/SignInButtons.vue'
 import Toast from '../components/Toast.vue'
 import ModerationAppealNotice from '../components/ModerationAppealNotice.vue'
 import { useI18n } from '../l10n'
+import { postSubmissionWithDuplicateNameCheck } from '../client/submission'
 import { useAuth } from '../composables/useAuth'
 import {
   buildFactCheckRequestBody,
@@ -49,6 +50,7 @@ const contentInput = ref<HTMLTextAreaElement | null>(null)
  * hydration 首幀共用的狀態——伺服器端不猜登入狀態，兩邊先畫同一個骨架，避免 mismatch。
  */
 const { authState, session, authFailed, ensureAuthSession } = useAuth()
+const duplicateNameRequiresEmail = computed(() => session.value?.hasDuplicateDisplayName === true)
 /**
  * 「填表填到一半 session 過期」專用的旗標，**刻意不重用 authState**——
  * authState 切回 'anonymous' 會把表單整個換成登入卡片，使用者剛打完的素材就沒了。
@@ -227,18 +229,19 @@ async function submitMaterial() {
   }
   submitting.value = true
   try {
-    const res = await fetch(`/api/issues/${props.issueId}/materials`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    const res = await postSubmissionWithDuplicateNameCheck(
+      `/api/issues/${props.issueId}/materials`,
+      {
         source_name: sourceName.value.trim(),
         source_url: sourceUrl.value.trim(),
         stance: stance.value,
         content: text,
         show_email: showEmail.value,
         terms_accepted: tosAgreed.value,
-      }),
-    })
+      },
+      () => window.confirm(t('duplicate_name_submission_confirm', { email: session.value?.user.email || '' }))
+    )
+    if (!res) return
     // session 可能在填表期間過期——真正的守門在伺服器端，前端要能接住 401。
     // 注意：不要把 authState 切回 'anonymous'，那會連同表單一起消失、吃掉使用者打的內容。
     if (res.status === 401) {
@@ -401,7 +404,10 @@ async function submitMaterial() {
               >
             </label>
           </div>
-          <div class="form-group">
+          <div v-if="duplicateNameRequiresEmail" class="alert alert-info">
+            {{ t('duplicate_name_email_required', { email: session?.user.email || '' }) }}
+          </div>
+          <div v-else class="form-group">
             <label class="flex items-start gap-2 font-normal">
               <input v-model="showEmail" type="checkbox" class="mt-1 w-auto" />
               <span

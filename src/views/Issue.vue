@@ -4,10 +4,12 @@ import AppHeader from '../components/AppHeader.vue'
 import AppFooter from '../components/AppFooter.vue'
 import AuthorEmailLink from '../components/AuthorEmailLink.vue'
 import LongTextContent from '../components/LongTextContent.vue'
+import OpinionVote from '../components/OpinionVote.vue'
 import SignInButtons from '../components/SignInButtons.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import Toast from '../components/Toast.vue'
 import ModerationAppealNotice from '../components/ModerationAppealNotice.vue'
+import { postSubmissionWithDuplicateNameCheck } from '../client/submission'
 import { useAuth } from '../composables/useAuth'
 import { useSubmitGuard } from '../composables/useSubmitGuard'
 import { useViewerRole } from '../composables/useViewerRole'
@@ -35,6 +37,8 @@ const issue = ref<Issue | null>(props.initialDetail?.issue ?? null)
 const materials = ref<Material[]>(props.initialDetail?.materials ?? [])
 const briefing = ref<Briefing | null>(props.initialDetail?.briefing ?? null)
 const opinions = ref<Opinion[]>(props.initialDetail?.opinions ?? [])
+const opinionSort = ref<'recent' | 'responses'>('recent')
+const opinionsLoading = ref(false)
 const loading = ref(!props.initialDetail)
 const activeTab = ref<TabName>('briefing')
 const renderedBriefing = computed(() => {
@@ -82,6 +86,7 @@ const synthesisDone = ref(false)
 
 // 全站共用的登入狀態（與 AppHeader 共用同一次 /api/me）；SSR 期間永遠是 'loading'
 const { authState, session, ensureAuthSession } = useAuth()
+const duplicateNameRequiresEmail = computed(() => session.value?.hasDuplicateDisplayName === true)
 // 送出時才發現 session 過期：意見框留著（別吃掉使用者打的字），只在上方補一列重新登入
 const sessionExpired = ref(false)
 // 志願者工具同樣需要登入；若操作時 session 過期，保留已填內容並引導重新登入。
@@ -91,6 +96,10 @@ const loginCallbackUrl = computed(() => `/issues/${props.issueId}`)
 type ModerationNotice = { appealType: 'rejected_submission' | 'account_ban'; reportId?: number; policyCode?: string; rationale?: string }
 const volunteerModerationNotice = ref<ModerationNotice | null>(null)
 const opinionModerationNotice = ref<ModerationNotice | null>(null)
+
+async function postIssueSubmission(path: string, body: Record<string, unknown>): Promise<Response | null> {
+  return postSubmissionWithDuplicateNameCheck(path, body, () => window.confirm(t('duplicate_name_submission_confirm', { email: session.value?.user.email || '' })))
+}
 
 async function handleModerationResult(res: Response, source: 'volunteer' | 'opinion'): Promise<boolean> {
   const notice = source === 'volunteer' ? volunteerModerationNotice : opinionModerationNotice
@@ -227,11 +236,36 @@ async function loadIssue() {
   } finally {
     loading.value = false
   }
+  if (authState.value === 'signed-in') await loadOpinions()
+}
+
+async function loadOpinions(sort: 'recent' | 'responses' = opinionSort.value) {
+  opinionsLoading.value = true
+  try {
+    const res = await fetch(`/api/issues/${props.issueId}/opinions?sort=${sort}`)
+    if (!res.ok) return
+    opinions.value = (await res.json()) as Opinion[]
+  } finally {
+    opinionsLoading.value = false
+  }
+}
+
+function updateOpinionVote(id: number, state: Record<string, unknown>) {
+  opinions.value = opinions.value.map(opinion => (opinion.id === id ? { ...opinion, ...state } : opinion))
+}
+
+function changeOpinionSort() {
+  void loadOpinions(opinionSort.value)
+}
+
+async function refreshViewerOpinions() {
+  await ensureAuthSession()
+  if (authState.value === 'signed-in') await loadOpinions()
 }
 
 onMounted(() => {
   if (!props.initialDetail) void loadIssue()
-  void ensureAuthSession()
+  void refreshViewerOpinions()
   void nextTick(() => renderPolis())
 })
 
@@ -315,11 +349,11 @@ async function submitSummarize() {
     toast.value?.show(t('vol_toast_fill_one'))
     return
   }
-  const res = await fetch(`/api/issues/${props.issueId}/briefing`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...body, show_email: volunteerShowEmail.value }),
+  const res = await postIssueSubmission(`/api/issues/${props.issueId}/briefing`, {
+    ...body,
+    show_email: volunteerShowEmail.value,
   })
+  if (!res) return
   if (res.status === 401) {
     volunteerSessionExpired.value = true
     toast.value?.show(t('login_expired_toast'))
@@ -342,11 +376,11 @@ async function submitSynthesis() {
     toast.value?.show(t('vol_toast_fill_one'))
     return
   }
-  const res = await fetch(`/api/issues/${props.issueId}/briefing`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...body, show_email: volunteerShowEmail.value }),
+  const res = await postIssueSubmission(`/api/issues/${props.issueId}/briefing`, {
+    ...body,
+    show_email: volunteerShowEmail.value,
   })
+  if (!res) return
   if (res.status === 401) {
     volunteerSessionExpired.value = true
     toast.value?.show(t('login_expired_toast'))
@@ -368,11 +402,11 @@ async function submitNarrative() {
   }
   if (typeof window !== 'undefined' && !window.confirm(t('vol_confirm_submit_narrative'))) return
   const body = { narrative: text }
-  const res = await fetch(`/api/issues/${props.issueId}/briefing`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...body, show_email: volunteerShowEmail.value }),
+  const res = await postIssueSubmission(`/api/issues/${props.issueId}/briefing`, {
+    ...body,
+    show_email: volunteerShowEmail.value,
   })
+  if (!res) return
   if (res.status === 401) {
     volunteerSessionExpired.value = true
     toast.value?.show(t('login_expired_toast'))
@@ -488,15 +522,12 @@ async function submitOpinion() {
     toast.value?.show(t('tos_required_toast'))
     return
   }
-  const res = await fetch(`/api/issues/${props.issueId}/opinions`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      summary,
-      show_email: opinionShowEmail.value,
-      terms_accepted: opinionTosAgreed.value,
-    }),
+  const res = await postIssueSubmission(`/api/issues/${props.issueId}/opinions`, {
+    summary,
+    show_email: opinionShowEmail.value,
+    terms_accepted: opinionTosAgreed.value,
   })
+  if (!res) return
   // session 可能在打字期間過期——守門在伺服器端，前端接住 401 但保留已寫的意見
   if (res.status === 401) {
     sessionExpired.value = true
@@ -531,7 +562,7 @@ async function submitOpinion() {
             <h1 class="mt-3 mb-2 font-serif text-3xl font-bold">
               {{ issue.abuse_flagged === 3 ? t('moderation_hidden_placeholder') : issue.title }}
             </h1>
-            <p v-if="issue.abuse_flagged !== 3 && issue.description" class="mt-0 mb-3 text-muted">{{ issue.description }}</p>
+            <p v-if="issue.abuse_flagged !== 3 && issue.description" class="mt-0 mb-3 whitespace-pre-line text-muted">{{ issue.description }}</p>
             <p class="m-0 text-sm text-muted">
               {{ t('issue_created') }} {{ formatDate(issue.created_at, locale) }} · {{ materials.length }} {{ t('issue_materials_unit') }} · {{ t('issue_author_label') }}：{{
                 issue.author_name || t('author_system')
@@ -692,7 +723,10 @@ async function submitOpinion() {
                 :rationale="volunteerModerationNotice.rationale"
               />
               <p class="mb-6 text-sm text-muted">{{ t('vol_step1') }} → {{ t('vol_step2') }} → {{ t('vol_step3') }}</p>
-              <div class="form-group mb-6">
+              <div v-if="duplicateNameRequiresEmail" class="alert alert-info mb-6">
+                {{ t('duplicate_name_email_required', { email: session?.user.email || '' }) }}
+              </div>
+              <div v-else class="form-group mb-6">
                 <label class="flex items-start gap-2 font-normal">
                   <input v-model="volunteerShowEmail" type="checkbox" class="mt-1 w-auto" />
                   <span
@@ -791,9 +825,23 @@ async function submitOpinion() {
           <section v-show="activeTab === 'opinions'">
             <h2 class="m-0 font-serif text-xl">{{ t('op_title') }}</h2>
             <div class="alert alert-info mb-4" v-html="t('op_alert')" />
-            <div class="mb-6 flex flex-wrap gap-2">
+            <div class="mb-6 flex flex-wrap items-center gap-2">
               <button type="button" class="btn btn-secondary btn-sm" @click="downloadOpinionMd">{{ t('op_download_btn') }}</button>
               <button type="button" class="btn btn-secondary btn-sm" @click="copyOpinionMd">{{ t('op_copy_btn') }}</button>
+              <a v-if="authState === 'signed-in'" :href="`/api/issues/${issueId}/opinions/comments.csv`" class="btn btn-secondary btn-sm" download>
+                {{ t('op_download_csv_btn') }}
+              </a>
+              <span v-else-if="authState === 'anonymous'" class="text-sm text-muted">{{ t('op_csv_login_required') }}</span>
+            </div>
+            <div class="mb-4 flex flex-wrap items-center gap-3">
+              <label class="flex items-center gap-2 text-sm text-muted">
+                <span>{{ t('op_sort_label') }}</span>
+                <select v-model="opinionSort" class="rounded border border-border bg-transparent px-2 py-1 text-sm" @change="changeOpinionSort">
+                  <option value="recent">{{ t('op_sort_recent') }}</option>
+                  <option value="responses">{{ t('op_sort_responses') }}</option>
+                </select>
+              </label>
+              <span v-if="opinionsLoading" class="text-sm text-muted">{{ t('loading') }}</span>
             </div>
             <div class="card mb-6">
               <h3 class="mt-0 mb-3 text-base">{{ t('op_submit_title') }}</h3>
@@ -834,7 +882,10 @@ async function submitOpinion() {
                     >
                   </label>
                 </div>
-                <div class="form-group">
+                <div v-if="duplicateNameRequiresEmail" class="alert alert-info">
+                  {{ t('duplicate_name_email_required', { email: session?.user.email || '' }) }}
+                </div>
+                <div v-else class="form-group">
                   <label class="flex items-start gap-2 font-normal">
                     <input v-model="opinionShowEmail" type="checkbox" class="mt-1 w-auto" />
                     <span
@@ -889,6 +940,7 @@ async function submitOpinion() {
                     </button>
                   </p>
                   <div class="markdown-content text-base sm:text-sm" v-html="renderedOpinions.get(o.id) ?? ''" />
+                  <OpinionVote :opinion="o" :expanded="o.abuse_flagged !== 1 || expandedFlagged.has(`opinion-${o.id}`)" :callback-url="loginCallbackUrl" @update="updateOpinionVote(o.id, $event)" />
                 </template>
               </div>
             </template>

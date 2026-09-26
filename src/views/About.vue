@@ -35,7 +35,7 @@ type FlowStep = {
 const steps = computed<FlowStep[]>(() => [
   { n: 1, label: t('abt_step1_label'), title: t('abt_step1_title'), desc: t('abt_step1_desc'), wip: false, wipNote: '' },
   { n: 2, label: t('abt_step2_label'), title: t('abt_step2_title'), desc: t('abt_step2_desc'), wip: false, wipNote: '' },
-  { n: 3, label: t('abt_step3_label'), title: t('abt_step3_title'), desc: t('abt_step3_desc'), wip: true, wipNote: t('abt_step3_wip_note') },
+  { n: 3, label: t('abt_step3_label'), title: t('abt_step3_title'), desc: t('abt_step3_desc'), wip: false, wipNote: '' },
   { n: 4, label: t('abt_step4_label'), title: t('abt_step4_title'), desc: t('abt_step4_desc'), wip: false, wipNote: '' },
   { n: 5, label: t('abt_step5_label'), title: t('abt_step5_title'), desc: t('abt_step5_desc'), wip: true, wipNote: t('abt_step5_wip_note') },
 ])

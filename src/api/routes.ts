@@ -9,26 +9,24 @@ import type {
   IssueStatus,
   Material,
   MaterialWithAuthor,
-  Opinion,
-  OpinionWithAuthor,
-  Stance,
+  OpinionVoteValue,
   ModerationSubmissionType,
+  Stance,
 } from '../db/queries'
 import * as db from '../db/queries'
-import { isAdminRole, tryGetAuthContext, type AuthContext } from '../auth/authorization'
+import { formatCommentsCsv, toCommentsCsvRows } from '../opinions/export'
+import { hasDuplicateDisplayName, isAdminRole, tryGetAuthContext, type AuthContext } from '../auth/authorization'
 import { createAuth } from '../auth/createAuth'
 import { TERMS_VERSION } from '../legal/terms'
+import { DUPLICATE_NAME_EMAIL_REQUIRED_CODE } from '../lib/profile-name'
 import { moderationReasonForPolicy, moderateSubmission, moderateSubmissionWithDiagnostics, type ModerationDecision, type ModerationSubmission } from '../moderation/service'
 import type { Context } from 'hono'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import type { App, AppBindings } from './types'
 
 const CONTENTFUL_STATUS_CODES = [
-  100, 102, 103,
-  200, 201, 202, 203, 206, 207, 208, 226,
-  300, 301, 302, 303, 305, 306, 307, 308,
-  400, 401, 402, 403, 404, 405, 406, 407, 408, 409, 410, 411, 412, 413, 414, 415, 416, 417, 418, 421, 422, 423, 424, 425, 426, 428, 429, 431, 451,
-  500, 501, 502, 503, 504, 505, 506, 507, 508, 510, 511,
+  100, 102, 103, 200, 201, 202, 203, 206, 207, 208, 226, 300, 301, 302, 303, 305, 306, 307, 308, 400, 401, 402, 403, 404, 405, 406, 407, 408, 409, 410, 411, 412, 413, 414, 415, 416, 417, 418, 421,
+  422, 423, 424, 425, 426, 428, 429, 431, 451, 500, 501, 502, 503, 504, 505, 506, 507, 508, 510, 511,
 ] as const satisfies readonly ContentfulStatusCode[]
 
 function contentfulStatusCode(value: unknown): ContentfulStatusCode {
@@ -170,6 +168,13 @@ export function validateSubmissionOptions(body: SubmissionOptions): Response | n
   if (body.terms_accepted !== true) return Response.json({ error: 'terms_accepted must be true' }, { status: 400 })
   if (body.show_email !== undefined && typeof body.show_email !== 'boolean') return Response.json({ error: 'show_email must be a boolean' }, { status: 400 })
   return null
+}
+
+/** 僅在 email 未明確公開時查同名；同名則要求 client 取得本次投稿的明確同意後重送。 */
+async function requireDuplicateNameEmail(c: Context, context: AuthContext, showEmail: unknown): Promise<Response | null> {
+  if (showEmail === true) return null
+  const duplicate = await hasDuplicateDisplayName(c.env.DB_AUTH, context.user.id, context.user.name)
+  return duplicate ? c.json({ code: DUPLICATE_NAME_EMAIL_REQUIRED_CODE }, 409) : null
 }
 
 export function buildAuthorSnapshot(user: AuthContext['user'], showEmail: boolean): AuthorSnapshotInput {
@@ -317,6 +322,8 @@ export function registerApiRoutes(app: App): void {
     if (!body.title?.trim()) return error(c, 'title is required')
     const invalidOptions = validateSubmissionOptions(body)
     if (invalidOptions) return invalidOptions
+    const duplicateNameEmailPreflight = await requireDuplicateNameEmail(c, auth.context, body.show_email)
+    if (duplicateNameEmailPreflight) return duplicateNameEmailPreflight
     const moderation = await moderateSubmissionForWrite(c.req.raw, c.env, {
       type: 'issue',
       fields: {
@@ -324,6 +331,8 @@ export function registerApiRoutes(app: App): void {
         description: body.description ?? '',
       },
     })
+    const duplicateNameEmail = await requireDuplicateNameEmail(c, auth.context, body.show_email)
+    if (duplicateNameEmail) return duplicateNameEmail
     const id = await db.createIssue(
       c.env.DB,
       {
@@ -447,6 +456,8 @@ export function registerApiRoutes(app: App): void {
     if (!body.content?.trim()) return error(c, 'content is required')
     const invalidOptions = validateSubmissionOptions(body)
     if (invalidOptions) return invalidOptions
+    const duplicateNameEmailPreflight = await requireDuplicateNameEmail(c, auth.context, body.show_email)
+    if (duplicateNameEmailPreflight) return duplicateNameEmailPreflight
     const submission: ModerationSubmission = {
       type: 'material',
       fields: {
@@ -457,6 +468,8 @@ export function registerApiRoutes(app: App): void {
       },
     }
     const moderation = await moderateSubmissionForWrite(c.req.raw, c.env, submission)
+    const duplicateNameEmail = await requireDuplicateNameEmail(c, auth.context, body.show_email)
+    if (duplicateNameEmail) return duplicateNameEmail
     const materialId = await db.createMaterial(
       c.env.DB,
       id,
@@ -511,6 +524,8 @@ export function registerApiRoutes(app: App): void {
       return error(c, 'Invalid JSON')
     }
     if (body.show_email !== undefined && typeof body.show_email !== 'boolean') return error(c, 'show_email must be a boolean')
+    const duplicateNameEmailPreflight = await requireDuplicateNameEmail(c, auth.context, body.show_email)
+    if (duplicateNameEmailPreflight) return duplicateNameEmailPreflight
     const submission: ModerationSubmission = {
       type: 'briefing',
       fields: {
@@ -522,7 +537,8 @@ export function registerApiRoutes(app: App): void {
       },
     }
     const moderation = await moderateSubmissionForWrite(c.req.raw, c.env, submission)
-    // 說明頁公開顯示投稿當下名稱；email 僅在 show_email = true 時公開。
+    const duplicateNameEmail = await requireDuplicateNameEmail(c, auth.context, body.show_email)
+    if (duplicateNameEmail) return duplicateNameEmail
     const version = await db.createBriefing(c.env.DB, id, buildAuthorSnapshot(auth.context.user, body.show_email === true), body, {
       moderationHidden: moderation.hidden,
       skipStatusTransition: moderation.hidden,
@@ -562,12 +578,33 @@ export function registerApiRoutes(app: App): void {
     return c.json({ ok: true })
   })
 
+  app.get('/api/issues/:id/opinions/comments.csv', async c => {
+    const context = await tryGetAuthContext(c.env, c.req.raw.headers)
+    if (!context) return error(c, 'Unauthorized', 401)
+    const issueId = parseId(c.req.param('id'))
+    if (!issueId) return error(c, 'Invalid id')
+    const rows = await db.listOpinionsForExport(c.env.DB, issueId)
+    const csv = formatCommentsCsv(toCommentsCsvRows(rows))
+    return new Response(csv, {
+      headers: {
+        'Content-Type': 'text/csv; charset=utf-8',
+        'Content-Disposition': `attachment; filename=\"civic-talk-issue-${issueId}-comments.csv\"`,
+        'Cache-Control': 'private, no-store',
+        Vary: 'Cookie',
+        'X-Content-Type-Options': 'nosniff',
+      },
+    })
+  })
+
   // 一般讀取公開顯示名稱與 opt-in email；管理員另拿完整快照與條款同意記錄。
   app.get('/api/issues/:id/opinions', async c => {
     const id = parseId(c.req.param('id'))
     if (!id) return publicError(c, 'Invalid id')
+    const sortParam = c.req.query('sort') ?? 'recent'
+    if (sortParam !== 'recent' && sortParam !== 'responses') return publicError(c, 'sort must be "recent" or "responses"')
     const context = await tryGetAuthContext(c.env, c.req.raw.headers)
-    const opinions: Opinion[] | OpinionWithAuthor[] = canReadAdminSnapshots(context) ? await db.listOpinionsWithAuthor(c.env.DB, id) : await db.listOpinions(c.env.DB, id)
+    const viewerId = context?.user.id ?? null
+    const opinions = canReadAdminSnapshots(context) ? await db.listOpinionsWithAuthorForViewer(c.env.DB, id, viewerId, sortParam) : await db.listOpinionsForViewer(c.env.DB, id, viewerId, sortParam)
     return publicJson(c, opinions)
   })
 
@@ -588,11 +625,15 @@ export function registerApiRoutes(app: App): void {
     if (!body.summary?.trim()) return error(c, 'summary is required')
     const invalidOptions = validateSubmissionOptions(body)
     if (invalidOptions) return invalidOptions
+    const duplicateNameEmailPreflight = await requireDuplicateNameEmail(c, auth.context, body.show_email)
+    if (duplicateNameEmailPreflight) return duplicateNameEmailPreflight
     const submission: ModerationSubmission = {
       type: 'opinion',
       fields: { summary: body.summary.trim() },
     }
     const moderation = await moderateSubmissionForWrite(c.req.raw, c.env, submission)
+    const duplicateNameEmail = await requireDuplicateNameEmail(c, auth.context, body.show_email)
+    if (duplicateNameEmail) return duplicateNameEmail
     const opinionId = await db.createOpinion(
       c.env.DB,
       id,
@@ -611,6 +652,37 @@ export function registerApiRoutes(app: App): void {
       opinion_id: opinionId,
     })
     return c.json({ id: opinionId, moderation: moderationMetadata(moderation.decision, reportId) }, 201)
+  })
+
+  app.post('/api/opinions/:id/vote', async c => {
+    const auth = await requireUser(c)
+    if ('denied' in auth) return auth.denied
+    const opinionId = parseId(c.req.param('id'))
+    if (!opinionId) return error(c, 'Invalid id')
+    let body: { value?: unknown }
+    try {
+      body = await c.req.json()
+    } catch {
+      return error(c, 'Invalid JSON')
+    }
+    if (typeof body.value !== 'number' || !Number.isInteger(body.value) || !([-1, 0, 1] as number[]).includes(body.value)) return error(c, 'value must be -1, 0, or 1')
+    const result = await db.upsertOpinionVote(c.env.DB, opinionId, auth.context.user.id, body.value as OpinionVoteValue)
+    if ('error' in result) {
+      if (result.error === 'not_found') return error(c, 'Opinion not found', 404)
+      if (result.error === 'author') return error(c, 'Authors cannot vote on their own opinions')
+      return error(c, 'This opinion cannot be voted on')
+    }
+    return c.json(result.state)
+  })
+
+  app.delete('/api/opinions/:id/vote', async c => {
+    const auth = await requireUser(c)
+    if ('denied' in auth) return auth.denied
+    const opinionId = parseId(c.req.param('id'))
+    if (!opinionId) return error(c, 'Invalid id')
+    const result = await db.deleteOpinionVote(c.env.DB, opinionId, auth.context.user.id)
+    if ('error' in result) return error(c, result.error === 'not_found' ? 'Opinion not found' : 'No vote to withdraw', result.error === 'not_found' ? 404 : 404)
+    return c.json(result.state)
   })
 
   app.get('/api/issues/:id/prompt', async c => {

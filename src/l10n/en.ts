@@ -21,6 +21,8 @@ export const messages = {
   profile_name_cooldown: 'Your name can only be changed once every 30 days.',
   profile_name_cooldown_remaining: 'You can change your name again in {days} days.',
   profile_name_confirm: 'After changing your name, you cannot change it again for {days} days. Continue?',
+  profile_name_duplicate_confirm:
+    'Another user already uses “{name}”. If you continue, your email will be made public on future submissions while the duplicate name exists so readers can tell the accounts apart. Continue?',
   profile_moderation_title: 'My pending moderation reviews',
   profile_moderation_empty: 'You have no pending AI moderation reviews.',
   profile_moderation_policy: 'Policy code: ',
@@ -153,9 +155,15 @@ export const messages = {
   brief_updated: 'last updated',
   brief_author_label: 'Prepared by',
   op_title: 'Public Opinions',
-  op_alert: "Download or copy <strong>OPINION.md</strong>, paste it into your AI chatbot, then paste the AI-generated summary back here. You don't need to share your full conversation — just the summary.",
+  op_alert:
+    "Download or copy <strong>OPINION.md</strong>, paste it into your AI chatbot, then paste the AI-generated summary back here. You don't need to share your full conversation — just the summary.",
   op_download_btn: '⬇️ Download OPINION.md',
   op_copy_btn: '📋 Copy OPINION.md to clipboard',
+  op_download_csv_btn: '⬇️ Download comments.csv',
+  op_csv_login_required: 'Sign in to download comments.csv',
+  op_sort_label: 'Sort',
+  op_sort_recent: 'Newest',
+  op_sort_responses: 'Most responses',
   op_submit_title: 'Submit Your Opinion Summary',
   op_login_desc: 'Submitting an opinion requires signing in, to keep the quality up and make abuse traceable. Your display name will be publicly shown on submitted opinions.',
   op_label_summary: 'Paste your AI-generated opinion summary here',
@@ -172,6 +180,18 @@ export const messages = {
   op_toast_download_ok: '✅ OPINION.md downloaded!',
   op_toast_copy_ok: '✅ OPINION.md copied to clipboard!',
   op_toast_copy_fail: 'Could not copy OPINION.md. Please download it instead.',
+  vote_agree: 'Agree',
+  vote_disagree: 'Disagree',
+  vote_pass: 'Pass',
+  vote_withdraw_title: 'Withdraw your “{choice}” vote',
+  vote_change_title: 'Change your vote to “{choice}”',
+  vote_author_implicit: 'Author agreement (locked)',
+  vote_unavailable: 'Voting is unavailable',
+  vote_your_choice: 'Your choice: {choice}',
+  vote_distribution_visible: 'Vote counts are visible after you vote.',
+  vote_login_prompt: 'Sign in to vote; the opinion remains visible on this page.',
+  vote_session_expired: 'Your session has expired. Please sign in again before voting.',
+  vote_error: 'Voting failed. Please try again.',
   issue_created: 'Created',
   issue_materials_unit: 'materials',
   adm_login_title: 'Admin Panel',
@@ -270,8 +290,7 @@ export const messages = {
   abt_step3_label: 'DISCUSS',
   abt_step3_title: 'Join the discussion',
   abt_step3_desc:
-    'After reading the briefing, download OPINION.md and paste it into your own AI chat. Let the AI guide your thinking from your own life context, then submit your civic opinion back to the platform.',
-  abt_step3_wip_note: "You can also vote on other people's opinions",
+    "After reading the briefing, download OPINION.md and paste it into your own AI chat. Let the AI guide your thinking from your own life context, then submit your civic opinion back to the platform. You can also vote on other people's opinions.",
   abt_step4_label: 'SHARE',
   abt_step4_title: 'Share your perspective',
   abt_step4_desc: 'Every opinion and source has its own permanent link, so you can share it on social media or send it to friends, bringing more people and viewpoints into the discussion.',
@@ -418,6 +437,9 @@ export const messages = {
   // Email disclosure option (#27)
   show_email_label: 'Make my email public: {email}',
   show_email_hint: '(optional; an email snapshot is stored and only published when checked)',
+  duplicate_name_email_required: 'Another account currently uses the same public display name. Under platform policy, this submission will publish your email: {email}',
+  duplicate_name_submission_confirm:
+    'A final check found another active account using the same display name. To distinguish the attribution, this submission must publish your email: {email}. Publish it and continue?',
   author_email_link_title: 'Email {name}',
   // RSS subscription (#45)
   rss_subscribe_btn: '📡 Subscribe via RSS',
@@ -435,7 +457,7 @@ export const messages = {
   terms_s3_p1:
     '<strong>Creating issues, submitting materials, posting opinions, and submitting briefings / summaries</strong> are all attributed actions. After submission, a snapshot of your public display name at the time of submission will be publicly attached to the content and visible to all visitors; changing your name later will not retroactively update the attribution on existing content.',
   terms_s3_p2:
-    'At submission time you may check "Make my email public". The platform stores a snapshot of your email at submission; if you choose to make it public the snapshot is shown alongside your display name, otherwise it will not appear in any public API, page, or SSR source code — it is only accessible to platform admins for tracing abuse and, when necessary, cooperating with investigations (see "Law Enforcement Cooperation").',
+    'When submitting, you can normally choose whether to make your email public. The platform stores a snapshot of your email at submission; if you choose to make it public the snapshot is shown alongside your display name, otherwise it will not appear in any public API, page, or SSR source code and is only accessible to platform admins for tracing abuse and, when necessary, cooperating with investigations (see "Law Enforcement Cooperation"). However, if another non-banned account uses the same public display name at submission time, your email must be public on that and subsequent new submissions while the duplicate exists, so the attribution remains distinguishable. Existing content is not changed retroactively. The platform checks again immediately before writing; if the duplicate appears while you are filling out the form, it asks for your explicit consent instead of silently publishing your email.',
   terms_s3_p3:
     'The purpose of named attribution is to ensure content quality and accountability, so that each issue, material, and opinion has a clearly identified submitter who accepts responsibility. Please confirm before submitting that you are willing to put your name to the content.',
   terms_s4_h: 'Account Requirements',
@@ -493,13 +515,15 @@ export const messages = {
     'To ensure content quality and accountability, after any of the above actions, a snapshot of your public display name at the time of submission will be publicly attached to the corresponding issue, material, or opinion and visible to all visitors. Changing your name later will not retroactively update the attribution on existing content.',
   privacy_s3_p2:
     'If your account does not provide or has not yet set a display name, the Platform will show a fixed "Display name unavailable" placeholder instead — it will never substitute your email.',
-  privacy_s3_p3: 'At submission time you may choose whether to make your email public:',
+  privacy_s3_p3: 'Email disclosure at submission works as follows:',
   privacy_s3_li1:
     '<strong>Choose to make email public</strong>: The email snapshot at the time of submission will be publicly displayed alongside your display name on that content for other visitors to see.',
   privacy_s3_li2:
-    '<strong>Keep email private</strong>: The email snapshot is still stored in the business database for abuse tracing, but will not be returned by public APIs, pages, or SSR source code; it is only accessible to platform admins when necessary.',
+    '<strong>Choose to keep email private</strong>: If no other account uses the same display name, the email snapshot is still stored in the business database for abuse tracing but is not returned by public APIs, pages, or SSR source code; it is only accessible to platform admins when necessary.',
+  privacy_s3_li3:
+    '<strong>Required disclosure for duplicate names</strong>: The platform checks again immediately before writing. If another non-banned account uses the same public display name at submission time, it asks for your explicit consent before resubmitting the new content with a public email snapshot. It never silently publishes the email and does not change existing content retroactively. Permanently banned accounts and active temporary bans do not occupy names; an expired temporary ban occupies the name again.',
   privacy_s3_p4:
-    'The user ID is a platform-internal identifier generated by Better Auth, not a public Google or GitHub account name; it is never displayed publicly. Issues, materials, opinions, and briefings all publicly display the display name snapshot taken at submission time; email is only shown when that specific content item has opted in to public disclosure.',
+    'The user ID is a platform-internal identifier generated by Better Auth, not a public Google or GitHub account name; it is never displayed publicly. Issues, materials, opinions, and briefings all publicly display the display name snapshot taken at submission time; email is shown either by the submitter’s choice or by the duplicate-name disclosure rule above.',
   privacy_s4_h: 'How We Use Data',
   privacy_s4_li1: 'Providing and maintaining the platform service (issue creation, material collection, opinion aggregation)',
   privacy_s4_li2: 'Ensuring content quality: named attribution reduces the risk of malicious submissions',
@@ -527,7 +551,7 @@ export const messages = {
   privacy_s8_github_label: 'GitHub:',
   privacy_s9_h: 'Policy Updates',
   privacy_s9_p: 'We may update this Privacy Policy from time to time. Significant changes will be announced on the Platform.',
-  privacy_s9_date: 'Last updated: August 2026',
+  privacy_s9_date: 'Last updated: September 2026',
   // Abuse reports (#21)
   report_btn: '⚑ Report Abuse',
   report_modal_title: 'Report Abusive Content',

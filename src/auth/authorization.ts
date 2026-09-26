@@ -22,7 +22,7 @@ export interface AuthContext {
   nameChangeCooldownDays: number | null
 }
 
-type UserNameChangeRow = {
+type UserNameStateRow = {
   nameChangedAt: string | null
 }
 
@@ -44,6 +44,36 @@ export function isAdminRole(role: AppRole): boolean {
   return role === 'admin' || role === 'super-admin'
 }
 
+type DuplicateNameRow = {
+  hasDuplicateDisplayName: number
+}
+
+/**
+ * 以共用 auth DB 的當下狀態判斷同名；永久停權及尚未到期的暫時停權不占用名稱，
+ * 已到期但 Better Auth 尚未清理的暫時停權則重新占位（issue #81 方案 4）。
+ */
+export async function hasDuplicateDisplayName(db: D1Database, userId: string, name: string): Promise<boolean> {
+  const normalizedName = name.trim()
+  if (!normalizedName) return false
+
+  const row = await db
+    .prepare(
+      `SELECT EXISTS (
+        SELECT 1
+        FROM "user"
+        WHERE "id" <> ?
+          AND TRIM("name") = ?
+          AND (
+            COALESCE("banned", 0) = 0
+            OR ("banExpires" IS NOT NULL AND datetime("banExpires") <= CURRENT_TIMESTAMP)
+          )
+      ) AS "hasDuplicateDisplayName"`
+    )
+    .bind(userId, normalizedName)
+    .first<DuplicateNameRow>()
+  return row?.hasDuplicateDisplayName === 1
+}
+
 /**
  * 讀出目前登入者。未登入回 null。
  *
@@ -54,8 +84,8 @@ export async function getAuthContext(env: AppBindings, headers: Headers): Promis
   const auth = createAuth(env)
   const session = await auth.api.getSession({ headers })
   if (!session) return null
-  // 共用認證庫僅讀取冷卻期；名稱寫入一律透過 Better Auth 的 update-user API。
-  const user = await env.DB_AUTH.prepare('SELECT "nameChangedAt" FROM "user" WHERE "id" = ?').bind(session.user.id).first<UserNameChangeRow>()
+  // 共用認證庫只讀取改名冷卻期；同名全表掃描由需要它的端點按需執行。
+  const user = await env.DB_AUTH.prepare('SELECT "nameChangedAt" FROM "user" WHERE "id" = ?').bind(session.user.id).first<UserNameStateRow>()
 
   return {
     user: {

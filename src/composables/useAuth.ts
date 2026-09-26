@@ -55,9 +55,9 @@ export function useAuth() {
       return inflight
     },
 
-    /** 個人資料剛更新時同步名稱，避免標頭仍顯示舊值。 */
-    updateSessionName(name: string): void {
-      if (session.value) session.value = { ...session.value, user: { ...session.value.user, name } }
+    /** 個人資料剛更新時同步名稱與同名狀態，避免標頭及投稿表單仍使用舊值。 */
+    updateSessionName(name: string, hasDuplicateDisplayName: boolean): void {
+      if (session.value) session.value = { ...session.value, user: { ...session.value.user, name }, hasDuplicateDisplayName }
     },
 
     /** 登出後整頁重載：最省事也最不會漏掉任何頁面狀態的作法。 */

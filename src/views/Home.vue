@@ -7,6 +7,7 @@ import SignInButtons from '../components/SignInButtons.vue'
 import Toast from '../components/Toast.vue'
 import ModerationAppealNotice from '../components/ModerationAppealNotice.vue'
 import { useI18n } from '../l10n'
+import { postSubmissionWithDuplicateNameCheck } from '../client/submission'
 import { useAuth } from '../composables/useAuth'
 import { useViewerRole, type ViewerRole } from '../composables/useViewerRole'
 import type { IssueListItem } from '../db/queries'
@@ -30,6 +31,7 @@ const toast = ref<{ show: (msg: string) => void } | null>(null)
 
 // 全站共用的登入狀態（與 AppHeader 共用同一次 /api/me）；SSR 期間永遠是 'loading'
 const { authState, session, ensureAuthSession } = useAuth()
+const duplicateNameRequiresEmail = computed(() => session.value?.hasDuplicateDisplayName === true)
 // 送出時才發現 session 過期：表單留著（別吃掉使用者打的字），只在上方補一列重新登入
 const sessionExpired = ref(false)
 const moderationNotice = ref<{ appealType: 'rejected_submission' | 'account_ban'; reportId?: number; policyCode?: string; rationale?: string } | null>(null)
@@ -117,16 +119,17 @@ async function createIssue() {
   }
   submitting.value = true
   try {
-    const res = await fetch('/api/issues', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    const res = await postSubmissionWithDuplicateNameCheck(
+      '/api/issues',
+      {
         title: title.value.trim(),
         description: description.value,
         show_email: issueShowEmail.value,
         terms_accepted: issueTosAgreed.value,
-      }),
-    })
+      },
+      () => window.confirm(t('duplicate_name_submission_confirm', { email: session.value?.user.email || '' }))
+    )
+    if (!res) return
     // session 可能在填表期間過期——守門在伺服器端，前端接住 401 但保留已填內容
     if (res.status === 401) {
       sessionExpired.value = true
@@ -321,7 +324,10 @@ async function copyRssUrl() {
                 >
               </label>
             </div>
-            <div class="form-group">
+            <div v-if="duplicateNameRequiresEmail" class="alert alert-info">
+              {{ t('duplicate_name_email_required', { email: session?.user.email || '' }) }}
+            </div>
+            <div v-else class="form-group">
               <label class="flex items-start gap-2 font-normal">
                 <input v-model="issueShowEmail" type="checkbox" class="mt-1 w-auto" />
                 <span

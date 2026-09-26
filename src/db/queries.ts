@@ -130,6 +130,20 @@ export interface Opinion {
   abuse_flagged: 0 | 1 | 2 | 3
 }
 
+export type OpinionVoteValue = -1 | 0 | 1
+
+export interface OpinionVoteState {
+  vote_agree: number | null
+  vote_disagree: number | null
+  vote_pass: number | null
+  my_vote: OpinionVoteValue | null
+  can_view_vote_distribution: boolean
+  can_vote: boolean
+  is_author: boolean
+}
+
+export interface OpinionWithVote extends Opinion, OpinionVoteState {}
+
 /** 意見 + 完整作者快照（僅供管理端） */
 export interface OpinionWithAuthor extends Opinion {
   author_id: string | null
@@ -137,6 +151,8 @@ export interface OpinionWithAuthor extends Opinion {
   terms_version: string | null
   terms_accepted_at: string | null
 }
+
+export interface OpinionWithAuthorAndVote extends OpinionWithAuthor, OpinionVoteState {}
 /** 濫用回報記錄（管理端查看用） */
 export interface AbuseReport {
   id: number
@@ -330,6 +346,7 @@ export async function updateIssue(
 }
 
 export async function deleteIssueCascade(db: D1Database, id: number): Promise<void> {
+  await db.prepare('DELETE FROM ct_opinion_votes WHERE opinion_id IN (SELECT id FROM ct_opinions WHERE issue_id = ?)').bind(id).run()
   await db.prepare('DELETE FROM ct_opinions WHERE issue_id = ?').bind(id).run()
   await db.prepare('DELETE FROM ct_briefings WHERE issue_id = ?').bind(id).run()
   await db.prepare('DELETE FROM ct_materials WHERE issue_id = ?').bind(id).run()
@@ -342,13 +359,13 @@ const MATERIAL_PUBLIC_COLUMNS =
 const MATERIAL_ADMIN_COLUMNS = `${MATERIAL_BASE_COLUMNS}, ${PRIVATE_AUTHOR_COLUMNS}, ${SUBMISSION_CONSENT_COLUMNS}`
 
 export async function listMaterials(db: D1Database, issueId: number): Promise<Material[]> {
-  const { results } = await db.prepare(`SELECT ${MATERIAL_PUBLIC_COLUMNS} FROM ct_materials WHERE issue_id = ? AND abuse_flagged IN (0, 1, 3) ORDER BY created_at DESC`).bind(issueId).all<Material>()
+  const { results } = await db.prepare(`SELECT ${MATERIAL_PUBLIC_COLUMNS} FROM ct_materials WHERE issue_id = ? AND abuse_flagged IN (0, 1, 3) ORDER BY created_at DESC, id DESC`).bind(issueId).all<Material>()
   return results ?? []
 }
 
 /** 管理端專用：回傳完整作者快照。呼叫端必須先過 requireAdmin()。 */
 export async function listMaterialsWithAuthor(db: D1Database, issueId: number): Promise<MaterialWithAuthor[]> {
-  const { results } = await db.prepare(`SELECT ${MATERIAL_ADMIN_COLUMNS} FROM ct_materials WHERE issue_id = ? ORDER BY created_at DESC`).bind(issueId).all<MaterialWithAuthor>()
+  const { results } = await db.prepare(`SELECT ${MATERIAL_ADMIN_COLUMNS} FROM ct_materials WHERE issue_id = ? ORDER BY created_at DESC, id DESC`).bind(issueId).all<MaterialWithAuthor>()
   return results ?? []
 }
 
@@ -532,14 +549,207 @@ const OPINION_BASE_COLUMNS = 'id, issue_id, summary, created_at, abuse_flagged'
 const OPINION_PUBLIC_COLUMNS = 'id, issue_id, CASE WHEN abuse_flagged = 3 THEN NULL ELSE summary END AS summary, created_at, abuse_flagged, ' + PUBLIC_AUTHOR_COLUMNS
 const OPINION_ADMIN_COLUMNS = `${OPINION_BASE_COLUMNS}, ${PRIVATE_AUTHOR_COLUMNS}, ${SUBMISSION_CONSENT_COLUMNS}`
 
+export interface OpinionExportRow {
+  id: number
+  summary: string | null
+  created_at: string
+  author_id: string | null
+  agrees: number
+  disagrees: number
+}
+
+interface OpinionVoteRow {
+  id: number
+  issue_id: number
+  summary: string | null
+  created_at: string
+  author_name: string | null
+  author_email: string | null
+  abuse_flagged: 0 | 1 | 2 | 3
+  author_id?: string | null
+  show_email?: AuthorVisibility
+  terms_version?: string | null
+  terms_accepted_at?: string | null
+  vote_agree: number | null
+  vote_disagree: number | null
+  vote_pass: number | null
+  my_vote: number | null
+  can_view_vote_distribution: number
+  can_vote: number
+  is_author: number
+}
+
+function opinionVoteCte(voteScope: 'issue' | 'opinion'): string {
+  const voteScopePredicate = voteScope === 'issue' ? 'opinion_id IN (SELECT id FROM ct_opinions WHERE issue_id = ?)' : 'opinion_id = ?'
+  return `
+  WITH params AS (SELECT ? AS viewer_id),
+  viewer_vote AS (
+    SELECT opinion_id, value FROM ct_opinion_votes
+    WHERE voter_id = (SELECT viewer_id FROM params)
+  ),
+  vote_counts AS (
+    SELECT opinion_id,
+      SUM(CASE WHEN value = 1 THEN 1 ELSE 0 END) AS agree_count,
+      SUM(CASE WHEN value = -1 THEN 1 ELSE 0 END) AS disagree_count,
+      SUM(CASE WHEN value = 0 THEN 1 ELSE 0 END) AS pass_count
+    FROM ct_opinion_votes
+    WHERE ${voteScopePredicate}
+    GROUP BY opinion_id
+  )`
+}
+
+const OPINION_VOTE_FIELDS = `
+  CASE WHEN params.viewer_id IS NOT NULL AND o.abuse_flagged IN (0, 1)
+      AND (o.author_id = params.viewer_id OR vv.opinion_id IS NOT NULL)
+    THEN COALESCE(vc.agree_count, 0) + CASE WHEN o.author_id IS NOT NULL THEN 1 ELSE 0 END ELSE NULL END AS vote_agree,
+  CASE WHEN params.viewer_id IS NOT NULL AND o.abuse_flagged IN (0, 1)
+      AND (o.author_id = params.viewer_id OR vv.opinion_id IS NOT NULL)
+    THEN COALESCE(vc.disagree_count, 0) ELSE NULL END AS vote_disagree,
+  CASE WHEN params.viewer_id IS NOT NULL AND o.abuse_flagged IN (0, 1)
+      AND (o.author_id = params.viewer_id OR vv.opinion_id IS NOT NULL)
+    THEN COALESCE(vc.pass_count, 0) ELSE NULL END AS vote_pass,
+  CASE WHEN o.author_id = params.viewer_id THEN NULL ELSE vv.value END AS my_vote,
+  CASE WHEN params.viewer_id IS NOT NULL AND o.abuse_flagged IN (0, 1)
+      AND (o.author_id = params.viewer_id OR vv.opinion_id IS NOT NULL) THEN 1 ELSE 0 END AS can_view_vote_distribution,
+  CASE WHEN o.abuse_flagged IN (0, 1)
+      AND (params.viewer_id IS NULL OR o.author_id IS NULL OR o.author_id <> params.viewer_id) THEN 1 ELSE 0 END AS can_vote,
+  CASE WHEN params.viewer_id IS NOT NULL AND o.author_id = params.viewer_id THEN 1 ELSE 0 END AS is_author`
+
+function normalizeOpinionVoteState(row: OpinionVoteRow): OpinionVoteState {
+  return {
+    vote_agree: typeof row.vote_agree === 'number' ? row.vote_agree : null,
+    vote_disagree: typeof row.vote_disagree === 'number' ? row.vote_disagree : null,
+    vote_pass: typeof row.vote_pass === 'number' ? row.vote_pass : null,
+    my_vote: row.my_vote === -1 || row.my_vote === 0 || row.my_vote === 1 ? row.my_vote : null,
+    can_view_vote_distribution: row.can_view_vote_distribution === 1,
+    can_vote: row.can_vote === 1,
+    is_author: row.is_author === 1,
+  }
+}
+
+function normalizeOpinionVote(row: OpinionVoteRow): OpinionWithVote {
+  return {
+    id: row.id,
+    issue_id: row.issue_id,
+    summary: row.summary,
+    created_at: row.created_at,
+    author_name: row.author_name,
+    author_email: row.author_email,
+    abuse_flagged: row.abuse_flagged,
+    ...normalizeOpinionVoteState(row),
+  }
+}
+
+function normalizeOpinionAuthorVote(row: OpinionVoteRow): OpinionWithAuthorAndVote {
+  return {
+    ...normalizeOpinionVote(row),
+    author_id: row.author_id ?? null,
+    show_email: row.show_email ?? 0,
+    terms_version: row.terms_version ?? null,
+    terms_accepted_at: row.terms_accepted_at ?? null,
+  }
+}
+
+function opinionVoteOrder(sort: 'recent' | 'responses'): string {
+  return sort === 'responses'
+    ? 'COALESCE(vc.agree_count, 0) + COALESCE(vc.disagree_count, 0) + COALESCE(vc.pass_count, 0) + CASE WHEN o.author_id IS NOT NULL THEN 1 ELSE 0 END DESC, o.created_at DESC, o.id DESC'
+    : 'o.created_at DESC, o.id DESC'
+}
+
+export async function listOpinionsForViewer(db: D1Database, issueId: number, viewerId: string | null, sort: 'recent' | 'responses' = 'recent'): Promise<OpinionWithVote[]> {
+  const query = `${opinionVoteCte('issue')}
+    SELECT o.id, o.issue_id, CASE WHEN o.abuse_flagged = 3 THEN NULL ELSE o.summary END AS summary,
+      o.created_at, o.abuse_flagged, o.author_name,
+      CASE WHEN o.show_email = 1 THEN o.author_email ELSE NULL END AS author_email,
+      ${OPINION_VOTE_FIELDS}
+    FROM ct_opinions o CROSS JOIN params
+    LEFT JOIN viewer_vote vv ON vv.opinion_id = o.id
+    LEFT JOIN vote_counts vc ON vc.opinion_id = o.id
+    WHERE o.issue_id = ? AND o.abuse_flagged IN (0, 1, 3)
+    ORDER BY ${opinionVoteOrder(sort)}`
+  const { results } = await db.prepare(query).bind(viewerId, issueId, issueId).all<OpinionVoteRow>()
+  return (results ?? []).map(normalizeOpinionVote)
+}
+
+export async function listOpinionsWithAuthorForViewer(db: D1Database, issueId: number, viewerId: string | null, sort: 'recent' | 'responses' = 'recent'): Promise<OpinionWithAuthorAndVote[]> {
+  const query = `${opinionVoteCte('issue')}
+    SELECT o.id, o.issue_id, o.summary, o.created_at, o.abuse_flagged,
+      o.author_id, o.author_name, o.author_email, o.show_email, o.terms_version, o.terms_accepted_at,
+      ${OPINION_VOTE_FIELDS}
+    FROM ct_opinions o CROSS JOIN params
+    LEFT JOIN viewer_vote vv ON vv.opinion_id = o.id
+    LEFT JOIN vote_counts vc ON vc.opinion_id = o.id
+    WHERE o.issue_id = ?
+    ORDER BY ${opinionVoteOrder(sort)}`
+  const { results } = await db.prepare(query).bind(viewerId, issueId, issueId).all<OpinionVoteRow>()
+  return (results ?? []).map(normalizeOpinionAuthorVote)
+}
+
+export async function getOpinionVoteState(db: D1Database, opinionId: number, viewerId: string): Promise<OpinionVoteState | null> {
+  const query = `${opinionVoteCte('opinion')}
+    SELECT ${OPINION_VOTE_FIELDS}
+    FROM ct_opinions o CROSS JOIN params
+    LEFT JOIN viewer_vote vv ON vv.opinion_id = o.id
+    LEFT JOIN vote_counts vc ON vc.opinion_id = o.id
+    WHERE o.id = ?`
+  const row = await db.prepare(query).bind(viewerId, opinionId, opinionId).first<OpinionVoteRow>()
+  return row ? normalizeOpinionVoteState(row) : null
+}
+
+export type OpinionVoteMutationError = 'not_found' | 'author' | 'not_voteable' | 'no_vote'
+
+export async function upsertOpinionVote(
+  db: D1Database,
+  opinionId: number,
+  voterId: string,
+  value: OpinionVoteValue
+): Promise<{ state: OpinionVoteState } | { error: Exclude<OpinionVoteMutationError, 'no_vote'> }> {
+  const opinion = await db.prepare('SELECT author_id, abuse_flagged FROM ct_opinions WHERE id = ?').bind(opinionId).first<{ author_id: string | null; abuse_flagged: number }>()
+  if (!opinion) return { error: 'not_found' }
+  if (opinion.author_id !== null && opinion.author_id === voterId) return { error: 'author' }
+  if (opinion.abuse_flagged !== 0 && opinion.abuse_flagged !== 1) return { error: 'not_voteable' }
+  await db
+    .prepare(
+      `INSERT INTO ct_opinion_votes (opinion_id, voter_id, value, created_at, updated_at)
+       VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+       ON CONFLICT(opinion_id, voter_id) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`
+    )
+    .bind(opinionId, voterId, value)
+    .run()
+  const state = await getOpinionVoteState(db, opinionId, voterId)
+  return state ? { state } : { error: 'not_found' }
+}
+
+export async function deleteOpinionVote(db: D1Database, opinionId: number, voterId: string): Promise<{ state: OpinionVoteState } | { error: OpinionVoteMutationError }> {
+  const opinion = await db.prepare('SELECT id FROM ct_opinions WHERE id = ?').bind(opinionId).first<{ id: number }>()
+  if (!opinion) return { error: 'not_found' }
+  const result = await db.prepare('DELETE FROM ct_opinion_votes WHERE opinion_id = ? AND voter_id = ?').bind(opinionId, voterId).run()
+  if ((result.meta?.changes ?? 0) < 1) return { error: 'no_vote' }
+  const state = await getOpinionVoteState(db, opinionId, voterId)
+  return state ? { state } : { error: 'not_found' }
+}
+
+export async function listOpinionsForExport(db: D1Database, issueId: number): Promise<OpinionExportRow[]> {
+  const query = `${opinionVoteCte('issue')}
+    SELECT o.id, o.summary, o.created_at, o.author_id,
+      COALESCE(vc.agree_count, 0) + CASE WHEN o.author_id IS NOT NULL THEN 1 ELSE 0 END AS agrees,
+      COALESCE(vc.disagree_count, 0) AS disagrees
+    FROM ct_opinions o CROSS JOIN params
+    LEFT JOIN vote_counts vc ON vc.opinion_id = o.id
+    WHERE o.issue_id = ? AND o.abuse_flagged IN (0, 1)
+    ORDER BY o.created_at ASC, o.id ASC`
+  const { results } = await db.prepare(query).bind(null, issueId, issueId).all<OpinionExportRow>()
+  return results ?? []
+}
+
 export async function listOpinions(db: D1Database, issueId: number): Promise<Opinion[]> {
-  const { results } = await db.prepare(`SELECT ${OPINION_PUBLIC_COLUMNS} FROM ct_opinions WHERE issue_id = ? AND abuse_flagged IN (0, 1, 3) ORDER BY created_at DESC`).bind(issueId).all<Opinion>()
+  const { results } = await db.prepare(`SELECT ${OPINION_PUBLIC_COLUMNS} FROM ct_opinions WHERE issue_id = ? AND abuse_flagged IN (0, 1, 3) ORDER BY created_at DESC, id DESC`).bind(issueId).all<Opinion>()
   return results ?? []
 }
 
 /** 管理端專用：回傳完整作者快照。呼叫端必須先過 requireAdmin()。 */
 export async function listOpinionsWithAuthor(db: D1Database, issueId: number): Promise<OpinionWithAuthor[]> {
-  const { results } = await db.prepare(`SELECT ${OPINION_ADMIN_COLUMNS} FROM ct_opinions WHERE issue_id = ? ORDER BY created_at DESC`).bind(issueId).all<OpinionWithAuthor>()
+  const { results } = await db.prepare(`SELECT ${OPINION_ADMIN_COLUMNS} FROM ct_opinions WHERE issue_id = ? ORDER BY created_at DESC, id DESC`).bind(issueId).all<OpinionWithAuthor>()
   return results ?? []
 }
 
@@ -567,6 +777,7 @@ export async function createOpinion(
 }
 
 export async function deleteOpinion(db: D1Database, id: number): Promise<void> {
+  await db.prepare('DELETE FROM ct_opinion_votes WHERE opinion_id = ?').bind(id).run()
   await db.prepare('DELETE FROM ct_opinions WHERE id = ?').bind(id).run()
 }
 
@@ -581,8 +792,7 @@ export async function getIssueDetail(
 } | null> {
   const issue = await getIssue(db, id)
   if (!issue) return null
-  const moderation = await db.prepare('SELECT abuse_flagged FROM ct_issues WHERE id = ?').bind(id).first<{ abuse_flagged: number }>()
-  if ((moderation?.abuse_flagged ?? 0) >= 2) return { issue, materials: [], briefing: null, opinions: [] }
+  if (issue.abuse_flagged >= 2) return { issue, materials: [], briefing: null, opinions: [] }
   const [materials, briefing, opinions] = await Promise.all([listMaterials(db, id), getLatestBriefing(db, id), listOpinions(db, id)])
   return { issue, materials, briefing, opinions }
 }
@@ -604,14 +814,14 @@ export async function getAdminStats(db: D1Database): Promise<AdminStats> {
 
 export async function listMaterialsForPrompt(db: D1Database, issueId: number): Promise<{ source_name: string | null; source_url: string | null; stance: Stance | null; content: string | null }[]> {
   const { results } = await db
-    .prepare('SELECT source_name, source_url, stance, content FROM ct_materials WHERE issue_id = ? AND abuse_flagged = 0 ORDER BY created_at')
+    .prepare('SELECT source_name, source_url, stance, content FROM ct_materials WHERE issue_id = ? AND abuse_flagged = 0 ORDER BY created_at ASC, id ASC')
     .bind(issueId)
     .all<{ source_name: string | null; source_url: string | null; stance: Stance | null; content: string | null }>()
   return results ?? []
 }
 
 export async function listOpinionSummaries(db: D1Database, issueId: number, limit = 50): Promise<Pick<Opinion, 'summary'>[]> {
-  const { results } = await db.prepare('SELECT summary FROM ct_opinions WHERE issue_id = ? AND abuse_flagged = 0 ORDER BY created_at DESC LIMIT ?').bind(issueId, limit).all<Pick<Opinion, 'summary'>>()
+  const { results } = await db.prepare('SELECT summary FROM ct_opinions WHERE issue_id = ? AND abuse_flagged = 0 ORDER BY created_at DESC, id DESC LIMIT ?').bind(issueId, limit).all<Pick<Opinion, 'summary'>>()
   return results ?? []
 }
 
