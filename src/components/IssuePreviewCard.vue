@@ -21,7 +21,7 @@ const date = computed(() => formatDate(props.issue.created_at, locale.value))
     </div>
 
     <h2 class="mt-0 mb-3 font-serif text-2xl font-bold text-ink">{{ issue.title }}</h2>
-    <p v-if="issue.description" class="mt-0 mb-4 whitespace-pre-line leading-relaxed text-vt-fg-2">
+    <p v-if="issue.description" class="mt-0 mb-4 whitespace-pre-line leading-relaxed text-vt-fg-2 h-full max-h-64 overflow-auto text-ellipsis">
       {{ issue.description }}
     </p>
 
@@ -31,7 +31,7 @@ const date = computed(() => formatDate(props.issue.created_at, locale.value))
       <template v-if="issue.author_email"> · <AuthorEmailLink :email="issue.author_email" :name="issue.author_name" /> </template>
     </p>
 
-    <div class="mt-6 flex justify-center">
+    <div class="mt-1 sm:mt-2 flex justify-center">
       <a :href="`/issues/${issue.id}`" class="btn btn-primary">{{ t('issue_preview_enter') }}</a>
     </div>
   </article>

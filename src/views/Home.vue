@@ -103,6 +103,12 @@ function showIssuePreview(issue: IssueListItem): void {
   window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
+function backToIssues(): void {
+  selectedIssueId.value = null
+  window.history.pushState({}, '', '/')
+  window.scrollTo({ top: 0, behavior: 'smooth' })
+}
+
 async function loadIssues() {
   loading.value = true
   try {
@@ -275,7 +281,7 @@ async function copyRssUrl() {
       </section>
     </div>
 
-    <div class="vt-hero">
+    <div class="vt-hero" v-if="!selectedIssue">
       <div class="vt-hero-inner">
         <div class="hero-tag">{{ t('site_tagline') }}</div>
         <h1 class="hero-title">{{ t('idx_page_title') }}</h1>
@@ -287,7 +293,14 @@ async function copyRssUrl() {
       </div>
     </div>
 
-    <main class="pt-9 pb-8">
+    <div v-else class="container mt-2 mb-2 flex items-center gap-2">
+      <!-- back to issues -->
+      <button type="button" class="btn btn-secondary" @click="backToIssues">
+        {{ t('back_to_issues') }}
+      </button>
+    </div>
+
+    <main class="pt-0 pb-4 sm:pt-2 sm:pb-4">
       <div class="container">
         <IssuePreviewCard v-if="selectedIssue" :issue="selectedIssue" />
 
