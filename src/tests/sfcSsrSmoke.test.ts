@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vite-plus/test'
 import AppFooter from '../components/AppFooter.vue'
 import AppHeader from '../components/AppHeader.vue'
 import IssueCard from '../components/IssueCard.vue'
+import IssuePreviewCard from '../components/IssuePreviewCard.vue'
 import LongTextContent from '../components/LongTextContent.vue'
 import ModerationAppealForm from '../components/ModerationAppealForm.vue'
 import ModerationAppealNotice from '../components/ModerationAppealNotice.vue'
@@ -94,7 +95,7 @@ describe('author email disclosure (#60)', () => {
   const optedIn = { ...issue, material_count: 1, opinion_count: 1, author_name: '投稿者', author_email: 'contributor@example.com' }
 
   it('renders the opted-in email as a mailto link, not as visible text', async () => {
-    const html = await render(IssueCard, { issue: optedIn })
+    const html = await render(IssuePreviewCard, { issue: optedIn })
     expect(html).toContain('mailto:contributor@example.com')
     // 明碼只能出現在 href 裡，不能成為可見文字
     expect(html.replace(/mailto:contributor@example\.com/g, '')).not.toContain('contributor@example.com')
@@ -131,8 +132,30 @@ describe('author email disclosure (#60)', () => {
   })
 
   it('renders nothing when the author did not opt in', async () => {
-    const html = await render(IssueCard, { issue: { ...issue, material_count: 0, opinion_count: 0 } })
+    const html = await render(IssuePreviewCard, { issue: { ...issue, material_count: 0, opinion_count: 0 } })
     expect(html).not.toContain('mailto:')
+  })
+})
+
+describe('home issue preview', () => {
+  const previewIssue = { ...issue, material_count: 3, opinion_count: 5, author_name: '建立者', author_email: null }
+
+  it('renders title, description, metadata, and the enter link', async () => {
+    const html = await render(IssuePreviewCard, { issue: previewIssue })
+    expect(html).toContain('測試議題')
+    expect(html).toContain('議題說明')
+    expect(html).toContain('3 份素材')
+    expect(html).toContain('5 份意見')
+    expect(html).toContain('建立者：建立者')
+    expect(html).toContain('href="/issues/1"')
+    expect(html).toContain('進入議題')
+  })
+
+  it('SSR renders the preview layout from query-derived initial state', async () => {
+    const html = await render(HomeView, { initialIssues: [previewIssue], initialPreviewIssueId: 1 })
+    expect(html).toContain('議題說明')
+    expect(html).toContain('進入議題')
+    expect(html).not.toContain('placeholder="搜尋議題關鍵字…"')
   })
 })
 
@@ -141,6 +164,7 @@ describe('shared component SSR smoke tests', () => {
     { name: 'app footer', component: AppFooter },
     { name: 'app header', component: AppHeader },
     { name: 'issue card', component: IssueCard, props: { issue: { ...issue, material_count: 1, opinion_count: 1 } } },
+    { name: 'issue preview card', component: IssuePreviewCard, props: { issue: { ...issue, material_count: 1, opinion_count: 1 } } },
     { name: 'long text content', component: LongTextContent, props: { text: '短素材' } },
     { name: 'moderation appeal form', component: ModerationAppealForm, props: { appealType: 'rejected_submission', reportId: 1, policyCode: 'spam', rationale: '測試' } },
     { name: 'moderation appeal notice', component: ModerationAppealNotice, props: { appealType: 'rejected_submission', reportId: 1, policyCode: 'spam', rationale: '測試' } },

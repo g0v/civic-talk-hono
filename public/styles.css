@@ -1222,8 +1222,26 @@
     outline-color: var(--color-vt-democratic-red);
   }
   @media (width >= 40rem) {
+    .sm\:block {
+      display: block;
+    }
+    .sm\:flex {
+      display: flex;
+    }
+    .sm\:hidden {
+      display: none;
+    }
+    .sm\:inline {
+      display: inline;
+    }
     .sm\:grid-cols-2 {
       grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .sm\:flex-wrap {
+      flex-wrap: wrap;
+    }
+    .sm\:gap-2 {
+      gap: calc(var(--spacing) * 2);
     }
     .sm\:p-7 {
       padding: calc(var(--spacing) * 7);
