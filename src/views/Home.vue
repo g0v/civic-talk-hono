@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppFooter from '../components/AppFooter.vue'
 import IssueCard from '../components/IssueCard.vue'
+import IssuePreviewCard from '../components/IssuePreviewCard.vue'
 import SignInButtons from '../components/SignInButtons.vue'
 import Toast from '../components/Toast.vue'
 import ModerationAppealNotice from '../components/ModerationAppealNotice.vue'
@@ -12,9 +13,11 @@ import { useAuth } from '../composables/useAuth'
 import { useViewerRole, type ViewerRole } from '../composables/useViewerRole'
 import type { IssueListItem } from '../db/queries'
 import { filterAndSortHomeIssues, type SortOrder } from '../lib/homeSorting'
+import { homeIssuePreviewUrl, readHomeIssuePreviewId } from '../lib/homeIssuePreview'
 
 const props = defineProps<{
   initialIssues?: IssueListItem[]
+  initialPreviewIssueId?: number | null
 }>()
 
 const { t } = useI18n()
@@ -38,6 +41,7 @@ const moderationNotice = ref<{ appealType: 'rejected_submission' | 'account_ban'
 
 const searchQuery = ref('')
 const sortOrder = ref<SortOrder>('newest')
+const selectedIssueId = ref<number | null>(props.initialPreviewIssueId ?? null)
 // 全站檢視角色（#77、#90、#99）：navbar 切換後，首頁清單立即依角色更新。
 const { viewerRole, preferredViewerRole, initViewerRole, setViewerRole } = useViewerRole()
 
@@ -87,6 +91,23 @@ const similarIssues = computed(() => {
 })
 
 const filteredAndSortedIssues = computed(() => filterAndSortHomeIssues(issues.value, viewerRole.value, sortOrder.value, searchQuery.value))
+const selectedIssue = computed(() => issues.value.find(issue => issue.id === selectedIssueId.value) ?? null)
+
+function syncIssuePreviewFromUrl(): void {
+  selectedIssueId.value = readHomeIssuePreviewId(new URL(window.location.href))
+}
+
+function showIssuePreview(issue: IssueListItem): void {
+  selectedIssueId.value = issue.id
+  window.history.pushState({}, '', homeIssuePreviewUrl(new URL(window.location.href), issue.id))
+  window.scrollTo({ top: 0, behavior: 'smooth' })
+}
+
+function backToIssues(): void {
+  selectedIssueId.value = null
+  window.history.pushState({}, '', '/')
+  window.scrollTo({ top: 0, behavior: 'smooth' })
+}
 
 async function loadIssues() {
   loading.value = true
@@ -106,6 +127,12 @@ onMounted(() => {
   rememberWelcomeRole.value = preferredViewerRole.value !== null
   showWelcomePrompt.value = !isWelcomePromptHidden()
   if (showWelcomePrompt.value) void nextTick(() => welcomeDialog.value?.focus())
+  syncIssuePreviewFromUrl()
+  window.addEventListener('popstate', syncIssuePreviewFromUrl)
+})
+
+onBeforeUnmount(() => {
+  if (typeof window !== 'undefined') window.removeEventListener('popstate', syncIssuePreviewFromUrl)
 })
 
 async function createIssue() {
@@ -209,7 +236,10 @@ async function copyRssUrl() {
         <div class="mb-5 pr-10">
           <div class="section-label mb-2">WELCOME</div>
           <h2 id="welcome-title" class="mt-0 mb-2 font-serif text-2xl font-bold text-vt-fg-1">{{ t('welcome_title') }}</h2>
-          <p class="m-0 text-vt-fg-2">{{ t('welcome_intro') }}</p>
+          <p class="m-0 text-vt-fg-2">
+            <span class="sm:hidden">{{ t('welcome_intro_mobile') }}</span>
+            <span class="hidden sm:inline">{{ t('welcome_intro') }}</span>
+          </p>
         </div>
 
         <div class="mb-5 grid gap-3 sm:grid-cols-2">
@@ -222,7 +252,7 @@ async function copyRssUrl() {
             <input v-model="welcomeRole" type="radio" name="welcome-role" :value="role" class="sr-only" />
             <span class="mb-2 block text-2xl" aria-hidden="true">{{ role === 'citizen' ? '💬' : '🤝' }}</span>
             <span class="mb-1 block font-serif text-lg font-bold text-vt-fg-1">{{ t(role === 'citizen' ? 'idx_role_citizen' : 'idx_role_volunteer') }}</span>
-            <span class="block text-sm leading-relaxed text-vt-fg-2">{{ t(role === 'citizen' ? 'welcome_citizen_desc' : 'welcome_volunteer_desc') }}</span>
+            <span class="hidden text-sm leading-relaxed text-vt-fg-2 sm:block">{{ t(role === 'citizen' ? 'welcome_citizen_desc' : 'welcome_volunteer_desc') }}</span>
             <span class="mt-2 block text-sm font-medium text-vt-democratic-red">{{ t(role === 'citizen' ? 'welcome_citizen_priority' : 'welcome_volunteer_priority') }}</span>
           </label>
         </div>
@@ -232,14 +262,14 @@ async function copyRssUrl() {
             <input v-model="rememberWelcomeRole" type="checkbox" class="mt-1 w-auto" />
             <span>
               <span class="block font-medium text-vt-fg-1">{{ t('welcome_remember_role') }}</span>
-              <span class="block text-sm text-vt-fg-3">{{ t('welcome_remember_role_hint') }}</span>
+              <span class="hidden text-sm text-vt-fg-3 sm:block">{{ t('welcome_remember_role_hint') }}</span>
             </span>
           </label>
           <label class="flex cursor-pointer items-start gap-2.5">
             <input v-model="hideWelcomePromptNextTime" type="checkbox" class="mt-1 w-auto" />
             <span>
               <span class="block font-medium text-vt-fg-1">{{ t('welcome_hide_prompt') }}</span>
-              <span class="block text-sm text-vt-fg-3">{{ t('welcome_hide_prompt_hint') }}</span>
+              <span class="hidden text-sm text-vt-fg-3 sm:block">{{ t('welcome_hide_prompt_hint') }}</span>
             </span>
           </label>
         </div>
@@ -251,131 +281,142 @@ async function copyRssUrl() {
       </section>
     </div>
 
-    <div class="vt-hero">
+    <div class="vt-hero" v-if="!selectedIssue">
       <div class="vt-hero-inner">
         <div class="hero-tag">{{ t('site_tagline') }}</div>
         <h1 class="hero-title">{{ t('idx_page_title') }}</h1>
-        <p class="hero-desc">{{ t('idx_page_subtitle') }}</p>
-        <div class="hero-btns">
+        <p class="hero-desc hidden sm:inline">{{ t('idx_page_subtitle') }}</p>
+        <div class="hero-btns hidden sm:flex sm:flex-wrap sm:gap-2 p-2">
           <a href="/about" class="btn btn-outline-white">{{ t('nav_about') }}</a>
           <button type="button" class="btn btn-outline-white" @click="copyRssUrl">{{ t('rss_subscribe_btn') }}</button>
         </div>
       </div>
     </div>
 
-    <main class="pt-9 pb-8">
+    <div v-else class="container mt-2 mb-2 flex items-center gap-2">
+      <!-- back to issues -->
+      <button type="button" class="btn btn-secondary" @click="backToIssues">
+        {{ t('back_to_issues') }}
+      </button>
+    </div>
+
+    <main class="pt-0 pb-4 sm:pt-2 sm:pb-4">
       <div class="container">
-        <div v-if="showForm" class="card mb-6">
-          <h2 class="mb-4 mt-0 font-bold">{{ t('idx_form_title') }}</h2>
+        <IssuePreviewCard v-if="selectedIssue" :issue="selectedIssue" />
 
-          <!-- 還在讀 session（onMounted 打 /api/me）：先不決定要出表單還是登入卡 -->
-          <p v-if="authState === 'loading'" class="m-0 text-muted">{{ t('loading') }}</p>
+        <template v-else>
+          <div v-if="showForm" class="card mb-6">
+            <h2 class="mb-4 mt-0 font-bold">{{ t('idx_form_title') }}</h2>
 
-          <!-- 未登入：建立議題需登入，表單不出現（守門在伺服器端） -->
-          <template v-else-if="authState === 'anonymous'">
-            <p class="mb-4 text-muted">{{ t('idx_login_desc') }}</p>
-            <SignInButtons callback-url="/" />
-            <p class="mt-4 mb-4 text-sm text-muted">{{ t('login_shared_account_hint') }}</p>
-            <button type="button" class="btn btn-secondary" @click="showForm = false">
-              {{ t('cancel') }}
-            </button>
-          </template>
+            <!-- 還在讀 session（onMounted 打 /api/me）：先不決定要出表單還是登入卡 -->
+            <p v-if="authState === 'loading'" class="m-0 text-muted">{{ t('loading') }}</p>
 
-          <template v-else>
-            <!-- 填表期間 session 過期：表單留著，只補一列重新登入 -->
-            <div v-if="sessionExpired" class="alert alert-warn mb-5">
-              <p class="mt-0 mb-3">{{ t('login_expired_hint') }}</p>
+            <!-- 未登入：建立議題需登入，表單不出現（守門在伺服器端） -->
+            <template v-else-if="authState === 'anonymous'">
+              <p class="mb-4 text-muted">{{ t('idx_login_desc') }}</p>
               <SignInButtons callback-url="/" />
-            </div>
-            <ModerationAppealNotice
-              v-if="moderationNotice"
-              :appeal-type="moderationNotice.appealType"
-              :report-id="moderationNotice.reportId"
-              :policy-code="moderationNotice.policyCode"
-              :rationale="moderationNotice.rationale"
-            />
-            <div class="form-group">
-              <label>
-                <span>{{ t('idx_label_title') }}</span>
-                <span class="label-hint">{{ t('idx_hint_title') }}</span>
-              </label>
-              <input v-model="title" type="text" :placeholder="t('idx_ph_title')" />
-              <ul v-if="similarIssues.length" class="mt-2 space-y-1 text-sm">
-                <li class="text-muted">{{ t('idx_similar_hint') }}</li>
-                <li v-for="s in similarIssues" :key="s.id">
-                  <a :href="`/issues/${s.id}`" target="_blank" rel="noopener noreferrer">{{ s.title }}</a>
-                </li>
-              </ul>
-            </div>
-            <div class="form-group">
-              <label>
-                <span>{{ t('idx_label_desc') }}</span>
-                <span class="label-hint">{{ t('idx_hint_desc') }}</span>
-              </label>
-              <textarea v-model="description" rows="3" :placeholder="t('idx_ph_desc')" />
-            </div>
-            <div class="form-group">
-              <label class="flex items-start gap-2 font-normal">
-                <input v-model="issueTosAgreed" type="checkbox" class="mt-1 w-auto" />
-                <span
-                  >{{ t('tos_agree_prefix') }}<a href="/terms" target="_blank" class="underline">{{ t('tos_terms_link') }}</a
-                  >{{ t('tos_agree_mid') }}<a href="/privacy" target="_blank" class="underline">{{ t('tos_privacy_link') }}</a
-                  >{{ t('tos_agree_suffix') }}</span
-                >
-              </label>
-            </div>
-            <div v-if="duplicateNameRequiresEmail" class="alert alert-info">
-              {{ t('duplicate_name_email_required', { email: session?.user.email || '' }) }}
-            </div>
-            <div v-else class="form-group">
-              <label class="flex items-start gap-2 font-normal">
-                <input v-model="issueShowEmail" type="checkbox" class="mt-1 w-auto" />
-                <span
-                  >{{ t('show_email_label', { email: session?.user.email || '' }) }} <span class="text-muted">{{ t('show_email_hint') }}</span></span
-                >
-              </label>
-            </div>
-            <div class="flex gap-2">
-              <button type="button" class="btn btn-primary" :disabled="submitting" @click="createIssue">
-                {{ t('idx_submit') }}
-              </button>
+              <p class="mt-4 mb-4 text-sm text-muted">{{ t('login_shared_account_hint') }}</p>
               <button type="button" class="btn btn-secondary" @click="showForm = false">
                 {{ t('cancel') }}
               </button>
-            </div>
-          </template>
-        </div>
+            </template>
 
-        <div class="mb-4 flex flex-wrap items-center gap-3">
-          <div class="section-label shrink-0">ISSUES</div>
-          <input
-            v-model="searchQuery"
-            type="search"
-            class="flex-1 min-w-40 rounded border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-vt-democratic-red/40"
-            :placeholder="t('idx_search_ph')"
-          />
-          <div class="flex gap-1 shrink-0">
-            <button v-for="s in ['newest', 'most', 'least'] as const" :key="s" type="button" class="btn btn-sm" :class="sortOrder === s ? 'btn-primary' : 'btn-secondary'" @click="sortOrder = s">
-              {{ t(s === 'newest' ? 'idx_sort_newest' : s === 'most' ? 'idx_sort_most' : 'idx_sort_least') }}
-            </button>
+            <template v-else>
+              <!-- 填表期間 session 過期：表單留著，只補一列重新登入 -->
+              <div v-if="sessionExpired" class="alert alert-warn mb-5">
+                <p class="mt-0 mb-3">{{ t('login_expired_hint') }}</p>
+                <SignInButtons callback-url="/" />
+              </div>
+              <ModerationAppealNotice
+                v-if="moderationNotice"
+                :appeal-type="moderationNotice.appealType"
+                :report-id="moderationNotice.reportId"
+                :policy-code="moderationNotice.policyCode"
+                :rationale="moderationNotice.rationale"
+              />
+              <div class="form-group">
+                <label>
+                  <span>{{ t('idx_label_title') }}</span>
+                  <span class="label-hint">{{ t('idx_hint_title') }}</span>
+                </label>
+                <input v-model="title" type="text" :placeholder="t('idx_ph_title')" />
+                <ul v-if="similarIssues.length" class="mt-2 space-y-1 text-sm">
+                  <li class="text-muted">{{ t('idx_similar_hint') }}</li>
+                  <li v-for="s in similarIssues" :key="s.id">
+                    <a :href="`/issues/${s.id}`" target="_blank" rel="noopener noreferrer">{{ s.title }}</a>
+                  </li>
+                </ul>
+              </div>
+              <div class="form-group">
+                <label>
+                  <span>{{ t('idx_label_desc') }}</span>
+                  <span class="label-hint">{{ t('idx_hint_desc') }}</span>
+                </label>
+                <textarea v-model="description" rows="3" :placeholder="t('idx_ph_desc')" />
+              </div>
+              <div class="form-group">
+                <label class="flex items-start gap-2 font-normal">
+                  <input v-model="issueTosAgreed" type="checkbox" class="mt-1 w-auto" />
+                  <span
+                    >{{ t('tos_agree_prefix') }}<a href="/terms" target="_blank" class="underline">{{ t('tos_terms_link') }}</a
+                    >{{ t('tos_agree_mid') }}<a href="/privacy" target="_blank" class="underline">{{ t('tos_privacy_link') }}</a
+                    >{{ t('tos_agree_suffix') }}</span
+                  >
+                </label>
+              </div>
+              <div v-if="duplicateNameRequiresEmail" class="alert alert-info">
+                {{ t('duplicate_name_email_required', { email: session?.user.email || '' }) }}
+              </div>
+              <div v-else class="form-group">
+                <label class="flex items-start gap-2 font-normal">
+                  <input v-model="issueShowEmail" type="checkbox" class="mt-1 w-auto" />
+                  <span
+                    >{{ t('show_email_label', { email: session?.user.email || '' }) }} <span class="text-muted">{{ t('show_email_hint') }}</span></span
+                  >
+                </label>
+              </div>
+              <div class="flex gap-2">
+                <button type="button" class="btn btn-primary" :disabled="submitting" @click="createIssue">
+                  {{ t('idx_submit') }}
+                </button>
+                <button type="button" class="btn btn-secondary" @click="showForm = false">
+                  {{ t('cancel') }}
+                </button>
+              </div>
+            </template>
           </div>
-        </div>
 
-        <div v-if="loading" class="empty">
-          <div class="empty-icon">⏳</div>
-          {{ t('loading') }}
-        </div>
-        <div v-else-if="!issues.length" class="empty">
-          <div class="empty-icon">🌱</div>
-          {{ t('idx_empty') }}
-        </div>
-        <div v-else-if="!filteredAndSortedIssues.length" class="empty">
-          <div class="empty-icon">🔍</div>
-          {{ t('idx_search_no_result', { keyword: searchQuery.trim() }) }}
-        </div>
-        <div v-else>
-          <IssueCard v-for="issue in filteredAndSortedIssues" :key="issue.id" :issue="issue" />
-        </div>
+          <div class="mb-4 flex flex-wrap items-center gap-3">
+            <div class="section-label shrink-0">ISSUES</div>
+            <input
+              v-model="searchQuery"
+              type="search"
+              class="flex-1 min-w-40 rounded border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-vt-democratic-red/40"
+              :placeholder="t('idx_search_ph')"
+            />
+            <div class="flex gap-1 shrink-0">
+              <button v-for="s in ['newest', 'most', 'least'] as const" :key="s" type="button" class="btn btn-sm" :class="sortOrder === s ? 'btn-primary' : 'btn-secondary'" @click="sortOrder = s">
+                {{ t(s === 'newest' ? 'idx_sort_newest' : s === 'most' ? 'idx_sort_most' : 'idx_sort_least') }}
+              </button>
+            </div>
+          </div>
+
+          <div v-if="loading" class="empty">
+            <div class="empty-icon">⏳</div>
+            {{ t('loading') }}
+          </div>
+          <div v-else-if="!issues.length" class="empty">
+            <div class="empty-icon">🌱</div>
+            {{ t('idx_empty') }}
+          </div>
+          <div v-else-if="!filteredAndSortedIssues.length" class="empty">
+            <div class="empty-icon">🔍</div>
+            {{ t('idx_search_no_result', { keyword: searchQuery.trim() }) }}
+          </div>
+          <div v-else>
+            <IssueCard v-for="issue in filteredAndSortedIssues" :key="issue.id" :issue="issue" @select="showIssuePreview" />
+          </div>
+        </template>
       </div>
     </main>
 
