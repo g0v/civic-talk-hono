@@ -955,7 +955,7 @@ async function submitOpinion() {
               </a>
               <span v-else-if="authState === 'anonymous'" class="text-sm text-muted">{{ t('op_csv_login_required') }}</span>
             </div>
-            <div class="mb-4 flex flex-wrap items-center gap-3">
+            <!--<div class="mb-4 flex flex-wrap items-center gap-3">
               <label class="flex items-center gap-2 text-sm text-muted">
                 <span>{{ t('op_sort_label') }}</span>
                 <select v-model="opinionSort" class="rounded border border-border bg-transparent px-2 py-1 text-sm" @change="changeOpinionSort">
@@ -964,7 +964,7 @@ async function submitOpinion() {
                 </select>
               </label>
               <span v-if="opinionsLoading" class="text-sm text-muted">{{ t('loading') }}</span>
-            </div>
+            </div> -->
             <div class="card mb-6">
               <h3 class="mt-0 mb-3 text-base">{{ t('op_submit_title') }}</h3>
               <template v-if="authState === 'loading'">
@@ -1021,11 +1021,21 @@ async function submitOpinion() {
               </template>
             </div>
             <div v-if="!opinions.length" class="empty">
-              <div class="empty-icon">💬</div>
+              <span v-if="opinionsLoading" class="text-sm text-muted">{{ t('loading') }}</span>
+              <div v-else class="empty-icon">💬</div>
               {{ t('op_empty') }}
             </div>
             <template v-else>
               <h3 class="mb-4 font-medium">{{ t('op_count_prefix') }}{{ opinions.length }}{{ t('op_count_suffix') }}</h3>
+              <div class="mb-4 flex flex-wrap items-center gap-3">
+                <label class="flex items-center gap-2 text-sm text-muted">
+                  <span>{{ t('op_sort_label') }}</span>
+                  <select v-model="opinionSort" class="rounded border border-border bg-transparent px-2 py-1 text-sm" @change="changeOpinionSort">
+                    <option value="recent">{{ t('op_sort_recent') }}</option>
+                    <option value="responses">{{ t('op_sort_responses') }}</option>
+                  </select>
+                </label>
+              </div> 
               <div v-for="o in opinions" :key="o.id" class="card mb-4">
                 <!-- 已確認違規（2）：完全隱藏，無展開選項 -->
                 <p v-if="o.abuse_flagged === 2" class="m-0 py-1 text-sm text-red">{{ t('flagged_confirmed') }}</p>
