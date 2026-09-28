@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { Carousel, Navigation, Pagination, Slide, type CarouselExposed } from 'vue3-carousel'
+import { Carousel, Navigation, Pagination, Slide } from 'vue3-carousel'
 import AppHeader from '../components/AppHeader.vue'
 import AppFooter from '../components/AppFooter.vue'
 import AuthorEmailLink from '../components/AuthorEmailLink.vue'
@@ -42,8 +42,8 @@ const opinionSort = ref<'recent' | 'responses'>('recent')
 const opinionsLoading = ref(false)
 const loading = ref(!props.initialDetail)
 const activeStep = ref<IssueStep | null>(props.initialStep ?? null)
-const carousel = ref<CarouselExposed | null>(null)
 const carouselIndex = ref(0)
+const lastBriefingSlideIndex = 3
 const carouselI18n = computed(() => ({
   ariaGallery: t('issue_carousel_aria'),
   ariaNextSlide: t('issue_carousel_next'),
@@ -216,8 +216,7 @@ const loginCallbackUrl = computed(() => {
 
 function handleCarouselDrag({ deltaX, deltaY }: { deltaX: number; deltaY: number }) {
   if (viewerRole.value !== 'citizen' || activeStep.value || Math.abs(deltaX) <= Math.abs(deltaY)) return
-  const data = carousel.value?.data
-  if (!data || data.currentSlide.value < data.maxSlide.value) {
+  if (carouselIndex.value < lastBriefingSlideIndex) {
     dragThresholdReached.value = false
     return
   }
@@ -319,8 +318,8 @@ watch(activeStep, () => {
 
 watch(viewerRole, role => {
   dragThresholdReached.value = false
-  if (role === 'citizen' && carouselIndex.value > 3) {
-    carouselIndex.value = 3
+  if (role === 'citizen' && carouselIndex.value > lastBriefingSlideIndex) {
+    carouselIndex.value = lastBriefingSlideIndex
   }
 })
 
@@ -618,10 +617,9 @@ async function submitOpinion() {
 
           <section v-if="!activeStep" class="issue-carousel-section">
             <Carousel
-              ref="carousel"
               v-model="carouselIndex"
               class="issue-carousel"
-              :class="{ 'issue-carousel-at-end': viewerRole === 'citizen' && carouselIndex === 3 }"
+              :class="{ 'issue-carousel-at-end': viewerRole === 'citizen' && carouselIndex === lastBriefingSlideIndex }"
               :items-to-show="1"
               :wrap-around="false"
               :prevent-excessive-dragging="true"
@@ -706,7 +704,7 @@ async function submitOpinion() {
                 </Navigation>
                 <Pagination />
                 <button
-                  v-if="viewerRole === 'citizen' && carouselIndex === 3"
+                  v-if="viewerRole === 'citizen' && carouselIndex === lastBriefingSlideIndex"
                   type="button"
                   class="carousel__next issue-carousel-next"
                   :aria-label="t('issue_carousel_next_comments')"
