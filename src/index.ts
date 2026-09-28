@@ -33,6 +33,7 @@ import TermsView from './views/Terms.vue'
 import ProfileView from './views/Profile.vue'
 import AppealsView from './views/Appeals.vue'
 import { readHomeIssuePreviewId } from './lib/homeIssuePreview'
+import { parseIssueStep } from './lib/issueNavigation'
 
 const app = new Hono<{ Bindings: AppBindings }>()
 
@@ -94,10 +95,11 @@ app.get('/issues/:id', async c => {
   const origin = new URL(c.req.url).origin
   const detail = await getIssueDetail(c.env.DB, id)
   if (!detail) return c.html(await notFoundHtml(origin), 404)
-  const html = await renderPage(IssueView, { issueId: id, initialDetail: detail }, headForIssue(detail.issue.title ?? '', detail.issue.description ?? '', id, origin), {
+  const initialStep = parseIssueStep(new URL(c.req.url).search)
+  const html = await renderPage(IssueView, { issueId: id, initialDetail: detail, initialStep }, headForIssue(detail.issue.title ?? '', detail.issue.description ?? '', id, origin), {
     hydrate: {
       page: 'issue',
-      state: { issueId: id, initialDetail: detail },
+      state: { issueId: id, initialDetail: detail, initialStep },
     },
   })
   return c.html(html)

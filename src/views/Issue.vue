@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { Carousel, Navigation, Pagination, Slide, type CarouselExposed } from 'vue3-carousel'
 import AppHeader from '../components/AppHeader.vue'
 import AppFooter from '../components/AppFooter.vue'
 import AuthorEmailLink from '../components/AuthorEmailLink.vue'
@@ -16,8 +17,7 @@ import { useViewerRole } from '../composables/useViewerRole'
 import type { Briefing, Issue, Material, Opinion } from '../db/queries'
 import { formatDate, useI18n } from '../l10n'
 import { renderSafeMarkdown } from '../markdown/renderSafeMarkdown'
-
-type TabName = 'briefing' | 'materials' | 'volunteer' | 'opinions'
+import { parseIssueStep, writeIssueStep, type IssueStep } from '../lib/issueNavigation'
 
 const props = defineProps<{
   issueId: number
@@ -27,6 +27,7 @@ const props = defineProps<{
     briefing: Briefing | null
     opinions: Opinion[]
   } | null
+  initialStep?: IssueStep | null
 }>()
 
 const { t, locale } = useI18n()
@@ -40,7 +41,16 @@ const opinions = ref<Opinion[]>(props.initialDetail?.opinions ?? [])
 const opinionSort = ref<'recent' | 'responses'>('recent')
 const opinionsLoading = ref(false)
 const loading = ref(!props.initialDetail)
-const activeTab = ref<TabName>('briefing')
+const activeStep = ref<IssueStep | null>(props.initialStep ?? null)
+const carousel = ref<CarouselExposed | null>(null)
+const carouselIndex = ref(0)
+const carouselI18n = computed(() => ({
+  ariaGallery: t('issue_carousel_aria'),
+  ariaNextSlide: t('issue_carousel_next'),
+  ariaPreviousSlide: t('issue_carousel_previous'),
+  ariaNavigateToSlide: t('issue_carousel_goto'),
+  itemXofY: t('issue_carousel_position'),
+}))
 const renderedBriefing = computed(() => {
   const current = briefing.value
   if (!current) return null
@@ -91,8 +101,6 @@ const duplicateNameRequiresEmail = computed(() => session.value?.hasDuplicateDis
 const sessionExpired = ref(false)
 // 志願者工具同樣需要登入；若操作時 session 過期，保留已填內容並引導重新登入。
 const volunteerSessionExpired = ref(false)
-// 登入後導回這一頁的意見分頁
-const loginCallbackUrl = computed(() => `/issues/${props.issueId}`)
 type ModerationNotice = { appealType: 'rejected_submission' | 'account_ban'; reportId?: number; policyCode?: string; rationale?: string }
 const volunteerModerationNotice = ref<ModerationNotice | null>(null)
 const opinionModerationNotice = ref<ModerationNotice | null>(null)
@@ -191,15 +199,39 @@ async function submitBrokenLinkReport(materialId: number) {
   }
 }
 
-const tabs = computed(() => {
-  const briefing = { id: 'briefing' as const, label: t('tab_briefing') }
-  const materials = { id: 'materials' as const, label: t('tab_materials') }
-  const volunteer = { id: 'volunteer' as const, label: t('tab_volunteer') }
-  const opinions = { id: 'opinions' as const, label: t('tab_opinions') }
+const dragThresholdReached = ref(false)
 
-  // 公民優先閱讀說明與參與意見；志願者維持素材、工具優先的工作流程。
-  return viewerRole.value === 'citizen' ? [briefing, opinions, materials, volunteer] : [briefing, materials, volunteer, opinions]
+function setIssueStep(step: IssueStep | null, replace = false) {
+  activeStep.value = step
+  if (!step) dragThresholdReached.value = false
+  if (typeof window === 'undefined') return
+  const nextUrl = writeIssueStep(window.location.href, step)
+  window.history[replace ? 'replaceState' : 'pushState']({}, '', nextUrl)
+}
+
+const loginCallbackUrl = computed(() => {
+  if (typeof window !== 'undefined') return `${window.location.pathname}${window.location.search}`
+  return `/issues/${props.issueId}${props.initialStep ? `?step=${props.initialStep}` : ''}`
 })
+
+function handleCarouselDrag({ deltaX, deltaY }: { deltaX: number; deltaY: number }) {
+  if (viewerRole.value !== 'citizen' || activeStep.value || Math.abs(deltaX) <= Math.abs(deltaY)) return
+  const data = carousel.value?.data
+  if (!data || data.currentSlide.value < data.maxSlide.value) {
+    dragThresholdReached.value = false
+    return
+  }
+  if (deltaX < -80 && !dragThresholdReached.value) {
+    dragThresholdReached.value = true
+    setIssueStep('comments')
+  }
+}
+
+function handlePopState() {
+  const nextStep = parseIssueStep(window.location.search)
+  activeStep.value = nextStep
+  if (!nextStep) dragThresholdReached.value = false
+}
 
 function stanceLabel(s: string) {
   if (s === 'pro') return t('stance_pro')
@@ -265,19 +297,31 @@ async function refreshViewerOpinions() {
 
 onMounted(() => {
   if (!props.initialDetail) void loadIssue()
+  window.addEventListener('popstate', handlePopState)
   void refreshViewerOpinions()
   void nextTick(() => renderPolis())
 })
 
+onBeforeUnmount(() => {
+  window.removeEventListener('popstate', handlePopState)
+})
+
 watch(
-  () => [issue.value?.polis_id, issue.value?.id, activeTab.value, locale.value] as const,
+  () => [issue.value?.polis_id, issue.value?.id, activeStep.value, locale.value] as const,
   () => {
-    if (activeTab.value === 'briefing') void nextTick(() => renderPolis())
+    if (!activeStep.value) void nextTick(() => renderPolis())
   }
 )
 
-watch(activeTab, () => {
+watch(activeStep, () => {
   if (typeof window !== 'undefined') window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+})
+
+watch(viewerRole, role => {
+  dragThresholdReached.value = false
+  if (role === 'citizen' && carouselIndex.value > 3) {
+    carouselIndex.value = 3
+  }
 })
 
 function renderPolis() {
@@ -417,7 +461,7 @@ async function submitNarrative() {
     narrative.value = ''
     toast.value?.show(t('vol_toast_narrative_ok'))
     await loadIssue()
-    activeTab.value = 'briefing'
+    setIssueStep(null)
   } else toast.value?.show(t('vol_toast_save_fail'))
 }
 
@@ -546,100 +590,145 @@ async function submitOpinion() {
 </script>
 
 <template>
-  <div>
+  <div :class="{ 'issue-carousel-page': !activeStep }">
     <AppHeader current="issue" />
 
-    <main class="py-8">
-      <div class="container">
+    <main class="py-8" :class="{ 'issue-main-carousel': !activeStep }">
+      <div class="container" :class="{ 'issue-container-carousel': !activeStep }">
         <div v-if="loading && !issue" class="empty">
           <div class="empty-icon">⏳</div>
           {{ t('loading') }}
         </div>
 
         <template v-else-if="issue">
-          <div class="mb-6">
-            <StatusBadge :status="issue.status" />
-            <h1 class="mt-3 mb-2 font-serif text-3xl font-bold">
+          <div class="issue-page-heading mb-6">
+            <div class="hidden sm:flex">
+              <StatusBadge :status="issue.status" />
+            </div>
+            <h1 class="mt-3 mb-2 font-serif text-xl font-bold">
               {{ issue.abuse_flagged === 3 ? t('moderation_hidden_placeholder') : issue.title }}
             </h1>
             <!-- <p v-if="issue.abuse_flagged !== 3 && issue.description" class="mt-0 mb-3 whitespace-pre-line text-muted">{{ issue.description }}</p> -->
-            <p class="m-0 text-sm text-muted">
+            <p class="m-0 text-sm text-muted" v-show="!activeStep">
               {{ t('issue_created') }} {{ formatDate(issue.created_at, locale) }} · {{ materials.length }} {{ t('issue_materials_unit') }} · {{ t('issue_author_label') }}：{{
                 issue.author_name || t('author_system')
               }}<template v-if="issue.author_email"> <AuthorEmailLink :email="issue.author_email" :name="issue.author_name" /></template>
             </p>
           </div>
 
-          <div class="tabs">
-            <button v-for="tab in tabs" :key="tab.id" type="button" class="tab" :class="{ active: activeTab === tab.id }" @click="activeTab = tab.id">
-              {{ tab.label }}
-            </button>
-          </div>
-
-          <!-- Briefing -->
-          <section v-show="activeTab === 'briefing'">
-            <template v-if="!briefing">
-              <div class="alert alert-warn mb-4">{{ t('brief_no_briefing_alert') }}</div>
-              <div class="empty">
-                <div class="empty-icon">📝</div>
-                {{ t('brief_go_volunteer') }}
-              </div>
-              <div class="mt-4 flex gap-2">
-                <a :href="`/contribute/${issueId}`" class="btn btn-primary">{{ t('brief_submit_material') }}</a>
-                <button type="button" class="btn btn-secondary" @click="activeTab = 'volunteer'">
-                  {{ t('tab_volunteer') }}
-                </button>
-              </div>
-            </template>
-            <!-- 已確認違規：隱藏 briefing 內容 -->
-            <template v-else-if="briefing.abuse_flagged === 2">
-              <div class="alert alert-error">{{ t('flagged_confirmed') }}</div>
-            </template>
-            <!-- 正常或待審核：顯示 briefing -->
-            <template v-else>
-              <h2 class="mt-0 mb-3 font-serif text-xl">{{ t('brief_overview') }}</h2>
-              <div class="markdown-content mb-6 leading-relaxed" v-html="renderedBriefing?.narrative ?? ''" />
-              <div class="grid-2 mb-6">
-                <div class="card">
-                  <h3 class="mt-0 mb-2 text-base">{{ t('brief_consensus') }}</h3>
-                  <div class="markdown-content text-base sm:text-sm" v-html="renderedBriefing?.consensus ?? ''" />
-                </div>
-                <div class="card">
-                  <h3 class="mt-0 mb-2 text-base">{{ t('brief_disputes') }}</h3>
-                  <div class="markdown-content text-base sm:text-sm" v-html="renderedBriefing?.disputes ?? ''" />
-                </div>
-              </div>
-              <div class="card mb-6">
-                <h3 class="mt-0 mb-2 text-base">{{ t('brief_positions') }}</h3>
-                <div class="markdown-content text-base sm:text-sm" v-html="renderedBriefing?.positions ?? ''" />
-              </div>
-              <div class="alert alert-info mb-4">
-                {{ t('brief_opinion_alert') }}
-                <br />
-                <button type="button" class="btn btn-primary btn-sm mt-2.5" @click="activeTab = 'opinions'">
-                  {{ t('brief_go_opinion') }}
-                </button>
-              </div>
-              <p class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
-                <span
-                  >{{ t('brief_version_prefix') }}{{ briefing.version }}，{{ t('brief_updated') }} {{ formatDate(briefing.created_at, locale) }} · {{ t('brief_author_label') }}：{{
-                    briefing.author_name || t('author_system')
-                  }}
-                  <template v-if="briefing.author_email">
-                    <AuthorEmailLink :email="briefing.author_email" :name="briefing.author_name" />
+          <section v-if="!activeStep" class="issue-carousel-section">
+            <Carousel
+              ref="carousel"
+              v-model="carouselIndex"
+              class="issue-carousel"
+              :class="{ 'issue-carousel-at-end': viewerRole === 'citizen' && carouselIndex === 3 }"
+              :items-to-show="1"
+              :wrap-around="false"
+              :prevent-excessive-dragging="true"
+              :touch-drag="true"
+              :mouse-drag="true"
+              :i18n="carouselI18n"
+              @drag="handleCarouselDrag"
+            >
+              <Slide :index="0">
+                <article class="issue-briefing-card card w-full">
+                  <template v-if="!briefing">
+                    <div class="alert alert-warn mb-4">{{ t('brief_no_briefing_alert') }}</div>
+                    <div class="empty"><div class="empty-icon">📝</div>{{ t('brief_go_volunteer') }}</div>
+                    <div class="mt-4 flex gap-2">
+                      <a :href="`/contribute/${issueId}`" class="btn btn-primary">{{ t('brief_submit_material') }}</a>
+                      <button type="button" class="btn btn-secondary" @click="setIssueStep('volunteer')">{{ t('tab_volunteer') }}</button>
+                    </div>
                   </template>
-                </span>
-                <button v-if="authState === 'signed-in' && !briefing.abuse_flagged" type="button" class="ml-auto text-xs text-muted hover:text-red" @click="openReport('briefing', briefing.id)">
-                  {{ t('report_btn') }}
+                  <template v-else-if="briefing.abuse_flagged === 2">
+                    <div class="alert alert-error">{{ t('flagged_confirmed') }}</div>
+                  </template>
+                  <template v-else>
+                    <h2 class="mt-0 mb-3 font-serif text-xl">{{ t('brief_overview') }}</h2>
+                    <div class="markdown-content leading-relaxed" v-html="renderedBriefing?.narrative ?? ''" />
+                    <div id="polis-section" class="my-8" style="display: none" />
+                  </template>
+                </article>
+              </Slide>
+              <Slide :index="1">
+                <article class="issue-briefing-card card w-full">
+                  <h2 class="mt-0 mb-3 font-serif text-xl">{{ t('brief_consensus') }}</h2>
+                  <div v-if="briefing && briefing.abuse_flagged !== 2" class="markdown-content leading-relaxed" v-html="renderedBriefing?.consensus ?? ''" />
+                  <div v-else class="empty">{{ t('brief_no_briefing_alert') }}</div>
+                </article>
+              </Slide>
+              <Slide :index="2">
+                <article class="issue-briefing-card card w-full">
+                  <h2 class="mt-0 mb-3 font-serif text-xl">{{ t('brief_disputes') }}</h2>
+                  <div v-if="briefing && briefing.abuse_flagged !== 2" class="markdown-content leading-relaxed" v-html="renderedBriefing?.disputes ?? ''" />
+                  <div v-else class="empty">{{ t('brief_no_briefing_alert') }}</div>
+                </article>
+              </Slide>
+              <Slide :index="3">
+                <article class="issue-briefing-card card w-full">
+                  <h2 class="mt-0 mb-3 font-serif text-xl">{{ t('brief_positions') }}</h2>
+                  <div v-if="briefing && briefing.abuse_flagged !== 2" class="markdown-content leading-relaxed" v-html="renderedBriefing?.positions ?? ''" />
+                  <div v-else class="empty">{{ t('brief_no_briefing_alert') }}</div>
+                  <template v-if="briefing && briefing.abuse_flagged !== 2">
+                    <p class="mt-6 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
+                      <span>{{ t('brief_version_prefix') }}{{ briefing.version }}，{{ t('brief_updated') }} {{ formatDate(briefing.created_at, locale) }} · {{ t('brief_author_label') }}：{{ briefing.author_name || t('author_system') }}</span>
+                      <AuthorEmailLink v-if="briefing.author_email" :email="briefing.author_email" :name="briefing.author_name" />
+                      <button v-if="authState === 'signed-in' && !briefing.abuse_flagged" type="button" class="text-xs text-muted hover:text-red" @click="openReport('briefing', briefing.id)">
+                        {{ t('report_btn') }}
+                      </button>
+                    </p>
+                    <div v-if="briefing.abuse_flagged === 1" class="mt-2 text-sm text-amber-600">{{ t('flagged_warning') }}</div>
+                  </template>
+                </article>
+              </Slide>
+              <Slide v-if="viewerRole === 'volunteer'" :index="4">
+                <article class="issue-briefing-card card w-full">
+                  <h2 class="mt-0 mb-3 font-serif text-xl">{{ t('tab_volunteer') }}</h2>
+                  <div class="flex flex-col gap-3">
+                    <button type="button" class="btn btn-primary" @click="setIssueStep('comments')">{{ t('tab_opinions') }}</button>
+                    <button type="button" class="btn btn-secondary" @click="setIssueStep('materials')">{{ t('tab_materials') }}</button>
+                    <button type="button" class="btn btn-secondary" @click="setIssueStep('volunteer')">{{ t('tab_volunteer') }}</button>
+                  </div>
+                </article>
+              </Slide>
+              <template #addons>
+                <Navigation>
+                  <template #prev>
+                    <svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <path d="m15 18-6-6 6-6" />
+                    </svg>
+                  </template>
+                  <template #next>
+                    <svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <path d="m9 18 6-6-6-6" />
+                    </svg>
+                  </template>
+                </Navigation>
+                <Pagination />
+                <button
+                  v-if="viewerRole === 'citizen' && carouselIndex === 3"
+                  type="button"
+                  class="carousel__next issue-carousel-next"
+                  :aria-label="t('issue_carousel_next_comments')"
+                  :title="t('issue_carousel_next_comments')"
+                  @click="setIssueStep('comments')"
+                >
+                  <svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="m9 18 6-6-6-6" />
+                  </svg>
                 </button>
-              </p>
-              <div v-if="briefing.abuse_flagged === 1" class="mt-2 text-sm text-amber-600">{{ t('flagged_warning') }}</div>
-            </template>
-            <div id="polis-section" class="my-8" style="display: none" />
+              </template>
+            </Carousel>
           </section>
-
-          <!-- Materials -->
-          <section v-show="activeTab === 'materials'">
+          <div v-else>
+            <!-- back to issue details -->
+            <div class="mb-4 flex items-center gap-3">
+              <button type="button" class="btn btn-ghost btn-sm" @click="setIssueStep(null)">
+                {{ t('contrib_back') }}
+              </button>
+            </div>
+          </div>
+          <section v-show="activeStep === 'materials'">
             <div class="mb-4 flex items-center justify-between gap-3">
               <h2 class="m-0 font-serif text-xl">{{ t('mat_title') }}</h2>
               <a :href="`/contribute/${issueId}`" class="btn btn-primary btn-sm">{{ t('mat_submit_btn') }}</a>
@@ -699,7 +788,7 @@ async function submitOpinion() {
           </section>
 
           <!-- Volunteer -->
-          <section v-show="activeTab === 'volunteer'">
+          <section v-show="activeStep === 'volunteer'">
             <h2 class="mt-0 mb-2 font-serif text-xl">{{ t('vol_title') }}</h2>
             <p class="mb-6 text-muted">{{ t('vol_intro') }}</p>
             <p v-if="authState === 'loading'" class="m-0 text-muted">{{ t('loading') }}</p>
@@ -822,7 +911,7 @@ async function submitOpinion() {
           </section>
 
           <!-- Opinions -->
-          <section v-show="activeTab === 'opinions'">
+          <section v-show="activeStep === 'comments'">
             <h2 class="m-0 font-serif text-xl">{{ t('op_title') }}</h2>
             <div class="alert alert-info mb-4" v-html="t('op_alert')" />
             <div class="mb-6 flex flex-wrap items-center gap-2">
