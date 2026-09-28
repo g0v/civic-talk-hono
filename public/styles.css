@@ -898,9 +898,6 @@
   .py-4 {
     padding-block: calc(var(--spacing) * 4);
   }
-  .py-8 {
-    padding-block: calc(var(--spacing) * 8);
-  }
   .py-9 {
     padding-block: calc(var(--spacing) * 9);
   }
@@ -1188,6 +1185,9 @@
     .hover\:text-red:hover {
       color: var(--color-red);
     }
+    .hover\:text-teal:hover {
+      color: var(--color-teal);
+    }
     .hover\:no-underline:hover {
       text-decoration-line: none;
     }
@@ -1249,11 +1249,26 @@
     .sm\:inline {
       display: inline;
     }
+    .sm\:max-w-sm {
+      max-width: var(--container-sm);
+    }
     .sm\:grid-cols-2 {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
+    .sm\:flex-row {
+      flex-direction: row;
+    }
     .sm\:flex-wrap {
       flex-wrap: wrap;
+    }
+    .sm\:items-end {
+      align-items: flex-end;
+    }
+    .sm\:justify-between {
+      justify-content: space-between;
+    }
+    .sm\:justify-center {
+      justify-content: center;
     }
     .sm\:gap-2 {
       gap: calc(var(--spacing) * 2);
@@ -1703,7 +1718,7 @@
     box-shadow: var(--shadow-sm);
   }
   .form-group {
-    margin-bottom: 1rem;
+    margin-bottom: .25rem;
   }
   .form-group label {
     display: block;
@@ -2217,6 +2232,22 @@ html.dark .alert-warn {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+}
+@layer components {
+  .comment-celebration-emoji {
+    display: inline-block;
+    font-size: 3rem;
+    line-height: 1;
+    animation: comment-celebration-bounce 1s ease-in-out infinite;
+  }
+  @keyframes comment-celebration-bounce {
+    0%, 100% {
+      transform: translateY(0) rotate(-6deg);
+    }
+    50% {
+      transform: translateY(-0.6rem) rotate(6deg);
+    }
   }
 }
 @property --tw-rotate-x {

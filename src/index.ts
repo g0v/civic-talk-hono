@@ -33,7 +33,7 @@ import TermsView from './views/Terms.vue'
 import ProfileView from './views/Profile.vue'
 import AppealsView from './views/Appeals.vue'
 import { readHomeIssuePreviewId } from './lib/homeIssuePreview'
-import { parseIssueStep } from './lib/issueNavigation'
+import { parseIssueCommentAction, parseIssueStep } from './lib/issueNavigation'
 
 const app = new Hono<{ Bindings: AppBindings }>()
 
@@ -92,14 +92,18 @@ app.get('/about', async c => {
 app.get('/issues/:id', async c => {
   const id = Number.parseInt(c.req.param('id'), 10)
   if (!Number.isFinite(id) || id <= 0) return c.redirect('/', 302)
-  const origin = new URL(c.req.url).origin
+  const requestUrl = new URL(c.req.url)
+  const origin = requestUrl.origin
   const detail = await getIssueDetail(c.env.DB, id)
   if (!detail) return c.html(await notFoundHtml(origin), 404)
-  const initialStep = parseIssueStep(new URL(c.req.url).search)
-  const html = await renderPage(IssueView, { issueId: id, initialDetail: detail, initialStep }, headForIssue(detail.issue.title ?? '', detail.issue.description ?? '', id, origin), {
+  const initialStep = parseIssueStep(requestUrl.search)
+  const initialCommentAction = parseIssueCommentAction(requestUrl.search)
+  const initialCommentSearch = requestUrl.searchParams.get('search') ?? ''
+  const issueProps = { issueId: id, initialDetail: detail, initialStep, initialCommentAction, initialCommentSearch }
+  const html = await renderPage(IssueView, issueProps, headForIssue(detail.issue.title ?? '', detail.issue.description ?? '', id, origin), {
     hydrate: {
       page: 'issue',
-      state: { issueId: id, initialDetail: detail, initialStep },
+      state: issueProps,
     },
   })
   return c.html(html)
