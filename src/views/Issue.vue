@@ -200,6 +200,37 @@ async function submitBrokenLinkReport(materialId: number) {
 }
 
 const dragThresholdReached = ref(false)
+let carouselDragEndListening = false
+let carouselDragEndFrame: number | null = null
+
+function clearCarouselDragEndListeners() {
+  if (!carouselDragEndListening || typeof document === 'undefined') return
+  document.removeEventListener('mouseup', finishCarouselDrag)
+  document.removeEventListener('touchend', finishCarouselDrag)
+  carouselDragEndListening = false
+}
+
+function finishCarouselDrag() {
+  clearCarouselDragEndListeners()
+  if (typeof window === 'undefined') return
+
+  // vue3-carousel 會攔截滑鼠拖曳後緊接著產生的 click；等該 click 結束再切換版面，
+  // 避免 carousel 過早卸載，讓攔截器殘留並吃掉 comments 的第一個按鈕 click。
+  carouselDragEndFrame = window.requestAnimationFrame(() => {
+    carouselDragEndFrame = null
+    const shouldEnterComments =
+      dragThresholdReached.value && viewerRole.value === 'citizen' && !activeStep.value && carouselIndex.value === lastBriefingSlideIndex
+    dragThresholdReached.value = false
+    if (shouldEnterComments) setIssueStep('comments')
+  })
+}
+
+function listenForCarouselDragEnd() {
+  if (carouselDragEndListening || typeof document === 'undefined') return
+  carouselDragEndListening = true
+  document.addEventListener('mouseup', finishCarouselDrag, { passive: true })
+  document.addEventListener('touchend', finishCarouselDrag, { passive: true })
+}
 
 function setIssueStep(step: IssueStep | null, replace = false) {
   activeStep.value = step
@@ -215,15 +246,17 @@ const loginCallbackUrl = computed(() => {
 })
 
 function handleCarouselDrag({ deltaX, deltaY }: { deltaX: number; deltaY: number }) {
-  if (viewerRole.value !== 'citizen' || activeStep.value || Math.abs(deltaX) <= Math.abs(deltaY)) return
+  if (viewerRole.value !== 'citizen' || activeStep.value) return
+  if (Math.abs(deltaX) <= Math.abs(deltaY)) {
+    dragThresholdReached.value = false
+    return
+  }
   if (carouselIndex.value < lastBriefingSlideIndex) {
     dragThresholdReached.value = false
     return
   }
-  if (deltaX < -80 && !dragThresholdReached.value) {
-    dragThresholdReached.value = true
-    setIssueStep('comments')
-  }
+  dragThresholdReached.value = deltaX < -80
+  if (dragThresholdReached.value) listenForCarouselDragEnd()
 }
 
 function handlePopState() {
@@ -303,6 +336,8 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('popstate', handlePopState)
+  clearCarouselDragEndListeners()
+  if (carouselDragEndFrame !== null) window.cancelAnimationFrame(carouselDragEndFrame)
 })
 
 watch(
