@@ -339,6 +339,16 @@ async function copyPrompt(type: string) {
   }
 }
 
+async function copyRssUrl() {
+  const url = `${window.location.origin}/issues/${props.issueId}/rss.xml`
+  try {
+    await navigator.clipboard.writeText(url)
+    toast.value?.show(t('rss_copy_ok'))
+  } catch {
+    toast.value?.show(t('rss_copy_fail', { url }))
+  }
+}
+
 async function submitSummarize() {
   const body = {
     consensus: consensus.value.trim(),
@@ -568,7 +578,7 @@ async function submitOpinion() {
                 issue.author_name || t('author_system')
               }}<template v-if="issue.author_email"> <AuthorEmailLink :email="issue.author_email" :name="issue.author_name" /></template>
             </p>
-            <a :href="`/issues/${issueId}/rss.xml`" class="btn btn-secondary btn-sm mt-3 inline-flex">{{ t('issue_rss_subscribe') }}</a>
+            <button type="button" class="btn btn-secondary btn-sm mt-3 inline-flex" @click="copyRssUrl">{{ t('issue_rss_subscribe') }}</button>
           </div>
 
           <div class="tabs">
