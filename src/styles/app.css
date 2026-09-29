@@ -495,8 +495,8 @@
     left: 50%;
     bottom: 24px;
     transform: translateX(-50%) translateY(120%);
-    background: var(--color-ink);
-    color: white;
+    background: var(--color-vt-bg-inverse);
+    color: var(--color-vt-fg-inverse);
     padding: 0.7rem 1.15rem;
     border-radius: var(--radius-pill);
     font-size: 0.9375rem;
