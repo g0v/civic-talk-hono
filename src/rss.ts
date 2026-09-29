@@ -7,7 +7,7 @@
  * - 議題連結 → /issues/:id；素材連結 → /issues/:issue_id/source/:id
  */
 
-import { listForRss } from './db/queries'
+import { listForRss, listIssueActivityForRss, type Issue } from './db/queries'
 
 /** RSS Cache TTL（秒） */
 const RSS_CACHE_TTL = 3600
@@ -74,6 +74,43 @@ ${itemXml}
 </rss>`
 }
 
+/** 生成單一議題的 RSS 2.0 XML，只包含素材與公民意見。 */
+export async function generateIssueRssFeed(db: D1Database, issue: Pick<Issue, 'id' | 'title'>, origin: string): Promise<string> {
+  const items = await listIssueActivityForRss(db, issue.id)
+  const issueTitle = issue.title || '（無標題議題）'
+  const lastBuildDate = items.length > 0 ? toRfc822(items[0].created_at) : new Date().toUTCString()
+
+  const itemXml = items
+    .map(item => {
+      const titleRaw = item.title ?? (item.type === 'material' ? '素材投稿' : '公民意見')
+      const descRaw = sanitize(item.description ?? '').slice(0, 300)
+      const link = item.type === 'material' ? `${origin}/issues/${issue.id}/source/${item.id}` : `${origin}/issues/${issue.id}/comment/${item.id}`
+      const category = item.type === 'material' ? '素材' : '公民意見'
+      return `    <item>
+      <title>${xmlEscape(sanitize(titleRaw))}</title>
+      <link>${link}</link>
+      <description>${xmlEscape(descRaw)}</description>
+      <category>${category}</category>
+      <pubDate>${toRfc822(item.created_at)}</pubDate>
+      <guid isPermaLink="true">${link}</guid>
+    </item>`
+    })
+    .join('\n')
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Civic Talk — ${xmlEscape(sanitize(issueTitle))}</title>
+    <link>${origin}/issues/${issue.id}</link>
+    <description>追蹤「${xmlEscape(sanitize(issueTitle))}」的素材與公民意見更新</description>
+    <language>zh-TW</language>
+    <atom:link href="${origin}/issues/${issue.id}/rss.xml" rel="self" type="application/rss+xml" />
+    <lastBuildDate>${lastBuildDate}</lastBuildDate>
+${itemXml}
+  </channel>
+</rss>`
+}
+
 // Cloudflare Workers 執行環境有 caches.default；DOM lib 的 CacheStorage 型別不含此欄位。
 // type 宣告不執行，故留頂層；實際的 caches 存取改到 handleRss 內部（惰性、每次請求）。
 type CFCaches = typeof caches & { readonly default: Cache }
@@ -88,7 +125,7 @@ type CFCaches = typeof caches & { readonly default: Cache }
  * 注意：本機 wrangler dev 的 Cache API 可能與正式行為不同；
  * caches.default 的存取與使用都在 try/catch 內，dev 環境失敗時安靜跳過。
  */
-export async function handleRss(db: D1Database, request: Request, executionCtx: { waitUntil(promise: Promise<unknown>): void }): Promise<Response> {
+async function handleFeed(request: Request, executionCtx: { waitUntil(promise: Promise<unknown>): void }, generate: (origin: string) => Promise<string>): Promise<Response> {
   // 1. 惰性取 caches.default（每次請求內存取，避免模組頂層初始化失敗）
   const cacheKey = new Request(request.url)
   try {
@@ -101,7 +138,7 @@ export async function handleRss(db: D1Database, request: Request, executionCtx: 
 
   // 2. 生成 RSS
   const origin = new URL(request.url).origin
-  const xml = await generateRssFeed(db, origin)
+  const xml = await generate(origin)
 
   const response = new Response(xml, {
     status: 200,
@@ -120,4 +157,17 @@ export async function handleRss(db: D1Database, request: Request, executionCtx: 
   }
 
   return response
+}
+
+export async function handleRss(db: D1Database, request: Request, executionCtx: { waitUntil(promise: Promise<unknown>): void }): Promise<Response> {
+  return handleFeed(request, executionCtx, origin => generateRssFeed(db, origin))
+}
+
+export async function handleIssueRss(
+  db: D1Database,
+  request: Request,
+  executionCtx: { waitUntil(promise: Promise<unknown>): void },
+  issue: Pick<Issue, 'id' | 'title'>
+): Promise<Response> {
+  return handleFeed(request, executionCtx, origin => generateIssueRssFeed(db, issue, origin))
 }
