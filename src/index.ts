@@ -67,8 +67,10 @@ app.get('/contribute.html', c => {
 // ── RSS feed ──────────────────────────────────────────────────
 app.get('/rss.xml', c => handleRss(c.env.DB, c.req.raw, c.executionCtx))
 app.get('/issues/:id/rss.xml', async c => {
-  const id = Number.parseInt(c.req.param('id'), 10)
-  if (!Number.isFinite(id) || id <= 0) return c.notFound()
+  const rawId = c.req.param('id')
+  if (!/^\d+$/.test(rawId)) return c.notFound()
+  const id = Number.parseInt(rawId, 10)
+  if (!Number.isSafeInteger(id) || id <= 0) return c.notFound()
   const issue = await getIssue(c.env.DB, id)
   // AI 審查隱藏的議題不可透過 feed 間接揭露其名稱或子內容。
   if (!issue || issue.abuse_flagged === 3) return c.notFound()

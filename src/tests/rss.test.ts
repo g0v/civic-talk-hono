@@ -1,7 +1,16 @@
-import { describe, expect, it } from 'vite-plus/test'
+import { describe, expect, it, vi } from 'vite-plus/test'
+import app from '../index'
 import { generateIssueRssFeed } from '../rss'
 
 describe('單一議題 RSS', () => {
+  it('拒絕部分數字的議題 ID，且不查詢 D1', async () => {
+    const prepare = vi.fn()
+    const response = await app.request('https://civic.example/issues/7abc/rss.xml', undefined, { DB: { prepare } } as never)
+
+    expect(response.status).toBe(404)
+    expect(prepare).not.toHaveBeenCalled()
+  })
+
   it('只輸出該議題的素材與公民意見，並使用各自的永久連結', async () => {
     const binds: unknown[][] = []
     const db = {
