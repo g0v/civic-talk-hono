@@ -848,11 +848,17 @@ export interface RssFeedItem {
   type: 'issue' | 'material'
   id: number
   title: string | null
-  /** 議題的 description 或素材的 content（前 300 字） */
+  /** 議題的 description 或素材的 content */
   description: string | null
   /** 素材所屬議題 ID；type === 'issue' 時為 NULL */
   issue_id: number | null
   created_at: string
+}
+
+/** 單一議題 RSS 的子內容；不包含議題本身，且 issue_id 必定存在。 */
+export type IssueRssActivityItem = Omit<RssFeedItem, 'type' | 'issue_id'> & {
+  type: 'material' | 'opinion'
+  issue_id: number
 }
 
 /** RSS 用：取最新 `limit` 筆（議題＋素材混合，按 created_at DESC） */
@@ -872,6 +878,25 @@ export async function listForRss(db: D1Database, limit = 20): Promise<RssFeedIte
       )
       .bind(limit)
       .all<RssFeedItem>()
+  ).results
+}
+
+/** 單一議題 RSS 用：取該議題所有公開可見的素材與公民意見，按建立時間排序。 */
+export async function listIssueActivityForRss(db: D1Database, issueId: number): Promise<IssueRssActivityItem[]> {
+  return (
+    await db
+      .prepare(
+        `SELECT 'material' AS type, id, source_name AS title, content AS description, issue_id, created_at
+         FROM ct_materials
+         WHERE issue_id = ? AND abuse_flagged IN (0, 1)
+         UNION ALL
+         SELECT 'opinion' AS type, id, NULL AS title, summary AS description, issue_id, created_at
+         FROM ct_opinions
+         WHERE issue_id = ? AND abuse_flagged IN (0, 1)
+         ORDER BY created_at DESC`
+      )
+      .bind(issueId, issueId)
+      .all<IssueRssActivityItem>()
   ).results
 }
 
