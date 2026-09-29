@@ -422,6 +422,7 @@ export const messages = {
   // Footer 連結（#27）
   footer_terms: '使用條款',
   footer_privacy: '隱私權政策',
+  footer_feedback: '網站意見回報',
   // 隱私權政策頁與使用條款頁（#27）
   privacy_page_title: '隱私權政策',
   terms_page_title: '使用條款',

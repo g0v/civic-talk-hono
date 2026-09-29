@@ -430,6 +430,7 @@ export const messages = {
   // Footer links (#27)
   footer_terms: 'Terms',
   footer_privacy: 'Privacy',
+  footer_feedback: 'Feedback',
   // Privacy policy and Terms of Service pages (#27)
   privacy_page_title: 'Privacy Policy',
   terms_page_title: 'Terms of Service',
