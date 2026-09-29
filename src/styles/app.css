@@ -1,6 +1,7 @@
 /* Civic Talk — Tailwind v4 source → public/styles.css */
 
 @import 'tailwindcss' source(none);
+@import 'vue3-carousel/carousel.css';
 @custom-variant dark (&:where(.dark, .dark *));
 
 /* Utilities only need to scan Vue templates; component CSS below is always emitted. */
@@ -314,7 +315,7 @@
   }
 
   .form-group {
-    margin-bottom: 1rem;
+    margin-bottom: .25rem;
   }
 
   .form-group label {
@@ -747,6 +748,50 @@
   .markdown-content tbody tr:nth-child(even) {
     background: color-mix(in srgb, var(--color-vt-bg-2) 55%, transparent);
   }
+
+}
+.issue-carousel .carousel__slide {
+  align-items: flex-start;
+}
+
+.issue-briefing-card {
+  max-height: 65svh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.carousel__pagination {
+  position: static;
+  transform: none;
+  margin-top: var(--spacing-vt-3);
+}
+
+.carousel__pagination-button {
+  width: var(--spacing-vt-2);
+  height: var(--spacing-vt-2);
+  border-radius: var(--radius-vt-full);
+  background: var(--color-vt-fg-3);
+  opacity: 0.65;
+}
+
+.carousel__pagination-button--active {
+  background: var(--color-vt-democratic-red);
+  opacity: 1;
+}
+
+.carousel__pagination-button:focus-visible {
+  outline: 2px solid var(--color-vt-democratic-red);
+  outline-offset: 2px;
+}
+
+.issue-carousel-at-end .carousel__next:not(.issue-carousel-next) {
+  display: none;
+}
+
+.issue-carousel-next {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 html.dark .status-collecting {
@@ -775,6 +820,67 @@ html.dark .alert-warn {
   .vt-hero {
     padding: 2.5rem 1rem 2rem;
   }
+
+  .issue-carousel-page {
+    display: flex;
+    flex-direction: column;
+    height: 100svh;
+    overflow: hidden;
+  }
+
+  .issue-main-carousel {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    padding-block: var(--spacing-vt-3);
+  }
+
+  .issue-container-carousel {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .issue-page-heading {
+    flex: none;
+    margin-bottom: var(--spacing-vt-3);
+  }
+
+  .issue-carousel-section {
+    flex: none;
+    max-height: 100%;
+    min-height: 0;
+  }
+
+  .issue-carousel {
+    display: flex;
+    flex-direction: column;
+    height: auto;
+    max-height: 100%;
+    min-height: 0;
+  }
+
+  .issue-carousel .carousel__viewport,
+  .issue-carousel .carousel__track,
+  .issue-carousel .carousel__slide {
+    height: auto;
+    min-height: 0;
+  }
+
+  .issue-briefing-card {
+    max-height: 55svh;
+  }
+
+  .issue-carousel .carousel__pagination {
+    flex: none;
+    margin-top: var(--spacing-vt-2);
+  }
+
+  .issue-carousel-page > footer {
+    display: none;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -788,5 +894,25 @@ html.dark .alert-warn {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+@layer components {
+  .comment-celebration-emoji {
+    display: inline-block;
+    font-size: 3rem;
+    line-height: 1;
+    animation: comment-celebration-bounce 1s ease-in-out infinite;
+  }
+
+  @keyframes comment-celebration-bounce {
+    0%,
+    100% {
+      transform: translateY(0) rotate(-6deg);
+    }
+
+    50% {
+      transform: translateY(-0.6rem) rotate(6deg);
+    }
   }
 }

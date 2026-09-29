@@ -88,7 +88,7 @@ async function copyLink() {
   <div>
     <AppHeader current="issue" />
 
-    <main class="py-8">
+    <main class="py-2">
       <div class="container">
         <!-- 載入中 -->
         <div v-if="loading" class="empty">

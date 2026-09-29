@@ -5,7 +5,42 @@ import { provideI18n } from '../l10n'
 import IssueView from '../views/Issue.vue'
 
 describe('Issue SSR', () => {
+  const renderBrowseOpinion = async (summary: string) => {
+    const app = createSSRApp(IssueView, {
+      issueId: 1,
+      initialCommentAction: 'browse',
+      initialDetail: {
+        issue: {
+          id: 1,
+          title: '測試議題',
+          description: '議題說明',
+          status: 'published',
+          polis_id: null,
+          created_at: '2026-08-17 00:00:00',
+          abuse_flagged: 0,
+          author_name: null,
+          author_email: null,
+        },
+        materials: [],
+        briefing: null,
+        opinions: [
+          {
+            id: 1,
+            issue_id: 1,
+            summary,
+            created_at: '2026-08-17 00:00:00',
+            author_name: null,
+            author_email: null,
+            abuse_flagged: 0,
+          },
+        ],
+      },
+    })
+    provideI18n(app, 'zh-TW')
+    return renderToString(app)
+  }
   it('renders an issue page with i18n helpers available', async () => {
+
     const app = createSSRApp(IssueView, {
       issueId: 1,
       initialDetail: {
@@ -31,15 +66,16 @@ describe('Issue SSR', () => {
 
     expect(html).toContain('測試議題')
     expect(html).toContain('2026')
-    expect(html).toContain('下載 OPINION.md')
-    expect(html).toContain('複製 OPINION.md 到剪貼簿')
+    expect(html).toContain('你認為呢？')
     expect(html).toContain('/issues/1/rss.xml')
-    expect(html.indexOf('💬 公民意見')).toBeLessThan(html.indexOf('📚 素材庫'))
-    expect(html.indexOf('💬 公民意見')).toBeLessThan(html.indexOf('🤝 志願者工具'))
+    expect(html).toContain('aria-label="議題說明輪播"')
+    expect((html.match(/class="carousel__slide/g) ?? []).length).toBe(4)
+    expect(html).not.toContain('class="tabs"')
   })
   it('renders opted-in author emails as mailto links only (#60)', async () => {
     const app = createSSRApp(IssueView, {
       issueId: 1,
+      initialCommentAction: 'browse',
       initialDetail: {
         issue: {
           id: 1,
@@ -115,6 +151,29 @@ describe('Issue SSR', () => {
       expect(depth).toBeLessThanOrEqual(1)
     }
     expect(depth).toBe(0)
+  })
+
+  it('collapses long browse opinions to a 50-code-point preview in SSR', async () => {
+    const prefix = '前'.repeat(50)
+    const suffix = '後段完整原文不應出現'
+    const html = await renderBrowseOpinion(`${prefix}${suffix}`)
+
+    expect(html).toContain(`${prefix}…`)
+    expect(html).not.toContain(suffix)
+    expect(html).toContain('aria-expanded="false"')
+    // SSR keeps long opinions collapsed, so the vote controls are not rendered.
+    expect(html).not.toContain('mt-4 border-t border-border pt-3')
+  })
+
+  it('renders short browse opinions in full without folding controls', async () => {
+    const summary = '短意見完整內容'
+    const html = await renderBrowseOpinion(summary)
+
+    expect(html).toContain(`<p>${summary}</p>`)
+    expect(html).not.toContain('展開全文')
+    expect(html).not.toContain('收合全文')
+    // The short opinion is directly rendered and remains vote-eligible.
+    expect(html).toContain('mt-4 border-t border-border pt-3')
   })
 
   it('collapses materials longer than 1000 characters into a character count (#65)', async () => {

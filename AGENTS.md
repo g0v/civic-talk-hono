@@ -68,7 +68,7 @@ Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑�
 - `migrations/0007_abuse_reports.sql`–`0013_query_indexes.sql` — 濫用／失效連結回報、AI 審查與申訴、投稿併發、議題活動時間、意見投票與查詢索引。**2026-09-24 使用者回報目前應已套用遠端 `0001`–`0013`；本次未查詢遠端**。部署前仍須以 remote pending 清單核對，不能只憑 repo 中的檔案或本紀錄推定遠端狀態。
 - `src/components/OpinionVote.vue` — 公民意見同意／不同意／略過控制；投票前隱藏分布，投票後或作者才顯示；匿名點擊保留意見內容並展開登入入口。
 - `src/ssr/render.ts` — SSR + 注入 `window.__PAGE__`／`__SSR_STATE__` + `/js/civic.js`（dev 走 `/src/client/civic-entry.ts`）。
-- `src/views/` — `Home`／`Issue`／`Contribute`／`About`／`Profile`／`Appeals`／`Privacy`／`Terms`／`Admin`／`MaterialDetail`／`OpinionDetail`／`NotFound`；共用 `AppHeader`／`AppFooter`／`StatusBadge`／`IssueCard`／`IssuePreviewCard`／`Toast`。首頁點議題卡時以 `?action=click_issue_card&issue=<id>` 留在 `Home` 顯示單張預覽，按「進入」才切換到議題內容路由。
+- `src/views/` — `Home`／`Issue`／`Contribute`／`About`／`Profile`／`Appeals`／`Privacy`／`Terms`／`Admin`／`MaterialDetail`／`OpinionDetail`／`NotFound`；`Issue` 無 `step` 時顯示 briefing 四張 carousel，volunteer hydration 後有第五張導航 slide，citizen 在最後一張可進 comments；`?step=comments|materials|volunteer` 可雙向同步且直接進入對應版面。手機 briefing 卡最高 `45svh`、長文在卡內捲動，carousel 主畫面固定在 `100svh` 內且不顯示頁尾，操作不需捲動整頁；carousel CSS 由 `src/styles/app.css` 納入。共用 `AppHeader`／`AppFooter`／`StatusBadge`／`IssueCard`／`IssuePreviewCard`／`Toast`。首頁點議題卡時以 `?action=click_issue_card&issue=<id>` 留在 `Home` 顯示單張預覽，按「進入」才切換到議題內容路由。
 - `src/composables/useAuth.ts` — 全站共用的登入狀態（`authState`／`session`／`ensureAuthSession`／`signOutAndReload`）。模組層級的 ref，同一頁的 `AppHeader` 與表單共用同一次 `/api/me`；**只在瀏覽器端寫入**（`ensureAuthSession()` 開頭擋掉 SSR），所以 SSR 永遠是 `'loading'`。
 - `src/components/SignInButtons.vue` — Google／GitHub 登入鈕（`/`、`/issues/:id`、`/contribute/:id`、`/admin` 與 `AppHeader` 共用）。
 - `src/components/LongTextContent.vue` — 長文折疊（#65）：超過 `threshold`（預設 1000 字，以 code point 計數）時**完全不輸出原文**，只顯示字數與展開／收合鈕。🚫 **不得改成截短預覽或摘要**——素材多為 CC BY-NC-ND 授權，截短等同改作。目前用於 `Issue.vue` 的素材卡；`MaterialDetail.vue`（專屬頁本來就是看全文）與 `Admin.vue`（管理員需審閱）維持全文顯示。
@@ -237,6 +237,13 @@ Better Auth 的端點位於 `/api/auth/*`（見「API 契約」），這段路�
 
 - **完整作者快照**：`ct_issues`、`ct_materials`、`ct_opinions`、`ct_briefings` 最終都有 `author_id`、`author_name`、`author_email`、`show_email`。`author_id` 是 Better Auth `user.id`；name／email 是投稿當下快照，不隨帳號日後更新。`author_name` 缺漏時一律為 `NULL`，**禁止退回 email**，否則會繞過 email opt-in。
 - **儲存與公開分離**：`author_email` 無論使用者是否 opt-in 都保存，供管理端追溯；`show_email INTEGER NOT NULL DEFAULT 0 CHECK (show_email IN (0, 1))` 才是公開同意。建立議題、投稿素材與意見的 API 只接受 boolean `show_email`，並要求 `terms_accepted === true`；兩者都由伺服器端驗證，不能只靠 checkbox。驗證通過後由伺服器寫入 `TERMS_VERSION` 與 `CURRENT_TIMESTAMP`，不採信 client 自報的版本或時間。
+
+### Issue #122 說明 carousel 與 URL step（程式碼與驗證完成）
+
+- `Issue.vue` 使用 `vue3-carousel`：無 `step` 時顯示說明 carousel；citizen 四張 narrative／consensus／disputes／positions，volunteer 另有第五張導航 slide。
+- `?step=comments|materials|volunteer` 直接顯示對應版面；內部切換使用共用 URL helper，保留其他 query、支援 popstate／上一頁／下一頁；登入 callback 會保留目前 query。
+- Carousel 樣式由 `src/styles/app.css` 匯入 `vue3-carousel/carousel.css`，不可手改 `public/styles.css`。SSR 初始檢視角色固定 citizen，hydration 後才讀取 volunteer 偏好。
+- 已加入 `src/tests/issueNavigation.test.ts`；`vp check --no-fmt --no-lint`、`vp test`、`vp run build` 均已通過。
 
 ### Issue #107 公民意見投票（程式碼完成；正式部署待確認）
 
