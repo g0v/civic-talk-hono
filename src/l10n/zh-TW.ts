@@ -437,6 +437,7 @@ export const messages = {
   rss_subscribe_btn: '📡 訂閱 RSS',
   rss_copy_ok: 'RSS 連結已複製到剪貼簿！貼入你的 RSS 閱讀器即可訂閱。',
   rss_copy_fail: '無法複製連結，請手動開啟：{url}',
+  issue_rss_subscribe: '📡 訂閱本議題 RSS（素材與公民意見）',
   // 使用條款頁內文（#46）
   terms_s1_h: '引言',
   terms_s1_p: '歡迎使用 Civic Talk 公民審議平台。本使用條款規範您對本平台服務的使用。本平台由 vTaiwan 公民科技社群維護，目的是降低公眾參與公共議題的門檻。使用本平台即表示您同意遵守本條款。',
