@@ -22,6 +22,9 @@ const { t } = useI18n()
         <a href="/about">{{ t('nav_about') }}</a>
         <a href="/terms">{{ t('footer_terms') }}</a>
         <a href="/privacy">{{ t('footer_privacy') }}</a>
+        <a href="https://github.com/g0v/civic-talk-hono/issues/" target="_blank" rel="noopener noreferrer">
+          {{ t('footer_feedback') }}
+        </a>
       </div>
     </div>
   </footer>

@@ -648,6 +648,7 @@ async function submitOpinion() {
                 issue.author_name || t('author_system')
               }}<template v-if="issue.author_email"> <AuthorEmailLink :email="issue.author_email" :name="issue.author_name" /></template>
             </p>
+            <a :href="`/issues/${issueId}/rss.xml`" class="btn btn-secondary btn-sm mt-3 inline-flex">{{ t('issue_rss_subscribe') }}</a>
           </div>
 
           <section v-if="!activeStep" class="issue-carousel-section">
