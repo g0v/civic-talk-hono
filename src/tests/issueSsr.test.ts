@@ -67,6 +67,7 @@ describe('Issue SSR', () => {
     expect(html).toContain('測試議題')
     expect(html).toContain('2026')
     expect(html).toContain('你認為呢？')
+    expect(html).toContain('/issues/1/rss.xml')
     expect(html).toContain('aria-label="議題說明輪播"')
     expect((html.match(/class="carousel__slide/g) ?? []).length).toBe(4)
     expect(html).not.toContain('class="tabs"')

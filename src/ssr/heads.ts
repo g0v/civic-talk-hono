@@ -1,9 +1,16 @@
 export type MetaEntry = { name: string; content: string } | { property: string; content: string }
+export interface LinkEntry {
+  rel: string
+  href: string
+  type?: string
+  title?: string
+}
 
 export interface HeadConfig {
   title: string
   description?: string
   meta?: MetaEntry[]
+  links?: LinkEntry[]
 }
 
 const SITE_NAME = 'Civic Talk'
@@ -56,6 +63,7 @@ export function headForIssue(title: string, description: string, id: number, ori
     title: pageTitle,
     description: desc,
     meta: buildOg(pageTitle, desc, DEFAULT_OG_IMAGE(origin), `${origin}/issues/${id}`),
+    links: [{ rel: 'alternate', type: 'application/rss+xml', title: `${title || SITE_NAME} RSS`, href: `${origin}/issues/${id}/rss.xml` }],
   }
 }
 
@@ -161,6 +169,12 @@ export function renderHeadTags(head: HeadConfig): string {
     } else {
       parts.push(`<meta property="${escapeHtml(m.property)}" content="${escapeHtml(m.content)}" />`)
     }
+  }
+  for (const link of head.links ?? []) {
+    const attrs = [`rel="${escapeHtml(link.rel)}"`, `href="${escapeHtml(link.href)}"`]
+    if (link.type) attrs.push(`type="${escapeHtml(link.type)}"`)
+    if (link.title) attrs.push(`title="${escapeHtml(link.title)}"`)
+    parts.push(`<link ${attrs.join(' ')} />`)
   }
   return parts.join('\n    ')
 }

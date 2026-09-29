@@ -445,6 +445,7 @@ export const messages = {
   // Footer links (#27)
   footer_terms: 'Terms',
   footer_privacy: 'Privacy',
+  footer_feedback: 'Feedback',
   // Privacy policy and Terms of Service pages (#27)
   privacy_page_title: 'Privacy Policy',
   terms_page_title: 'Terms of Service',
@@ -460,6 +461,7 @@ export const messages = {
   rss_subscribe_btn: '📡 Subscribe via RSS',
   rss_copy_ok: 'RSS link copied to clipboard! Paste it into your RSS reader to subscribe.',
   rss_copy_fail: 'Could not copy link. Please open manually: {url}',
+  issue_rss_subscribe: '📡 Subscribe to this issue via RSS (materials and public opinions)',
   // Terms of Service page content (#46)
   terms_s1_h: 'Introduction',
   terms_s1_p:
