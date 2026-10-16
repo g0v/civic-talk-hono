@@ -8,6 +8,17 @@
 
 新的 Civic Talk 軟體貢獻請明確使用 **AGPL-3.0-only**。不要將專案的新貢獻宣告成 `AGPL-3.0-or-later`；第三方元件本身使用的其他 SPDX 授權識別不得因此被改寫。
 
+## 什麼情況下應新增測試
+
+送出 PR 前請確認 `vp check --no-fmt --no-lint`、`vp test` 與 `vp run build` 都通過（CI 也會執行）。除了讓既有測試通過，以下改動請在同一個 PR 補上 `src/tests/` 的測試：
+
+- **修 bug**：先寫能重現問題的測試，修好後讓它通過，避免同一個 bug 再次出現
+- **安全與隱私相關**：使用者輸入的呈現（XSS）、跨站請求（CSRF）、作者 email／`author_id` 的公開範圍、登入與權限檢查
+- **有判斷邏輯的功能**：排序、狀態轉換、限制條件（如改名冷卻期）、防重複送出
+- **新增 i18n key**：既有的 `l10n.test.ts` 會自動檢查，不需另寫
+
+純文案或樣式調整通常不需要新增測試。不確定時可在 PR 中詢問。測試寫法可參考 `src/tests/` 既有檔案，並從 `vite-plus/test` import `describe`／`it`／`expect`。
+
 ## 舊分支、舊 PR 與 cherry-pick
 
 commit 日期不決定授權。MIT final tag 未涵蓋的新增修改，也不能只因為基於 MIT 分支就推定已採 MIT。

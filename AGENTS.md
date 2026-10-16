@@ -404,6 +404,17 @@ npx wrangler d1 migrations apply vtaiwan-civic-talks --remote   # 🚫 需先取
 
 > **仍未自動涵蓋**：正式站 OAuth／遠端 D1／Service Binding 煙霧測試、連結完整性與真實瀏覽器 hydration 一致性。CI 已執行 typecheck、Vitest（含 SSR smoke）與 build，但不能取代部署後人工驗收。
 
+### 什麼情況下應新增測試（#153）
+
+不變量 9 只要求既有測試通過；CI 擋得下「弄壞既有測試」，擋不下「該補測試卻沒補」。以下改動必須在**同一個 commit／PR** 補上 `src/tests/` 的測試，與既有慣例一致（功能與測試一起交付）：
+
+- **修 bug**：先寫能重現問題的測試（修正前應失敗），修好後讓它通過，避免同一個 bug 再次出現。
+- **安全與隱私相關**：使用者輸入的呈現（XSS，參考 `renderSafeMarkdown.test.ts`）、跨站請求（CSRF，`apiCsrf.test.ts`）、作者 email／`author_id` 的公開範圍（`authorPrivacy.test.ts`）、登入與權限檢查（未登入 401／非管理員 403，`moderationRoutes.test.ts`）。
+- **有判斷邏輯的功能**：排序（`homeSorting.test.ts`）、狀態轉換、限制條件（如改名冷卻期，`profile-name.test.ts`）、防重複送出（`submitGuard.test.ts`）。
+- **新增 i18n key**：既有的 `l10n.test.ts` 會自動檢查三語 key 與插值欄位同步，不需另寫。
+
+純文案或樣式調整通常不需要新增測試（UI 仍須依上方規定做淺色／深色目視驗收）。判斷不了是否該補測試時，先問使用者，不要自行略過；交付時說明新增了哪些測試，或為何不需要。
+
 ## Git / Commit 慣例
 
 - **Conventional Commits + 繁體中文描述**，例如：
