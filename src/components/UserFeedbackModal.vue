@@ -77,7 +77,7 @@ async function submit() {
 <template>
   <dialog
     ref="dialog"
-    class="modal m-auto max-w-[calc(100%-2rem)] border border-vt-border text-vt-fg-1 backdrop:bg-black/50"
+    class="feedback-modal modal m-auto max-w-[calc(100%-2rem)] border border-vt-border text-vt-fg-1 backdrop:bg-black/50"
     aria-labelledby="feedback-title"
     aria-describedby="feedback-privacy"
     @cancel.prevent="close"
@@ -101,9 +101,9 @@ async function submit() {
             <option value="suggestion">{{ t('feedback_category_suggestion') }}</option>
           </select>
         </div>
-        <div class="form-group">
+        <div class="feedback-description-group form-group">
           <label for="feedback-description">{{ t('feedback_description') }}</label>
-          <textarea id="feedback-description" v-model="description" rows="5" required :placeholder="t('feedback_description_hint')" aria-describedby="feedback-limit" />
+          <textarea id="feedback-description" v-model="description" class="feedback-description-input" required :placeholder="t('feedback_description_hint')" aria-describedby="feedback-limit" />
           <p id="feedback-limit" class="mt-2 text-sm text-vt-fg-2">{{ t('feedback_limit') }}</p>
         </div>
         <p class="mb-4 break-all text-sm text-vt-fg-2">{{ t('feedback_page') }}: {{ pagePath }}</p>
