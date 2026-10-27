@@ -23,6 +23,8 @@ export type AppBindings = {
   OPEN_ROUTER_API_KEY?: string
   /** 私有事實查核核心；只透過 Cloudflare Service Binding 呼叫，不經公開網址。 */
   FACT_CHECK_CORE: Fetcher
+  /** 僅 dev:remote 注入，用於 #185 的本機彙整實驗。 */
+  AI?: Ai
   /** 用於執行時讀取 public/rules/community-guidelines.md */
   ASSETS?: {
     fetch: (request: RequestInfo | URL, init?: RequestInit) => Promise<Response>

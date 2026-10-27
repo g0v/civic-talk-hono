@@ -3,6 +3,7 @@ import { registerApiRoutes } from './api/routes'
 import { registerAuthRoutes } from './api/auth'
 import { apiCsrf } from './api/csrf'
 import type { AppBindings } from './api/types'
+import { registerSummaryExperiment } from './api/summary-experiment'
 import { listIssues, getIssue, getIssueDetail, getMaterialWithIssue, getOpinionWithIssue } from './db/queries'
 import { handleIssueRss, handleRss } from './rss'
 import { renderPage } from './ssr/render'
@@ -51,6 +52,8 @@ app.use('/api/*', apiCsrf)
 
 // 先掛 auth：/api/auth/* 與 /api/me 要在 registerApiRoutes 的 /api/* 泛用處理之前命中。
 registerAuthRoutes(app)
+// 正式 build 與一般 dev 均不註冊會產生推論費用的實驗端點。
+if (import.meta.env.DEV && import.meta.env.MODE === 'remote') registerSummaryExperiment(app)
 registerApiRoutes(app)
 
 // ── 舊網址導向（只能新增、不能刪除）──────────────────────────

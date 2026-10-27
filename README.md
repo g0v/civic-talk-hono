@@ -4,7 +4,7 @@
 
 本站受[ronnywang](https://www.github.com/ronnywang)提出的[原始構想](https://ronnywang.github.io/civic-notes/civic-talk/)的啟發。
 
-內容生成仍由志願者使用自己的 AI token 完成，平台只產生 prompt 並收回結果；例外是投稿安全審查會呼叫外部 moderation 服務，素材事實查核則由 Civic Talk Worker 透過 Cloudflare Service Binding 呼叫不公開的 `fact-check-core` Worker。
+正式站的內容生成仍由志願者使用自己的 AI token 完成，平台只產生 prompt 並收回結果；例外是投稿安全審查會呼叫外部 moderation 服務，素材事實查核則由 Civic Talk Worker 透過 Cloudflare Service Binding 呼叫不公開的 `fact-check-core` Worker。#185 另授權僅供本機 `dev:remote` 使用的 Gemma 彙整實驗，正式版不開放此端點。
 
 ## 軟體授權
 
@@ -78,6 +78,18 @@ vp run dev
 ```
 
 > 登入功能在 `vp run dev` 下**測不了**：Better Auth 的資料表在遠端的 `vtaiwan-auth`，本機模擬庫是空的。要實測登入請用 `vp run dev:remote`。
+
+### 本機 Gemma 彙整實驗（#185）
+
+此實驗讀取遠端議題及其公開、未被標記的素材，送到 Cloudflare Workers AI 的 `@cf/google/gemma-4-26b-a4b-it`，回傳符合 #181 結構的 JSON，不儲存或發布結果。`consensus`、`disputes`、`positions` 各有 `overview` 與 `items`；前兩者的項目含 `title`、`description`，立場項目含 `name`、`sources`（`title`、`href`）、`core_concern`、`opinions`（`title`、`description`）。結果仍須人工檢查品質及來源，符合結構不代表內容正確。
+
+先完成 Cloudflare 登入，啟動 `vp run dev:remote`，從 `GET /api/issues` 挑選有素材的議題 ID，另開終端機執行（port 以啟動時輸出為準）：
+
+```bash
+curl -sS -X POST -H 'Origin: http://localhost:5173' http://localhost:5173/api/dev/issues/1/summary | jq .
+```
+
+這會使用 Cloudflare 推論額度，可能產生費用，且會將素材內容送交 Workers AI。實驗端點無登入驗證，只在 `dev:remote` 註冊；不要將開發伺服器暴露至不可信網路。一般 `dev` 和正式 build 不註冊端點，也不配置 AI binding。沒有素材回 400、議題不存在或隱藏回 404、模型失敗或回應結構不符回 502；`no-store` 避免快取實驗結果。
 
 常用指令：
 

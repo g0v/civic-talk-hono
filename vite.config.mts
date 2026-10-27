@@ -5,7 +5,7 @@ import * as vueCompiler from '@vue/compiler-sfc'
 import { sourceDefines, projectRoot } from './scripts/source-metadata.mjs'
 import { bundleNotices } from './scripts/bundle-notices.mjs'
 
-export default defineConfig(({ mode }) => ({
+export default defineConfig(({ mode, command }) => ({
   define: sourceDefines(),
   server: {
     // 不讓 dev server 代替 Worker 回 CORS，確保本機與正式路由行為一致。
@@ -45,7 +45,10 @@ export default defineConfig(({ mode }) => ({
   plugins: lazyPlugins(() => [
     // Cloudflare plugin 與 Vitest 不相容；測試時略過，由 vue plugin 單獨處理 .vue
     // 只有明確使用 `--mode remote` 時才連遠端綁定；一般 dev 使用本機模擬資源。
-    ...(process.env['VITEST'] ? [] : [cloudflare({ remoteBindings: mode === 'remote' })]),
+    ...(process.env['VITEST'] ? [] : [cloudflare({
+      remoteBindings: mode === 'remote',
+      config: command === 'serve' && mode === 'remote' ? { ai: { binding: 'AI' } } : undefined,
+    })]),
     vue({
       compiler: vueCompiler,
       template: { transformAssetUrls: false },
