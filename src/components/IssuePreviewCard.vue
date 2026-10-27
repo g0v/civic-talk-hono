@@ -10,14 +10,16 @@ const props = defineProps<{
 }>()
 
 const { t, locale } = useI18n()
-const date = computed(() => formatDate(props.issue.created_at, locale.value))
+const publishedDate = computed(() => formatDate(props.issue.created_at, locale.value))
+const activityDate = computed(() => formatDate(props.issue.last_activity_at ?? props.issue.created_at, locale.value))
 </script>
 
 <template>
   <article class="card mx-auto flex w-full max-w-5xl flex-col">
     <div class="mb-3 flex flex-wrap items-center gap-2">
       <StatusBadge :status="issue.status" short />
-      <span class="text-sm text-muted">{{ date }}</span>
+      <span class="text-sm whitespace-nowrap text-muted">{{ t('idx_published_date', { date: publishedDate }) }}</span>
+      <span class="text-sm whitespace-nowrap text-muted">{{ t('idx_activity_date', { date: activityDate }) }}</span>
     </div>
 
     <h2 class="mt-0 mb-3 font-serif text-2xl font-bold text-ink">{{ issue.title }}</h2>
@@ -26,7 +28,7 @@ const date = computed(() => formatDate(props.issue.created_at, locale.value))
     </p>
 
     <p class="mt-0 mb-0 text-sm text-muted">
-      {{ issue.material_count }} {{ t('idx_materials_unit') }} · {{ issue.opinion_count }} {{ t('idx_opinions_unit') }}
+      {{ issue.material_count }} {{ t('idx_materials_unit') }} · {{ issue.opinion_count }} {{ t('idx_opinions_unit') }} · {{ t('issue_preview_vote_count', { count: issue.vote_count }) }}
       <span> · {{ t('issue_author_label') }}：{{ issue.author_name || t('author_system') }}</span>
       <template v-if="issue.author_email"> · <AuthorEmailLink :email="issue.author_email" :name="issue.author_name" /> </template>
     </p>

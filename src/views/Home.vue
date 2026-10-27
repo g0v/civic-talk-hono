@@ -50,7 +50,7 @@ const sessionExpired = ref(false)
 const moderationNotice = ref<{ appealType: 'rejected_submission' | 'account_ban'; reportId?: number; policyCode?: string; rationale?: string } | null>(null)
 
 const searchQuery = ref(props.initialSearchQuery ?? '')
-const sortOrder = ref<SortOrder>('newest')
+const sortOrder = ref<SortOrder>('published')
 const selectedIssueId = ref<number | null>(props.initialPreviewIssueId ?? null)
 const lifecycleTab = ref<HomeLifecycleTab>(props.initialLifecycleTab ?? 'open')
 const openLifecycleTab = ref<HTMLButtonElement | null>(null)
@@ -512,9 +512,10 @@ async function copyRssUrl() {
                 @change="saveHomeSortPreference(sortOrder)"
                 class="cursor-pointer rounded border border-vt-border bg-vt-bg-1 px-3 py-1.5 text-sm text-vt-fg-1 focus:outline-none focus:ring-2 focus:ring-vt-democratic-red/40"
               >
-                <option v-for="s in ['newest', 'most', 'least'] as const" :key="s" :value="s">
-                  {{ t(s === 'newest' ? 'idx_sort_newest' : s === 'most' ? 'idx_sort_most' : 'idx_sort_least') }}
-                </option>
+                <option value="published">{{ t('idx_sort_published') }}</option>
+                <option value="activity">{{ t('idx_sort_activity') }}</option>
+                <option value="most">{{ t('idx_sort_most') }}</option>
+                <option value="least">{{ t('idx_sort_least') }}</option>
               </select>
             </label>
           </div>

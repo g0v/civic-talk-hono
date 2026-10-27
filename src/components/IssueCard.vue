@@ -16,7 +16,8 @@ const emit = defineEmits<{
 const { t, locale } = useI18n()
 
 const href = computed(() => `/issues/${props.issue.id}`)
-const date = computed(() => formatDate(props.issue.created_at, locale.value))
+const publishedDate = computed(() => formatDate(props.issue.created_at, locale.value))
+const activityDate = computed(() => formatDate(props.issue.last_activity_at ?? props.issue.created_at, locale.value))
 const canShowTags = computed(() => props.issue.tags.length > 0 && props.issue.abuse_flagged !== 2 && props.issue.abuse_flagged !== 3)
 const opinionCountLabel = computed(() => `${props.issue.opinion_count} ${t('idx_opinions_unit')}`)
 const voteCountLabel = computed(() => t('issue_vote_count_label', { count: props.issue.vote_count }))
@@ -33,7 +34,8 @@ function selectIssue(event: MouseEvent): void {
   <div class="card issue-list-card relative mb-4 grid grid-cols-1 gap-y-2 md:grid-cols-[minmax(0,1fr)_minmax(0,38%)] md:gap-x-4">
     <div class="mb-2 flex flex-wrap items-center gap-2 md:col-span-2">
       <StatusBadge :status="issue.status" short />
-      <span class="text-sm text-muted">{{ date }}</span>
+      <span class="text-sm whitespace-nowrap text-muted">{{ t('idx_published_date', { date: publishedDate }) }}</span>
+      <span class="text-sm whitespace-nowrap text-muted">{{ t('idx_activity_date', { date: activityDate }) }}</span>
     </div>
     <h2 class="m-0 min-w-0 font-serif text-xl font-bold [overflow-wrap:anywhere]" :class="canShowTags || issue.opinion_count > 0 || issue.vote_count > 0 ? '' : 'md:col-span-2'">
       <a :href="href" class="text-ink no-underline hover:no-underline after:absolute after:inset-0" @click="selectIssue">{{ issue.title }}</a>

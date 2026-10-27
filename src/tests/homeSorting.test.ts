@@ -233,9 +233,24 @@ describe('filterByRole（#77）', () => {
 })
 
 describe('sortByOrder（#77）', () => {
-  it('newest 以 last_activity_at 降冪（不是 created_at）', () => {
-    const list = [item(1, { created_at: '2026-09-01 00:00:00', last_activity_at: '2026-08-01 00:00:00' }), item(2, { created_at: '2026-08-01 00:00:00', last_activity_at: '2026-09-01 00:00:00' })]
-    expect(sortByOrder(list, 'newest').map(i => i.id)).toEqual([2, 1])
+  it('發布與活動日期相反時，兩種排序各自依對應時間降冪且不改動輸入', () => {
+    const list = [
+      item(1, { created_at: '2026-09-01 00:00:00', last_activity_at: '2026-09-02 00:00:00' }),
+      item(2, { created_at: '2026-08-01 00:00:00', last_activity_at: '2026-10-01 00:00:00' }),
+    ]
+    expect(sortByOrder(list, 'published').map(i => i.id)).toEqual([1, 2])
+    expect(sortByOrder(list, 'activity').map(i => i.id)).toEqual([2, 1])
+    expect(list.map(i => i.id)).toEqual([1, 2])
+  })
+
+  it('尚無活動時以發布時間排序，相同日期保留原清單順序', () => {
+    const list = [
+      item(1, { created_at: '2026-09-01 00:00:00', last_activity_at: null }),
+      item(2, { created_at: '2026-08-01 00:00:00', last_activity_at: '2026-09-01 00:00:00' }),
+      item(3, { created_at: '2026-08-01 00:00:00', last_activity_at: null }),
+    ]
+    expect(sortByOrder(list, 'published').map(i => i.id)).toEqual([1, 2, 3])
+    expect(sortByOrder(list, 'activity').map(i => i.id)).toEqual([1, 2, 3])
   })
 
   it('most／least 加總意見與票數、忽略素材數，同分保留原順序', () => {
@@ -253,18 +268,30 @@ describe('sortByOrder（#77）', () => {
 })
 
 describe('filterAndSortHomeIssues（#77、#90）', () => {
-  it('citizen：過濾 collecting，newest 依 last_activity_at', () => {
+  it.each(['published', 'activity'] as const)('%s 保留公民／志願者的狀態階序與角色過濾', order => {
+    const list = [
+      item(1, { status: 'published', created_at: '2026-09-01', last_activity_at: '2026-10-01' }),
+      item(2, { status: 'published', created_at: '2026-10-01', last_activity_at: '2026-09-01' }),
+      item(3, { status: 'summarizing', created_at: '2026-10-10', last_activity_at: '2026-10-10' }),
+      item(4, { status: 'collecting', created_at: '2026-10-20', last_activity_at: '2026-10-20' }),
+    ]
+    const publishedIds = order === 'published' ? [2, 1] : [1, 2]
+    expect(filterAndSortHomeIssues(list, 'citizen', order).map(i => i.id)).toEqual([...publishedIds, 3])
+    expect(filterAndSortHomeIssues(list, 'volunteer', order).map(i => i.id)).toEqual([3, 4, ...publishedIds])
+  })
+
+  it('citizen：過濾 collecting，最新活動依 last_activity_at', () => {
     const list = [
       item(1, { last_activity_at: '2026-08-01 00:00:00' }),
       item(2, { status: 'collecting', last_activity_at: '2026-09-01 00:00:00' }),
       item(3, { last_activity_at: '2026-08-15 00:00:00' }),
     ]
-    expect(filterAndSortHomeIssues(list, 'citizen', 'newest').map(i => i.id)).toEqual([3, 1])
+    expect(filterAndSortHomeIssues(list, 'citizen', 'activity').map(i => i.id)).toEqual([3, 1])
   })
 
   it('citizen：已發佈排在彙整中之前，即使彙整中比較新（#90）', () => {
     const list = [item(1, { status: 'summarizing', last_activity_at: '2026-09-01 00:00:00' }), item(2, { status: 'published', last_activity_at: '2026-08-01 00:00:00' })]
-    expect(filterAndSortHomeIssues(list, 'citizen', 'newest').map(i => i.id)).toEqual([2, 1])
+    expect(filterAndSortHomeIssues(list, 'citizen', 'activity').map(i => i.id)).toEqual([2, 1])
   })
 
   it('citizen：階內仍套使用者選的排序（#90）', () => {
@@ -274,7 +301,7 @@ describe('filterAndSortHomeIssues（#77、#90）', () => {
       item(3, { status: 'published', last_activity_at: '2026-09-01 00:00:00' }),
       item(4, { status: 'summarizing', last_activity_at: '2026-09-05 00:00:00' }),
     ]
-    expect(filterAndSortHomeIssues(list, 'citizen', 'newest').map(i => i.id)).toEqual([3, 2, 4, 1])
+    expect(filterAndSortHomeIssues(list, 'citizen', 'activity').map(i => i.id)).toEqual([3, 2, 4, 1])
   })
 
   it('volunteer：彙整中 → 素材收集中 → 已發佈（#90）', () => {
@@ -283,7 +310,7 @@ describe('filterAndSortHomeIssues（#77、#90）', () => {
       item(2, { status: 'collecting', last_activity_at: '2026-08-05 00:00:00' }),
       item(3, { status: 'summarizing', last_activity_at: '2026-08-01 00:00:00' }),
     ]
-    expect(filterAndSortHomeIssues(list, 'volunteer', 'newest').map(i => i.id)).toEqual([3, 2, 1])
+    expect(filterAndSortHomeIssues(list, 'volunteer', 'activity').map(i => i.id)).toEqual([3, 2, 1])
   })
 
   it('volunteer：階內套使用者排序，階與階之間不混（#90）', () => {
@@ -295,7 +322,7 @@ describe('filterAndSortHomeIssues（#77、#90）', () => {
       item(5, { status: 'summarizing', last_activity_at: '2026-07-01 00:00:00' }),
       item(6, { status: 'summarizing', last_activity_at: '2026-07-10 00:00:00' }),
     ]
-    expect(filterAndSortHomeIssues(list, 'volunteer', 'newest').map(i => i.id)).toEqual([6, 5, 3, 2, 1, 4])
+    expect(filterAndSortHomeIssues(list, 'volunteer', 'activity').map(i => i.id)).toEqual([6, 5, 3, 2, 1, 4])
   })
 
   it('most／least 只在狀態階內依意見數＋票數排序，保留角色過濾與階序', () => {
@@ -314,12 +341,12 @@ describe('filterAndSortHomeIssues（#77、#90）', () => {
 
   it('未列在優先序中的狀態排在最後，不會從列表中消失（防呆）', () => {
     const list = [item(1, { status: 'future_status' as IssueStatus }), item(2, { status: 'published' })]
-    expect(filterAndSortHomeIssues(list, 'citizen', 'newest').map(i => i.id)).toEqual([2, 1])
+    expect(filterAndSortHomeIssues(list, 'citizen', 'activity').map(i => i.id)).toEqual([2, 1])
   })
 
   it('citizen + 搜尋：保留標題／簡介比對並排除 collecting', () => {
     const list = [item(1, { title: '居住正義' }), item(2, { status: 'collecting', title: '居住正義' }), item(3, { title: '交通建設', description: '居住描述' }), item(4, { title: '交通建設' })]
-    expect(filterAndSortHomeIssues(list, 'citizen', 'newest', '居住').map(i => i.id)).toEqual([1, 3])
+    expect(filterAndSortHomeIssues(list, 'citizen', 'activity', '居住').map(i => i.id)).toEqual([1, 3])
   })
 
   it('tag search accepts # prefixes while preserving role filtering and status ordering', () => {
@@ -331,8 +358,8 @@ describe('filterAndSortHomeIssues（#77、#90）', () => {
       item(5, { status: 'published', abuse_flagged: 3, tags: ['civic life'] }),
     ]
 
-    expect(filterAndSortHomeIssues(list, 'citizen', 'newest', '#cIvIc').map(i => i.id)).toEqual([1, 3])
-    expect(filterAndSortHomeIssues(list, 'volunteer', 'newest', '#CIVIC').map(i => i.id)).toEqual([3, 2, 1])
+    expect(filterAndSortHomeIssues(list, 'citizen', 'activity', '#cIvIc').map(i => i.id)).toEqual([1, 3])
+    expect(filterAndSortHomeIssues(list, 'volunteer', 'activity', '#CIVIC').map(i => i.id)).toEqual([3, 2, 1])
   })
 })
 
@@ -346,10 +373,10 @@ describe('homepage lifecycle filtering', () => {
 
   it('defaults to open issues and filters closed issues before role, search, and sort', () => {
     expect(filterHomeIssuesByLifecycle(list, 'open').map(issue => issue.id)).toEqual([1, 4])
-    expect(filterAndSortHomeIssues(filterHomeIssuesByLifecycle(list, 'open'), 'citizen', 'newest', 'housing').map(issue => issue.id)).toEqual([1])
-    expect(filterAndSortHomeIssues(filterHomeIssuesByLifecycle(list, 'open'), 'volunteer', 'newest', 'housing').map(issue => issue.id)).toEqual([4, 1])
+    expect(filterAndSortHomeIssues(filterHomeIssuesByLifecycle(list, 'open'), 'citizen', 'activity', 'housing').map(issue => issue.id)).toEqual([1])
+    expect(filterAndSortHomeIssues(filterHomeIssuesByLifecycle(list, 'open'), 'volunteer', 'activity', 'housing').map(issue => issue.id)).toEqual([4, 1])
     expect(filterHomeIssuesByLifecycle(list, 'closed').map(issue => issue.id)).toEqual([2, 3])
-    expect(filterAndSortHomeIssues(filterHomeIssuesByLifecycle(list, 'closed'), 'citizen', 'newest', 'housing').map(issue => issue.id)).toEqual([2])
-    expect(filterAndSortHomeIssues(filterHomeIssuesByLifecycle(list, 'closed'), 'volunteer', 'newest', 'housing').map(issue => issue.id)).toEqual([3, 2])
+    expect(filterAndSortHomeIssues(filterHomeIssuesByLifecycle(list, 'closed'), 'citizen', 'activity', 'housing').map(issue => issue.id)).toEqual([2])
+    expect(filterAndSortHomeIssues(filterHomeIssuesByLifecycle(list, 'closed'), 'volunteer', 'activity', 'housing').map(issue => issue.id)).toEqual([3, 2])
   })
 })

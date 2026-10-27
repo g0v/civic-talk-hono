@@ -5,7 +5,7 @@
 import type { IssueListItem, IssueStatus } from '../db/queries'
 import type { ViewerRole } from '../composables/useViewerRole'
 
-export type SortOrder = 'newest' | 'most' | 'least'
+export type SortOrder = 'published' | 'activity' | 'most' | 'least'
 
 /**
  * 各角色的狀態優先序（#90）——列表先依這個順序分階，階內再套使用者選的排序。
@@ -29,7 +29,7 @@ export function filterByRole(issues: IssueListItem[], role: ViewerRole): IssueLi
 }
 
 /**
- * 依使用者選擇排序。newest 以「最新活動日期」為準（#77），不再用議題建立日期。
+ * published 依議題建立時間；activity 依最新活動時間，尚無活動時回到建立時間（#186）。
  * most／least 以意見數＋累計票數為關注數，不計素材數（#178）。
  */
 export function sortByOrder(issues: IssueListItem[], order: SortOrder): IssueListItem[] {
@@ -39,12 +39,13 @@ export function sortByOrder(issues: IssueListItem[], order: SortOrder): IssueLis
   } else if (order === 'least') {
     result.sort((a, b) => a.opinion_count + a.vote_count - (b.opinion_count + b.vote_count))
   } else {
-    // newest: last_activity_at DESC（穩定排序，維持 API 既有順序作為同值 fallback）。
-    // last_activity_at 為 NULL（尚無子內容活動）時 fallback 到 created_at（#77）。
-    const activityOf = (issue: IssueListItem): string => issue.last_activity_at ?? issue.created_at
+    // 日期相同時保留 API 既有順序；兩種日期排序都只在角色的狀態階內套用。
+    const dateOf = order === 'published'
+      ? (issue: IssueListItem): string => issue.created_at
+      : (issue: IssueListItem): string => issue.last_activity_at ?? issue.created_at
     result.sort((a, b) => {
-      const aAt = activityOf(a)
-      const bAt = activityOf(b)
+      const aAt = dateOf(a)
+      const bAt = dateOf(b)
       return aAt < bAt ? 1 : aAt > bAt ? -1 : 0
     })
   }

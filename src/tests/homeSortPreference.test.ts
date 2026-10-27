@@ -17,23 +17,19 @@ function browserStorage() {
 }
 
 describe('首頁排序偏好', () => {
-  it('restores each supported choice and allows an explicit reset to newest', () => {
+  it.each(['published', 'activity', 'most', 'least'] as const)('儲存並恢復手動選擇的 %s', order => {
     browserStorage()
-    saveHomeSortPreference('most')
-    expect(readHomeSortPreference()).toBe('most')
-    saveHomeSortPreference('least')
-    expect(readHomeSortPreference()).toBe('least')
-    saveHomeSortPreference('newest')
-    expect(readHomeSortPreference()).toBe('newest')
+    saveHomeSortPreference(order)
+    expect(readHomeSortPreference()).toBe(order)
   })
 
   it('rejects missing, empty and unsupported stored values without overwriting storage', () => {
     const values = browserStorage()
-    expect(readHomeSortPreference()).toBe('newest')
+    expect(readHomeSortPreference()).toBe('published')
     expect(values.has(STORAGE_KEY)).toBe(false)
-    for (const invalid of ['', 'MOST', 'unknown', '__proto__']) {
+    for (const invalid of ['newest', '', 'MOST', 'unknown', '__proto__']) {
       values.set(STORAGE_KEY, invalid)
-      expect(readHomeSortPreference()).toBe('newest')
+      expect(readHomeSortPreference()).toBe('published')
       expect(values.get(STORAGE_KEY)).toBe(invalid)
     }
   })
@@ -42,8 +38,8 @@ describe('首頁排序偏好', () => {
     vi.stubGlobal('window', {
       get localStorage() { throw new DOMException('Storage blocked', 'SecurityError') },
     })
-    expect(readHomeSortPreference()).toBe('newest')
+    expect(readHomeSortPreference()).toBe('published')
     vi.stubGlobal('window', undefined)
-    expect(readHomeSortPreference()).toBe('newest')
+    expect(readHomeSortPreference()).toBe('published')
   })
 })

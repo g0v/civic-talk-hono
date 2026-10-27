@@ -172,7 +172,7 @@ describe('home issue card counters', () => {
 })
 
 describe('home issue preview', () => {
-  const previewIssue = { ...issue, material_count: 3, opinion_count: 5, author_name: '建立者', author_email: null }
+  const previewIssue = { ...issue, material_count: 3, opinion_count: 5, vote_count: 7, author_name: '建立者', author_email: null }
 
   it('renders title, description, metadata, and the enter link', async () => {
     const html = await render(IssuePreviewCard, { issue: previewIssue })
@@ -183,6 +183,18 @@ describe('home issue preview', () => {
     expect(html).toContain('建立者：建立者')
     expect(html).toContain('href="/issues/1"')
     expect(html).toContain('進入議題')
+  })
+
+  it('SSR 預設依發布日期而非最新活動排序', async () => {
+    const html = await render(HomeView, {
+      initialIssues: [
+        { ...previewIssue, id: 2, title: 'Older publication', status: 'published', created_at: '2026-08-01', last_activity_at: '2026-10-01' },
+        { ...previewIssue, id: 3, title: 'Newer publication', status: 'published', created_at: '2026-09-01', last_activity_at: '2026-09-01' },
+      ],
+    })
+    expect(html).toContain('Older publication')
+    expect(html).toContain('Newer publication')
+    expect(html.indexOf('Newer publication')).toBeLessThan(html.indexOf('Older publication'))
   })
 
   it('SSR renders the preview layout from query-derived initial state', async () => {
