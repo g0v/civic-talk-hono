@@ -25,6 +25,7 @@
 1. **所有資料表一律 `ct_` 前綴。** 遠端 D1 `vtaiwan-civic-talks` 位於 vTaiwan 命名空間、可能與其他專案共用，未加前綴的 `issues`／`materials`／`briefings`／`opinions` 會撞名並造成不可逆的資料破壞。所有 DDL、SQL、型別一律只碰 `ct_*`；migration 套用後查 `sqlite_master` 確認只新增 `ct_` 開頭的業務表。
 2. **內容生成與投稿安全審查分開。** 素材彙整／說明頁等**內容生成**仍由志願者使用自己的 AI token 完成，平台只產出 prompt 並收回結果；伺服器端不得代為呼叫生成模型。**例外（issue #29，使用者明確授權）**：四個投稿入口可在 Worker 內呼叫 OpenRouter 的 `openai/gpt-oss-safeguard-20b` 做投稿安全審查。審查採 **fail-open**：OpenRouter 缺 key、逾時或 5xx 等基礎設施故障時記錄結構化錯誤並放行投稿，不把故障誤判成濫用，也不因外部服務故障擋住全站投稿。
    - **素材事實查核不是內容生成。** `POST /api/fact-check` 經登入／停權守門後，以 `FACT_CHECK_CORE` Service Binding 串流轉送到沒有公開 route 的 `fact-check-core`。Service Binding 已是核心 Worker 的 capability；不要再加入前端 API key、HMAC token 或把 session cookie 轉送給核心。
+   - **例外（issue #183，使用者明確授權的 Clairic 抽取實驗）**：僅允許未停權的 `admin`／`super-admin` 透過 `POST /api/issues/:id/extraction-preview` 呼叫 Workers AI Clairic，對允許檢視的議題及素材進行只讀抽取並取得人工審閱用 Markdown 預覽。不得傳送作者快照，不寫入業務資料、不自動發布；既有 Better Auth session 生命週期仍可能寫入認證資料庫。此例外不授權伺服器端內容生成或改變志願者自帶 AI token 的流程。
 3. **SSR 路徑絕不碰瀏覽器 API。** 任何在 SSR 期間執行的程式碼（元件 `setup`、模組頂層、共用工廠）不得使用 `window`／`document`／`localStorage`／`navigator`——需要時用 `typeof window === 'undefined'` 守衛或放到 `onMounted`。每請求新建獨立的 app 實例，嚴禁跨請求共享可變狀態。
 4. **舊網址永不失效。** 下列舊路徑必須以 301／302 導向新的乾淨路由，且此對應表只能新增、不能刪除：
 
@@ -214,6 +215,7 @@ Better Auth 的端點位於 `/api/auth/*`（見「API 契約」），這段路�
 | `GET`    | `/api/issues/:id/materials`                 | 素材列表（公開顯示 `author_name`，email 僅依 opt-in 顯示；管理員另拿完整作者快照）                                                                                                                        |
 | `POST`   | `/api/fact-check`                           | 素材事實查核（**需登入**；Civic Talk 以 Service Binding 轉送私有 `fact-check-core`，不使用前端 token）                                                                                                    |
 | `POST`   | `/api/issues/:id/materials`                 | 投稿素材（**需登入**，#9；前端投稿表單須先完成同源 `/api/fact-check` 查核且結果允許；伺服器仍照常執行 moderation；正常投稿 `collecting` → `summarizing`；自動審查違規會保存但暫時隱藏，且不觸發狀態轉換） |
+| `POST`   | `/api/issues/:id/extraction-preview`        | Clairic 只讀抽取實驗（admin／super-admin；僅允許議題及 `abuse_flagged = 0` 素材；不傳作者快照、不寫業務資料或發布） |
 | `DELETE` | `/api/materials/:id`                        | 刪除素材（admin）                                                                                                                                                                                         |
 | `GET`    | `/api/issues/:id/briefing`                  | 取得說明頁（公開顯示 `author_name`，email 僅依 opt-in；管理員另拿完整作者快照）                                                                                                                           |
 | `POST`   | `/api/issues/:id/briefing`                  | 新增說明頁（**需登入**；版本遞增；正常投稿 → `published`；違規投稿保存但暫時隱藏且不觸發狀態轉換）                                                                                                        |

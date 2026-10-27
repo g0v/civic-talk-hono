@@ -20,6 +20,8 @@ import { createAuth } from '../auth/createAuth'
 import { TERMS_VERSION } from '../legal/terms'
 import { DUPLICATE_NAME_EMAIL_REQUIRED_CODE } from '../lib/profile-name'
 import { normalizeIssueTags } from '../lib/issueTags'
+import { extractIssuePreview, ExtractionError, MAX_MATERIAL_BYTES, MAX_MATERIALS } from '../extraction/clairic'
+import { extractCorpusPreview, MAX_CORPUS_STATE_BYTES } from '../extraction/corpus'
 import { moderationReasonForPolicy, moderateSubmission, moderateSubmissionWithDiagnostics, type ModerationDecision, type ModerationSubmission } from '../moderation/service'
 import type { Context } from 'hono'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
@@ -759,6 +761,60 @@ export function registerApiRoutes(app: App): void {
     const result = await db.deleteOpinionVote(c.env.DB, opinionId, auth.context.user.id)
     if ('error' in result) return error(c, result.error === 'not_found' ? 'Opinion not found' : 'No vote to withdraw', result.error === 'not_found' ? 404 : 404)
     return c.json(result.state)
+  })
+
+  // #183：只供管理員人工檢視，單次請求不儲存、不發布，也不改變議題狀態。
+  app.post('/api/issues/:id/extraction-preview', async c => {
+    const denied = await requireAdmin(c)
+    if (denied) return denied
+
+    const rawId = c.req.param('id')
+    const id = Number(rawId)
+    if (!/^[1-9]\d*$/.test(rawId) || !Number.isSafeInteger(id)) return error(c, 'Invalid id')
+
+    let body: unknown
+    try {
+      body = await c.req.json()
+    } catch {
+      return error(c, 'Invalid JSON')
+    }
+    if (body === null || typeof body !== 'object' || Array.isArray(body)) return error(c, 'Request body must be a JSON object')
+    if ('scope' in body && body.scope !== 'issue') return error(c, 'scope must be "issue" when specified')
+    const corpus = 'scope' in body
+
+    const requested = 'material_ids' in body ? body.material_ids : undefined
+    let materialIds: number[] | undefined
+    if (requested !== undefined) {
+      if (!Array.isArray(requested) || requested.length === 0 || !requested.every(value => Number.isSafeInteger(value) && value > 0)) {
+        return error(c, 'material_ids must be a non-empty array of positive integer IDs')
+      }
+      materialIds = requested as number[]
+      if (new Set(materialIds).size !== materialIds.length) return error(c, 'material_ids must not contain duplicates')
+      if (materialIds.length > MAX_MATERIALS) return error(c, `At most ${MAX_MATERIALS} materials are allowed`, 413)
+    }
+
+    const issue = await db.getIssueForExtraction(c.env.DB, id)
+    if (!issue || issue.abuse_flagged >= 2) return error(c, 'Issue not found', 404)
+    const materials = await db.listMaterialsForExtraction(c.env.DB, id, MAX_MATERIALS + 1, materialIds)
+    if (materialIds && materials.length !== materialIds.length) return error(c, 'Materials not found', 404)
+    if (materials.length === 0) return error(c, '尚無可抽取的素材')
+    if (materials.length > MAX_MATERIALS) return error(c, `At most ${MAX_MATERIALS} materials are allowed; select material_ids explicitly`, 413)
+
+    const encoder = new TextEncoder()
+    for (const material of materials) {
+      if (typeof material.content !== 'string' || !material.content.trim()) return error(c, '素材內容不可為空')
+      if (encoder.encode(material.content).byteLength > MAX_MATERIAL_BYTES) return error(c, `Each material must be at most ${MAX_MATERIAL_BYTES} UTF-8 bytes`, 413)
+    }
+    if (!c.env.AI || typeof c.env.AI.run !== 'function') return error(c, 'Clairic binding unavailable', 503)
+
+    try {
+      return c.json(corpus ? await extractCorpusPreview(c.env.AI, id, materials, materialIds ? 'selected' : 'all') : await extractIssuePreview(c.env.AI, id, materials))
+    } catch (caught) {
+      if (caught instanceof ExtractionError && caught.kind === 'too_large') return error(c, `The complete material state must be at most ${MAX_CORPUS_STATE_BYTES} UTF-8 bytes`, 413)
+      if (caught instanceof ExtractionError && caught.kind === 'truncated') return error(c, 'Clairic response was truncated', 502)
+      if (caught instanceof ExtractionError && caught.kind === 'invalid_model_response') return error(c, 'Invalid Clairic response', 502)
+      return error(c, 'Clairic request failed', 502)
+    }
   })
 
   app.get('/api/issues/:id/prompt', async c => {

@@ -11,6 +11,8 @@
   "observability": {
     "enabled": true,
   },
+  // #183 僅供管理員的 Clairic 抽取預覽；remote 僅影響本機開發。
+  "ai": { "binding": "AI", "remote": true },
   "services": [
     {
       // 事實查核核心（#92）：fact-check-core 沒有公開網址（workers_dev: false），

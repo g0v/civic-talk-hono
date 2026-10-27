@@ -23,6 +23,8 @@ export type AppBindings = {
   OPEN_ROUTER_API_KEY?: string
   /** 私有事實查核核心；只透過 Cloudflare Service Binding 呼叫，不經公開網址。 */
   FACT_CHECK_CORE: Fetcher
+  /** #183 管理員專用的 Clairic 抽取預覽；不得用於其他伺服器端內容生成。 */
+  AI?: Ai
   /** 用於執行時讀取 public/rules/community-guidelines.md */
   ASSETS?: {
     fetch: (request: RequestInfo | URL, init?: RequestInit) => Promise<Response>

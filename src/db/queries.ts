@@ -335,6 +335,11 @@ export async function getIssue(db: D1Database, id: number): Promise<Issue | null
   return row ? issueFromRow(row) : null
 }
 
+/** 抽取預覽只需要議題可見性，不讀取作者快照或其他議題內容。 */
+export async function getIssueForExtraction(db: D1Database, id: number): Promise<Pick<Issue, 'id' | 'abuse_flagged'> | null> {
+  return db.prepare('SELECT id, abuse_flagged FROM ct_issues WHERE id = ?').bind(id).first<Pick<Issue, 'id' | 'abuse_flagged'>>()
+}
+
 /**
  * #77：議題有非隱藏的子內容活動（素材／意見／說明頁的新增或更新）時更新
  * ct_issues.last_activity_at。moderation-hidden（abuse_flagged = 3）的投稿
@@ -891,6 +896,24 @@ export async function listMaterialsForPrompt(db: D1Database, issueId: number): P
     .prepare('SELECT source_name, source_url, stance, content FROM ct_materials WHERE issue_id = ? AND abuse_flagged = 0 ORDER BY created_at ASC, id ASC')
     .bind(issueId)
     .all<{ source_name: string | null; source_url: string | null; stance: Stance | null; content: string | null }>()
+  return results ?? []
+}
+
+/** 抽取預覽只讀乾淨素材的必要欄位，保留 ID 以追溯來源，不讀作者快照。 */
+export interface ExtractionMaterial {
+  id: number
+  source_name: string | null
+  source_url: string | null
+  content: string
+}
+
+export async function listMaterialsForExtraction(db: D1Database, issueId: number, limit: number, materialIds?: number[]): Promise<ExtractionMaterial[]> {
+  const selected = materialIds ? ` AND id IN (${materialIds.map(() => '?').join(', ')})` : ''
+  const limitClause = materialIds ? '' : ' LIMIT ?'
+  const { results } = await db
+    .prepare(`SELECT id, source_name, source_url, content FROM ct_materials WHERE issue_id = ? AND abuse_flagged = 0${selected} ORDER BY created_at ASC, id ASC${limitClause}`)
+    .bind(issueId, ...(materialIds ?? [limit]))
+    .all<ExtractionMaterial>()
   return results ?? []
 }
 

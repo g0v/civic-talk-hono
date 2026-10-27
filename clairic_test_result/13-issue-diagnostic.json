@@ -1,0 +1,743 @@
+{
+  "http_status": 502,
+  "service_status": "error",
+  "error": "invalid_model_response",
+  "diagnostics": {
+    "root_type": "object",
+    "missing_root_keys": [],
+    "model": {
+      "type": "string",
+      "value": "clairic"
+    },
+    "truncated": {
+      "type": "boolean",
+      "value": false
+    },
+    "usage_type": "object",
+    "missing_usage_keys": [],
+    "usage": {
+      "input_tokens": {
+        "type": "number",
+        "value": 11078
+      },
+      "output_tokens": {
+        "type": "number",
+        "value": 0
+      },
+      "state_tokens": {
+        "type": "number",
+        "value": 831
+      },
+      "image_tokens": {
+        "type": "number",
+        "value": 0
+      },
+      "schema_tokens": {
+        "type": "number",
+        "value": 2768
+      },
+      "passes": {
+        "type": "number",
+        "value": 10
+      }
+    },
+    "answers_type": "object",
+    "missing_field_keys": [],
+    "fields": [
+      {
+        "name": "consensus_overview",
+        "expected_type": "text",
+        "actual_type": "text",
+        "answer_type": "object",
+        "missing_value": false,
+        "value_type": "string",
+        "value_count": null,
+        "span_type": "array",
+        "spans_type": "undefined",
+        "confidence": 0.2431780844926834,
+        "p_null": 0.004794502630829811,
+        "quotes": [
+          {
+            "index": 0,
+            "type": "string",
+            "length": 29,
+            "matching_material_ids": [
+              25
+            ],
+            "in_state": true,
+            "anchor_mismatch": false,
+            "example": "設計師太過樂觀，低估了 AI 取代初階/中階設計工作的速度",
+            "example_truncated": false
+          }
+        ]
+      },
+      {
+        "name": "consensus_opinions",
+        "expected_type": "list",
+        "actual_type": "list",
+        "answer_type": "object",
+        "missing_value": false,
+        "value_type": "array",
+        "value_count": 3,
+        "span_type": "undefined",
+        "spans_type": "array",
+        "confidence": 4.119722096466691e-92,
+        "p_null": null,
+        "quotes": [
+          {
+            "index": 0,
+            "type": "string",
+            "length": 8,
+            "matching_material_ids": [
+              26
+            ],
+            "in_state": true,
+            "anchor_mismatch": false
+          },
+          {
+            "index": 1,
+            "type": "string",
+            "length": 2,
+            "matching_material_ids": [
+              26
+            ],
+            "in_state": true,
+            "anchor_mismatch": false,
+            "example": "高達",
+            "example_truncated": false
+          },
+          {
+            "index": 2,
+            "type": "string",
+            "length": 5,
+            "matching_material_ids": [
+              27
+            ],
+            "in_state": true,
+            "anchor_mismatch": false,
+            "example": "設計與工程",
+            "example_truncated": false
+          }
+        ]
+      },
+      {
+        "name": "disputes_overview",
+        "expected_type": "text",
+        "actual_type": "text",
+        "answer_type": "object",
+        "missing_value": false,
+        "value_type": "string",
+        "value_count": null,
+        "span_type": "array",
+        "spans_type": "undefined",
+        "confidence": 0.2788257896900177,
+        "p_null": 0.17987261712551117,
+        "quotes": [
+          {
+            "index": 0,
+            "type": "string",
+            "length": 29,
+            "matching_material_ids": [
+              25
+            ],
+            "in_state": true,
+            "anchor_mismatch": false
+          }
+        ]
+      },
+      {
+        "name": "disputes_opinions",
+        "expected_type": "list",
+        "actual_type": "list",
+        "answer_type": "object",
+        "missing_value": false,
+        "value_type": "array",
+        "value_count": 2,
+        "span_type": "undefined",
+        "spans_type": "array",
+        "confidence": 5.691246119045421e-76,
+        "p_null": null,
+        "quotes": [
+          {
+            "index": 0,
+            "type": "string",
+            "length": 12,
+            "matching_material_ids": [
+              25
+            ],
+            "in_state": true,
+            "anchor_mismatch": false
+          },
+          {
+            "index": 1,
+            "type": "string",
+            "length": 7,
+            "matching_material_ids": [
+              25
+            ],
+            "in_state": true,
+            "anchor_mismatch": false
+          }
+        ]
+      },
+      {
+        "name": "positions_overview",
+        "expected_type": "text",
+        "actual_type": "text",
+        "answer_type": "object",
+        "missing_value": false,
+        "value_type": "string",
+        "value_count": null,
+        "span_type": "array",
+        "spans_type": "undefined",
+        "confidence": 0.23412171006202698,
+        "p_null": 0.005056026857346296,
+        "quotes": [
+          {
+            "index": 0,
+            "type": "string",
+            "length": 53,
+            "matching_material_ids": [
+              27
+            ],
+            "in_state": true,
+            "anchor_mismatch": false
+          }
+        ]
+      },
+      {
+        "name": "position_25_name",
+        "expected_type": "text",
+        "actual_type": "text",
+        "answer_type": "object",
+        "missing_value": false,
+        "value_type": "null",
+        "value_count": null,
+        "span_type": "array",
+        "spans_type": "undefined",
+        "confidence": 0.8368440866470337,
+        "p_null": 0.7513373494148254,
+        "quotes": []
+      },
+      {
+        "name": "position_25_core_concern",
+        "expected_type": "text",
+        "actual_type": "text",
+        "answer_type": "object",
+        "missing_value": false,
+        "value_type": "string",
+        "value_count": null,
+        "span_type": "array",
+        "spans_type": "undefined",
+        "confidence": 0.721254289150238,
+        "p_null": 0.0023562731221318245,
+        "quotes": [
+          {
+            "index": 0,
+            "type": "string",
+            "length": 29,
+            "matching_material_ids": [
+              25
+            ],
+            "in_state": true,
+            "anchor_mismatch": false
+          }
+        ]
+      },
+      {
+        "name": "position_25_opinions",
+        "expected_type": "list",
+        "actual_type": "list",
+        "answer_type": "object",
+        "missing_value": false,
+        "value_type": "array",
+        "value_count": 6,
+        "span_type": "undefined",
+        "spans_type": "array",
+        "confidence": 2.031317361592566e-57,
+        "p_null": null,
+        "quotes": [
+          {
+            "index": 0,
+            "type": "string",
+            "length": 5,
+            "matching_material_ids": [
+              25,
+              27
+            ],
+            "in_state": true,
+            "anchor_mismatch": false
+          },
+          {
+            "index": 1,
+            "type": "string",
+            "length": 13,
+            "matching_material_ids": [
+              25
+            ],
+            "in_state": true,
+            "anchor_mismatch": false
+          },
+          {
+            "index": 2,
+            "type": "string",
+            "length": 17,
+            "matching_material_ids": [
+              25
+            ],
+            "in_state": true,
+            "anchor_mismatch": false
+          },
+          {
+            "index": 3,
+            "type": "string",
+            "length": 43,
+            "matching_material_ids": [
+              25
+            ],
+            "in_state": true,
+            "anchor_mismatch": false
+          },
+          {
+            "index": 4,
+            "type": "string",
+            "length": 8,
+            "matching_material_ids": [
+              25
+            ],
+            "in_state": true,
+            "anchor_mismatch": false
+          },
+          {
+            "index": 5,
+            "type": "string",
+            "length": 8,
+            "matching_material_ids": [
+              26
+            ],
+            "in_state": true,
+            "anchor_mismatch": true,
+            "example": "設計招募全面回溫",
+            "example_truncated": false
+          }
+        ]
+      },
+      {
+        "name": "position_26_name",
+        "expected_type": "text",
+        "actual_type": "text",
+        "answer_type": "object",
+        "missing_value": false,
+        "value_type": "null",
+        "value_count": null,
+        "span_type": "array",
+        "spans_type": "undefined",
+        "confidence": 0.23047994077205658,
+        "p_null": 0.9669160842895508,
+        "quotes": []
+      },
+      {
+        "name": "position_26_core_concern",
+        "expected_type": "text",
+        "actual_type": "text",
+        "answer_type": "object",
+        "missing_value": false,
+        "value_type": "string",
+        "value_count": null,
+        "span_type": "array",
+        "spans_type": "undefined",
+        "confidence": 0.16085398197174072,
+        "p_null": 0.061569709330797195,
+        "quotes": [
+          {
+            "index": 0,
+            "type": "string",
+            "length": 28,
+            "matching_material_ids": [
+              26
+            ],
+            "in_state": true,
+            "anchor_mismatch": false
+          }
+        ]
+      },
+      {
+        "name": "position_26_opinions",
+        "expected_type": "list",
+        "actual_type": "list",
+        "answer_type": "object",
+        "missing_value": false,
+        "value_type": "array",
+        "value_count": 3,
+        "span_type": "undefined",
+        "spans_type": "array",
+        "confidence": 2.5179731669677694e-30,
+        "p_null": null,
+        "quotes": [
+          {
+            "index": 0,
+            "type": "string",
+            "length": 8,
+            "matching_material_ids": [
+              26
+            ],
+            "in_state": true,
+            "anchor_mismatch": false
+          },
+          {
+            "index": 1,
+            "type": "string",
+            "length": 12,
+            "matching_material_ids": [
+              26
+            ],
+            "in_state": true,
+            "anchor_mismatch": false
+          },
+          {
+            "index": 2,
+            "type": "string",
+            "length": 10,
+            "matching_material_ids": [
+              26
+            ],
+            "in_state": true,
+            "anchor_mismatch": false
+          }
+        ]
+      },
+      {
+        "name": "position_27_name",
+        "expected_type": "text",
+        "actual_type": "text",
+        "answer_type": "object",
+        "missing_value": false,
+        "value_type": "string",
+        "value_count": null,
+        "span_type": "array",
+        "spans_type": "undefined",
+        "confidence": 0.9992018342018127,
+        "p_null": 0.0017199951689690351,
+        "quotes": [
+          {
+            "index": 0,
+            "type": "string",
+            "length": 13,
+            "matching_material_ids": [
+              27
+            ],
+            "in_state": true,
+            "anchor_mismatch": false
+          }
+        ]
+      },
+      {
+        "name": "position_27_core_concern",
+        "expected_type": "text",
+        "actual_type": "text",
+        "answer_type": "object",
+        "missing_value": false,
+        "value_type": "string",
+        "value_count": null,
+        "span_type": "array",
+        "spans_type": "undefined",
+        "confidence": 0.20969630777835846,
+        "p_null": 0.013695633970201015,
+        "quotes": [
+          {
+            "index": 0,
+            "type": "string",
+            "length": 15,
+            "matching_material_ids": [
+              27
+            ],
+            "in_state": true,
+            "anchor_mismatch": false
+          }
+        ]
+      },
+      {
+        "name": "position_27_opinions",
+        "expected_type": "list",
+        "actual_type": "list",
+        "answer_type": "object",
+        "missing_value": false,
+        "value_type": "array",
+        "value_count": 26,
+        "span_type": "undefined",
+        "spans_type": "array",
+        "confidence": 1.3483032173962892e-98,
+        "p_null": null,
+        "quotes": [
+          {
+            "index": 0,
+            "type": "string",
+            "length": 1,
+            "matching_material_ids": [
+              27
+            ],
+            "in_state": true,
+            "anchor_mismatch": false,
+            "example": "【",
+            "example_truncated": false
+          },
+          {
+            "index": 1,
+            "type": "string",
+            "length": 4,
+            "matching_material_ids": [
+              27
+            ],
+            "in_state": true,
+            "anchor_mismatch": false
+          },
+          {
+            "index": 2,
+            "type": "string",
+            "length": 14,
+            "matching_material_ids": [
+              27
+            ],
+            "in_state": true,
+            "anchor_mismatch": false
+          },
+          {
+            "index": 3,
+            "type": "string",
+            "length": 15,
+            "matching_material_ids": [
+              27
+            ],
+            "in_state": true,
+            "anchor_mismatch": false
+          },
+          {
+            "index": 4,
+            "type": "string",
+            "length": 7,
+            "matching_material_ids": [
+              27
+            ],
+            "in_state": true,
+            "anchor_mismatch": false
+          },
+          {
+            "index": 5,
+            "type": "string",
+            "length": 20,
+            "matching_material_ids": [
+              27
+            ],
+            "in_state": true,
+            "anchor_mismatch": false
+          },
+          {
+            "index": 6,
+            "type": "string",
+            "length": 11,
+            "matching_material_ids": [
+              27
+            ],
+            "in_state": true,
+            "anchor_mismatch": false
+          },
+          {
+            "index": 7,
+            "type": "string",
+            "length": 20,
+            "matching_material_ids": [
+              27
+            ],
+            "in_state": true,
+            "anchor_mismatch": false
+          },
+          {
+            "index": 8,
+            "type": "string",
+            "length": 7,
+            "matching_material_ids": [
+              27
+            ],
+            "in_state": true,
+            "anchor_mismatch": false
+          },
+          {
+            "index": 9,
+            "type": "string",
+            "length": 18,
+            "matching_material_ids": [
+              27
+            ],
+            "in_state": true,
+            "anchor_mismatch": false
+          },
+          {
+            "index": 10,
+            "type": "string",
+            "length": 9,
+            "matching_material_ids": [
+              27
+            ],
+            "in_state": true,
+            "anchor_mismatch": false
+          },
+          {
+            "index": 11,
+            "type": "string",
+            "length": 21,
+            "matching_material_ids": [
+              27
+            ],
+            "in_state": true,
+            "anchor_mismatch": false
+          },
+          {
+            "index": 12,
+            "type": "string",
+            "length": 15,
+            "matching_material_ids": [
+              27
+            ],
+            "in_state": true,
+            "anchor_mismatch": false,
+            "example": "偉大的設計師不只問「這好看嗎？",
+            "example_truncated": false
+          },
+          {
+            "index": 13,
+            "type": "string",
+            "length": 11,
+            "matching_material_ids": [
+              27
+            ],
+            "in_state": true,
+            "anchor_mismatch": false
+          },
+          {
+            "index": 14,
+            "type": "string",
+            "length": 12,
+            "matching_material_ids": [
+              27
+            ],
+            "in_state": true,
+            "anchor_mismatch": false
+          },
+          {
+            "index": 15,
+            "type": "string",
+            "length": 18,
+            "matching_material_ids": [
+              27
+            ],
+            "in_state": true,
+            "anchor_mismatch": false
+          },
+          {
+            "index": 16,
+            "type": "string",
+            "length": 17,
+            "matching_material_ids": [
+              27
+            ],
+            "in_state": true,
+            "anchor_mismatch": false
+          },
+          {
+            "index": 17,
+            "type": "string",
+            "length": 6,
+            "matching_material_ids": [
+              27
+            ],
+            "in_state": true,
+            "anchor_mismatch": false
+          },
+          {
+            "index": 18,
+            "type": "string",
+            "length": 3,
+            "matching_material_ids": [
+              27
+            ],
+            "in_state": true,
+            "anchor_mismatch": false
+          },
+          {
+            "index": 19,
+            "type": "string",
+            "length": 1,
+            "matching_material_ids": [
+              26,
+              27
+            ],
+            "in_state": true,
+            "anchor_mismatch": false,
+            "example": "5",
+            "example_truncated": false
+          },
+          {
+            "index": 20,
+            "type": "string",
+            "length": 17,
+            "matching_material_ids": [
+              27
+            ],
+            "in_state": true,
+            "anchor_mismatch": false
+          },
+          {
+            "index": 21,
+            "type": "string",
+            "length": 4,
+            "matching_material_ids": [
+              27
+            ],
+            "in_state": true,
+            "anchor_mismatch": false
+          },
+          {
+            "index": 22,
+            "type": "string",
+            "length": 1,
+            "matching_material_ids": [
+              27
+            ],
+            "in_state": true,
+            "anchor_mismatch": false
+          },
+          {
+            "index": 23,
+            "type": "string",
+            "length": 31,
+            "matching_material_ids": [
+              27
+            ],
+            "in_state": true,
+            "anchor_mismatch": false
+          },
+          {
+            "index": 24,
+            "type": "string",
+            "length": 7,
+            "matching_material_ids": [
+              27
+            ],
+            "in_state": true,
+            "anchor_mismatch": false
+          },
+          {
+            "index": 25,
+            "type": "string",
+            "length": 1,
+            "matching_material_ids": [
+              27
+            ],
+            "in_state": true,
+            "anchor_mismatch": false
+          }
+        ]
+      }
+    ]
+  }
+}

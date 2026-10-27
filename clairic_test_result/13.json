@@ -1,0 +1,273 @@
+{
+  "issue_id": 13,
+  "model": "@cf/cloudflare/clairic",
+  "candidate": true,
+  "markdown": "> **人工評估候選**：僅逐份素材抽取原文；不是已驗證的共識或立場，未進行跨素材共識統整。\n> 每份素材在每類最多一個候選，並非完整觀點；同一素材的各欄位是否相關仍須人工核對。Title 僅取同一候選原文首句，並非新擬標題。\n\n# 共識\n\n## Overview\n- 素材 #25：設計師太過樂觀，低估了 AI 取代初階/中階設計工作的速度\n- 素材 #26：高達 82% 的企業主管表示對設計師的需求正在增加或持平\n- 素材 #27：偉大的設計師不只問「這好看嗎？」，更會問「這能帶來什麼改變？」\n\n## Opinion 清單\n- **Title（原文首句）**：設計師太過樂觀，低估了 AI 取代初階/中階設計工作的速度\n  **description（同一候選全文）**：設計師太過樂觀，低估了 AI 取代初階/中階設計工作的速度\n  **素材 ID**：25\n- **Title（原文首句）**：數據顯示，高達 82% 的企業主管表示對設計師的需求正在增加或持平\n  **description（同一候選全文）**：數據顯示，高達 82% 的企業主管表示對設計師的需求正在增加或持平\n  **素材 ID**：26\n- **Title（原文首句）**：偉大的設計師不只問「這好看嗎？\n  **description（同一候選全文）**：偉大的設計師不只問「這好看嗎？」，更會問「這能帶來什麼改變？」\n  **素材 ID**：27\n\n# 爭點\n\n## Overview\n- 素材 #25：設計師是否在「自我欺騙」？\n- 素材 #26：（缺值）\n- 素材 #27：（缺值）\n\n## Opinion 清單\n- **Title（原文首句）**：設計師太過樂觀，低估了 AI 取代初階/中階設計工作的速度\n  **description（同一候選全文）**：設計師太過樂觀，低估了 AI 取代初階/中階設計工作的速度\n  **素材 ID**：25\n\n# 立場地圖\n\n## Overview\n- 素材 #25：初階/中階設計工作的速度\n- 素材 #26：設計師\n- 素材 #27：每位設計師的驅動力都不同——有些人熱衷於與工程師緊密合作處理極端案例，有些人天生是產品策略家、說故事的高手\n\n## 各方立場\n\n### Position 1（素材 #25）\n- **name**：OP\n- **Sources**：\n  - **Title（來源名稱）**：Raddit 社群討論\n    **href**：<https://www.reddit.com/r/UXDesign/comments/1sqw344/designers_are_in_complete_denial_about_ais_real/>\n    **素材 ID**：25\n- **Core_concern**：設計師太過樂觀，低估了 AI 取代初階/中階設計工作的速度\n- **主要主張與論據**：\n  - **Title（原文首句）**：設計師太過樂觀，低估了 AI 取代初階/中階設計工作的速度\n    **description（同一候選全文）**：設計師太過樂觀，低估了 AI 取代初階/中階設計工作的速度\n\n### Position 2（素材 #26）\n- **name**：設計師\n- **Sources**：\n  - **Title（來源名稱）**：\\[Figma\\] Why demand for designers is on the rise\n    **href**：<https://www.figma.com/blog/why-demand-for-designers-is-on-the-rise/>\n    **素材 ID**：26\n- **Core_concern**：高達 82% 的企業主管表示對設計師的需求正在增加或持平\n- **主要主張與論據**：\n  - **Title（原文首句）**：數據顯示，高達 82% 的企業主管表示對設計師的需求正在增加或持平\n    **description（同一候選全文）**：數據顯示，高達 82% 的企業主管表示對設計師的需求正在增加或持平\n\n### Position 3（素材 #27）\n- **name**：（缺值）\n- **Sources**：\n  - **Title（來源名稱）**：Medium 分享\n    **href**：<https://gabiduncombe.medium.com/becoming-a-product-designer-in-the-age-of-ai-without-losing-the-plot-c5f11d9f5b02>\n    **素材 ID**：27\n- **Core_concern**：產品設計師不該陷入「工具焦慮」，而是要將心力投資在商業思維與解決真實問題的能力上\n- **主要主張與論據**：\n  - **Title（原文首句）**：好奇心遠比工具掌控能力更重要\n    **description（同一候選全文）**：好奇心遠比工具掌控能力更重要",
+  "material_count": 3,
+  "extractions": [
+    {
+      "material_id": 25,
+      "fields": {
+        "consensus_overview": {
+          "value": "設計師太過樂觀，低估了 AI 取代初階/中階設計工作的速度",
+          "span": [
+            44,
+            73
+          ],
+          "confidence": 0.2632133662700653,
+          "p_null": 0.16552682220935822,
+          "source_match": "unique"
+        },
+        "consensus_opinion": {
+          "value": "設計師太過樂觀，低估了 AI 取代初階/中階設計工作的速度",
+          "span": [
+            44,
+            73
+          ],
+          "confidence": 0.40150967240333557,
+          "p_null": 0.05464546009898186,
+          "source_match": "unique"
+        },
+        "disputes_overview": {
+          "value": "設計師是否在「自我欺騙」？",
+          "span": [
+            13,
+            26
+          ],
+          "confidence": 0.27418026328086853,
+          "p_null": 0.022617453709244728,
+          "source_match": "unique"
+        },
+        "disputes_opinion": {
+          "value": "設計師太過樂觀，低估了 AI 取代初階/中階設計工作的速度",
+          "span": [
+            44,
+            73
+          ],
+          "confidence": 0.4000686705112457,
+          "p_null": 0.023385750129818916,
+          "source_match": "unique"
+        },
+        "positions_overview": {
+          "value": "初階/中階設計工作的速度",
+          "span": [
+            61,
+            73
+          ],
+          "confidence": 0.10766129195690155,
+          "p_null": 0.03406015411019325,
+          "source_match": "unique"
+        },
+        "position_name": {
+          "value": "OP",
+          "span": [
+            31,
+            33
+          ],
+          "confidence": 0.5774478912353516,
+          "p_null": 0.25945696234703064,
+          "source_match": "unique"
+        },
+        "position_core_concern": {
+          "value": "設計師太過樂觀，低估了 AI 取代初階/中階設計工作的速度",
+          "span": [
+            44,
+            73
+          ],
+          "confidence": 0.5324641466140747,
+          "p_null": 0.00482822535559535,
+          "source_match": "unique"
+        },
+        "position_opinion": {
+          "value": "設計師太過樂觀，低估了 AI 取代初階/中階設計工作的速度",
+          "span": [
+            44,
+            73
+          ],
+          "confidence": 0.49037638306617737,
+          "p_null": 0.0019126884872093797,
+          "source_match": "unique"
+        }
+      },
+      "usage": {
+        "input_tokens": 1890,
+        "output_tokens": 0,
+        "state_tokens": 82,
+        "image_tokens": 0,
+        "schema_tokens": 1234,
+        "passes": 8
+      }
+    },
+    {
+      "material_id": 26,
+      "fields": {
+        "consensus_overview": {
+          "value": "高達 82% 的企業主管表示對設計師的需求正在增加或持平",
+          "span": [
+            26,
+            54
+          ],
+          "confidence": 0.18934158980846405,
+          "p_null": 0.33539652824401855,
+          "source_match": "unique"
+        },
+        "consensus_opinion": {
+          "value": "數據顯示，高達 82% 的企業主管表示對設計師的需求正在增加或持平",
+          "span": [
+            21,
+            54
+          ],
+          "confidence": 0.200972780585289,
+          "p_null": 0.17717687785625458,
+          "source_match": "unique"
+        },
+        "disputes_overview": {
+          "value": null,
+          "span": null,
+          "confidence": 0.2544352412223816,
+          "p_null": 0.9988576173782349,
+          "source_match": null
+        },
+        "disputes_opinion": {
+          "value": null,
+          "span": null,
+          "confidence": 0.1273740977048874,
+          "p_null": 0.9975625276565552,
+          "source_match": null
+        },
+        "positions_overview": {
+          "value": "設計師",
+          "span": [
+            41,
+            44
+          ],
+          "confidence": 0.38395199179649353,
+          "p_null": 0.08183986693620682,
+          "source_match": "unique"
+        },
+        "position_name": {
+          "value": "設計師",
+          "span": [
+            41,
+            44
+          ],
+          "confidence": 0.9108512997627258,
+          "p_null": 0.33442994952201843,
+          "source_match": "unique"
+        },
+        "position_core_concern": {
+          "value": "高達 82% 的企業主管表示對設計師的需求正在增加或持平",
+          "span": [
+            26,
+            54
+          ],
+          "confidence": 0.2039107382297516,
+          "p_null": 0.016704311594367027,
+          "source_match": "unique"
+        },
+        "position_opinion": {
+          "value": "數據顯示，高達 82% 的企業主管表示對設計師的需求正在增加或持平",
+          "span": [
+            21,
+            54
+          ],
+          "confidence": 0.2138967365026474,
+          "p_null": 0.005418498069047928,
+          "source_match": "unique"
+        }
+      },
+      "usage": {
+        "input_tokens": 2122,
+        "output_tokens": 0,
+        "state_tokens": 111,
+        "image_tokens": 0,
+        "schema_tokens": 1234,
+        "passes": 8
+      }
+    },
+    {
+      "material_id": 27,
+      "fields": {
+        "consensus_overview": {
+          "value": "偉大的設計師不只問「這好看嗎？」，更會問「這能帶來什麼改變？」",
+          "span": [
+            498,
+            529
+          ],
+          "confidence": 0.06408146023750305,
+          "p_null": 0.04843680188059807,
+          "source_match": "unique"
+        },
+        "consensus_opinion": {
+          "value": "偉大的設計師不只問「這好看嗎？」，更會問「這能帶來什麼改變？」",
+          "span": [
+            498,
+            529
+          ],
+          "confidence": 0.08864536136388779,
+          "p_null": 0.01188739389181137,
+          "source_match": "unique"
+        },
+        "disputes_overview": {
+          "value": null,
+          "span": null,
+          "confidence": 0.08635646849870682,
+          "p_null": 0.984363853931427,
+          "source_match": null
+        },
+        "disputes_opinion": {
+          "value": null,
+          "span": null,
+          "confidence": 0.07666746526956558,
+          "p_null": 0.9276911020278931,
+          "source_match": null
+        },
+        "positions_overview": {
+          "value": "每位設計師的驅動力都不同——有些人熱衷於與工程師緊密合作處理極端案例，有些人天生是產品策略家、說故事的高手",
+          "span": [
+            955,
+            1008
+          ],
+          "confidence": 0.12238624691963196,
+          "p_null": 0.024564532563090324,
+          "source_match": "unique"
+        },
+        "position_name": {
+          "value": null,
+          "span": null,
+          "confidence": 0.5441283583641052,
+          "p_null": 0.8266844749450684,
+          "source_match": null
+        },
+        "position_core_concern": {
+          "value": "產品設計師不該陷入「工具焦慮」，而是要將心力投資在商業思維與解決真實問題的能力上",
+          "span": [
+            150,
+            190
+          ],
+          "confidence": 0.2674637734889984,
+          "p_null": 0.01370429340749979,
+          "source_match": "unique"
+        },
+        "position_opinion": {
+          "value": "好奇心遠比工具掌控能力更重要",
+          "span": [
+            212,
+            226
+          ],
+          "confidence": 0.20290832221508026,
+          "p_null": 0.002032856224104762,
+          "source_match": "unique"
+        }
+      },
+      "usage": {
+        "input_tokens": 6154,
+        "output_tokens": 0,
+        "state_tokens": 615,
+        "image_tokens": 0,
+        "schema_tokens": 1234,
+        "passes": 8
+      }
+    }
+  ]
+}

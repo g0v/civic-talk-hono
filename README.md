@@ -4,7 +4,7 @@
 
 本站受[ronnywang](https://www.github.com/ronnywang)提出的[原始構想](https://ronnywang.github.io/civic-notes/civic-talk/)的啟發。
 
-內容生成仍由志願者使用自己的 AI token 完成，平台只產生 prompt 並收回結果；例外是投稿安全審查會呼叫外部 moderation 服務，素材事實查核則由 Civic Talk Worker 透過 Cloudflare Service Binding 呼叫不公開的 `fact-check-core` Worker。
+內容生成仍由志願者使用自己的 AI token 完成，平台只產生 prompt 並收回結果；例外是投稿安全審查會呼叫外部 moderation 服務，素材事實查核則由 Civic Talk Worker 透過 Cloudflare Service Binding 呼叫不公開的 `fact-check-core` Worker。#183 另授權管理員以 Workers AI Clairic 進行只讀抽取實驗，供人工審閱、不自動發布，不改變志願者自帶 token 的內容生成流程。
 
 ## 軟體授權
 
@@ -77,6 +77,39 @@ vp run dev
 ```
 
 > 登入功能在 `vp run dev` 下**測不了**：Better Auth 的資料表在遠端的 `vtaiwan-auth`，本機模擬庫是空的。要實測登入請用 `vp run dev:remote`。
+
+### Clairic 抽取實驗
+
+`POST /api/issues/:id/extraction-preview` 僅供未停權的 `admin`／`super-admin` 測試，沒有 UI；只讀取允許的議題與素材，回傳人工審閱用原文摘錄候選及 Markdown，不寫入業務資料、不發布；既有 Better Auth session 生命週期仍可能寫入認證資料庫。建議以 `scope: "issue"` 將選取素材一次送入同一個 Clairic state、只呼叫一次模型，檢視跨素材候選和出處。候選不是已驗證的共識，也不是對來源文章的事實查核；不保證涵蓋全部意見。詳見 [抽取契約、限制與人工檢查方式](./docs/clairic-extraction.md)。
+
+本機以 `vp run dev:remote` 啟動後，在同一個本機 origin 以管理員登入。AI 呼叫仍在 Cloudflare 遠端執行、使用真實帳號額度並可能產生費用；不要使用不願送出的素材。以下範例需將 `ORIGIN` 換成開發伺服器實際網址及登入 origin、`ISSUE_ID` 換成允許抽取的議題 ID。在同一個互動式終端貼上並執行整個括號區塊，等提示出現後，再從同源瀏覽器開發工具將該登入請求的 **Cookie 標頭值**貼入不回顯的提示；不要將 cookie 存入 repo、貼到 issue／訊息、放進 shell 歷史，或在共用終端及 shell trace 中操作。結果可能含投稿內容，也應妥善保護。
+
+```bash
+(
+set +x
+ORIGIN='http://localhost:5173'
+ISSUE_ID=123
+COOKIE_HEADER_FILE="$(mktemp "${TMPDIR:-/tmp}/civic-cookie.XXXXXX")"
+chmod 600 "$COOKIE_HEADER_FILE"
+trap 'rm -f "$COOKIE_HEADER_FILE"' EXIT
+printf '貼上 Cookie 標頭值（不會回顯）： ' >&2
+IFS= read -r -s COOKIE_VALUE
+printf '\n' >&2
+printf 'Cookie: %s\n' "$COOKIE_VALUE" > "$COOKIE_HEADER_FILE"
+unset COOKIE_VALUE
+curl --silent --show-error -X POST "$ORIGIN/api/issues/$ISSUE_ID/extraction-preview" \
+  -H 'Content-Type: application/json' -H "Origin: $ORIGIN" \
+  -H "@$COOKIE_HEADER_FILE" --data '{"scope":"issue"}'
+rm -f "$COOKIE_HEADER_FILE"
+trap - EXIT
+)
+```
+
+若已安裝 `jq`，可將上述 curl 末尾改為 `--data '{"scope":"issue"}' | jq 'if .analysis then {scope, selection, material_ids, usage, analysis} else . end'`，閱讀全批候選、來源 ID 與本次呼叫的用量；或改用 `--data '{"scope":"issue"}' | jq -r 'if .markdown then .markdown else . end'` 閱讀 Markdown。遇到錯誤仍顯示 JSON 錯誤。輸出可能含素材原文，勿寫入公開日誌。
+
+`{"scope":"issue"}` 選取所有符合條件的素材；可改用 `{"scope":"issue","material_ids":[12,15]}` 指定子集，仍按建立時間／ID 排序。每次至多 8 筆、每筆原文至多 4,000 UTF-8 bytes，整批 state（含素材 ID 標籤）至多 8,000 UTF-8 bytes；逾限整批報錯而非默默截取。這是本實驗上限，不是全站素材數量限制或 token 保證。
+
+省略 `scope` 的 `{}` 或 `{"material_ids":[12,15]}` 維持原有逐素材抽取與 `extractions` 格式，每筆一次模型呼叫及其各自的 `usage`；新模式則以 `analysis` 表示全批候選，只有回應頂層的單次 `usage`，不分攤到各素材。其他 `scope` 值回 `400`。
 
 常用指令：
 

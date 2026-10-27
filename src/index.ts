@@ -45,6 +45,14 @@ async function notFoundHtml(origin: string): Promise<string> {
   })
 }
 
+// 抽取預覽即使被 CSRF 中介層擋下，也不得被快取。
+app.use('/api/issues/:id/extraction-preview', async (c, next) => {
+  await next()
+  c.header('Cache-Control', 'private, no-store')
+  c.header('Vary', 'Cookie')
+  c.header('X-Content-Type-Options', 'nosniff')
+})
+
 // ⚠️ 必須先於所有 /api 路由註冊。Hono 依註冊順序組 handler chain；若寫在後面，
 // 已註冊的路由回應後便不會進入這層，跨站寫入防護會靜默失效。
 app.use('/api/*', apiCsrf)
