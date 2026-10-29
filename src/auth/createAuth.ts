@@ -1,7 +1,7 @@
 import { betterAuth } from 'better-auth'
 import { admin } from 'better-auth/plugins'
 import { adminAc, userAc } from 'better-auth/plugins/admin/access'
-import type { AppBindings } from '../api/types'
+import type { AuthBindings } from '../api/types'
 
 /**
  * admin plugin 的角色存取控制表：
@@ -38,7 +38,7 @@ export function limitOAuthProfileSyncToAvatar(data: Record<string, unknown>, pat
  * admin plugin 開放 ban/unban 供濫用回報審核使用（#21，AGENTS.md 不變量 5／11）。
  * 危險端點（set-role、remove-user、impersonate）在 src/api/auth.ts 以路由前攔截。
  */
-export function createAuth(env: AppBindings) {
+export function createAuth(env: AuthBindings) {
   return betterAuth({
     appName: 'Civic Talk',
     database: env.DB_AUTH,

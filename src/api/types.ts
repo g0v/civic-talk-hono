@@ -29,4 +29,10 @@ export type AppBindings = {
   }
 }
 
+/** 僅 Better Auth 所需的綁定；實驗入口不需要其他業務服務。 */
+export type AuthBindings = Pick<
+  AppBindings,
+  'DB_AUTH' | 'BETTER_AUTH_URL' | 'BETTER_AUTH_SECRET' | 'GOOGLE_CLIENT_ID' | 'GOOGLE_CLIENT_SECRET' | 'GITHUB_CLIENT_ID' | 'GITHUB_CLIENT_SECRET'
+>
+
 export type App = Hono<{ Bindings: AppBindings }>

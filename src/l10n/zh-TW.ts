@@ -166,7 +166,7 @@ export const messages = {
   stance_neutral: '中立',
   stance_unknown: '立場未知',
   vol_title: '志願者工具',
-  vol_intro: '平台不直接呼叫 AI API。請用以下工具生成 prompt，貼到你自己的 Claude / ChatGPT / Gemini，再把輸出結果貼回平台。',
+  vol_intro: '一般志願者流程不直接呼叫生成 AI API。請用以下工具生成 prompt，貼到你自己的 Claude / ChatGPT / Gemini，再把輸出結果貼回平台；另有需明確同意的 #183 非正式實驗 API，會將指定素材送交 Cloudflare Workers AI，詳見隱私權政策。',
   vol_login_desc: '使用志願者工具需要先登入，以確保 prompt 的使用與彙整內容異動都能追溯。',
   vol_step1: '生成彙整 prompt',
   vol_step2: '貼到你的 AI',
@@ -598,8 +598,10 @@ export const messages = {
   privacy_s4_li2: '確保內容品質：具名提交可降低惡意投稿的風險',
   privacy_s4_li3: '在有濫用情形時進行追溯與調查',
   privacy_s4_li4: '自動安全審查：被拒絕的投稿會保存內容快照，供管理員複核與處理申訴；如需申訴，請使用平台提供的申訴管道。',
+  privacy_s4_li5:
+    '#183 證據實驗僅在明確啟用的隔離本機環境提供（正式站不可用），每次工作都須登入並明確同意。指定議題與素材的原始文字及必要來源資料會送至 Cloudflare Workers AI；素材正文可能含個資且未經匿名化。作者快照欄位中的 ID、姓名與 email 不送入模型，但素材原文未經脫敏，仍可能包含相同資訊。輸入快照、引文、模型回應、來源紀錄與人改版本保存在該實驗的隔離本機業務資料庫。',
   privacy_s5_h: '資料分享',
-  privacy_s5_p: '除必要的基礎設施服務（Cloudflare Workers 平台）外，平台不會將您的個人資料出售、出租或分享給第三方用於商業目的。',
+  privacy_s5_p: '除必要的基礎設施服務（Cloudflare Workers 平台）外，平台不會將您的個人資料出售、出租或分享給第三方用於商業目的；另僅在您明確同意的 #183 本機實驗中，選定資料會由 Cloudflare Workers AI 處理，詳見上方說明。',
   privacy_s5_alert_h: '執法配合聲明',
   privacy_s5_alert_body:
     '若有使用者濫用平台（包含但不限於散布不實資訊、騷擾他人、非法內容等），平台保留依法配合主管機關（包含警察機關）調查、提供相關使用記錄的權利。<strong>上述記錄包括但不限於：帳號 ID、公開顯示名稱、email（無論使用者是否選擇公開）、提交時間與 IP 位址等技術資料。</strong>',
@@ -610,14 +612,14 @@ export const messages = {
   privacy_s7_li1: '<strong>存取權</strong>：要求查看平台持有的您的個人資料',
   privacy_s7_li2: '<strong>更正權</strong>：您可在個人資料頁修改公開顯示名稱；歷史記錄中的顯示名稱為提交當下的快照，平台不提供追溯修改。',
   privacy_s7_li3:
-    '<strong>刪除與匿名化權</strong>：要求刪除帳號或匿名化內容中的作者快照。由於內容資料與共用認證資料庫分開保存，刪除登入帳號不會自動刪除既有內容的作者快照；平台收到請求後會另行處理，惟依法或為處理爭議所需者可能在必要期間內保留。',
+    '<strong>刪除與匿名化權</strong>：要求刪除帳號或匿名化內容中的作者快照。由於內容資料與共用認證資料庫分開保存，刪除登入帳號不會自動刪除既有內容的作者快照；平台收到請求後會另行處理，惟依法或為處理爭議所需者可能在必要期間內保留。#183 實驗快照另存於隔離本機資料庫；遠端來源為唯讀，素材隱藏、變更或刪除只能在實驗下次啟動對帳或後續來源查核時發現，因此不會即時同步清除。已送出的模型請求不能保證撤回；如需清除實驗資料，請聯絡平台。',
   privacy_s7_footer: '如需行使上述權利，請透過下方聯絡方式與我們聯絡。',
   privacy_s8_h: '聯絡我們',
   privacy_s8_email_label: '電子郵件：',
   privacy_s8_github_label: 'GitHub：',
   privacy_s9_h: '政策更新',
   privacy_s9_p: '我們可能不時更新本隱私權政策。重大變更將在平台上公告。',
-  privacy_s9_date: '最後更新：2026 年 9 月',
+  privacy_s9_date: '最後更新：2026 年 10 月',
   // 濫用回報（#21）
   report_btn: '⚑ 回報濫用',
   report_modal_title: '回報濫用內容',

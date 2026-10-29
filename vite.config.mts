@@ -10,6 +10,8 @@ export default defineConfig(({ mode }) => ({
   server: {
     // 不讓 dev server 代替 Worker 回 CORS，確保本機與正式路由行為一致。
     cors: false,
+    // 實驗入口綁定 canonical localhost:5173（不暴露 LAN）；占用時直接失敗，避免 OAuth callback 漂移。
+    ...(mode === 'remote' && process.env['CIVIC_AI_EXPERIMENT'] === '1' ? { host: 'localhost', port: 5173, strictPort: true } : {}),
   },
   optimizeDeps: {
     // 一起預載 Vue 與輪播，避免首次發現輪播時重建依賴，短暫混用不同 Vue runtime。
@@ -44,8 +46,20 @@ export default defineConfig(({ mode }) => ({
   publicDir: 'public',
   plugins: lazyPlugins(() => [
     // Cloudflare plugin 與 Vitest 不相容；測試時略過，由 vue plugin 單獨處理 .vue
-    // 只有明確使用 `--mode remote` 時才連遠端綁定；一般 dev 使用本機模擬資源。
-    ...(process.env['VITEST'] ? [] : [cloudflare({ remoteBindings: mode === 'remote' })]),
+    // 一般遠端開發仍用既有設定；只有明確 opt-in 的 remote mode 才載入實驗 Worker 與隔離 persist。
+    ...(process.env['VITEST']
+      ? []
+      : [
+          cloudflare({
+            remoteBindings: mode === 'remote',
+            ...(mode === 'remote' && process.env['CIVIC_AI_EXPERIMENT'] === '1'
+              ? {
+                  configPath: 'wrangler.ai-experiment.jsonc',
+                  persistState: { path: '.wrangler/ai-experiment' },
+                }
+              : {}),
+          }),
+        ]),
     vue({
       compiler: vueCompiler,
       template: { transformAssetUrls: false },

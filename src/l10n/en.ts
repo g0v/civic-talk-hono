@@ -168,7 +168,7 @@ export const messages = {
   stance_neutral: 'Neutral',
   stance_unknown: 'Unknown',
   vol_title: 'Volunteer Tools',
-  vol_intro: 'This platform never calls AI APIs directly. Use the tools below to generate prompts, paste them into your own Claude / ChatGPT / Gemini, then paste the output back here.',
+  vol_intro: 'The standard volunteer workflow does not call generative AI APIs directly. Use the tools below to generate prompts, paste them into your own Claude / ChatGPT / Gemini, then paste the output back here. A separate opt-in #183 experimental API sends selected materials to Cloudflare Workers AI; see the Privacy Policy.',
   vol_login_desc: 'Using Volunteer Tools requires signing in so prompt use and briefing changes can be traced to an account.',
   vol_step1: 'Generate prompt',
   vol_step2: 'Paste into your AI',
@@ -623,9 +623,11 @@ export const messages = {
   privacy_s4_li3: 'Tracing and investigating abuse when it occurs',
   privacy_s4_li4:
     'Automated safety review: rejected submissions are retained as content snapshots for admin review and appeal handling; use the Platform appeal channel if you believe a rejection was mistaken.',
+  privacy_s4_li5:
+    'The #183 evidence experiment is available only in an explicitly enabled isolated local environment (not on the public production site); each job requires sign-in and explicit consent. Selected issue/material text and required source metadata are sent to Cloudflare Workers AI. Material text may contain personal data and is not anonymized. Author snapshot fields (ID, name, and email) are excluded from model input; the source text is not scrubbed and may contain the same information. Input snapshots, citations, model responses, provenance, and human revisions are stored in that experiment’s isolated local business database.',
   privacy_s5_h: 'Data Sharing',
   privacy_s5_p:
-    'Except for necessary infrastructure services (the Cloudflare Workers platform), the Platform will not sell, rent, or share your personal data with third parties for commercial purposes.',
+    'Except for necessary infrastructure services (the Cloudflare Workers platform), the Platform will not sell, rent, or share your personal data with third parties for commercial purposes. In the #183 local experiment only, data you explicitly consent to process is handled by Cloudflare Workers AI, as described above.',
   privacy_s5_alert_h: 'Law Enforcement Disclosure',
   privacy_s5_alert_body:
     'If a user abuses the Platform (including but not limited to spreading false information, harassment, or illegal content), the Platform reserves the right to cooperate with competent authorities (including law enforcement) and provide relevant usage records as required by law. <strong>Such records include but are not limited to: account ID, public display name, email (regardless of whether the user chose to make it public), submission time, and technical data such as IP addresses.</strong>',
@@ -637,14 +639,14 @@ export const messages = {
   privacy_s7_li2:
     '<strong>Right of rectification</strong>: You can change your public display name on the Profile page; display names in historical records are snapshots taken at the time of submission and the Platform does not provide retroactive corrections.',
   privacy_s7_li3:
-    '<strong>Right to erasure and anonymisation</strong>: Request deletion of your account or anonymisation of the author snapshots in your content. Because content data and the shared authentication database are stored separately, deleting your login account will not automatically delete the author snapshots in existing content; the Platform will handle such requests separately, although data required by law or needed for dispute resolution may be retained for the necessary period.',
+    '<strong>Right to erasure and anonymisation</strong>: Request deletion of your account or anonymisation of the author snapshots in your content. Because content data and the shared authentication database are stored separately, deleting your login account will not automatically delete the author snapshots in existing content; the Platform will handle such requests separately, although data required by law or needed for dispute resolution may be retained for the necessary period. #183 experiment snapshots are stored separately in an isolated local database. Because the remote source is read-only, source hiding, changes, or deletion are detected only during the next experiment startup reconciliation or a later source check, so cleanup is not immediate. A model request already sent cannot be guaranteed to be withdrawn; contact the Platform to request cleanup of experiment data.',
   privacy_s7_footer: 'To exercise any of the above rights, please contact us using the details below.',
   privacy_s8_h: 'Contact Us',
   privacy_s8_email_label: 'Email:',
   privacy_s8_github_label: 'GitHub:',
   privacy_s9_h: 'Policy Updates',
   privacy_s9_p: 'We may update this Privacy Policy from time to time. Significant changes will be announced on the Platform.',
-  privacy_s9_date: 'Last updated: September 2026',
+  privacy_s9_date: 'Last updated: October 2026',
   // Abuse reports (#21)
   report_btn: '⚑ Report Abuse',
   report_modal_title: 'Report Abusive Content',
