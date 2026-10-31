@@ -94,3 +94,10 @@
 - generation diagnostics 新增固定白名單 validation_code，不保存原始例外或模型文字。新增缺 refusal 的正常完成與錯誤 evidence/candidate ID 診斷回歸，修正前兩項皆失敗，修正後生成／流水線／計價三檔共 39 tests 通過。全流程 fixture 也改為實際原生完成的缺 refusal 形狀。
 - 獨立 ephemeral loopback smoke 用合成 completion 省略 refusal，完成 `ai_draft` 與引用來源核對，零真實模型呼叫。直接重播使用者的未修改 raw response，現在精確拒絕 `generation_invalid_candidate`：只修好誤拒，不將該筆不合格結果變成草稿。新 prompt 的真實生成品質仍待另一次明確同意的工作驗收；本輪未重送 POST、改舊工作或清除 sandbox。
 - 本輪完整驗收：`vp check --no-fmt --no-lint` 通過（152 files）、`vp test` 通過（51 files／453 tests）、`vp run build` 成功；有既有 client bundle 大於 500 kB 警告。初次完整檢查指出新增測試的 JSON body 型別為 unknown，已使用既有 object guard 縮窄後重跑通過。這些結果與離線／合成 smoke 不替代新 prompt 的真實模型品質驗收。
+
+## 2026-11-01：Overview 採最佳努力生成
+
+- 使用者回報已成功取得可讀結果，提供三段 evidence、一項爭點、三個立場及對應 citation／比較摘要；這是該次真實流程可產出結果的使用者驗收證據，不代表獨立人工語義品質、其他案例或整個 PR 已全數驗收。使用者另觀察三個分區 Overview 均為 null；此處不複製素材或完整私有輸出。
+- 程式核對與離線 probe 確認，原 schema 的 Overview 允許 null，解析器不會清掉已有概述，但也不要求有 items 就必須有概述。使用者明確選擇「先加強 prompt」，不新增完整性拒絕規則，也不授權本輪新增付費模型呼叫。
+- system prompt 改為要求有項目的分區產生 1–2 句概述，每句引用該分區項目已使用的 evidence；立場概述中性呈現不同主張、不宣稱共識。空分區維持 null，證據不足不補造，Core_concern 仍可為 null。`gemma_prompt` 版本為 `evidence-only-native-v4`；只改提示與實際版本，不改 schema、解析器、API、原生四參數、費用算法或舊工作。
+- 離線 probe 確認：有項目且 Overview 為 null 仍接受；已提供的 Overview 與 citation 保留；builder 在 48 KiB 上限內、原生參數形狀不變，設定指紋與 v3 不同。本輪無真實模型呼叫，不把合成／離線驗證當作新提示已改善模型結果的證據。僅提示文字與版本調整，不新增脆弱的 prompt 措辭斷言；沿用既有行為測試。

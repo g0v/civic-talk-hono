@@ -524,6 +524,8 @@ Gemma 生成採與 `../pocket-polis/src/sensemaking.ts` 的 `runAiModel()` 相�
 
 送給 Gemma 的候選與輸出統一使用 `candidate_id`，必須逐字取自相同分區的輸入候選，不能拿 `evidence_ids` 中的證據 ID 代替。每個候選最多輸出一項；共識／爭點項目須引用至少兩份不同素材，爭點應在同一項呈現雙方，不能拆成只引用單一來源的兩項。Prompt 明示這些規則，但本站仍獨立驗證，模型不遵循時不會自動配對、改寫候選或放行。
 
+`Overview` 採最佳努力生成：分區有項目時，prompt 要求用 1–2 句簡述該分區已輸出的項目，每句附上這些項目已引用的 evidence IDs；立場概述只中性整理不同主張，不宣稱共識。分區無項目時用 null；證據不足以支持可靠概述時也不得補造。這是 prompt 要求，不是新增的完整性守門：schema／解析器仍接受有項目但 Overview 為 null，不會只因缺概述把整份可讀草稿判為失敗，也不自動補寫或重試。`Core_concern` 證據不足時仍可為 null。
+
 此次原生呼叫與候選契約修訂會自然改變 prompt／參數／設定指紋，因此新工作不沿用舊契約的失敗結果；舊工件、未知費用與 tombstone 保留，不能把新指紋當作舊呼叫退款或已驗收的證據。離線契約與回歸通過不能取代完整真實工作與人工品質驗收；再次送出仍是可能付費的新工作，需重新明確同意。
 
 `Source.Title` 取自 `ct_materials.source_name`，缺值才用素材 ID；來源表沒有 material title 欄，不以原文預覽或 AI 衍生標題替代。`source_hash` 是固定順序 metadata+content JSON 的 UTF-8 SHA-256，`content_hash` 是原始 content UTF-8 bytes 的 SHA-256；原文不 trim、不正規化。空白正文不會被省略，會以 `422 empty_material` 拒絕。
