@@ -101,3 +101,12 @@
 - 程式核對與離線 probe 確認，原 schema 的 Overview 允許 null，解析器不會清掉已有概述，但也不要求有 items 就必須有概述。使用者明確選擇「先加強 prompt」，不新增完整性拒絕規則，也不授權本輪新增付費模型呼叫。
 - system prompt 改為要求有項目的分區產生 1–2 句概述，每句引用該分區項目已使用的 evidence；立場概述中性呈現不同主張、不宣稱共識。空分區維持 null，證據不足不補造，Core_concern 仍可為 null。`gemma_prompt` 版本為 `evidence-only-native-v4`；只改提示與實際版本，不改 schema、解析器、API、原生四參數、費用算法或舊工作。
 - 離線 probe 確認：有項目且 Overview 為 null 仍接受；已提供的 Overview 與 citation 保留；builder 在 48 KiB 上限內、原生參數形狀不變，設定指紋與 v3 不同。本輪無真實模型呼叫，不把合成／離線驗證當作新提示已改善模型結果的證據。僅提示文字與版本調整，不新增脆弱的 prompt 措辭斷言；沿用既有行為測試。
+
+## 2026-11-01：三素材工作 Overview 封裝格式失敗
+
+- 使用者自行將 README 工作選取擴至議題 13 的素材 25／26／27，並回報長時間 generating 後 failed。本輪只讀本機 job／SQLite 與保存的工件，未新增付費呼叫，也不回退使用者的三素材選取。該工作抽取 11 段 evidence，六次呼叫全已結算，ledger actual 合計 3,054 microUSD、unknown／reserved 為零；Gemma actual 1,334 microUSD。這不是帳單核對，也不影響其他工作既有未知費用。
+- Gemma 生成 75.869 秒後正常 `stop`，回報 2,514 prompt tokens、3,608 completion tokens，沒有碰到 8,192 輸出上限或 10 分鐘 step timeout。回應為完整 JSON；診斷是 `invalid_generation / generation_invalid_schema`，不是 provider error、輪詢逾時或截斷。延長輪詢或提高 token 上限不能修正本次 schema 錯誤。
+- 官方形狀／本站 schema 的離線檢查定位兩處：consensus.Overview 與 positions.Overview 是 `{text:[字串], evidence_ids:[...]}`，但契約要求 `[{text:字串,evidence_ids:[...]}]` 或 null。僅包外層陣列仍失敗，因為 text 仍是陣列。診斷時只在記憶體將各自唯一的 text 元素改回原字串、移入句子物件陣列，其餘內容與 ID 不動，整份回應即可通過 schema 與完整解析；這是排除其他失敗原因的反事實驗證，不是修改／接受原始工件。
+- 沿用使用者先前「只加強 prompt」的決策，加入非 null Overview 的明確格式示例與單句／兩句規則，明示 Overview 不能是單一物件、text 不能是陣列，版本為 `evidence-only-native-v5`。不放寬 schema／解析器、不自動改寫回應、不重試，不改舊工作與 ledger。新提示是否改善真實輸出仍未驗證。
+- README 的來源預檢同步選取 25／26／27，保留先前 25／26 的歷史 metadata，並明確註記該舊查核不涵蓋 27。本輪未執行新的遠端預檢，不捏造素材 27 當前狀態；後續實驗須重新確認三筆來源。
+- 後續使用者於 2026-11-01 回報：本次三素材流程已成功產出 `ai_draft`，因此 v5 提示已有該次真實工作成功的使用者驗收證據。使用者尚未查核內容品質；此回報不等於概述、候選分類、引用語義或所有驗收案例皆已通過，也不解除 Draft PR 的人工品質與其他合併門檻。本次僅記錄回報，不重新呼叫模型。

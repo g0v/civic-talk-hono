@@ -237,13 +237,13 @@ vp exec wrangler d1 execute DB --local --config wrangler.ai-experiment.jsonc --p
 
 ### 2. 唯讀來源預檢與啟動
 
-先核對議題 13 與素材 25／26 是否仍存在、屬於該議題且未隱藏。以下固定 SQL 只回傳識別、狀態及長度，不讀正文、不建立或修改遠端資料：
+先核對議題 13 與素材 25／26／27 是否仍存在、屬於該議題且未隱藏。以下固定 SQL 只回傳識別、狀態及長度，不讀正文、不建立或修改遠端資料：
 
 ```bash
-vp exec wrangler d1 execute SOURCE_DB --remote --config wrangler.ai-experiment.jsonc --json --command "SELECT id, title, status, abuse_flagged FROM ct_issues WHERE id = 13; SELECT id, issue_id, length(source_name) AS source_name_chars, length(source_url) AS source_url_chars, length(CAST(content AS BLOB)) AS content_utf8_bytes, abuse_flagged FROM ct_materials WHERE issue_id = 13 AND id IN (25, 26) ORDER BY id;"
+vp exec wrangler d1 execute SOURCE_DB --remote --config wrangler.ai-experiment.jsonc --json --command "SELECT id, title, status, abuse_flagged FROM ct_issues WHERE id = 13; SELECT id, issue_id, length(source_name) AS source_name_chars, length(source_url) AS source_url_chars, length(CAST(content AS BLOB)) AS content_utf8_bytes, abuse_flagged FROM ct_materials WHERE issue_id = 13 AND id IN (25, 26, 27) ORDER BY id;"
 ```
 
-最近一次唯讀檢查回報：議題 13 為 `published`、素材 25／26 屬於該議題且 `abuse_flagged = 0`，UTF-8 正文長度分別 339／449 bytes；查詢未讀取正文，Wrangler 回報 `rows_written: 0`、`changed_db: false`。每次實驗前仍須重查；若議題或素材已變更／撤下，就記錄差異並停止，不修改正式來源、不悄悄替換素材。
+先前兩素材唯讀檢查回報：議題 13 為 `published`、素材 25／26 屬於該議題且 `abuse_flagged = 0`，UTF-8 正文長度分別 339／449 bytes；查詢未讀取正文，Wrangler 回報 `rows_written: 0`、`changed_db: false`。這份歷史紀錄不包含素材 27，不能當成三素材的當前查核證據。每次實驗前仍須以上方查詢逐一核對 25／26／27；若議題或素材已變更／撤下，就記錄差異並停止，不修改正式來源、不悄悄替換素材。
 
 專用命令會先跑 production prebuild；本次已在來源凍結後成功執行，證據見第 8 節。若後續再改動任何 source／untracked 檔，重跑前仍須確認全部變更已凍結：
 
@@ -387,7 +387,7 @@ test "$BASE_URL" = 'http://localhost:5173' || { printf '%s\n' 'origin mismatch' 
 umask 077
 POST_JSON="$PWD/.wrangler/ai-experiment/job-post.json"
 JOB_JSON="$PWD/.wrangler/ai-experiment/job.json"
-JOB_REQUEST='{"material_ids":[25,26],"language":"zh-TW","consent":true}'
+JOB_REQUEST='{"material_ids":[25,26,27],"language":"zh-TW","consent":true}'
 POST_CODE=$(curl --disable --noproxy '*' --silent --show-error --connect-timeout 5 --max-time 120 --output "$POST_JSON" --write-out '%{http_code}' \
   --cookie "$COOKIE_JAR" --header "Origin: $BASE_URL" --header 'Content-Type: application/json' \
   --request POST "$BASE_URL/api/issues/13/evidence-jobs" \
@@ -525,6 +525,8 @@ Gemma 生成採與 `../pocket-polis/src/sensemaking.ts` 的 `runAiModel()` 相�
 送給 Gemma 的候選與輸出統一使用 `candidate_id`，必須逐字取自相同分區的輸入候選，不能拿 `evidence_ids` 中的證據 ID 代替。每個候選最多輸出一項；共識／爭點項目須引用至少兩份不同素材，爭點應在同一項呈現雙方，不能拆成只引用單一來源的兩項。Prompt 明示這些規則，但本站仍獨立驗證，模型不遵循時不會自動配對、改寫候選或放行。
 
 `Overview` 採最佳努力生成：分區有項目時，prompt 要求用 1–2 句簡述該分區已輸出的項目，每句附上這些項目已引用的 evidence IDs；立場概述只中性整理不同主張，不宣稱共識。分區無項目時用 null；證據不足以支持可靠概述時也不得補造。這是 prompt 要求，不是新增的完整性守門：schema／解析器仍接受有項目但 Overview 為 null，不會只因缺概述把整份可讀草稿判為失敗，也不自動補寫或重試。`Core_concern` 證據不足時仍可為 null。
+
+非 null 的 Overview 必須使用句子物件陣列，例如 `[{"text":"單句概述","evidence_ids":["既有證據ID"]}]`；即使只有一句也要保留外層陣列，兩句則各用一個物件。不能改成單一物件，也不能把 `text` 寫成字串陣列。Prompt 提供明確格式示例，但解析器仍嚴格驗證，不會自動搬動欄位、串接 `text` 陣列或推測逐句引用。
 
 此次原生呼叫與候選契約修訂會自然改變 prompt／參數／設定指紋，因此新工作不沿用舊契約的失敗結果；舊工件、未知費用與 tombstone 保留，不能把新指紋當作舊呼叫退款或已驗收的證據。離線契約與回歸通過不能取代完整真實工作與人工品質驗收；再次送出仍是可能付費的新工作，需重新明確同意。
 
