@@ -3,7 +3,7 @@ import { isAdminRole } from '../auth/authorization'
 import { requireUser } from '../api/requireUser'
 import type { EvidenceBindings } from './env'
 import { buildClairicRequest, MODEL_SELECTORS } from './models'
-import { pipelineSettings, type GenerationLanguage } from './generation'
+import { GENERATION_SECTIONS, pipelineSettings, type GenerationLanguage, type GenerationSection } from './generation'
 import { validateHumanData } from './human'
 import { checkedSnapshot, reconcileSources, SourceUnavailable } from './lifecycle'
 import { estimateCall } from './pricing'
@@ -108,6 +108,47 @@ export async function recoverActiveWorkflows(env: EvidenceBindings, coldStart = 
 function sourceMetadata(): { commit: string | null; dirty: boolean } {
   if (typeof __CIVIC_SOURCE__ === 'undefined') return { commit: null, dirty: true }
   return { commit: __CIVIC_SOURCE__.commit, dirty: __CIVIC_SOURCE__.dirty }
+}
+
+function generationProgress(events: unknown[], status: ExecutionStatus, errorCode: string | null) {
+  const sections = Object.fromEntries(GENERATION_SECTIONS.map(section => [
+    section, { status: 'pending', reason: null as string | null, artifact_id: null as string | null, raw_artifact_id: null as string | null },
+  ])) as Record<GenerationSection, { status: string; reason: string | null; artifact_id: string | null; raw_artifact_id: string | null }>
+  let currentSection: GenerationSection | null = null
+  let estimatedMicroUsd: number | null = null
+  let present = false
+  for (const event of events) {
+    if (!object(event) || event.stage !== 'generation') continue
+    present = true
+    if (event.phase === 'planned' && typeof event.estimated_micro_usd === 'number') estimatedMicroUsd = event.estimated_micro_usd
+    if (event.phase === 'started' && GENERATION_SECTIONS.includes(event.section as GenerationSection)) {
+      currentSection = event.section as GenerationSection
+      sections[currentSection].status = 'running'
+    }
+    if (event.phase === 'finished' && object(event.outcome) && GENERATION_SECTIONS.includes(event.outcome.section as GenerationSection)) {
+      const outcome = event.outcome
+      const section = outcome.section as GenerationSection
+      if (!['completed', 'no_findings', 'failed', 'not_started'].includes(String(outcome.status))) continue
+      sections[section] = {
+        status: String(outcome.status),
+        reason: typeof outcome.reason === 'string' ? outcome.reason : null,
+        artifact_id: typeof outcome.artifact_id === 'string' ? outcome.artifact_id : null,
+        raw_artifact_id: typeof outcome.raw_artifact_id === 'string' ? outcome.raw_artifact_id : null,
+      }
+      if (currentSection === section) currentSection = null
+    }
+  }
+  if (!present) return null
+  if (status === 'failed') {
+    for (const section of GENERATION_SECTIONS) {
+      if (sections[section].status === 'pending' || sections[section].status === 'running') {
+        sections[section].status = sections[section].status === 'running' ? 'failed' : 'not_started'
+        sections[section].reason = errorCode
+      }
+    }
+    currentSection = null
+  }
+  return { current_section: currentSection, estimated_micro_usd: estimatedMicroUsd, sections }
 }
 
 export function registerEvidenceRoutes(app: EvidenceApp): void {
@@ -271,7 +312,7 @@ export function registerEvidenceRoutes(app: EvidenceApp): void {
     const payload = artifact && object(artifact.payload) ? artifact.payload : {}
     const provenance = { ...(object(payload.provenance) ? payload.provenance : {}), artifacts: artifactSummaries }
     const generationArtifact = artifact ? { id: artifact.id, sha256: artifact.payloadHash } : null
-    return c.json({ ...payload, ...refreshedBase, provenance, generation_artifact: generationArtifact, input_manifest: snapshot.manifest, sources: snapshot.sources, initial_input_diagnostics: initialInputDiagnostics, current_issue_exclusions: currentIssueExclusions, diagnostics: payload.diagnostics ?? diagnostics.map(item => item.payload) })
+    return c.json({ ...payload, ...refreshedBase, provenance, generation_artifact: generationArtifact, generation_progress: generationProgress(diagnostics.map(item => item.payload), updated.status, updated.errorCode), input_manifest: snapshot.manifest, sources: snapshot.sources, initial_input_diagnostics: initialInputDiagnostics, current_issue_exclusions: currentIssueExclusions, diagnostics: payload.diagnostics ?? diagnostics.map(item => item.payload) })
   })
 
   app.get('/api/evidence-jobs/:jobId/revisions', async c => {

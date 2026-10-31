@@ -169,6 +169,9 @@ vp run dev
 
 ## #183 隔離本機證據實驗：真實議題驗收手冊
 
+**目前管線：** Clairic 逐素材抽取 → Clef 四分類比較 → Gemma 依序執行共識、爭點、立場地圖三次專項生成 → 驗證後組裝。三項共用同一份已驗證證據／比較資料，不以前項摘要代替來源；一般站與 BYO token 流程不變。Clef prompt 為 `symmetric-four-way-v2`，Gemma prompt／schema 為 `specialized-evidence-v1`／`specialized-cited-v1`。新版已完成離線合成流程驗證，**尚未新增真實模型呼叫或通過新版人工語義驗收**；舊版成功草稿不能當作新版品質證據。
+
+
 本節是操作步驟，不代表未執行的 runtime／OAuth／模型／人工品質案例已通過。實驗 API 只會在明確 opt-in 的專用本機 remote-dev 入口註冊；`DB`、Workflow 與工件留在本機隔離目錄，`SOURCE_DB` 連遠端業務 D1、程式只用來源 SELECT，`DB_AUTH` 僅供 Better Auth 正常 OAuth／session 生命週期（此為唯一預期遠端 auth 寫入），`AI` 使用平台 Cloudflare Workers AI。遠端 D1 binding 並非資料庫唯讀 credential；不得對 `SOURCE_DB` 執行任何寫入或 migration，也不得對 `DB_AUTH` 建表、migration 或直接 SQL 寫入。
 
 一般志願者內容生成維持 BYO AI token 與既有 synthesis prompt API；實驗不寫入既有 briefing、不改議題狀態、不自動發布。Cloudflare Workers AI 的費用由平台帳號承擔；US$5／日是應用程式估算預留，不是 Cloudflare 帳單硬上限。
@@ -428,7 +431,8 @@ while [ "$i" -lt 30 ]; do
     printf '%s\n' 'GET 回應沒有有效 status；停止輪詢' >&2
     break
   }
-  printf 'GET HTTP %s status=%s\n' "$GET_CODE" "$STATUS"
+  CURRENT_SECTION=$(jq -r '.generation_progress.current_section // "-"' "$JOB_JSON")
+  printf 'GET HTTP %s status=%s section=%s\n' "$GET_CODE" "$STATUS" "$CURRENT_SECTION"
   case "$STATUS" in
     ai_draft|partial_draft|failed|withdrawn|erased) break ;;
     queued|extracting|comparing|generating) sleep 2 ;;
@@ -438,7 +442,7 @@ while [ "$i" -lt 30 ]; do
 done
 ```
 
-若 30 次後仍在執行，記下當下 status 並停止；不要快速重送 POST、不要假設在途 provider request 已取消。只有 `ai_draft`／`partial_draft` 才檢視草稿；`failed` 應連同 `error_code` 與 usage 記錄，`withdrawn`／`erased` 不可再展示內容。
+若 30 次後仍在執行，記下當下 status／section 並停止；三個生成專項依序執行，可能超過這次等待時間。可稍後重新執行同一 job ID 的 GET 輪詢區塊，不重送 POST，也不假設在途 provider request 已取消。只有 `ai_draft`／`partial_draft` 才檢視草稿；`failed` 應連同 `error_code`、分項進度與 usage 記錄，`withdrawn`／`erased` 不可再展示內容。
 快取驗證的精確重複 POST 與 GET usage ledger 前後比較見第 6 節；僅在第一工作已完成為 draft 且來源／設定未變時執行。
 若輪詢因網路、HTTP 或 JSON 錯誤而停止，不要檢視可能留在磁碟上的舊 `JOB_JSON`，也不要重送 POST；先依本機錯誤與帳務狀態人工判斷。
 
@@ -454,7 +458,7 @@ case "${STATUS:-missing}" in
 esac
 
  jq '{
-   status, error_code, source_checked_at, input_key, generation_artifact,
+   status, error_code, source_checked_at, input_key, generation_artifact, generation_progress,
    usage: {attempts: .usage.attempts, uncertain: .usage.uncertain,
      reservedMicroUsd: .usage.reservedMicroUsd, actualMicroUsd: .usage.actualMicroUsd},
    sources: [.sources[]? | {kind, id, hash}],
@@ -475,11 +479,18 @@ esac
    }],
    initial_input_diagnostics, current_issue_exclusions,
    diagnostics: (.diagnostics | if type == "object" then {
-     coverage, partial, comparison_summary: .comparisons.diagnostics,
+     coverage: [.coverage[]? | {material_id, status, evidence_count, error_code, usage_status}],
+     partial, comparison_summary: .comparisons.diagnostics,
+     generation_sections: (.generation.sections // {} | with_entries(.value |= {
+       status, reason, artifact_id, raw_artifact_id, validation_code
+     })),
      candidate_paths: .comparisons.candidate_paths,
      incomplete_pairs: .comparisons.incomplete_pairs,
      unclassified_evidence_ids: .comparisons.unclassified_evidence_ids
-   } else . end)
+   } else (if type == "array" then map({
+     stage, phase, code, validation_code, step_key, model_selector,
+     error_name, provider_code, http_status, category
+   }) else [] end) end)
  }' "$JOB_JSON"
  jq '{attempts: .usage.attempts, uncertain: .usage.uncertain,
      reservedMicroUsd: .usage.reservedMicroUsd, actualMicroUsd: .usage.actualMicroUsd,
@@ -488,6 +499,8 @@ esac
 ```
 
 上方安全摘要的來源投影只顯示 `{kind,id,hash}`；**原始 `JOB_JSON` 的 `.sources` 包含完整來源 payload**，可能含個資，必須依私有資料保護，不能把整份 response 當成去識別摘要。`source_checked_at` 是整份 job 的查核時間，不存在 per-source `checked_at`。`input_key`、`generation_artifact` 與 `provenance.artifacts` 只摘要 artifact ID／hash／建立時間、model selector/provider metadata 與 attempt ledger；缺值如實為 `null`／`unknown`。此 safe summary 不含 raw request／response 或作者欄位；它不是 provider 權重 revision 或帳單證明。
+
+`generation_progress.current_section` 顯示正在呼叫的專項；進行中各項可能是 `pending`／`running`。最終以 `diagnostics.generation.sections` 判讀：`completed` 是有內容且驗證通過，`no_findings` 是驗證通過但沒有可整理內容，`failed` 是該項呼叫／驗證失敗，`not_started` 是因預算／context 等原因未啟動。至少一項有效而其餘失敗或未啟動時為 `partial_draft`，全失敗則不交付草稿。data 中的 null／空陣列也可能只是失敗段的相容占位，**不能不看分項狀態就斷言「沒有爭點」**。
 
 只在 draft 狀態下檢視分區輸出及引用：
 
@@ -512,6 +525,19 @@ jq '.diagnostics.comparisons | {
 }' "$JOB_JSON"
 ```
 
+若終端無法完整顯示，先通過上面的 draft 狀態檢查，再將完整審閱資料保存到已忽略的本機目錄：
+
+```bash
+umask 077
+REVIEW_JSON="$PWD/.wrangler/ai-experiment/review.json"
+jq '{status, error_code, data, evidence, sources, citation_map,
+     diagnostics, usage, generation_progress, provenance}' "$JOB_JSON" > "$REVIEW_JSON"
+chmod 600 "$REVIEW_JSON"
+printf '私有審閱結果已保存：%s\n' "$REVIEW_JSON"
+```
+
+此檔包含完整原文／引文，只供本機檢視，不提交、不貼到 PR；既有 `results/ai-experiment_reault.json` 可保留作舊版基準，不以新版覆寫它或把它當作新模型結果。
+
 先有人逐句回查素材原文中的精確片段、條件、否定與轉述歸屬，再判斷其對應的共識、爭點或立場是否準確；`agree` 只是相容／支持判斷，不是等價或作者認可。候選路徑不算直接比較；漏比、未完成或不確定的 pair 不得當成已證實。`citation_map` 與 schema 通過只代表格式及出處錨定檢查，不證明語義正確。US$ 金額是應用估算／provider usage 結算欄位，不是 Cloudflare 帳單保證或硬上限。
 
 上面的 `.sources[].payload.content` 是工作使用的**完整、未截斷素材快照**；僅在私有本機檢視並依 material ID 對照每筆 evidence／引文，再回查當下可讀的完整來源與 hash，記錄漏抽、少數反例和不一致，不得貼出原文。比對 `pairs`、直接判斷、`consensus_groups`、`disputes` 與候選路徑：只確認不同素材的直接邊；同素材不算獨立支持，支持鏈不自動補成已證實邊。
@@ -520,17 +546,56 @@ jq '.diagnostics.comparisons | {
 
 若 provider 用量欄位缺失或格式錯誤，`usage.uncertain`／用量狀態會保留未知結算，預留額度不當成零費用釋放；不因單獨用量缺漏抹除已通過其他 schema／來源驗證的答案。provider 回報的 `model` 名稱只是字串 metadata，不是不可變權重 revision。這些欄位不是 Cloudflare 帳單核對結果，每次真實驗收仍須另記證據。
 
-Gemma 生成採與 `../pocket-polis/src/sensemaking.ts` 的 `runAiModel()` 相同的最小原生文字生成參數：`messages`、`max_tokens`、`temperature:0.2`、`chat_template_kwargs.enable_thinking:false`；本站保留 8,192 tokens 輸出上限與相應費用預留，不送 `response_format/json_schema` 或其他額外選項。輸出 JSON Schema 放入可信的 system prompt，不混入來源 user message，也不宣稱 provider 保證遵循。本站仍要求單一 chat completion、明確 `finish_reason:"stop"`、原始 JSON、合法候選與逐句出處；原生完成可省略 `refusal` 或回傳 null，任何明示非 null 的 refusal 仍拒絕。截斷、拒答、工具呼叫、Markdown 包裝或引用不符都會失敗，不自動修補、重試或產生 fallback。
+Gemma 每個專項採與 `../pocket-polis/src/sensemaking.ts` 的 `runAiModel()` 相同的最小原生文字生成參數：`messages`、`max_tokens:8192`、`temperature:0.2`、`chat_template_kwargs.enable_thinking:false`；不送 `response_format/json_schema`。各項 JSON Schema 與格式例放入可信的 system prompt，不宣稱 provider 保證遵循。每項獨立預留輸入及最大輸出成本、保存回應並驗證；截斷、拒答、工具呼叫、Markdown 包裝或引用不符只拒收該項，不自動修補或重試。原生完成可省略 refusal 或回傳 null，明示非 null 仍拒絕。
 
-送給 Gemma 的候選與輸出統一使用 `candidate_id`，必須逐字取自相同分區的輸入候選，不能拿 `evidence_ids` 中的證據 ID 代替。每個候選最多輸出一項；共識／爭點項目須引用至少兩份不同素材，爭點應在同一項呈現雙方，不能拆成只引用單一來源的兩項。Prompt 明示這些規則，但本站仍獨立驗證，模型不遵循時不會自動配對、改寫候選或放行。
+三項的整理責任與診斷如下；它們不是把原本的大型請求重送三遍：
 
-`Overview` 採最佳努力生成：分區有項目時，prompt 要求用 1–2 句簡述該分區已輸出的項目，每句附上這些項目已引用的 evidence IDs；立場概述只中性整理不同主張，不宣稱共識。分區無項目時用 null；證據不足以支持可靠概述時也不得補造。這是 prompt 要求，不是新增的完整性守門：schema／解析器仍接受有項目但 Overview 為 null，不會只因缺概述把整份可讀草稿判為失敗，也不自動補寫或重試。`Core_concern` 證據不足時仍可為 null。
+|專項|生成與驗證重點|本機審閱位置|
+|---|---|---|
+|共識|從一般支持候選提煉具體共同命題，保留條件，每個參與來源都須支持 description；不能用並列歧見充當共識。可採候選子集，無可靠共同命題就拒絕候選並附理由。|`.diagnostics.generation.sections.consensus.details` 的 adopted／rejected_candidates／coverage|
+|爭點|即使沒有 Clef disagree 也檢視可並存張力；每項至少兩素材、逐側引用，區分 `contradiction`／`opposition`／`tension`。細分類始終待人工確認，程式推導 direct_clef／gemma_proposal，不讓模型冒充新的正式 Clef 判斷。|`.diagnostics.generation.sections.disputes.details.items` 的 sides／comparison_conditions／relations／origin／formal_relation|
+|立場地圖|依明示關注、主張與應對方式重新分群並在群內綜整，不強制一素材一立場或固定群數；不混合已知對立。每條納入證據須被群內論點引用，未納入須有理由，保留少數觀點與重疊歸屬。|`.diagnostics.generation.sections.positions.details` 的 groups／coverage|
+
+共識模型輸入與輸出都使用 `candidate_id`，不可拿 evidence ID 代替；爭點以 sides 表示各側，立場以 `group_id`／`evidence_ids` 提交新分群，不再受原本單條立場候選限制。組裝仍維持既有 data 三分區與 citation pointers；各分項的 context hash 須符合相同來源、證據、比較、語言與設定。分項工件及原生回應只留隔離本機 D1，Workflows checkpoint 不帶正文。
+
+`Overview` 採最佳努力生成：有項目時提示中性概括已採用內容，每句只能引用這些項目已使用的證據；沒有項目時必須為 null。有項目但無可靠概述仍可為 null，不因單獨缺概述拒收可讀分項，也不自動補寫。共識概述只能是共同命題，不能把歧見搬進概述；立場概述不宣稱共識，`Core_concern` 證據不足仍可為 null。
 
 非 null 的 Overview 必須使用句子物件陣列，例如 `[{"text":"單句概述","evidence_ids":["既有證據ID"]}]`；即使只有一句也要保留外層陣列，兩句則各用一個物件。不能改成單一物件，也不能把 `text` 寫成字串陣列。Prompt 提供明確格式示例，但解析器仍嚴格驗證，不會自動搬動欄位、串接 `text` 陣列或推測逐句引用。
 
-此次原生呼叫與候選契約修訂會自然改變 prompt／參數／設定指紋，因此新工作不沿用舊契約的失敗結果；舊工件、未知費用與 tombstone 保留，不能把新指紋當作舊呼叫退款或已驗收的證據。離線契約與回歸通過不能取代完整真實工作與人工品質驗收；再次送出仍是可能付費的新工作，需重新明確同意。
+Clef 題目、三份 Gemma prompt／schema、組裝政策及所有語言的實際 builder 都納入設定指紋，新工作不誤用舊的一次生成工件。在途舊設定工作若遇程式設定改變會明確停止，不自動換新版重打；已完成的舊草稿與未知費用／tombstone 保留。新版三項分別原子預留、結算與去重；不因拆成三項而把一個工作算成三次帳號日配額，也不宣稱整條管線費用必然乘三。新指紋不代表退款或品質改善；重新送出是可能付費的新工作，仍需明確同意。
 
 `Source.Title` 取自 `ct_materials.source_name`，缺值才用素材 ID；來源表沒有 material title 欄，不以原文預覽或 AI 衍生標題替代。`source_hash` 是固定順序 metadata+content JSON 的 UTF-8 SHA-256，`content_hash` 是原始 content UTF-8 bytes 的 SHA-256；原文不 trim、不正規化。空白正文不會被省略，會以 `422 empty_material` 拒絕。
+
+#### 5.1 Clef 人工標註與純離線對照
+
+新版題目先對照共同問題、條件與轉述歸屬；agree 可以是有意義的支持／補充而非嚴格同義，disagree 要有明示對立，unrelated 不作兜底，資訊不足用 uncertain。不得為降低 unrelated 比例而強迫分類、重寫機率或任意設定信心門檻。
+
+離線工具只讀三份 JSON，不呼叫模型、不讀取資料庫／Cookie，也不產生人工標準答案：
+
+```bash
+node scripts/evidence-clef-calibration.mjs --help
+```
+
+三檔須聲明同一個 `evidence_snapshot_sha256`；人工檔為 `labels` 陣列，每筆有 `id`、四分類 `relation` 及經真人確認後才可填的 `reviewed_by_human:true`；舊／新版預測檔各有 `prompt_version` 與相同案例 ID 的 `predictions` 陣列。實際欄位與錯誤說明見 `--help`。保留校準集與未用於調整提示的人工驗收集，分開執行；沒有真人標準答案就停在未驗證，不以測試 fixture 充當 gold labels。
+
+將已準備且經核對的三檔放在私有目錄後執行：
+
+```bash
+umask 077
+CALIBRATION_DIR="$PWD/.wrangler/ai-experiment/calibration"
+for name in labels old new; do
+  test -f "$CALIBRATION_DIR/$name.json" || {
+    printf '缺少已核對的校準檔：%s\n' "$name" >&2
+    exit 1
+  }
+done
+node scripts/evidence-clef-calibration.mjs \
+  --labels "$CALIBRATION_DIR/labels.json" \
+  --old "$CALIBRATION_DIR/old.json" \
+  --new "$CALIBRATION_DIR/new.json" > "$CALIBRATION_DIR/report.json"
+```
+
+工具拒絕未核可、未知／重複／漏配 ID、不同 snapshot hash 與非法分類，輸出舊／新混淆矩陣、逐類 precision／recall 及錯配 ID；零分母為 null。人工核可旗標、hash 與預測來源仍須由人確認，工具不能證明其真實性。只比較保存的同一證據工件；若重新抽句造成不同證據集合，不得冒稱固定樣本對照。取得新的付費預測須另依既有工作授權與帳本安排，不繞過管線直接打 provider。
 
 ### 6. 快取、人改版本與衝突
 
@@ -751,9 +816,9 @@ rm -f "$COOKIE_JAR"
 | config 修正後 temporary-port entry smoke | 已執行；不是 OAuth／callback 驗證 | 為避免碰既有 5173 listener，直接 `CIVIC_AI_EXPERIMENT=1 vp dev --mode remote --port 5174`（無 prebuild）於 `http://localhost:5174` ready。匿名 status-only 結果：`GET /` 404、job GET／POST 與 maintenance POST 均 401；無 cookie、body discarded、沒有登入／來源操作／建 job／模型呼叫。此 port 與 `BETTER_AUTH_URL` 不同，不驗證 OAuth callback。自有 PID 84596 已停止。log／status／HTTP：`.wrangler/ai-experiment/verification/entry-load-5174.log`、`entry-load-5174-status.json`、`entry-load-5174-smoke.json` |
 | host 修正前的 IPv4 entry／官方 smoke 與 HEAD | 保留為舊配置的 no-login 證據，不代表 canonical origin | 本次環境整合檢查依 `lsof` 與 loopback 結果發現既有 `[::1]:5173` listener 與舊 IPv4 bind 的 origin mismatch；先前 remote Worker 綁 `127.0.0.1:5173` 並用 `curl --resolve` 強制 IPv4，root 404、匿名 job／maintenance 401，dotenv HEAD 路徑均 403。這些 forced-IPv4 smoke **不能證明**瀏覽器 canonical `localhost` 命中實驗 Worker，也不驗 OAuth callback。舊 log／status／HTTP：`.wrangler/ai-experiment/verification/experimental-dev.log`、`experimental-no-login-smoke.json`、`experimental-dev-head-final.log`、`experimental-dotenv-head-final.json`；沒有 response body 或登入 session |
 | `.dev.vars` 靜態路徑／權限檢查 | 只查 public ASSETS 路徑與檔名／mode；未讀內容 | `dist/civic_talk/wrangler.json` 的 `assets.directory` 解析為 `dist/client`；`dist/civic_talk/.dev.vars` 位於 ASSETS 之外，mode 644 且由 `.gitignore:2 dist` 忽略；`dist/client/.dev.vars` 不存在。這不證明 Worker bundle／deploy package 是否包含它；未刪除／改權限／部署 |
-| 真實 OAuth／Workers AI 呼叫與費用 | 尚未執行 | 沒有登入或 consented job，沒有本次真實模型 request／usage／費用；OAuth callback 是否可用仍未知。帳號總帳單不在此紀錄範圍 |
-| 人工語義品質 | 尚無獨立真人 gold labels | 本功能尚無真人手動功能驗收；程式測試或開發者設計的預期關係案例不能當人工標準答案。`clairic_test_result/` 為空，沒有可引用的舊模型 fixture |
-| Gemma／Clef 能力 | 尚未驗證 | Gemma 4 未列入 Cloudflare JSON Mode 支援清單；Clef 文件提到 context state 會截斷且沒有回傳截斷旗標。provider `model` metadata 是任意字串而不是不可變權重 revision；usage 缺漏／格式錯誤會保持費用未知與原 reservation，不把格式正確答案因此作廢。沒有真實 provider 證據，不宣稱 JSON schema、未截斷或引用語義品質通過 |
+| 真實 OAuth／Workers AI 呼叫與費用 | 舊版已有使用者回報；新版未重跑 | 使用者已回報舊版三素材工作產出 `ai_draft`；歷史失敗、usage 與修正見 `Insight.md`。新版三項生成尚未新增真實模型呼叫或費用，不把舊版證據當作新版驗收；完整 OAuth 案例仍須逐項確認 |
+| 人工語義品質 | 舊版已發現問題；新版待驗收 | 使用者指出共識混入歧見、爭點遺漏及立場逐條枚舉。新版有離線校準工具，但尚無獨立真人 gold labels 或新版品質成績；不能將合成案例當作人工標準答案 |
+| 新版 SQLite／HTTP 管線 smoke | 已執行；合成 provider | 獨立 loopback 腳本執行實際 runner／SQLite：完整工作 `ai_draft`、單項中斷 `partial_draft`、生成途中清除 `erased` 均回 HTTP 200；三項依序呼叫、成功／partial 重入不新增付費嘗試、來源 fixture 未改。不是原生 Workflow 重啟或真實 provider／OAuth 驗收，臨時腳本已移除 |
 
 人工驗收者須另填實際 source／model／prompt／schema／algorithm 版本、工作 ID、hash、來源覆蓋、逐句引用查核、漏失與反例、人工修正、usage／預留／結算及未知項目。沒有真實模型呼叫或真人標註時，對應欄位留作未知，不填預期值；不得把 HTTP 200、JSON parse、unit test、隔離測試 provider 或 fixture 寫成「真實議題人工驗收完成」。Privacy 已依新增揭露更新，`TERMS_VERSION` 未改；一般 BYO prompt 與 synthesis API 保留。
 

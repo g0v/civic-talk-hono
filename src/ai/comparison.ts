@@ -1,6 +1,6 @@
 import { MAX_EVIDENCE, type Evidence } from './evidence'
 
-export const COMPARISON_ALGORITHM_VERSION = 'comparison-1' as const
+export const COMPARISON_ALGORITHM_VERSION = 'comparison-2' as const
 export type Relation = 'agree' | 'disagree' | 'unrelated' | 'uncertain'
 
 export interface EvidencePair {
@@ -27,11 +27,6 @@ export interface ComparisonFailure {
 }
 
 export interface ConsensusGroup {
-  id: string
-  evidence_ids: string[]
-}
-
-export interface PositionCandidate {
   id: string
   evidence_ids: string[]
 }
@@ -66,7 +61,6 @@ export interface ComparisonAnalysis {
   direct_comparisons: DirectComparison[]
   reverse_diagnostics: DirectComparison[]
   consensus_groups: ConsensusGroup[]
-  position_candidates: PositionCandidate[]
   disputes: DisputeCandidate[]
   candidate_paths: CandidatePath[]
   incomplete_pairs: IncompletePair[]
@@ -185,10 +179,6 @@ export function analyzeComparisons(
     groups.set(id, { id, evidence_ids: evidenceIds })
   }
   const consensusGroups = [...groups.values()].sort((a, b) => compareIds(a.id, b.id))
-  const positionCandidates: PositionCandidate[] = [
-    ...sorted.map(item => ({ id: `position:${JSON.stringify([item.id])}`, evidence_ids: [item.id] })),
-    ...consensusGroups.map(group => ({ id: `position:${JSON.stringify(group.evidence_ids)}`, evidence_ids: group.evidence_ids })),
-  ]
   const grouped = new Set(consensusGroups.flatMap(group => group.evidence_ids))
   const disputes: DisputeCandidate[] = []
   const incompletePairs: IncompletePair[] = []
@@ -237,7 +227,6 @@ export function analyzeComparisons(
     direct_comparisons: pairs.flatMap(pair => comparisons.has(pair.key) ? [comparisons.get(pair.key)!] : []),
     reverse_diagnostics: [...reverseDiagnostics],
     consensus_groups: consensusGroups,
-    position_candidates: positionCandidates,
     disputes,
     candidate_paths: candidatePaths,
     incomplete_pairs: incompletePairs,

@@ -13,6 +13,7 @@ import {
   type DirectComparison,
   type Relation,
 } from '../ai/comparison'
+import { buildClefBatches, MODEL_VERSIONS, parseClefResponse } from '../ai/models'
 
 function unitsBefore(text: string, utf16: number, unit: OffsetUnit): number {
   const prefix = text.slice(0, utf16)
@@ -193,6 +194,29 @@ describe('Clef 無向配對與支持群', () => {
     expect(() => analyzeComparisons([a, b], [answer, direct(a, b, 'agree')])).toThrow('duplicate_direct_comparison')
   })
 
+  it('保留完整引文、出處、平手機率與 provider 低信心，不因任意門檻改寫選項', () => {
+    const left = { ...a, quote: '甲說：「逐字😀。\r\n不可忽略條件。」' }
+    const right = { ...b, quote: '乙提出另一個主張。' }
+    const batch = buildClefBatches([right, left], createEvidencePairs([left, right]))[0]
+    expect(batch.input.state.evidence).toEqual([
+      { id: 'A', material_id: 1, quote: left.quote },
+      { id: 'B', material_id: 2, quote: right.quote },
+    ])
+    const probabilities = { agree: 0.25, disagree: 0.25, unrelated: 0.25, uncertain: 0.25 }
+    const answer = { type: 'choice', choice: 'uncertain', probabilities, confidence: 0 }
+    const [parsed] = parseClefResponse({ model: 'clef', answers: { q0: answer } }, batch)
+    expect(parsed).toMatchObject({
+      pair_key: pairKey('A', 'B'),
+      evidence_ids: ['A', 'B'],
+      relation: 'uncertain',
+      question_version: MODEL_VERSIONS.clef_prompt,
+      probabilities,
+      provider_diagnostics: { confidence: 0, question_id: 'q0', truncated: null },
+    })
+    expect(analyzeComparisons([left, right], [parsed]).direct_comparisons[0]).toEqual(parsed)
+    expect(() => parseClefResponse({ model: 'clef', answers: { q0: { ...answer, probabilities: { ...probabilities, agree: Number.NaN } } } }, batch)).toThrow('clef_invalid_probabilities')
+  })
+
   it('pair key 對含特殊分隔符的 ID 仍無碰撞', () => {
     expect(pairKey('A,B', 'C')).not.toBe(pairKey('A', 'B,C'))
     expect(pairKey('x"', 'y')).toBe(pairKey('y', 'x"'))
@@ -230,7 +254,6 @@ describe('Clef 無向配對與支持群', () => {
     expect(result.consensus_groups).toMatchObject([{ evidence_ids: ['A', 'B', 'C'] }])
     expect(result.disputes).toEqual([])
     expect(result.candidate_paths).toEqual([])
-    expect(result.position_candidates.some(candidate => candidate.evidence_ids.join(',') === 'A,B,C')).toBe(true)
   })
 
   it('同素材不形成支持票，所有跨素材配對都必須直接確認才能進群', () => {

@@ -562,6 +562,9 @@ npx wrangler d1 migrations apply vtaiwan-civic-talks --remote   # 🚫 需先取
 - 實驗 migration 僅可套用本機 `DB`，並確認新表皆為 `ct_` 前綴。`ct_materials` 沒有 title 欄位；來源標題用 `source_name` 或素材 ID，不得生成預覽文字。來源 hash 欄位順序、空內容拒絕及原始內容處理依 #183 核准計畫與實作契約，不得改寫來源資料。
 - 一般志願者內容生成仍由使用者自帶模型金鑰；既有 synthesis prompt API 保留。`Issues.md` 只記錄計畫 §11.1 的兩項未實作未來工作，不建立 GitHub issue。
 - 完成度須分別記錄本機 runtime、遠端唯讀來源查核、真實模型呼叫及人工語意／OAuth 驗收；不得把 fixture／單元測試當作真實模型或人工驗收。
+- 新版管線依序執行 Gemma 共識／爭點／立場地圖三個專項，使用同一份已驗證證據與比較資料，不串接摘要；只在共識保留直接支持候選限制，爭點可提出明示類型的張力，立場允許多證據重新分群。不得恢復單次生成或單條立場枚舉 fallback。
+- 各項獨立記帳、驗證與保存；`diagnostics.generation.sections` 區分 completed／no_findings／failed／not_started，進行中另看 `generation_progress`。partial 不代表失敗空段沒有爭點；來源 fence、停權、去重及禁止自動重試仍適用。
+- Clef `symmetric-four-way-v2` 以共同問題／條件校準四分類，不追求特定分布；`scripts/evidence-clef-calibration.mjs` 只做已人工核可資料的離線對照，不呼叫模型，也不能證明人工核可／hash 的來源。新版真實模型與人工語義品質尚待驗收，不以合成 SQLite／HTTP smoke 取代。
 
 
 ### 已完成：#25 素材與意見的獨立連結（專屬路由）

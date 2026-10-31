@@ -110,3 +110,32 @@
 - 沿用使用者先前「只加強 prompt」的決策，加入非 null Overview 的明確格式示例與單句／兩句規則，明示 Overview 不能是單一物件、text 不能是陣列，版本為 `evidence-only-native-v5`。不放寬 schema／解析器、不自動改寫回應、不重試，不改舊工作與 ledger。新提示是否改善真實輸出仍未驗證。
 - README 的來源預檢同步選取 25／26／27，保留先前 25／26 的歷史 metadata，並明確註記該舊查核不涵蓋 27。本輪未執行新的遠端預檢，不捏造素材 27 當前狀態；後續實驗須重新確認三筆來源。
 - 後續使用者於 2026-11-01 回報：本次三素材流程已成功產出 `ai_draft`，因此 v5 提示已有該次真實工作成功的使用者驗收證據。使用者尚未查核內容品質；此回報不等於概述、候選分類、引用語義或所有驗收案例皆已通過，也不解除 Draft PR 的人工品質與其他合併門檻。本次僅記錄回報，不重新呼叫模型。
+
+## 新版管線：Clef 判準與三項專項生成
+
+- 使用者先要求修訂並提交 `plan.md`，其後明確要求依新版改造；本輪不承接過往 commit／push 授權，不新增付費模型工作、不使用登入 Cookie，也不寫遠端 D1 或改 migration。
+- Clef prompt 改為 `symmetric-four-way-v2`，先辨識共同問題／比較維度、條件與歸屬，再選支持、對立、無關或資訊不足；一般支持不等於共同命題，不能由語氣悲觀／樂觀推斷互斥。不改寫 provider choice／機率，不設分類配額或未校準信心門檻；比較演算法版本為 `comparison-2`，移除單條立場候選枚舉。
+- `scripts/evidence-clef-calibration.mjs` 是無網路、無模型的離線工具；讀入同一 evidence snapshot hash 的人工 labels 與舊／新版 predictions，拒絕缺人工核可旗標、未知／重複／漏配案例及不同 hash，輸出混淆矩陣、各類 precision／recall 及錯配 ID。旗標與 hash 是待人核對的聲明，不是工具能驗證的事實。目前仍無獨立真人 gold labels，未產生模型品質成績。
+- Gemma prompt／schema 改為 `specialized-evidence-v1`／`specialized-cited-v1`，依序三次原生完成，不串接摘要、不新增第四次總整或修復。共識須從直接支持候選提煉共同命題並交代拒絕原因；爭點即使沒有 disagree 候選仍可提出張力，逐側引用並由程式區分正式關係與待審提案；立場允許多證據分群、重疊與少數獨立觀點，逐證據記錄納入／排除，不把已知對立混為同一群。
+- 每段使用自己的 schema、完整完成／拒答檢查、逐句引用與來源驗證。共識保留輸入／輸出同名的 candidate_id，避免回到先前 evidence ID／candidate ID 混淆；立場改以 group_id 與證據集合表示，不以放寬來源驗證救結果。Overview 有項目仍可 null，但沒有項目不得生出無依據概述。
+- 工作流新增獨立生成規劃、三組付費／驗證 step 與最終組裝；規劃列出三段估算，每段呼叫前仍原子預留／結算。一個工作仍只算一次帳號任務額度，未知成本不退款、失敗不自動重打。已驗證分項可在 checkpoint gap 重用，組裝檢查相同 context hash；來源／授權失效仍全域停止，不以 partial 繞過。
+- `diagnostics.generation.sections` 區分 completed／no_findings／failed／not_started；至少一段有效而其他段缺漏時 partial，全段失敗則不交付草稿。輪詢新增 generation_progress，生成中可看到目前專項與 pending／running，不把失敗空陣列當成「沒有爭點」。README 更新相應指令與私有 review.json 存檔，既有使用者 results 檔未覆寫。
+- 獨立 ephemeral loopback smoke 執行實際 runner 與記憶體 SQLite，只使用合成 provider／帳號狀態 adapter，無 auth schema、無遠端 binding。三個 HTTP 情境均 200：完整工作為 ai_draft（六次合成呼叫；共識 completed、爭點 no_findings、立場 completed）、爭點 provider 中斷為 partial_draft（六次合成呼叫、一筆 unknown）、生成中清除為 erased（五次合成呼叫、全部私有 payload 清空、未啟動立場段）。完整／partial 重入不新增呼叫，來源 fixture 前後一致，checkpoint 回傳不含正文。這不是正式 API／真實 OAuth、原生 Workflow 中斷恢復或模型語義品質證據；臨時腳本已移除。
+- 初次 typecheck 指出新測試使用 Promise.withResolvers 的 ES2024 型別缺漏與 unknown JSON body；僅在 Node 測試加入對應 lib reference 並沿用 object guard，不修改 production target 或 runtime。隨後完整 typecheck 通過 155 files、52 test files／471 tests 通過；後續候選欄位對齊與最終 build 另依本輪最終檢查紀錄，不把此中途結果冒充發布驗收。
+- 舊版私有三素材基準的離線 context 預檢：保留 11 段證據與 26 組配對，新的 Clef 題目在既有 12,288-byte 上限內分成六批；三個 Gemma builder 均低於 48 KiB，不為減少批次放寬 guard。這是保存的舊證據規模，不是新版實際抽取或品質成績；未送出 provider request。
+
+|專項|基準請求 bytes|應用估算預留 microUSD|
+|---|---:|---:|
+|共識|17,412|9,832|
+|爭點|18,189|10,143|
+|立場地圖|18,304|10,189|
+
+以上只涵蓋三項 Gemma 的保守預留，非整個工作的費用或 Cloudflare 帳單；真正新工作須重新讀來源、抽取、分批與記帳。
+
+### 本輪最終自動檢查
+
+- `vp check --no-fmt --no-lint` 通過：155 files、零型別錯誤。
+- `vp test` 通過：52 test files、471 tests；涵蓋三項生成、來源／引用、部分失敗、預算中止、checkpoint gap 重用、停權與清除邊界。
+- `vp run build` 通過：client／Worker 均成功，保留既有 client chunk 大於 500 kB 警告；來源 metadata 為 dirty，未將此建置當發布版本。
+- README 的 29 個 bash 區塊通過語法檢查；新版安全 jq 摘要在 object／array／缺失 diagnostics 下均可執行，並確認排除來源正文、state_mapping 及分項私有 details。文件本機連結、章節引用與 fenced blocks 核對通過。
+- canonical `http://localhost:5173` 的實際專用 Worker 匿名 smoke：`GET /api/me`、`POST /api/issues/13/evidence-jobs`、`GET /api/evidence-jobs/<UUID>` 全部 401；未帶 Cookie、未建立工作、未觸發來源讀取或模型呼叫。這只確認實際入口載入與未登入守門，不是 authenticated pipeline／OAuth 驗收。
