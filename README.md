@@ -217,7 +217,7 @@ mkdir -p .wrangler/ai-experiment
 vp exec wrangler types .wrangler/ai-experiment/worker-configuration.d.ts --config wrangler.ai-experiment.jsonc
 ```
 
-`.dev.vars` 必須由維護者在本機私下設定專用設定要求的 OAuth／Better Auth 欄位：`BETTER_AUTH_URL`、`BETTER_AUTH_SECRET`、`GOOGLE_CLIENT_ID`、`GOOGLE_CLIENT_SECRET`、`GITHUB_CLIENT_ID`、`GITHUB_CLIENT_SECRET`。不要 `cat`、`echo`、貼上或記錄 secret、token、cookie。`BETTER_AUTH_URL` 與本機瀏覽器 origin 固定為專案既有的 `http://localhost:5173`；Google callback 為 `http://localhost:5173/api/auth/callback/google`，GitHub callback 為 `http://localhost:5173/api/auth/callback/github`。專用 Vite server 綁 canonical hostname `localhost`（只 loopback，不暴露 LAN），`strictPort` 固定 5173；若該埠已有 listener，參照下方 preflight，只停止確認屬於自己的舊服務，不可殺未知 listener或改用另一個 port 做 OAuth。仍需由維護者私下確認目前 OAuth app 已允許既有 callback；實際 provider 設定未檢查。設定缺失、origin 不一致或 `whoami` 權限不足時，在前置檢查停止，不建立假 session。
+`.dev.vars` 必須由維護者在本機私下設定專用設定要求的 OAuth／Better Auth 欄位：`BETTER_AUTH_URL`、`BETTER_AUTH_SECRET`、`GOOGLE_CLIENT_ID`、`GOOGLE_CLIENT_SECRET`、`GITHUB_CLIENT_ID`、`GITHUB_CLIENT_SECRET`。不要 `cat`、`echo`、貼上或記錄 secret、token、cookie。`BETTER_AUTH_URL` 與本機瀏覽器 origin 固定為專案既有的 `http://localhost:5173`；本機驗收使用 Google，callback 為 `http://localhost:5173/api/auth/callback/google`。目前 GitHub OAuth 僅允許 `vtaiwan.tw` 子網域，不支援此 localhost callback，因此本機登入不得選用 GitHub；專用設定要求的 GitHub 欄位仍須保留。專用 Vite server 綁 canonical hostname `localhost`（只 loopback，不暴露 LAN），`strictPort` 固定 5173；若該埠已有 listener，參照下方 preflight，只停止確認屬於自己的舊服務，不可殺未知 listener或改用另一個 port 做 OAuth。仍需由維護者私下確認 Google OAuth app 已允許上述 callback；本文件不代表已完成實際登入驗收。設定缺失、origin 不一致或 `whoami` 權限不足時，在前置檢查停止，不建立假 session。
 
 **Migration 硬性警告：** 一般 `wrangler.jsonc` 與實驗設定的 `DB` 都指向 `./migrations`；目錄中的 `0017` 沒有程式性的環境保護。一般 `wrangler d1 migrations apply vtaiwan-civic-talks --local` 會把它套進預設開發庫，`--remote` 則可能套進遠端業務庫；本草稿兩者皆不得執行。也不得以 `SOURCE_DB`／`DB_AUTH` 或其 database name 作 migration 目標；未修改既有 `0001`–`0016`。唯有下方同時指定 `DB`、`--local`、專用 config 與專用 persist 的命令是本次隔離實驗的 migration 路徑。
 
@@ -263,7 +263,7 @@ Vite 僅在此明確變數與 remote serve mode 同時成立時載入 `wrangler.
 
 ### 3. 登入與私有 Cookie jar
 
-此 API-only 實驗入口沒有網站登入 UI；使用已配置 Google 或 GitHub OAuth 的本機瀏覽器。開啟 `http://localhost:5173/`（首頁 404 是預期），在該頁 DevTools Console 執行以下同源流程；它只導向 OAuth provider，不輸出 OAuth URL／token：
+此 API-only 實驗入口沒有網站登入 UI；本機驗收一律使用 Google OAuth（目前 GitHub OAuth 不允許 localhost callback）。開啟 `http://localhost:5173/`（首頁 404 是預期），在該頁 DevTools Console 執行以下同源流程；它只導向 Google，不輸出 OAuth URL／token：
 
 ```js
 (async () => {
@@ -271,7 +271,7 @@ Vite 僅在此明確變數與 remote serve mode 同時成立時載入 `wrangler.
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ provider: 'github', callbackURL: '/' }),
+    body: JSON.stringify({ provider: 'google', callbackURL: '/' }),
   })
   const auth = await response.json()
   if (typeof auth.url !== 'string') throw new Error('OAuth start failed')
