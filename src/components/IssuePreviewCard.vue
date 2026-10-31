@@ -15,7 +15,7 @@ const activityDate = computed(() => formatDate(props.issue.last_activity_at ?? p
 </script>
 
 <template>
-  <article class="card mx-auto flex w-full max-w-5xl flex-col">
+  <article class="card flex w-full flex-col">
     <div class="mb-3 flex flex-wrap items-center gap-2">
       <StatusBadge :status="issue.status" short />
       <span class="text-sm whitespace-nowrap text-muted">{{ t('idx_published_date', { date: publishedDate }) }}</span>
@@ -23,7 +23,7 @@ const activityDate = computed(() => formatDate(props.issue.last_activity_at ?? p
     </div>
 
     <h2 class="mt-0 mb-3 font-serif text-2xl font-bold text-ink">{{ issue.title }}</h2>
-    <p v-if="issue.description" class="mt-0 mb-4 whitespace-pre-line leading-relaxed text-vt-fg-2 h-full max-h-64 overflow-auto text-ellipsis">
+    <p v-if="issue.description" class="mt-0 mb-4 whitespace-pre-line leading-relaxed text-vt-fg-2 h-full max-h-64 overflow-auto text-ellipsis sm:max-w-prose">
       {{ issue.description }}
     </p>
 

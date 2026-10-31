@@ -339,7 +339,7 @@ async function copyRssUrl() {
     </div>
 
     <div class="vt-hero" v-if="!selectedIssue">
-      <div class="vt-hero-inner relative sm:pr-40 lg:pr-56">
+      <div class="page-container relative sm:pr-40 lg:pr-56">
         <HomeGrowthIllustration variant="garden" class="absolute right-0 bottom-0 hidden w-36 sm:block lg:w-48" />
         <div class="hero-tag flex items-center gap-2">
           <HomeGrowthIllustration variant="seedling" class="h-6 w-8 shrink-0 sm:hidden" />
@@ -354,7 +354,7 @@ async function copyRssUrl() {
       </div>
     </div>
 
-    <div v-else class="container mt-2 mb-2 flex items-center gap-2">
+    <div v-else class="page-container mt-2 mb-2 flex items-center gap-2">
       <!-- back to issues -->
       <button type="button" class="btn btn-secondary" @click="backToIssues">
         {{ t('back_to_issues') }}
@@ -363,7 +363,7 @@ async function copyRssUrl() {
 
     <main class="relative isolate pt-0 pb-4 sm:pt-2 sm:pb-4">
       <HomeNatureBackdrop placement="issues" />
-      <div class="container">
+      <div class="page-container">
         <IssuePreviewCard v-if="selectedIssue" :issue="selectedIssue" />
 
         <template v-else>

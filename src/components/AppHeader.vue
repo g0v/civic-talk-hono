@@ -78,12 +78,9 @@ function handleNewIssue() {
 </script>
 
 <template>
-  <header class="sticky top-0 z-[100] bg-transparent px-2 pt-3 sm:px-4">
+  <header class="sticky top-0 z-[100] bg-transparent px-2 pt-3 sm:px-0">
     <!-- ── 主列：logo ＋ 桌面 nav ＋ 手機漢堡按鈕 ── -->
-    <div
-      class="mx-auto flex h-16 items-center justify-between rounded-xl border border-vt-border/75 bg-vt-bg-1/88 px-1 shadow-md backdrop-blur-[20px] sm:px-4 sm:pl-6"
-      :class="isJapanese ? 'max-w-6xl' : 'max-w-[980px] xl:max-w-6xl'"
-    >
+    <div class="page-container flex h-16 items-center justify-between rounded-xl border border-vt-border/75 bg-vt-bg-1/88 px-1 shadow-md backdrop-blur-[20px] sm:px-4 sm:pl-6">
       <!-- Logo -->
       <a href="/" class="flex shrink-0 items-center no-underline" aria-label="vTaiwan Civic Talk">
         <img src="/vtaiwan-logo.svg" alt="vTaiwan" class="h-6 w-auto dark:hidden sm:h-7" />
@@ -282,8 +279,7 @@ function handleNewIssue() {
     <!-- ── 手機下拉選單 ── -->
     <div
       v-if="showMenu"
-      class="mx-auto mt-2 rounded-xl border border-vt-border/75 bg-vt-bg-1/95 px-5 py-4 shadow-md backdrop-blur-[20px] xl:hidden"
-      :class="isJapanese ? 'max-w-6xl' : 'max-w-[980px]'"
+      class="page-container mt-2 rounded-xl border border-vt-border/75 bg-vt-bg-1/95 px-5 py-4 shadow-md backdrop-blur-[20px] xl:hidden"
     >
       <!-- 導航連結 -->
       <nav class="mb-4 flex flex-col gap-1">
@@ -392,7 +388,7 @@ function handleNewIssue() {
     </div>
 
     <!-- 桌面登入面板沿用導覽斷點與容器寬度。 -->
-    <div v-if="authState === 'anonymous' && showLoginPanel" class="mx-auto mt-2 hidden max-w-6xl rounded-xl border border-vt-border/75 bg-vt-bg-1/95 p-4 shadow-md backdrop-blur-[20px] xl:block">
+    <div v-if="authState === 'anonymous' && showLoginPanel" class="page-container mt-2 hidden rounded-xl border border-vt-border/75 bg-vt-bg-1/95 p-4 shadow-md backdrop-blur-[20px] xl:block">
       <p class="mt-0 mb-3 text-sm text-muted">{{ t('login_panel_desc') }}</p>
       <SignInButtons :callback-url="loginCallbackUrl" />
     </div>

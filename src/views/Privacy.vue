@@ -11,7 +11,7 @@ const { t } = useI18n()
     <AppHeader current="home" />
 
     <main class="py-10">
-      <div class="container max-w-3xl">
+      <div class="page-container">
         <div class="card">
           <h1 class="mb-8 font-serif text-3xl font-bold">{{ t('privacy_page_title') }}</h1>
 

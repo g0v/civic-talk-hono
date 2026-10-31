@@ -75,7 +75,7 @@ async function saveName() {
     <AppHeader current="profile" />
 
     <main class="py-10">
-      <div class="container max-w-2xl">
+      <div class="page-container">
         <!-- SSR 與 hydration 首幀都不猜登入狀態，避免 cookie 導致 mismatch。 -->
         <section v-if="authState === 'loading'" class="card" aria-busy="true">
           <div class="h-8 w-32 animate-pulse rounded bg-gray-200" />

@@ -12,7 +12,7 @@ import Toast from '../components/Toast.vue'
 import ModerationAppealNotice from '../components/ModerationAppealNotice.vue'
 import MarkdownEditor from '../components/MarkdownEditor.vue'
 import { postSubmissionWithDuplicateNameCheck } from '../client/submission'
-import { copyTextWhenReady } from '../client/clipboard'
+import { briefingMarkdown, copyTextWhenReady, type BriefingMarkdownField } from '../client/clipboard'
 import { useAuth } from '../composables/useAuth'
 import { useSubmitGuard } from '../composables/useSubmitGuard'
 import { useViewerRole } from '../composables/useViewerRole'
@@ -245,7 +245,6 @@ let carouselDragEndFrame: number | null = null
 
 function clearCarouselDragEndListeners() {
   if (!carouselDragEndListening || typeof document === 'undefined') return
-  document.removeEventListener('mouseup', finishCarouselDrag)
   document.removeEventListener('touchend', finishCarouselDrag)
   carouselDragEndListening = false
 }
@@ -254,8 +253,7 @@ function finishCarouselDrag() {
   clearCarouselDragEndListeners()
   if (typeof window === 'undefined') return
 
-  // vue3-carousel 會攔截滑鼠拖曳後緊接著產生的 click；等該 click 結束再切換版面，
-  // 避免 carousel 過早卸載，讓攔截器殘留並吃掉 comments 的第一個按鈕 click。
+  // 等拖曳結束事件處理完再切換版面，避免 carousel 在事件中途卸載
   carouselDragEndFrame = window.requestAnimationFrame(() => {
     carouselDragEndFrame = null
     const shouldEnterComments = dragThresholdReached.value && viewerRole.value === 'citizen' && !activeStep.value && carouselIndex.value === lastBriefingSlideIndex
@@ -267,7 +265,6 @@ function finishCarouselDrag() {
 function listenForCarouselDragEnd() {
   if (carouselDragEndListening || typeof document === 'undefined') return
   carouselDragEndListening = true
-  document.addEventListener('mouseup', finishCarouselDrag, { passive: true })
   document.addEventListener('touchend', finishCarouselDrag, { passive: true })
 }
 
@@ -663,6 +660,16 @@ function downloadOpinionMd() {
   toast.value?.show(t('op_toast_download_ok'))
 }
 
+async function copyBriefingMarkdown(field: BriefingMarkdownField) {
+  if (!briefing.value) return
+  try {
+    await navigator.clipboard.writeText(briefingMarkdown(briefing.value, field))
+    toast.value?.show(t('brief_copy_md_ok'))
+  } catch {
+    toast.value?.show(t('brief_copy_md_fail'))
+  }
+}
+
 async function copyOpinionMd() {
   try {
     await navigator.clipboard.writeText(buildOpinionMd())
@@ -715,7 +722,7 @@ async function submitOpinion() {
     <AppHeader current="issue" :callback-url="loginCallbackUrl" />
 
     <main class="py-2" :class="{ 'issue-main-carousel': !activeStep }">
-      <div class="container" :class="{ 'issue-container-carousel': !activeStep }">
+      <div class="page-container" :class="{ 'issue-container-carousel': !activeStep }">
         <div v-if="loading && !issue" class="empty">
           <div class="empty-icon">⏳</div>
           {{ t('loading') }}
@@ -730,20 +737,20 @@ async function submitOpinion() {
             <p class="my-1 max-h-24 overflow-y-auto whitespace-pre-wrap break-words">{{ issue.closure_reason }}</p>
             <p class="m-0 text-muted">{{ t('issue_closure_participation_hint') }}</p>
           </section>
-          <div class="issue-page-heading mb-6" v-show="activeStep !== 'comments'">
-            <div v-if="activeStep" class="hidden sm:flex">
+          <div class="issue-page-heading mb-6">
+            <div v-if="activeStep && activeStep !== 'comments'" class="hidden sm:flex">
               <StatusBadge :status="issue.status" />
             </div>
-            <h1 class="mt-3 mb-2 font-serif text-xl font-bold">
+            <h1 class="mt-3 mb-2 font-serif font-bold" :class="activeStep === 'comments' ? 'text-lg sm:text-xl' : 'text-xl'">
               {{ issue.abuse_flagged === 3 ? t('moderation_hidden_placeholder') : issue.title }}
             </h1>
             <!-- <p v-if="issue.abuse_flagged !== 3 && issue.description" class="mt-0 mb-3 whitespace-pre-line text-muted">{{ issue.description }}</p> -->
-            <p class="m-0 text-sm text-muted" v-show="!activeStep">
+            <p class="m-0 text-sm text-muted" :class="{ 'hidden sm:block': activeStep === 'comments' }" v-show="!activeStep || activeStep === 'comments'">
               {{ t('issue_created') }} {{ formatDate(issue.created_at, locale) }} · {{ materials.length }} {{ t('issue_materials_unit') }} · {{ t('issue_author_label') }}：{{
                 issue.author_name || t('author_system')
               }}<template v-if="issue.author_email"> <AuthorEmailLink :email="issue.author_email" :name="issue.author_name" /></template>
             </p>
-            <button type="button" class="btn btn-secondary btn-sm mt-3 inline-flex" @click="copyRssUrl">{{ t('issue_rss_subscribe') }}</button>
+            <button type="button" class="btn btn-secondary btn-sm mt-3" :class="activeStep === 'comments' ? 'hidden sm:inline-flex' : 'inline-flex'" @click="copyRssUrl">{{ t('issue_rss_subscribe') }}</button>
           </div>
 
           <nav class="issue-briefing-tabs" :aria-label="t('issue_tabs_aria')">
@@ -776,7 +783,7 @@ async function submitOpinion() {
               :wrap-around="false"
               :prevent-excessive-dragging="true"
               :touch-drag="true"
-              :mouse-drag="true"
+              :mouse-drag="false"
               :i18n="carouselI18n"
               @drag="handleCarouselDrag"
             >
@@ -799,6 +806,12 @@ async function submitOpinion() {
                   <template v-else>
                     <h2 class="mt-0 mb-3 font-serif text-xl">{{ t('brief_overview') }}</h2>
                     <div class="markdown-content mobile-readable" v-html="renderedBriefing?.narrative ?? ''" />
+                    <p v-if="briefing.narrative" class="mt-6 flex">
+                      <button type="button" class="inline-flex cursor-pointer items-center gap-1 text-xs text-muted hover:text-teal" :aria-label="t('brief_copy_md_aria', { section: t(briefingTabKeys[0]) })" @click="copyBriefingMarkdown('narrative')">
+                        <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
+                        {{ t('brief_copy_md') }}
+                      </button>
+                    </p>
                   </template>
                 </article>
               </Slide>
@@ -807,6 +820,12 @@ async function submitOpinion() {
                   <h2 class="mt-0 mb-3 font-serif text-xl">{{ t('brief_consensus') }}</h2>
                   <div v-if="briefing && briefing.abuse_flagged !== 2" class="markdown-content mobile-readable" v-html="renderedBriefing?.consensus ?? ''" />
                   <div v-else class="empty">{{ t('brief_no_briefing_alert') }}</div>
+                  <p v-if="briefing && briefing.abuse_flagged !== 2 && briefing.consensus" class="mt-6 flex">
+                    <button type="button" class="inline-flex cursor-pointer items-center gap-1 text-xs text-muted hover:text-teal" :aria-label="t('brief_copy_md_aria', { section: t(briefingTabKeys[1]) })" @click="copyBriefingMarkdown('consensus')">
+                      <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
+                      {{ t('brief_copy_md') }}
+                    </button>
+                  </p>
                 </article>
               </Slide>
               <Slide :index="2">
@@ -814,6 +833,12 @@ async function submitOpinion() {
                   <h2 class="mt-0 mb-3 font-serif text-xl">{{ t('brief_disputes') }}</h2>
                   <div v-if="briefing && briefing.abuse_flagged !== 2" class="markdown-content mobile-readable" v-html="renderedBriefing?.disputes ?? ''" />
                   <div v-else class="empty">{{ t('brief_no_briefing_alert') }}</div>
+                  <p v-if="briefing && briefing.abuse_flagged !== 2 && briefing.disputes" class="mt-6 flex">
+                    <button type="button" class="inline-flex cursor-pointer items-center gap-1 text-xs text-muted hover:text-teal" :aria-label="t('brief_copy_md_aria', { section: t(briefingTabKeys[2]) })" @click="copyBriefingMarkdown('disputes')">
+                      <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
+                      {{ t('brief_copy_md') }}
+                    </button>
+                  </p>
                 </article>
               </Slide>
               <Slide :index="3">
@@ -829,6 +854,10 @@ async function submitOpinion() {
                         }}</span
                       >
                       <AuthorEmailLink v-if="briefing.author_email" :email="briefing.author_email" :name="briefing.author_name" />
+                      <button v-if="briefing.positions" type="button" class="inline-flex cursor-pointer items-center gap-1 text-xs text-muted hover:text-teal" :aria-label="t('brief_copy_md_aria', { section: t(briefingTabKeys[3]) })" @click="copyBriefingMarkdown('positions')">
+                        <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
+                        {{ t('brief_copy_md') }}
+                      </button>
                       <button v-if="authState === 'signed-in' && !briefing.abuse_flagged" type="button" class="text-xs text-muted hover:text-red" @click="openReport('briefing', briefing.id)">
                         {{ t('report_btn') }}
                       </button>
@@ -1077,7 +1106,7 @@ async function submitOpinion() {
               <div class="comment-action-panel">
                 <h2 class="mt-0 mb-3 font-serif text-xl">{{ t('op_start_title') }}</h2>
                 <p class="mb-6 text-muted">{{ t('op_start_desc') }}</p>
-                <div class="flex flex-col gap-3 sm:mx-auto sm:max-w-sm sm:gap-4 sm:[&>button]:py-4 sm:[&>button]:text-lg">
+                <div class="flex flex-col gap-3 sm:mx-auto sm:max-w-sm sm:gap-4">
                   <button type="button" class="btn btn-primary" @click="setIssueCommentAction('commit')">
                     <span class="sm:hidden">{{ t('op_start_continue') }}</span>
                     <span class="hidden sm:inline">{{ t('op_start_commit') }}</span>

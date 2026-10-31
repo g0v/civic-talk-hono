@@ -54,7 +54,7 @@ const techRows = computed(() => [
     <AppHeader current="about" />
 
     <section class="vt-hero">
-      <div class="vt-hero-inner">
+      <div class="page-container">
         <div class="hero-tag">{{ t('abt_hero_tag') }}</div>
         <h1 class="hero-title" v-html="heroTitleHtml" />
         <p class="hero-desc">{{ t('abt_hero_desc') }}</p>
@@ -62,7 +62,7 @@ const techRows = computed(() => [
     </section>
 
     <main class="py-10">
-      <div class="container space-y-12">
+      <div class="page-container space-y-12">
         <section>
           <h2 class="mt-0 mb-2 font-serif text-2xl font-bold">{{ t('abt_how_title') }}</h2>
           <p class="mt-0 mb-6 text-muted">{{ t('abt_how_desc') }}</p>

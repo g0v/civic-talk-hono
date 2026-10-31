@@ -11,7 +11,7 @@ const { t } = useI18n()
     <AppHeader current="other" />
 
     <main class="py-20">
-      <div class="container text-center">
+      <div class="page-container text-center">
         <div class="mb-4 text-6xl">🧭</div>
         <h1 class="mt-0 mb-2 font-serif text-2xl font-bold">{{ t('nf_title') }}</h1>
         <p class="mx-auto mb-6 max-w-md text-muted">{{ t('nf_desc') }}</p>

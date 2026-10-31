@@ -27,7 +27,7 @@ function closeOnBackdropClick(event: MouseEvent) {
 
 <template>
   <footer :class="compact ? 'shrink-0 border-t border-border bg-vt-bg-1' : 'mt-16 border-t border-border bg-vt-bg-1'">
-    <div :class="compact ? 'container py-2' : 'container py-10'">
+    <div :class="compact ? 'page-container py-2' : 'page-container py-10'">
       <template v-if="!compact">
         <div class="mb-4">
           <img src="/vtaiwan-logo.svg" alt="vTaiwan" class="h-7 w-auto dark:hidden" />

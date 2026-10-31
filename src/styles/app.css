@@ -63,6 +63,9 @@
   --text-vt-5xl: 48px;
   --text-vt-5xl--line-height: 1.15;
 
+  /* 閱讀欄與頁面外框分開限制；65ch 對應 max-w-prose。 */
+  --container-prose: 65ch;
+
   /* Spacing */
   --spacing-vt-0_5: 2px;
   --spacing-vt-1: 4px;
@@ -229,10 +232,19 @@
     font-size: 15px;
   }
 
-  .container {
-    max-width: 860px;
+  /* 避開 Tailwind 內建 container 的響應式上限；手機保留原有 20px 留白。 */
+  .page-container {
+    width: 100%;
+    max-width: var(--container-6xl);
     margin-inline: auto;
-    padding-inline: 20px;
+    padding-inline: calc(var(--spacing-vt-4) + var(--spacing-vt-1));
+  }
+
+  @media (width >= theme(--breakpoint-sm)) {
+    .page-container {
+      max-width: min(var(--container-6xl), calc(100% - var(--spacing-vt-8)));
+      padding-inline: 0;
+    }
   }
 
   /* 回報欄寬由表頭分配；th/td 的 max-width 本身擋不住 auto table 的長字串。 */
@@ -626,9 +638,15 @@
     padding: 3.5rem 1.25rem 3rem;
   }
 
-  .vt-hero-inner {
-    max-width: 860px;
-    margin-inline: auto;
+  /* Hero 的手機留白由外層保留；桌機改由共用容器統一頁面邊界。 */
+  .vt-hero .page-container {
+    padding-inline: 0;
+  }
+
+  @media (width >= theme(--breakpoint-sm)) {
+    .vt-hero {
+      padding-inline: 0;
+    }
   }
 
   .hero-tag {
@@ -935,14 +953,6 @@
   min-height: 0;
 }
 
-/* 寬螢幕限制輪播閱讀寬度；手機、平板與非輪播版面沿用原有容器。 */
-@media (width >= theme(--breakpoint-lg)) {
-  .issue-container-carousel {
-    max-width: var(--container-5xl);
-    padding-inline: var(--spacing-vt-12);
-  }
-}
-
 .issue-carousel-page .issue-page-heading {
   flex: none;
   margin-bottom: var(--spacing-vt-2);
@@ -984,6 +994,17 @@
   max-height: 100%;
   overflow-y: auto;
   overscroll-behavior: contain;
+}
+
+/* 加寬卡片外框；閱讀欄靠左並保留 65ch 行長上限，手機維持原樣。 */
+@media (width >= theme(--breakpoint-sm)) {
+  .issue-briefing-card {
+    padding-inline-start: var(--spacing-vt-12);
+  }
+
+  .issue-briefing-card .mobile-readable {
+    max-width: var(--container-prose);
+  }
 }
 
 .issue-briefing-card .mobile-readable {

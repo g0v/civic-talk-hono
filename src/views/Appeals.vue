@@ -102,7 +102,7 @@ onMounted(async () => {
     <AppHeader current="appeals" />
 
     <main class="py-10">
-      <div class="container max-w-3xl">
+      <div class="page-container">
         <p class="section-label">{{ t('appeals_eyebrow') }}</p>
         <h1 class="page-title">{{ t('appeals_title') }}</h1>
         <p class="page-subtitle">{{ t('appeals_intro') }}</p>

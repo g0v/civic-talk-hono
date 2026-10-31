@@ -2,6 +2,7 @@ import { renderToString } from '@vue/server-renderer'
 import { createSSRApp } from 'vue'
 import { describe, expect, it } from 'vite-plus/test'
 import { provideI18n } from '../l10n'
+import { messages } from '../l10n/zh-TW'
 import IssueView from '../views/Issue.vue'
 
 describe('Issue SSR', () => {
@@ -325,5 +326,43 @@ describe('Issue SSR', () => {
     expect(html).not.toContain('報報報')
     // 短素材照舊直接顯示
     expect(html).toContain('短素材內容')
+  })
+
+  it.each(['comments', 'materials', 'volunteer'] as const)('preserves issue heading controls and step-specific status on the %s step', async step => {
+    const title = '跨分頁保留的議題標題'
+    const app = createSSRApp(IssueView, {
+      issueId: 1,
+      initialStep: step,
+      initialDetail: {
+        issue: {
+          id: 1,
+          title,
+          description: '議題說明',
+          status: 'published',
+          polis_id: null,
+          created_at: '2026-08-17 00:00:00',
+          tags: [],
+          is_closed: 0,
+          closure_reason: null,
+          closure_changed_at: null,
+          abuse_flagged: 0,
+          author_name: null,
+          author_email: null,
+        },
+        materials: [],
+        briefing: null,
+        opinions: [],
+      },
+    })
+    provideI18n(app, 'zh-TW')
+
+    const html = await renderToString(app)
+    const headingText = html.match(/<h1\b[^>]*>([\s\S]*?)<\/h1>/)?.[1].trim()
+    const buttonLabels = [...html.matchAll(/<button\b[^>]*>([\s\S]*?)<\/button>/g)].map(match => match[1].trim())
+
+    expect(headingText).toBe(title)
+    expect(buttonLabels).toContain(messages.issue_rss_subscribe)
+    // 驗證分頁的狀態顯示規則，不固定翻譯文案或 CSS 實作。
+    expect(html.includes(messages.status_published)).toBe(step !== 'comments')
   })
 })

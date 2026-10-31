@@ -593,7 +593,7 @@ function isSafeFeedbackPagePath(pagePath: string): boolean {
     <AppHeader current="admin" />
 
     <main class="py-9">
-      <div class="container">
+      <div class="page-container">
         <!-- 讀取 session 中：SSR 與 hydration 首幀共用這個骨架 -->
         <div v-if="adminView === 'loading'" class="mx-auto max-w-md">
           <div class="card">

@@ -1,3 +1,5 @@
+import type { Briefing } from '../db/queries'
+
 /** 在點擊當下啟動寫入，讓需要 user activation 的瀏覽器也能複製非同步取得的 prompt。 */
 export async function copyTextWhenReady(text: Promise<string | null>): Promise<boolean> {
   try {
@@ -18,4 +20,11 @@ export async function copyTextWhenReady(text: Promise<string | null>): Promise<b
   } catch {
     return false
   }
+}
+
+export type BriefingMarkdownField = 'narrative' | 'consensus' | 'disputes' | 'positions'
+
+/** 取得說明卡欄位的原始 Markdown */
+export function briefingMarkdown(briefing: Pick<Briefing, BriefingMarkdownField>, field: BriefingMarkdownField): string {
+  return briefing[field] ?? ''
 }

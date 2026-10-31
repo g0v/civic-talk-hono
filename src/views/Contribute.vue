@@ -286,7 +286,7 @@ async function submitMaterial() {
     <AppHeader current="contribute" :back-href="backHref" :back-label="t('contrib_back')" />
 
     <main class="py-9">
-      <div class="container">
+      <div class="page-container">
         <h1 class="page-title">{{ t('contrib_title') }}</h1>
         <p class="page-subtitle">{{ t('contrib_issue_prefix') }}{{ title || t('loading') }}</p>
 

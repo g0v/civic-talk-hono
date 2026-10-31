@@ -93,7 +93,7 @@ async function copyLink() {
     <AppHeader current="issue" />
 
     <main class="py-2">
-      <div class="container">
+      <div class="page-container">
         <!-- 載入中 -->
         <div v-if="loading" class="empty">
           <div class="empty-icon">⏳</div>
