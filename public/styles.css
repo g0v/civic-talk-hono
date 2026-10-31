@@ -1604,6 +1604,10 @@
       font-size: var(--text-sm);
       line-height: var(--tw-leading, var(--text-sm--line-height));
     }
+    .sm\:text-xl {
+      font-size: var(--text-xl);
+      line-height: var(--tw-leading, var(--text-xl--line-height));
+    }
     .sm\:text-xs {
       font-size: var(--text-xs);
       line-height: var(--tw-leading, var(--text-xs--line-height));
@@ -1764,15 +1768,6 @@
   }
   .\[\&\>a\]\:whitespace-nowrap > a {
     white-space: nowrap;
-  }
-  @media (width >= 40rem) {
-    .sm\:\[\&\>button\]\:py-4 > button {
-      padding-block: calc(var(--spacing) * 4);
-    }
-    .sm\:\[\&\>button\]\:text-lg > button {
-      font-size: var(--text-lg);
-      line-height: var(--tw-leading, var(--text-lg--line-height));
-    }
   }
 }
 :root {

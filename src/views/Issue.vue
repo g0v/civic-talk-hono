@@ -737,20 +737,20 @@ async function submitOpinion() {
             <p class="my-1 max-h-24 overflow-y-auto whitespace-pre-wrap break-words">{{ issue.closure_reason }}</p>
             <p class="m-0 text-muted">{{ t('issue_closure_participation_hint') }}</p>
           </section>
-          <div class="issue-page-heading mb-6" v-show="activeStep !== 'comments'">
-            <div v-if="activeStep" class="hidden sm:flex">
+          <div class="issue-page-heading mb-6">
+            <div v-if="activeStep && activeStep !== 'comments'" class="hidden sm:flex">
               <StatusBadge :status="issue.status" />
             </div>
-            <h1 class="mt-3 mb-2 font-serif text-xl font-bold">
+            <h1 class="mt-3 mb-2 font-serif font-bold" :class="activeStep === 'comments' ? 'text-lg sm:text-xl' : 'text-xl'">
               {{ issue.abuse_flagged === 3 ? t('moderation_hidden_placeholder') : issue.title }}
             </h1>
             <!-- <p v-if="issue.abuse_flagged !== 3 && issue.description" class="mt-0 mb-3 whitespace-pre-line text-muted">{{ issue.description }}</p> -->
-            <p class="m-0 text-sm text-muted" v-show="!activeStep">
+            <p class="m-0 text-sm text-muted" :class="{ 'hidden sm:block': activeStep === 'comments' }" v-show="!activeStep || activeStep === 'comments'">
               {{ t('issue_created') }} {{ formatDate(issue.created_at, locale) }} · {{ materials.length }} {{ t('issue_materials_unit') }} · {{ t('issue_author_label') }}：{{
                 issue.author_name || t('author_system')
               }}<template v-if="issue.author_email"> <AuthorEmailLink :email="issue.author_email" :name="issue.author_name" /></template>
             </p>
-            <button type="button" class="btn btn-secondary btn-sm mt-3 inline-flex" @click="copyRssUrl">{{ t('issue_rss_subscribe') }}</button>
+            <button type="button" class="btn btn-secondary btn-sm mt-3" :class="activeStep === 'comments' ? 'hidden sm:inline-flex' : 'inline-flex'" @click="copyRssUrl">{{ t('issue_rss_subscribe') }}</button>
           </div>
 
           <nav class="issue-briefing-tabs" :aria-label="t('issue_tabs_aria')">
@@ -1106,7 +1106,7 @@ async function submitOpinion() {
               <div class="comment-action-panel">
                 <h2 class="mt-0 mb-3 font-serif text-xl">{{ t('op_start_title') }}</h2>
                 <p class="mb-6 text-muted">{{ t('op_start_desc') }}</p>
-                <div class="flex flex-col gap-3 sm:mx-auto sm:max-w-sm sm:gap-4 sm:[&>button]:py-4 sm:[&>button]:text-lg">
+                <div class="flex flex-col gap-3 sm:mx-auto sm:max-w-sm sm:gap-4">
                   <button type="button" class="btn btn-primary" @click="setIssueCommentAction('commit')">
                     <span class="sm:hidden">{{ t('op_start_continue') }}</span>
                     <span class="hidden sm:inline">{{ t('op_start_commit') }}</span>
