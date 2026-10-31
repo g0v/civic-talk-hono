@@ -4,7 +4,7 @@
 
 本站受[ronnywang](https://www.github.com/ronnywang)提出的[原始構想](https://ronnywang.github.io/civic-notes/civic-talk/)的啟發。
 
-內容生成仍由志願者使用自己的 AI token 完成，平台只產生 prompt 並收回結果；例外是投稿安全審查會呼叫外部 moderation 服務，素材事實查核則由 Civic Talk Worker 透過 Cloudflare Service Binding 呼叫不公開的 `fact-check-core` Worker。
+一般內容生成仍由志願者使用自己的 AI token 完成。Issue #183 另加入需明確啟用的本機證據實驗 API：每次工作須明確同意，選定素材送交 Cloudflare Workers AI，費用由平台帳號承擔；隔離本機資料庫保存實驗工件，正式入口不註冊此 API，也不會自動改寫 briefing。投稿安全審查仍使用 OpenRouter；素材事實查核則由 Civic Talk Worker 透過 Cloudflare Service Binding 呼叫不公開的 `fact-check-core` Worker。
 
 ## 軟體授權
 
@@ -73,10 +73,11 @@
 
 ## 開發
 
+> **#183 草稿分支的 migration 風險：** 此分支的 `migrations/0017_evidence_pipeline.sql` 位於一般 migration 目錄，以下一般開發流程刻意不執行 migration；不得用一般 `--local` 將它套入預設開發庫，更不得用 `--remote` 套入正式庫。需要實驗時只用[專用隔離本機指令](#1-帳號設定與隔離資料庫)；若一般本機庫尚未初始化，不要在本分支以一般指令初始化，先參閱[實驗後處置與合併門檻](#71-實驗後-migration-與私有狀態處置)。
+
 ```bash
-cp .dev.vars.example .dev.vars   # 填入 Better Auth 與 Google／GitHub OAuth 憑證
+cp -n .dev.vars.example .dev.vars   # 僅首次建立；私下填入 Better Auth 與 Google／GitHub OAuth 憑證
 npm install
-npx wrangler d1 migrations apply vtaiwan-civic-talks --local
 vp run dev
 ```
 
@@ -163,8 +164,664 @@ vp run dev
 - `migrations/0001`–`0006`（初始 schema、作者快照、條款同意）**本機與遠端皆已套用**
 - `migrations/0014_user_feedback.sql` 新增 `ct_feedback`；本機與遠端皆已套用。2026-10-16 經使用者授權套用遠端 0014，查核 pending 清單為空、schema 與索引符合預期，新增業務表僅 `ct_feedback`； Worker已部部，正式站功能已上線。
 - `migrations/0015_issue_tags.sql` 為 `ct_issues` 新增 `tags` JSON 文字欄位，舊議題預設 `[]`、不新增資料表。本機與遠端皆已套用：2026-10-20 經使用者授權套用遠端 0015，查核 pending 清單為空、資料表清單未變，16 筆既有議題的 tags 皆為 `[]`。此次未部署 Worker。
-- 認證資料庫：D1 `vtaiwan-auth`（binding：`DB_AUTH`），schema 由 `../vTaiwan-hono` 維護——本 repo **只讀不改**，🚫 不對它跑任何 migration
-- 遠端 migration 需先取得授權：`npx wrangler d1 migrations apply vtaiwan-civic-talks --remote`
+- 認證資料庫：D1 `vtaiwan-auth`（binding：`DB_AUTH`），schema 由 `../vTaiwan-hono` 維護；本 repo 不改 schema、不對它跑 migration 或直接 SQL 寫入，Better Auth 正常登入／session 生命週期是既有寫入例外。
+- 遠端 migration 一律需另行授權；**此 #183 草稿分支不得對一般業務庫執行 migration apply**，因為一般目錄含僅供隔離實驗的 `0017`，不論 `--local` 或 `--remote` 都會被一般 apply 選入。不得對 `DB_AUTH` 執行任何 migration。
+
+## #183 隔離本機證據實驗：真實議題驗收手冊
+
+**目前管線：** Clairic 逐素材抽取 → Clef 四分類比較 → Gemma 依序執行共識、爭點、立場地圖三次專項生成 → 驗證後組裝。三項共用同一份已驗證證據／比較資料，不以前項摘要代替來源；一般站與 BYO token 流程不變。Clef prompt 為 `symmetric-four-way-v2`，Gemma prompt／schema 為 `specialized-evidence-v1`／`specialized-cited-v1`。新版已完成離線合成流程驗證，**尚未新增真實模型呼叫或通過新版人工語義驗收**；舊版成功草稿不能當作新版品質證據。
+
+
+本節是操作步驟，不代表未執行的 runtime／OAuth／模型／人工品質案例已通過。實驗 API 只會在明確 opt-in 的專用本機 remote-dev 入口註冊；`DB`、Workflow 與工件留在本機隔離目錄，`SOURCE_DB` 連遠端業務 D1、程式只用來源 SELECT，`DB_AUTH` 僅供 Better Auth 正常 OAuth／session 生命週期（此為唯一預期遠端 auth 寫入），`AI` 使用平台 Cloudflare Workers AI。遠端 D1 binding 並非資料庫唯讀 credential；不得對 `SOURCE_DB` 執行任何寫入或 migration，也不得對 `DB_AUTH` 建表、migration 或直接 SQL 寫入。
+
+一般志願者內容生成維持 BYO AI token 與既有 synthesis prompt API；實驗不寫入既有 briefing、不改議題狀態、不自動發布。Cloudflare Workers AI 的費用由平台帳號承擔；US$5／日是應用程式估算預留，不是 Cloudflare 帳單硬上限。
+
+**狀態：INITIAL DRAFT AWAITING REAL SMOKE/ACCEPTANCE；不可合併。** 真實 OAuth、付費三模型流程及獨立人工語義品質尚未驗收；自動測試與合成 smoke 不能替代它們。按下列編號手冊操作前，先由人工確認此分支、費用、來源與隱私風險；本草稿也尚未解決一般 migration 目錄的誤用風險。
+
+執行本手冊需 `vp`、`curl`、`jq`，以及原生 Node.js `>=22.18`（建議 Node 24 LTS）：`scripts/evidence-maintenance.mjs` 直接匯入 `src/ai/store.ts` 並使用 `node:sqlite`，需要 Node 原生 TypeScript／SQLite 支援。此環境觀察到 `node --version` 為 `v26.13.0`、`vp --version` 為 `vp v1.4.0`、`jq --version` 輸出 `jaq 3.1.1`、`curl --version` 為 `8.7.1`；這是本機 CLI 版本紀錄，不代表曾以其他 Node 版本測試維護 CLI。
+
+| Binding | 實驗入口連線目標 | 允許用途 |
+|---|---|---|
+| `DB` | 隔離本機 D1，`remote:false`，persist 至 `.wrangler/ai-experiment` | 新增 `ct_*` 實驗資料；只套本機 migration |
+| `SOURCE_DB` | 遠端 `vtaiwan-civic-talks` D1 | 固定參數化 SELECT 來源；不要寫入或套 migration（binding 本身仍有寫入能力） |
+| `DB_AUTH` | 遠端 `vtaiwan-auth` D1 | Better Auth 既有登入／session／OAuth 正常生命週期及授權查詢；不建 schema、不跑 migration、不直接 SQL 寫入 |
+| `AI` | 遠端 Cloudflare Workers AI | 真實模型請求由平台帳號計費；不得以 mock 或假結果作 runtime fallback |
+| `EVIDENCE_WORKFLOW` | 本機 Workflow `civic-talk-evidence-local` (`EvidenceWorkflow`) | 本機持久任務與 recovery smoke；不是遠端 Workflow |
+
+以下 shell 指令請在同一個私有 Bash session 依序執行，讓 `BASE_URL`、`COOKIE_JAR`、`JOB_ID` 等變數延續；另開 terminal 時需重新設定並驗證 `BASE_URL`，不得從 `.dev.vars` 印出 secret。
+
+### 1. 帳號、設定與隔離資料庫
+
+在 repo root 使用乾淨 checkout 的 `feat/issue-183-evidence-pipeline`；先檢查分支及 tracked 變更，保護既有 ignored `.dev.vars` 與 `.wrangler` 狀態，不得因 checkout／安裝而覆寫或清空。`npm`／lockfile 管理依賴；`package.json` 指定 npm `^12.0.1`。
+
+```bash
+git status --short --branch
+node --version
+npm --version
+vp --version
+curl --version
+jq --version
+npm ci
+```
+
+若 `.wrangler/ai-experiment/` 已存在，先確認它是自己預期的實驗狀態及其中私有工件的留存需求；不可為重新驗收或繞過額度清空它。缺工具、帳號權限、canonical origin 或明確付費同意時停止。
+
+
+先確認本機 Wrangler 已登入並具有 D1、Workers、Workers AI 所需權限：
+
+```bash
+vp exec wrangler whoami
+```
+
+此命令會顯示帳號識別資訊，僅在本機核對權限，不要複製完整輸出到 issue、PR、終端錄影或聊天；不要執行 deploy。專用設定為 [`wrangler.ai-experiment.jsonc`](./wrangler.ai-experiment.jsonc)，工作資料目錄為 `.wrangler/ai-experiment/`（已忽略、不提交）。typegen 寫入忽略目錄，不手改生成型別：
+
+```bash
+mkdir -p .wrangler/ai-experiment
+vp exec wrangler types .wrangler/ai-experiment/worker-configuration.d.ts --config wrangler.ai-experiment.jsonc
+```
+
+`.dev.vars` 必須由維護者在本機私下設定專用設定要求的 OAuth／Better Auth 欄位：`BETTER_AUTH_URL`、`BETTER_AUTH_SECRET`、`GOOGLE_CLIENT_ID`、`GOOGLE_CLIENT_SECRET`、`GITHUB_CLIENT_ID`、`GITHUB_CLIENT_SECRET`。不要 `cat`、`echo`、貼上或記錄 secret、token、cookie。`BETTER_AUTH_URL` 與本機瀏覽器 origin 固定為專案既有的 `http://localhost:5173`；本機驗收使用 Google，callback 為 `http://localhost:5173/api/auth/callback/google`。目前 GitHub OAuth 僅允許 `vtaiwan.tw` 子網域，不支援此 localhost callback，因此本機登入不得選用 GitHub；專用設定要求的 GitHub 欄位仍須保留。專用 Vite server 綁 canonical hostname `localhost`（只 loopback，不暴露 LAN），`strictPort` 固定 5173；若該埠已有 listener，參照下方 preflight，只停止確認屬於自己的舊服務，不可殺未知 listener或改用另一個 port 做 OAuth。仍需由維護者私下確認 Google OAuth app 已允許上述 callback；本文件不代表已完成實際登入驗收。設定缺失、origin 不一致或 `whoami` 權限不足時，在前置檢查停止，不建立假 session。
+
+**Migration 硬性警告：** 一般 `wrangler.jsonc` 與實驗設定的 `DB` 都指向 `./migrations`；目錄中的 `0017` 沒有程式性的環境保護。一般 `wrangler d1 migrations apply vtaiwan-civic-talks --local` 會把它套進預設開發庫，`--remote` 則可能套進遠端業務庫；本草稿兩者皆不得執行。也不得以 `SOURCE_DB`／`DB_AUTH` 或其 database name 作 migration 目標；未修改既有 `0001`–`0016`。唯有下方同時指定 `DB`、`--local`、專用 config 與專用 persist 的命令是本次隔離實驗的 migration 路徑。
+
+`remote:false` 只控制本機開發時的 binding，不是 Wrangler CLI migration 的硬鎖：即使用實驗 config 選取 `DB`，明寫 `--remote` 仍可能命中同一個正式 `database_id`。本輪只在隔離本機套用，沒有查詢遠端 schema 或 migration ledger，不能推斷遠端是否已有 `0017`。
+
+若懷疑曾誤套遠端，立即停止 migration 與其他資料變更，保留命令、時間與錯誤／變更紀錄（勿公開機密或個資），聯繫維護者並取得明確核准後才決定修復；不得自行 DROP、改寫 `d1_migrations` 或重試。
+
+
+只套用隔離本機 `DB` 的 migration；命令明列 `--local`、專用 config 與專用 persist 路徑：
+
+```bash
+vp exec wrangler d1 migrations apply DB --local --config wrangler.ai-experiment.jsonc --persist-to .wrangler/ai-experiment
+vp exec wrangler d1 execute DB --local --config wrangler.ai-experiment.jsonc --persist-to .wrangler/ai-experiment --command "SELECT type, name, tbl_name FROM sqlite_master WHERE type IN ('table', 'index') ORDER BY type, name;"
+```
+
+檢查應用程式業務表只使用 `ct_` 前綴；SQLite／Cloudflare／D1 的內部 metadata／migration 表不是業務表。實際已在隔離目錄套用 `0001`–`0017_evidence_pipeline.sql`，並檢視 `sqlite_master`：新增的 pipeline 表為 `ct_ai_*`，應用程式表皆為 `ct_*`。不可把 `DB` 換成 `SOURCE_DB` 或 `DB_AUTH`；不得用 `--remote` 套 migration。`DB` 是 `remote:false`，正式／一般配置仍使用原 `wrangler.jsonc`。
+
+### 2. 唯讀來源預檢與啟動
+
+先核對議題 13 與素材 25／26／27 是否仍存在、屬於該議題且未隱藏。以下固定 SQL 只回傳識別、狀態及長度，不讀正文、不建立或修改遠端資料：
+
+```bash
+vp exec wrangler d1 execute SOURCE_DB --remote --config wrangler.ai-experiment.jsonc --json --command "SELECT id, title, status, abuse_flagged FROM ct_issues WHERE id = 13; SELECT id, issue_id, length(source_name) AS source_name_chars, length(source_url) AS source_url_chars, length(CAST(content AS BLOB)) AS content_utf8_bytes, abuse_flagged FROM ct_materials WHERE issue_id = 13 AND id IN (25, 26, 27) ORDER BY id;"
+```
+
+先前兩素材唯讀檢查回報：議題 13 為 `published`、素材 25／26 屬於該議題且 `abuse_flagged = 0`，UTF-8 正文長度分別 339／449 bytes；查詢未讀取正文，Wrangler 回報 `rows_written: 0`、`changed_db: false`。這份歷史紀錄不包含素材 27，不能當成三素材的當前查核證據。每次實驗前仍須以上方查詢逐一核對 25／26／27；若議題或素材已變更／撤下，就記錄差異並停止，不修改正式來源、不悄悄替換素材。
+
+專用命令會先跑 production prebuild；本次已在來源凍結後成功執行，證據見第 8 節。若後續再改動任何 source／untracked 檔，重跑前仍須確認全部變更已凍結：
+
+啟動前先檢查 5173 的 IPv4／IPv6 loopback listener：
+
+```bash
+lsof -nP -iTCP:5173 -sTCP:LISTEN
+```
+
+若有 listener，只能停止自己確認擁有的舊本機 dev service；未知 owner 的 listener 不要強制終止，先停止實驗，避免 `localhost` 解析到另一個 server。不要接受自動改 port。
+
+```bash
+CIVIC_AI_EXPERIMENT=1 vp run dev:remote
+```
+
+Vite 僅在此明確變數與 remote serve mode 同時成立時載入 `wrangler.ai-experiment.jsonc`，並持久化至 `.wrangler/ai-experiment/`；專用 server 綁定 canonical hostname `localhost`（loopback，不暴露 LAN）、`strictPort` 固定使用 5173。啟動前先執行 `lsof -nP -iTCP:5173 -sTCP:LISTEN`；若已占用，只能停止確認屬於自己的舊服務，不要殺未知 listener，也不要接受自動改 port。`BETTER_AUTH_URL`、瀏覽器與 `BASE_URL` 的唯一有效 OAuth origin 為 `http://localhost:5173`。另一個 port 只可用於明確標示的無登入煙霧測試，不能驗證 OAuth callback。
+
+### 3. 登入與私有 Cookie jar
+
+此 API-only 實驗入口沒有網站登入 UI；本機驗收一律使用 Google OAuth（目前 GitHub OAuth 不允許 localhost callback）。開啟 `http://localhost:5173/`（首頁 404 是預期），在該頁 DevTools Console 執行以下同源流程；它只導向 Google，不輸出 OAuth URL／token：
+
+```js
+(async () => {
+  const response = await fetch('/api/auth/sign-in/social', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ provider: 'google', callbackURL: '/' }),
+  })
+  const auth = await response.json()
+  if (typeof auth.url !== 'string') throw new Error('OAuth start failed')
+  location.assign(auth.url)
+})()
+```
+
+在 provider 頁面完成人工登入，等瀏覽器回到本機 origin 後，在 DevTools Console 僅檢查 session 是否存在，不輸出 session JSON、姓名或 email：
+
+```js
+fetch('/api/auth/get-session', { credentials: 'include' })
+  .then(response => response.json())
+  .then(session => console.info(session?.user?.id ? '本機 session 已建立' : '沒有本機 session'))
+```
+
+從 DevTools Network 的 `GET /api/auth/get-session` **Request Headers** 取得 `Cookie` header 值（不是 response `Set-Cookie`）。請從 repository root 的私有本機 terminal 執行；此 header 只放在隱藏輸入與管線中，由本機 helper 轉成真正的 Netscape Cookie jar，之後驗證及所有 API 請求都只使用該 jar：
+
+```bash
+set +x
+umask 077
+mkdir -p .wrangler/ai-experiment
+COOKIE_JAR='.wrangler/ai-experiment/session.cookies'
+BASE_URL='http://localhost:5173'
+: "${BASE_URL:?必須明確設定本機 origin}"
+if [ "$BASE_URL" != 'http://localhost:5173' ]; then
+  rm -f "$COOKIE_JAR" "$PWD/.wrangler/ai-experiment/session-check.json"
+  printf '%s\n' 'BASE_URL 必須與 BETTER_AUTH_URL 完全一致' >&2
+  exit 2
+fi
+if ! bash -c '
+  set +x
+  umask 077
+  state_dir=$3
+  jar=$2
+  check=
+  cleanup_on_exit() {
+    status=$?
+    trap - EXIT
+    if [ "$status" -ne 0 ]; then
+      rm -f "$jar" "$state_dir/session-check.json"
+      if [ -n "$check" ]; then rm -f "$check"; fi
+    fi
+    exit "$status"
+  }
+  trap cleanup_on_exit EXIT
+  rm -f "$state_dir/session-check.json" || exit 1
+  IFS= read -r -s -p "貼上 Cookie request header 值（不含 Cookie: 前綴）：" cookie || exit 1
+  printf "\n" >&2
+  if ! printf "%s" "$cookie" | node scripts/session-cookie-jar.mjs "$1" "$jar"; then
+    unset cookie
+    exit 1
+  fi
+  unset cookie
+  check=$(mktemp "$state_dir/session-check.XXXXXX") || exit 1
+  if ! curl --disable --noproxy "*" --fail --silent --show-error --connect-timeout 5 --max-time 15 --output "$check" --cookie "$jar" "$1/api/auth/get-session"; then
+    printf "%s\n" "OAuth session 未驗證；檢查 provider callback 與 session，不要繼續" >&2
+    exit 1
+  fi
+  if ! jq -e "type == \"object\" and (.user.id | type == \"string\")" "$check" >/dev/null; then
+    printf "%s\n" "OAuth session JSON 無效；不要繼續" >&2
+    exit 1
+  fi
+  rm -f "$check" || exit 1
+  check=
+  exit 0
+' _ "$BASE_URL" "$COOKIE_JAR" "$PWD/.wrangler/ai-experiment"; then
+  printf '%s\n' 'Cookie jar 匯入或 session 驗證失敗；已清除本機 jar 與驗證回應' >&2
+  exit 1
+fi
+```
+
+helper 會寫入 host-only `localhost`、`/` 路徑、session expiry `0` 的 jar，並以原子替換建立權限 `0600` 的檔案；`Cookie` request header 不含原始 `Domain`、`Path`、`Secure` 或 `HttpOnly` 屬性，因此不宣稱保留這些原始屬性。`__Secure-`／`__Host-` 前綴會保留 Secure 要求。Netscape jar 不含 port scope；此 jar **只能**與完全相同的 canonical `BASE_URL`（`http://localhost:5173`）搭配，絕不可拿去請求其他 localhost 服務／port，也不可貼入或匯入正式站 Cookie。後續 `curl --cookie "$COOKIE_JAR"` 即使驗證回應沒有 `Set-Cookie` 仍會使用已匯入 cookie；只有確實需要保存伺服器合法 refresh 時，才在該請求另加 `--cookie-jar "$COOKIE_JAR"`。
+
+若驗證失敗，script 會清除 jar 與暫存驗證回應；不要把假 `Cookie:` 樣本當登入成功。Cookie jar 與所有私有 API 回應均置於 `.wrangler/ai-experiment/`，權限為目前使用者讀寫；不提交、不備份到雲端、不貼報告，也不可開啟 shell tracing。操作完成後呼叫 sign-out 或刪除 Cookie jar。
+
+以同一 jar 私下檢查帳號角色與停權狀態；`/api/me` 原始回應含身分資料，暫存於私有檔，以下只印角色與 `banned`，不印 session、姓名或 email：
+
+```bash
+ME_JSON="$PWD/.wrangler/ai-experiment/me-check.json"
+if ! curl --disable --noproxy '*' --fail --silent --show-error --output "$ME_JSON" \
+  --cookie "$COOKIE_JAR" "$BASE_URL/api/me"; then
+  rm -f "$ME_JSON"
+  printf '%s\n' '無法確認登入身分；停止驗收' >&2
+  exit 1
+fi
+if ! jq -e '.banned == false and (.role == "user" or .role == "admin" or .role == "super-admin")' "$ME_JSON" >/dev/null; then
+  rm -f "$ME_JSON"
+  printf '%s\n' '帳號停權或角色不明；停止驗收' >&2
+  exit 1
+fi
+jq '{role, banned}' "$ME_JSON"
+rm -f "$ME_JSON"
+```
+
+一般未停權登入者即可建工作並修改自己的版本，admin／super-admin 才能使用 maintenance POST；不要為驗收修改帳號角色或停權狀態。
+
+
+每次開新 terminal 都明確設定並驗證同一個 `BASE_URL`，不得留空或改用其他 origin：
+
+```bash
+BASE_URL='http://localhost:5173'
+: "${BASE_URL:?必須設定 BASE_URL}"
+test "$BASE_URL" = 'http://localhost:5173' || { printf '%s\n' 'origin mismatch' >&2; exit 2; }
+```
+
+### 4. 建立工作與有限輪詢
+
+以下請求只讀固定遠端來源，新增的工作／快照／Workflow state 都寫進本機 `DB`；不帶 `--remote` 執行任何寫入。先以真實 session 呼叫：
+
+實驗核心僅有以下六條業務／維護 API：`POST /api/issues/:id/evidence-jobs`、`GET /api/evidence-jobs/:jobId`、`GET /api/evidence-jobs/:jobId/revisions`、`POST /api/evidence-jobs/:jobId/revisions`、`POST /api/evidence-maintenance/reconcile`、`POST /api/evidence-maintenance/erase`。皆須有效使用者 session；兩條 maintenance POST 另外要求 admin／super-admin 角色，且受全域 CSRF 防護；revision 只供工作 owner 建立。
+
+```bash
+umask 077
+POST_JSON="$PWD/.wrangler/ai-experiment/job-post.json"
+JOB_JSON="$PWD/.wrangler/ai-experiment/job.json"
+JOB_REQUEST='{"material_ids":[25,26,27],"language":"zh-TW","consent":true}'
+POST_CODE=$(curl --disable --noproxy '*' --silent --show-error --connect-timeout 5 --max-time 120 --output "$POST_JSON" --write-out '%{http_code}' \
+  --cookie "$COOKIE_JAR" --header "Origin: $BASE_URL" --header 'Content-Type: application/json' \
+  --request POST "$BASE_URL/api/issues/13/evidence-jobs" \
+  --data-binary "$JOB_REQUEST")
+printf 'POST HTTP %s\n' "$POST_CODE"
+if [ "$POST_CODE" != '200' ] && [ "$POST_CODE" != '202' ]; then
+  printf '%s\n' 'POST 未取得可輪詢工作；檢查錯誤碼，不要重送' >&2
+  exit 1
+fi
+JOB_ID=$(jq -er '.job_id | select(type == "string" and length > 0)' "$POST_JSON") || {
+  printf '%s\n' '回應缺少 job ID；停止，不要重送' >&2
+  exit 1
+}
+jq '{job_id, status, cache, input_coverage}' "$POST_JSON"
+```
+
+`consent:true` 是每個工作的必要明確同意。新工作預期 `202`／`cache:"miss"`；同一進行中工作可能是 `202`／`cache:"joined"`；完成快取是 `200`／`cache:"hit"`。狀態欄要與 HTTP code 一起判讀，失敗工作不會被偽裝成 AI 草稿。若來源預檢或 POST 回應錯誤，先看 response 的機器錯誤碼，不要改寫遠端資料或重送空請求。
+
+對實際 job ID 以兩秒間隔最多輪詢 30 次；GET 的進度以 JSON `status` 判斷，停止等待不會取消已送出的模型呼叫：
+
+```bash
+i=0
+STATUS=missing
+while [ "$i" -lt 30 ]; do
+  if ! GET_CODE=$(curl --disable --noproxy '*' --silent --show-error --connect-timeout 5 --max-time 15 --output "$JOB_JSON" --write-out '%{http_code}' \
+    --cookie "$COOKIE_JAR" "$BASE_URL/api/evidence-jobs/$JOB_ID"); then
+    STATUS=missing
+    printf '%s\n' 'GET 失敗；停止輪詢，不重送 POST' >&2
+    break
+  fi
+  if [ "$GET_CODE" != '200' ]; then
+    STATUS=missing
+    printf 'GET HTTP %s；停止輪詢，不重送 POST\n' "$GET_CODE" >&2
+    break
+  fi
+  STATUS=$(jq -er '.status | select(type == "string")' "$JOB_JSON") || {
+    STATUS=missing
+    printf '%s\n' 'GET 回應沒有有效 status；停止輪詢' >&2
+    break
+  }
+  CURRENT_SECTION=$(jq -r '.generation_progress.current_section // "-"' "$JOB_JSON")
+  printf 'GET HTTP %s status=%s section=%s\n' "$GET_CODE" "$STATUS" "$CURRENT_SECTION"
+  case "$STATUS" in
+    ai_draft|partial_draft|failed|withdrawn|erased) break ;;
+    queued|extracting|comparing|generating) sleep 2 ;;
+    *) printf '%s\n' '未知回應；停止輪詢且不重送 POST' >&2; break ;;
+  esac
+  i=$((i + 1))
+done
+```
+
+若 30 次後仍在執行，記下當下 status／section 並停止；三個生成專項依序執行，可能超過這次等待時間。可稍後重新執行同一 job ID 的 GET 輪詢區塊，不重送 POST，也不假設在途 provider request 已取消。只有 `ai_draft`／`partial_draft` 才檢視草稿；`failed` 應連同 `error_code`、分項進度與 usage 記錄，`withdrawn`／`erased` 不可再展示內容。
+快取驗證的精確重複 POST 與 GET usage ledger 前後比較見第 6 節；僅在第一工作已完成為 draft 且來源／設定未變時執行。
+若輪詢因網路、HTTP 或 JSON 錯誤而停止，不要檢視可能留在磁碟上的舊 `JOB_JSON`，也不要重送 POST；先依本機錯誤與帳務狀態人工判斷。
+
+
+### 5. 檢視來源、逐句引文、比較診斷與費用
+
+所有正文、引文與生成文字都可能含個資；以下 jq 輸出只留在本機，不能貼到 issue、PR、console log 或公開報告。先看狀態、來源查核時間、來源識別、錯誤與用量，不印出 source snapshot payload：
+
+```bash
+case "${STATUS:-missing}" in
+  queued|extracting|comparing|generating|ai_draft|partial_draft|failed|withdrawn|erased) ;;
+  *) printf '%s\n' '沒有可用的本次 GET；停止，不顯示舊結果' >&2; exit 1 ;;
+esac
+
+ jq '{
+   status, error_code, source_checked_at, input_key, generation_artifact, generation_progress,
+   usage: {attempts: .usage.attempts, uncertain: .usage.uncertain,
+     reservedMicroUsd: .usage.reservedMicroUsd, actualMicroUsd: .usage.actualMicroUsd},
+   sources: [.sources[]? | {kind, id, hash}],
+   provenance_artifacts: [.provenance.artifacts[]? | {
+     id, kind, sha256, created_at,
+     model: (if .model == null then null else {
+       selector: .model.selector, provider_model: .model.provider_model,
+       provider_revision: .model.provider_revision, request_id: .model.request_id,
+       system_fingerprint: .model.system_fingerprint,
+       request_sha256: .model.request_sha256, pricing_version: .model.pricing_version,
+       usage_status: .model.usage_status
+     } end),
+     attempt: (if .attempt == null then null else {
+       id: .attempt.id, state: .attempt.state,
+       estimated_micro_usd: .attempt.estimated_micro_usd,
+       actual_micro_usd: .attempt.actual_micro_usd
+     } end)
+   }],
+   initial_input_diagnostics, current_issue_exclusions,
+   diagnostics: (.diagnostics | if type == "object" then {
+     coverage: [.coverage[]? | {material_id, status, evidence_count, error_code, usage_status}],
+     partial, comparison_summary: .comparisons.diagnostics,
+     generation_sections: (.generation.sections // {} | with_entries(.value |= {
+       status, reason, artifact_id, raw_artifact_id, validation_code
+     })),
+     candidate_paths: .comparisons.candidate_paths,
+     incomplete_pairs: .comparisons.incomplete_pairs,
+     unclassified_evidence_ids: .comparisons.unclassified_evidence_ids
+   } else (if type == "array" then map({
+     stage, phase, code, validation_code, step_key, model_selector,
+     error_name, provider_code, http_status, category
+   }) else [] end) end)
+ }' "$JOB_JSON"
+ jq '{attempts: .usage.attempts, uncertain: .usage.uncertain,
+     reservedMicroUsd: .usage.reservedMicroUsd, actualMicroUsd: .usage.actualMicroUsd,
+     reservedUsd: ((.usage.reservedMicroUsd // 0) / 1000000),
+     actualUsd: ((.usage.actualMicroUsd // 0) / 1000000)}' "$JOB_JSON"
+```
+
+上方安全摘要的來源投影只顯示 `{kind,id,hash}`；**原始 `JOB_JSON` 的 `.sources` 包含完整來源 payload**，可能含個資，必須依私有資料保護，不能把整份 response 當成去識別摘要。`source_checked_at` 是整份 job 的查核時間，不存在 per-source `checked_at`。`input_key`、`generation_artifact` 與 `provenance.artifacts` 只摘要 artifact ID／hash／建立時間、model selector/provider metadata 與 attempt ledger；缺值如實為 `null`／`unknown`。此 safe summary 不含 raw request／response 或作者欄位；它不是 provider 權重 revision 或帳單證明。
+
+`generation_progress.current_section` 顯示正在呼叫的專項；進行中各項可能是 `pending`／`running`。最終以 `diagnostics.generation.sections` 判讀：`completed` 是有內容且驗證通過，`no_findings` 是驗證通過但沒有可整理內容，`failed` 是該項呼叫／驗證失敗，`not_started` 是因預算／context 等原因未啟動。至少一項有效而其餘失敗或未啟動時為 `partial_draft`，全失敗則不交付草稿。data 中的 null／空陣列也可能只是失敗段的相容占位，**不能不看分項狀態就斷言「沒有爭點」**。
+
+只在 draft 狀態下檢視分區輸出及引用：
+
+```bash
+case "$STATUS" in
+  ai_draft|partial_draft) ;;
+  *) printf '%s\n' '尚無可檢視草稿；停止，不顯示舊結果' >&2; exit 1 ;;
+esac
+
+jq '.data' "$JOB_JSON"
+jq '.evidence' "$JOB_JSON"
+jq '.sources[] | select(.kind == "material") | {id, source_name: .payload.source_name, content: .payload.content}' "$JOB_JSON"
+jq -r '.citation_map[]? | [.pointer, .start, .end, .unit, (.evidence_ids | join(","))] | @tsv' "$JOB_JSON"
+jq '.citation_map[]? as $m | $m.sources[]? |
+  {pointer: $m.pointer, material_id, source_title: .source.Title,
+   raw_quote, quote, raw_span, expanded_span}' "$JOB_JSON"
+jq '.diagnostics.comparisons | {
+  diagnostics,
+  pairs, consensus_groups, disputes,
+  direct_comparisons: [.direct_comparisons[]? | {pair_key, evidence_ids, relation, cached}],
+  candidate_paths, incomplete_pairs, unclassified_evidence_ids
+}' "$JOB_JSON"
+```
+
+若終端無法完整顯示，先通過上面的 draft 狀態檢查，再將完整審閱資料保存到已忽略的本機目錄：
+
+```bash
+umask 077
+REVIEW_JSON="$PWD/.wrangler/ai-experiment/review.json"
+jq '{status, error_code, data, evidence, sources, citation_map,
+     diagnostics, usage, generation_progress, provenance}' "$JOB_JSON" > "$REVIEW_JSON"
+chmod 600 "$REVIEW_JSON"
+printf '私有審閱結果已保存：%s\n' "$REVIEW_JSON"
+```
+
+此檔包含完整原文／引文，只供本機檢視，不提交、不貼到 PR；既有 `results/ai-experiment_reault.json` 可保留作舊版基準，不以新版覆寫它或把它當作新模型結果。
+
+先有人逐句回查素材原文中的精確片段、條件、否定與轉述歸屬，再判斷其對應的共識、爭點或立場是否準確；`agree` 只是相容／支持判斷，不是等價或作者認可。候選路徑不算直接比較；漏比、未完成或不確定的 pair 不得當成已證實。`citation_map` 與 schema 通過只代表格式及出處錨定檢查，不證明語義正確。US$ 金額是應用估算／provider usage 結算欄位，不是 Cloudflare 帳單保證或硬上限。
+
+上面的 `.sources[].payload.content` 是工作使用的**完整、未截斷素材快照**；僅在私有本機檢視並依 material ID 對照每筆 evidence／引文，再回查當下可讀的完整來源與 hash，記錄漏抽、少數反例和不一致，不得貼出原文。比對 `pairs`、直接判斷、`consensus_groups`、`disputes` 與候選路徑：只確認不同素材的直接邊；同素材不算獨立支持，支持鏈不自動補成已證實邊。
+
+獨立人工品質驗收依 [`plan.md` 第 10.2 節](./plan.md#102-必做實際執行)：先由人建立標準答案，再看模型結果；四種關係各至少三個明確中文案例，並涵蓋少數反對、條件支持、轉述、prompt injection、中英日／emoji、A／B 對調及非遞移支持鏈。沒有真人標註時填「未驗證」，不可捏造 gold labels。偽造／跨素材錯錨／缺引用必須被拒絕；已知明確反例若仍列為共識，即品質不通過。
+
+若 provider 用量欄位缺失或格式錯誤，`usage.uncertain`／用量狀態會保留未知結算，預留額度不當成零費用釋放；不因單獨用量缺漏抹除已通過其他 schema／來源驗證的答案。provider 回報的 `model` 名稱只是字串 metadata，不是不可變權重 revision。這些欄位不是 Cloudflare 帳單核對結果，每次真實驗收仍須另記證據。
+
+Gemma 每個專項採與 `../pocket-polis/src/sensemaking.ts` 的 `runAiModel()` 相同的最小原生文字生成參數：`messages`、`max_tokens:8192`、`temperature:0.2`、`chat_template_kwargs.enable_thinking:false`；不送 `response_format/json_schema`。各項 JSON Schema 與格式例放入可信的 system prompt，不宣稱 provider 保證遵循。每項獨立預留輸入及最大輸出成本、保存回應並驗證；截斷、拒答、工具呼叫、Markdown 包裝或引用不符只拒收該項，不自動修補或重試。原生完成可省略 refusal 或回傳 null，明示非 null 仍拒絕。
+
+三項的整理責任與診斷如下；它們不是把原本的大型請求重送三遍：
+
+|專項|生成與驗證重點|本機審閱位置|
+|---|---|---|
+|共識|從一般支持候選提煉具體共同命題，保留條件，每個參與來源都須支持 description；不能用並列歧見充當共識。可採候選子集，無可靠共同命題就拒絕候選並附理由。|`.diagnostics.generation.sections.consensus.details` 的 adopted／rejected_candidates／coverage|
+|爭點|即使沒有 Clef disagree 也檢視可並存張力；每項至少兩素材、逐側引用，區分 `contradiction`／`opposition`／`tension`。細分類始終待人工確認，程式推導 direct_clef／gemma_proposal，不讓模型冒充新的正式 Clef 判斷。|`.diagnostics.generation.sections.disputes.details.items` 的 sides／comparison_conditions／relations／origin／formal_relation|
+|立場地圖|依明示關注、主張與應對方式重新分群並在群內綜整，不強制一素材一立場或固定群數；不混合已知對立。每條納入證據須被群內論點引用，未納入須有理由，保留少數觀點與重疊歸屬。|`.diagnostics.generation.sections.positions.details` 的 groups／coverage|
+
+共識模型輸入與輸出都使用 `candidate_id`，不可拿 evidence ID 代替；爭點以 sides 表示各側，立場以 `group_id`／`evidence_ids` 提交新分群，不再受原本單條立場候選限制。組裝仍維持既有 data 三分區與 citation pointers；各分項的 context hash 須符合相同來源、證據、比較、語言與設定。分項工件及原生回應只留隔離本機 D1，Workflows checkpoint 不帶正文。
+
+`Overview` 採最佳努力生成：有項目時提示中性概括已採用內容，每句只能引用這些項目已使用的證據；沒有項目時必須為 null。有項目但無可靠概述仍可為 null，不因單獨缺概述拒收可讀分項，也不自動補寫。共識概述只能是共同命題，不能把歧見搬進概述；立場概述不宣稱共識，`Core_concern` 證據不足仍可為 null。
+
+非 null 的 Overview 必須使用句子物件陣列，例如 `[{"text":"單句概述","evidence_ids":["既有證據ID"]}]`；即使只有一句也要保留外層陣列，兩句則各用一個物件。不能改成單一物件，也不能把 `text` 寫成字串陣列。Prompt 提供明確格式示例，但解析器仍嚴格驗證，不會自動搬動欄位、串接 `text` 陣列或推測逐句引用。
+
+Clef 題目、三份 Gemma prompt／schema、組裝政策及所有語言的實際 builder 都納入設定指紋，新工作不誤用舊的一次生成工件。在途舊設定工作若遇程式設定改變會明確停止，不自動換新版重打；已完成的舊草稿與未知費用／tombstone 保留。新版三項分別原子預留、結算與去重；不因拆成三項而把一個工作算成三次帳號日配額，也不宣稱整條管線費用必然乘三。新指紋不代表退款或品質改善；重新送出是可能付費的新工作，仍需明確同意。
+
+`Source.Title` 取自 `ct_materials.source_name`，缺值才用素材 ID；來源表沒有 material title 欄，不以原文預覽或 AI 衍生標題替代。`source_hash` 是固定順序 metadata+content JSON 的 UTF-8 SHA-256，`content_hash` 是原始 content UTF-8 bytes 的 SHA-256；原文不 trim、不正規化。空白正文不會被省略，會以 `422 empty_material` 拒絕。
+
+#### 5.1 Clef 人工標註與純離線對照
+
+新版題目先對照共同問題、條件與轉述歸屬；agree 可以是有意義的支持／補充而非嚴格同義，disagree 要有明示對立，unrelated 不作兜底，資訊不足用 uncertain。不得為降低 unrelated 比例而強迫分類、重寫機率或任意設定信心門檻。
+
+離線工具只讀三份 JSON，不呼叫模型、不讀取資料庫／Cookie，也不產生人工標準答案：
+
+```bash
+node scripts/evidence-clef-calibration.mjs --help
+```
+
+三檔須聲明同一個 `evidence_snapshot_sha256`；人工檔為 `labels` 陣列，每筆有 `id`、四分類 `relation` 及經真人確認後才可填的 `reviewed_by_human:true`；舊／新版預測檔各有 `prompt_version` 與相同案例 ID 的 `predictions` 陣列。實際欄位與錯誤說明見 `--help`。保留校準集與未用於調整提示的人工驗收集，分開執行；沒有真人標準答案就停在未驗證，不以測試 fixture 充當 gold labels。
+
+將已準備且經核對的三檔放在私有目錄後執行：
+
+```bash
+umask 077
+CALIBRATION_DIR="$PWD/.wrangler/ai-experiment/calibration"
+for name in labels old new; do
+  test -f "$CALIBRATION_DIR/$name.json" || {
+    printf '缺少已核對的校準檔：%s\n' "$name" >&2
+    exit 1
+  }
+done
+node scripts/evidence-clef-calibration.mjs \
+  --labels "$CALIBRATION_DIR/labels.json" \
+  --old "$CALIBRATION_DIR/old.json" \
+  --new "$CALIBRATION_DIR/new.json" > "$CALIBRATION_DIR/report.json"
+```
+
+工具拒絕未核可、未知／重複／漏配 ID、不同 snapshot hash 與非法分類，輸出舊／新混淆矩陣、逐類 precision／recall 及錯配 ID；零分母為 null。人工核可旗標、hash 與預測來源仍須由人確認，工具不能證明其真實性。只比較保存的同一證據工件；若重新抽句造成不同證據集合，不得冒稱固定樣本對照。取得新的付費預測須另依既有工作授權與帳本安排，不繞過管線直接打 provider。
+
+### 6. 快取、人改版本與衝突
+
+同一 owner、議題、明確選取的 `material_ids`、language、目前來源快照與 model/settings manifest 重送 POST，已完成工作應回 `200`／`cache:"hit"`，進行中的同一工作回 `202`／`cache:"joined"`；確認 `usage.attempts` 未因快取／join 增加。明確選取時，未選取素材的隱藏／刪除狀態不進入付費 cache key；`input_coverage` 只回報本次 selection 的材料 ID 與初始排除清單，`GET` 的 `initial_input_diagnostics` 保留建立工作時的排除快照，`current_issue_exclusions` 則是每次讀取時重新查到的隱藏素材。若省略 `material_ids`，selection 是當下所有可用素材，選取集合變化會改變 cache key。此步仍需真實 OAuth／API runtime 才能驗證；不同來源快照／語言／settings 會建立不同工作，可能付費。
+#### 快取驗證
+
+
+若前一工作已成功到達 `ai_draft`／`partial_draft`，且來源狀態、所選素材與 pipeline 設定未變，可用完全相同的 `JOB_REQUEST` 做一次 cache proof。這是會進入正式 admission 的真實 POST；cache miss 可能建立新工作並造成平台模型費用，因此只在條件全都成立時執行。此步只重用前面真實 POST 回應抽出的 `JOB_ID` 與本機 OAuth Cookie jar，不建立假 UUID／cookie；若未完成、來源已變更或回應不是預期 cache hit，停止且不再 POST。
+
+```bash
+case "$STATUS" in
+  ai_draft|partial_draft) ;;
+  *) printf '%s\n' '工作未完成為草稿；不做 cache proof POST' >&2; exit 1 ;;
+esac
+
+CACHE_BEFORE_JSON="$PWD/.wrangler/ai-experiment/cache-before.json"
+CACHE_POST_JSON="$PWD/.wrangler/ai-experiment/cache-repeat-post.json"
+CACHE_AFTER_JSON="$PWD/.wrangler/ai-experiment/cache-after.json"
+CACHE_BEFORE_CODE=$(curl --disable --noproxy '*' --silent --show-error --output "$CACHE_BEFORE_JSON" --write-out '%{http_code}' \
+  --cookie "$COOKIE_JAR" "$BASE_URL/api/evidence-jobs/$JOB_ID")
+if [ "$CACHE_BEFORE_CODE" != "200" ] || [ "$(jq -er '.job_id' "$CACHE_BEFORE_JSON")" != "$JOB_ID" ]; then
+  printf 'Before-cache GET failed or returned a different job (HTTP %s); stop\n' "$CACHE_BEFORE_CODE" >&2
+  exit 1
+fi
+printf '%s\n' 'Usage before repeat POST:'
+jq '{job_id, status, attempts: .usage.attempts, uncertain: .usage.uncertain,
+     reservedMicroUsd: .usage.reservedMicroUsd, actualMicroUsd: .usage.actualMicroUsd}' "$CACHE_BEFORE_JSON"
+
+CACHE_POST_CODE=$(curl --disable --noproxy '*' --silent --show-error --output "$CACHE_POST_JSON" --write-out '%{http_code}' \
+  --cookie "$COOKIE_JAR" --header "Origin: $BASE_URL" --header 'Content-Type: application/json' \
+  --request POST "$BASE_URL/api/issues/13/evidence-jobs" --data-binary "$JOB_REQUEST")
+printf 'Repeat POST HTTP %s\n' "$CACHE_POST_CODE"
+jq '{job_id, status, cache}' "$CACHE_POST_JSON"
+CACHE_JOB_ID=$(jq -er '.job_id' "$CACHE_POST_JSON")
+CACHE_MARK=$(jq -er '.cache' "$CACHE_POST_JSON")
+if [ "$CACHE_POST_CODE" != "200" ] || [ "$CACHE_JOB_ID" != "$JOB_ID" ] || [ "$CACHE_MARK" != "hit" ]; then
+  printf '%s\n' 'Expected the same job with cache:"hit"; stop and record the returned response, do not POST again' >&2
+  exit 1
+fi
+
+CACHE_AFTER_CODE=$(curl --disable --noproxy '*' --silent --show-error --output "$CACHE_AFTER_JSON" --write-out '%{http_code}' \
+  --cookie "$COOKIE_JAR" "$BASE_URL/api/evidence-jobs/$JOB_ID")
+if [ "$CACHE_AFTER_CODE" != "200" ] || [ "$(jq -er '.job_id' "$CACHE_AFTER_JSON")" != "$JOB_ID" ]; then
+  printf 'After-cache GET failed or returned a different job (HTTP %s)\n' "$CACHE_AFTER_CODE" >&2
+  exit 1
+fi
+printf '%s\n' 'Usage after repeat POST:'
+jq '{job_id, status, attempts: .usage.attempts, uncertain: .usage.uncertain,
+     reservedMicroUsd: .usage.reservedMicroUsd, actualMicroUsd: .usage.actualMicroUsd}' "$CACHE_AFTER_JSON"
+if ! jq -e -s 'length == 2 and (.[0].usage | {attempts, uncertain, reservedMicroUsd, actualMicroUsd}) == (.[1].usage | {attempts, uncertain, reservedMicroUsd, actualMicroUsd})' \
+  "$CACHE_BEFORE_JSON" "$CACHE_AFTER_JSON" >/dev/null; then
+  printf '%s\n' 'GET usage ledger changed across the cache request; record both responses' >&2
+  exit 1
+fi
+printf '%s\n' 'Same job/cache hit; GET usage ledger unchanged'
+```
+
+此比較驗證的是實驗 DB 中的 usage ledger 前後相同，不是 Cloudflare invoice 或帳號總帳單，也不證明費用為零；若 usage metadata 為 unknown，依原未知／預留數據判讀，不推算退款。
+
+快取命中不應扣新工作配額；此 HTTP 比較直接觀察的是同工作與 usage ledger，不能單憑它證明完整配額實作。配額／冷卻邊界另參照第 7 節的隔離自動測試，不為示範而燒滿額度或重建狀態。
+
+
+先取得 AI 基底，再於本機複製並人工編輯 `data`，不要覆寫 AI 原稿：
+
+```bash
+REV_JSON="$PWD/.wrangler/ai-experiment/revisions.json"
+EDIT_JSON="$PWD/.wrangler/ai-experiment/human-data.json"
+REV_POST="$PWD/.wrangler/ai-experiment/revision-post.json"
+curl --disable --noproxy '*' --silent --show-error --output "$REV_JSON" --cookie "$COOKIE_JAR" \
+  "$BASE_URL/api/evidence-jobs/$JOB_ID/revisions"
+jq '.ai_base.data' "$REV_JSON" > "$EDIT_JSON"
+${EDITOR:-vi} "$EDIT_JSON"
+jq -e 'type == "object"' "$EDIT_JSON" >/dev/null
+jq -n --arg parent_revision_id 'ai' --slurpfile data "$EDIT_JSON" \
+  '{parent_revision_id:$parent_revision_id,data:$data[0]}' > "$REV_POST"
+REV_CODE=$(curl --disable --noproxy '*' --silent --show-error --output "$POST_JSON" --write-out '%{http_code}' \
+  --cookie "$COOKIE_JAR" --header "Origin: $BASE_URL" --header 'Content-Type: application/json' \
+  --request POST "$BASE_URL/api/evidence-jobs/$JOB_ID/revisions" --data-binary "@$REV_POST")
+printf 'Revision POST HTTP %s\n' "$REV_CODE"
+jq '{revision_id, parent_revision_id, verification}' "$POST_JSON"
+if [ "$REV_CODE" != '201' ] || [ "$(jq -r '.verification // empty' "$POST_JSON")" != 'human_unverified' ]; then
+  printf '%s\n' '修訂未成功；停止，不做 stale parent 測試' >&2
+  exit 1
+fi
+curl --disable --noproxy '*' --silent --show-error --output "$REV_JSON" --cookie "$COOKIE_JAR" \
+  "$BASE_URL/api/evidence-jobs/$JOB_ID/revisions"
+jq '{ai_base: {id: .ai_base.id, verification: .ai_base.verification, data: .ai_base.data},
+     revisions: [.revisions[] | {id, parentId, verification, diff}]}' "$REV_JSON"
+```
+
+新增修訂預期 `201` 並標為 `human_unverified`；原 `ai_base` 保持不變，diff 只描述修訂差異，不能沿用舊引用宣稱新文字已驗證。要驗證 stale parent，可在第一次成功後再次以 `parent_revision_id:"ai"` 提交，預期 `409 revision_conflict`；不要把第二次回應當作已保存。實驗不呼叫既有 briefing endpoint，不改既有 briefing 或 issue status。
+
+第一次成功後，原封不動重送仍指向 `ai` 的本機 request，核對衝突而不是建立第二版：
+
+```bash
+STALE_JSON="$PWD/.wrangler/ai-experiment/revision-conflict.json"
+STALE_CODE=$(curl --disable --noproxy '*' --silent --show-error --output "$STALE_JSON" --write-out '%{http_code}' \
+  --cookie "$COOKIE_JAR" --header "Origin: $BASE_URL" --header 'Content-Type: application/json' \
+  --request POST "$BASE_URL/api/evidence-jobs/$JOB_ID/revisions" --data-binary "@$REV_POST")
+printf 'Stale revision POST HTTP %s\n' "$STALE_CODE"
+jq '{error}' "$STALE_JSON"
+```
+
+預期 `409` 與 `revision_conflict`；若不是，停止並記錄觀察，不反覆重送。
+
+### 7. 錯誤、對帳、清除與重啟
+
+- 未登入 `401`、停權 `403`、輸入格式／language 錯誤 `400`、request body 過大 `413`、不存在／撤下／空內容／超過 64 份素材／單份 48 KiB 或總正文 512 KiB 上限 `422`、過時 revision `409`、帳號每日 20 次新工作名額或同議題 5 分鐘冷卻 `429`、每日 US$5 估算預留用盡 `503`。排隊／執行中的工作先占每日名額；已開始、結算或費用未知的 provider attempt 即使工作失敗仍計入名額與保留費用。若工作在付費 attempt 開始前終止，名額及同議題冷卻可釋放。64 份是單次實驗輸入上限，不是 #11.1 待辦的議題投稿上限；抽取後證據超過 64 段會以工作 `status:"failed"`／`error_code:"too_many_evidence"` 診斷，不會任意裁切。工作中非同步錯誤從 GET 的 `status`、`error_code`、`usage.uncertain` 與 diagnostics 查；來源失聯時 fail closed，不取回舊快照正文或自動重送付費呼叫。
+- **Provider 失敗診斷：** 新版會在仍可寫入的隔離本機工件保存 `stage:"provider"`，包含 `step_key`、固定模型 selector、白名單 `error_name`、訊息開頭的數字 `provider_code`、例外本身明確提供的數字 `http_status`（400–599）及固定分類 `category`。分類只辨識 `json_mode_unmet`、`timeout`、`aborted`，其他為 `unknown`，不是供應商根因的保證；SDK 沒提供的 HTTP 狀態保持 `null`，不把 provider code 猜成 HTTP 狀態。不保存原始訊息、stack、cause、request、prompt、素材或 Cookie。診斷寫入失敗只輸出固定的 `evidence_provider_diagnostic_unavailable`，仍保留原 `provider_error` 與未知費用。舊工作無法補回已丟棄的例外；本次改動不變更模型設定或快取鍵，也不會自動重跑失敗工作。不要為取得診斷清空狀態、修改舊工作或任意變更語言／設定；新的最小重現工作仍需另外明確同意素材與平台費用。
+- **生成內容驗證失敗：** `invalid_generation` 表示已有模型回應，但本站未接受為草稿。新版在 `stage:"generation"` 的 diagnostics 另保存白名單 `validation_code`，例如 `generation_invalid_candidate`、`generation_insufficient_group_citations`、`generation_invalid_json` 或 `generation_incomplete_completion`；非白名單例外為 null，不輸出原始錯誤訊息或模型內文。這與 `stage:"provider"` 的呼叫例外不同；內容不合格即使工作失敗，也不會退回已回報用量的費用。
+
+失敗後可從已保存的 `JOB_JSON` 只讀取安全摘要，不再送 POST：
+
+```bash
+jq '{
+  status, error_code,
+  provider_errors: [
+    (.diagnostics | if type == "array" then .[] else empty end)
+    | select(.stage == "provider")
+    | {step_key, model_selector, error_name, provider_code, http_status, category}
+  ],
+  generation_errors: [
+    (.diagnostics | if type == "array" then .[] else empty end)
+    | select(.stage == "generation")
+    | {code, validation_code}
+  ],
+  usage: {
+    attempts: .usage.attempts, uncertain: .usage.uncertain,
+    reservedMicroUsd: .usage.reservedMicroUsd, actualMicroUsd: .usage.actualMicroUsd
+  }
+}' "$JOB_JSON"
+```
+
+空的 `provider_errors`／`generation_errors` 只表示這份回應沒有對應診斷，不代表模型未被呼叫或費用為零；舊工件也可能沒有 `validation_code`。完整 `JOB_JSON` 仍含來源快照，不能貼到聊天或 PR。
+
+- 每個 DB binding 的第一個通過認證之 evidence API request 會先全量 reconcile 本機來源並修復 active Workflow；同一 isolate/binding 後續 request 不重複跑這次 startup bootstrap，失敗則下一個 request 可重試。正常 job GET 仍逐次查該 job 所依賴來源；管理員手動 reconcile 每次都全量查核並再要求 recovery。隱藏或變更只會在 startup reconcile 或下一次來源查核時發現，遠端 D1 沒有刪除通知，跨庫清除不是即時或原子同步。
+- local Wrangler／Workflow kill 後，原生 Workflow instance 曾保持 `running` 而不會自行續跑；新 process 的 startup recovery 以明確 `restart()` 請求 safe replay，不代表 Cloudflare／本機 runtime 自動恢復。儲存層用來源 generation fence 保護快照、artifact、revision、狀態完成與讀取：來源被刪除或明確 erase 時會增加 tombstone generation、將本機來源／工件／修訂 payload 清空；較晚返回的在途回應不能重新保存或提供內容。來源僅隱藏或內容變更時標為 `withdrawn` 並停止提供舊內容，這與 hard erase 不同。已送出的 AI request 不能保證撤回。
+- GET job 在載入 snapshot／artifact 後仍做最後一次狀態查核：若此時已 erase／withdrawn，只回最新狀態、時間與 usage 等 metadata，不回舊 `data`／引文／正文；正常回應亦採最新狀態，artifact ID 已變則 fail closed。核心以真正 SQLite barrier 交錯測試 erase 與 withdrawn，確認 snapshot 已讀取後才提交處置時，HTTP response 不含正文／引文／`data`；這是本機回歸測試，不是 OAuth 或 Workers AI 測試。
+- admin／super-admin 可用 CSRF 保護的 `POST /api/evidence-maintenance/reconcile`，body 必須恰為 JSON `{}`；成功會回 `{ ok, checked, withdrawn, erased }` 並修復 active Workflow。`POST /api/evidence-maintenance/erase` body 必須恰為 `{ "kind": "material", "id": 25 }` 或 issue 版本，僅允許 `kind:"issue"|"material"` 與正整數 ID；它只在隔離本機 DB 建立永久 tombstone 並清除相關私有工件，不寫遠端來源。CLI `list` 僅回來源 ID／hash／查核時間；`reconcile` 可能發現已刪除來源而不可逆清除本機 payload，`erase` 則直接清除。**兩者均須先取得使用者對該次資料處置的明確授權；以下是手動決策的指令，不是驗收時自動執行的步驟。** material 25 與後面的 issue 13 都是永久 source opt-out，不是正常測試 reset：只應在相關測試／人工驗收完成且有清除理由後使用；同一隔離 DB 任何包含該 source ID 的新工作（即使 prompt/settings 改版）都會被拒絕。不得刪 tombstone、改 generation 或重建隔離 DB 來強迫重跑或繞過配額。
+
+```bash
+node scripts/evidence-maintenance.mjs list
+# 以下兩項各自需要使用者事先明確授權；未授權時不要執行。
+node scripts/evidence-maintenance.mjs reconcile --base "$BASE_URL" --cookie-jar "$COOKIE_JAR"
+node scripts/evidence-maintenance.mjs erase --kind material --id 25
+```
+
+
+下列 issue 13 的 `erase` 命令同樣是永久資料清除範例，不是正常測試 reset：它會在此隔離 DB 對 issue 13 建立 per-source tombstone，之後任何包含該 issue 的工作都會被拒絕，即使 prompt/settings 更新。先列出本機來源；只有完成相關測試／人工驗收並另取得使用者對該次清除的明確授權後才可執行，否則不要執行。不要刪 tombstone、改 generation 或重建隔離 DB 來強迫重跑；未來是否允許明確 new-generation／new-consent re-import 留給人工決策。
+
+```bash
+node scripts/evidence-maintenance.mjs list
+# 僅供使用者明確授權此筆 issue 清除後手動執行；未授權時不要執行。
+node scripts/evidence-maintenance.mjs erase --kind issue --id 13
+```
+
+以上 `erase` 會清掉本機該議題相關快照／引文／模型輸出／人改 payload 並留下不含正文的稽核 tombstone。這個 per-source tombstone 永久阻止當前隔離 DB 中任何後續工作包含該 namespace／ID；來源僅隱藏／改動則撤下舊工作，但不等同明確清除全部本機 payload。操作後重新 `list` 核對。
+
+若沒有安全可控的來源，隱藏／變更／刪除及晚到回應 fence 的可重做檢查只使用本機測試 fixture；不可修改、隱藏或刪除真實遠端來源來製造案例。以下測試使用 in-memory SQLite／合成 provider，另覆蓋一般 API router 的六條實驗／maintenance 路徑 `404`，以及 session、停權、角色、CSRF、來源失聯與清除競態；它們不是 live OAuth、正式入口 runtime 或真實模型的證據：
+
+```bash
+vp test src/tests/evidencePipeline.test.ts src/tests/evidenceStorage.test.ts src/tests/evidenceSource.test.ts
+```
+
+保留手動驗收尚未驗證的狀態；不要因為 fixture 全過而聲稱真人來源生命週期或模型品質已驗收。
+
+需要檢查一般入口的 runtime 時，先確認 5174 無 listener；占用時不要終止未知程序。另開 terminal 以一般本機 mode 啟動（不套 migration、不帶實驗 Cookie），只對自己確認啟動的 server 作匿名 status-only 檢查：
+
+```bash
+lsof -nP -iTCP:5174 -sTCP:LISTEN
+CIVIC_AI_EXPERIMENT=0 vp dev --host 127.0.0.1 --port 5174 --strictPort
+```
+
+在另一個 terminal：
+
+```bash
+curl --disable --noproxy '*' --silent --show-error --output /dev/null --write-out 'HTTP %{http_code}\n' \
+  --header 'Origin: http://127.0.0.1:5174' --header 'Content-Type: application/json' \
+  --request POST 'http://127.0.0.1:5174/api/issues/1/evidence-jobs' --data-binary '{}'
+```
+
+一般入口預期 `404`；這不是 OAuth 或 live model 驗收。完成後只在自己啟動的一般 dev terminal 按 Ctrl-C。若要重啟實驗 Worker，先在自己啟動的實驗 terminal 按 Ctrl-C，重新確認 canonical 5173 沒有其他 listener，再在 repo root 執行第 2 節的 `CIVIC_AI_EXPERIMENT=1 vp run dev:remote`；登入後以第 4 節的有限 GET 查看原 job，不重送 paid POST。重啟後的首個認證請求會對帳並可能清除已刪除來源的本機 payload；不代表已送出的模型請求被取消。
+
+結束人工驗收時在實驗 server 仍運作且 canonical origin 經確認後結束自己的登入 session 並移除本機 Cookie jar：
+
+```bash
+curl --disable --noproxy '*' --silent --show-error --output /dev/null --cookie "$COOKIE_JAR" --header "Origin: $BASE_URL" \
+  --request POST "$BASE_URL/api/auth/sign-out"
+rm -f "$COOKIE_JAR"
+```
+
+#### 7.1 實驗後 migration 與私有狀態處置
+
+以下為人工決策順序，不是自動清理命令；任何不可逆的資料處置都要另取得使用者明確授權：
+
+1. **區分三種東西。** `migrations/0017_evidence_pipeline.sql` 是版控的程式來源／供 review，新增八個本機 `ct_ai_*` 表及索引，外鍵只互相指向 `ct_ai_*`，沒有指向來源／auth 表，也沒有修改 `0001`–`0016`；`.wrangler/ai-experiment/` 內的隔離 D1 有實驗資料與 `d1_migrations` 已套用紀錄；遠端業務來源與 auth DB 不是清理目標。本次只在專用本機 D1 套用 `0017`，沒有對遠端業務或認證庫套 migration；Better Auth 的正常登入／session 寫入仍是計畫明列的例外，不能把它說成永無遠端 auth 寫入。`wrangler deploy` 本身不會自動 apply migration；風險在於另行執行一般 migration apply。
+2. **維持草稿／尚未合併：** 為重現與審查保留 `0017` 原始檔、隔離本機 migration／usage ledger 及必要實驗狀態，包括 tombstone 與未知費用預留。任何保留的 DB／ledger 都要能對回相符且不可變的原 SQL，可使用固定 Git commit 或可取得的封存副本；不必為了保留資料庫而永遠將檔案留在一般 `migrations` 目錄。不得覆寫或重用同一 migration 歷史中已套用的版本；刪除來源檔不會回滾資料庫 schema。未來 `main`／catalog 的編號由維護者依實際歷史另行核准，不是全域永久保留 `0017`。
+3. **打算保留或將來合併：** 目前一般與實驗 config 共用 `./migrations`，單靠本文件不能防止誤套。合併前維護者必須先決定並審查具體方案：讓實驗 migration 有獨立、可重現的隔離 catalog，或先明確決定 production 需求、核准並審查永久 migration 的完整編排與既有資料庫歷史，再實作及檢查該方案；不可把暫態 `0017` 直接視為正式 migration。方案未定、必要處理與驗證未完成前此 PR 保持 draft，不可合併或執行一般 migration。此處不移動檔案、不暗改 schema。
+4. **決定放棄整個未合併實驗：** 以關閉 PR 而不合併的決策確保 `0017` 不進 `main`；由使用者先決定私有工件與稽核資料的留存，再決定是否處置本機隔離狀態。後續若要從分支移除 active `0017`，必須一併移除或 revert 依賴的程式、測試及設定，不可單刪 schema；保留的 DB／ledger 仍須能對回相符的不可變原 SQL，但不必先刪除所有封存 DB。移除檔案不會回滾 DB，也不是對遠端業務／auth DB 下 DROP SQL 的授權；不可刪除全域 `.wrangler`。
+5. **若使用者授權處置隔離狀態：** 先停止自己擁有的實驗 dev process，確認在途工作及費用狀態，並按使用者核准的留存政策處理。`.wrangler/ai-experiment/` 可能含 Cookie jar、來源快照／引文／原始模型回應、人改內容、Workflow checkpoints、traces、usage 與本機 D1；不得將憑證、原文或私有 payload 提交或公開。僅把人工確需且經檢查不含個資的 prompt 版本／hash／診斷摘要留到核准的私有位置；Cookie、OAuth token、secret 不備份或公開。按第 7 節以既有 `list` 盤點、按已授權的權利請求使用 `erase`，保留計畫要求的不含正文稽核 tombstone；不要為強迫付費重跑而刪 tombstone、重設 generation 或重建狀態，也不要重置以繞過配額。只有完成上述留存決策並取得對**整個隔離狀態**的明確處置授權後，才由擁有人手動處理該專用目錄，不提供或執行全域刪除指令。丟棄本機狀態無法撤回已送出的模型請求或費用。
+
+### 8. 已觀察證據與未知真相
+
+以下是本次環境檢查的去識別紀錄，不是模型品質報告：
+
+| 項目 | 狀態 | 證據／限制 |
+|---|---|---|
+| 日期／分支／source metadata | 歷史紀錄 | 2026-10-29；`feat/issue-183-evidence-pipeline`；初始工作目錄乾淨；先前 build 的 source metadata commit `bb111b6442b856d054bfee4d137d08877f2a4edf`，`dirty=true`；不是後續 commit 或發布版本的 SHA |
+| CLI／遠端唯讀來源 | 已執行 | `vp exec wrangler whoami` 可用，具 Workers／D1／Workers AI 權限；缺 `k2.read`／`k2.write`。固定 SELECT 只回 issue 13 與 materials 25／26 的狀態、ID、metadata 長度及 UTF-8 bytes（339／449），來源狀態符合查核條件，`rows_written:0`、`changed_db:false`，沒有讀正文 |
+| 隔離本機 DB migration | 已執行 | `0001`–`0017` migration 已套用；`sqlite_master` 顯示 app table 皆為 `ct_*`；實驗 D1 路徑 `.wrangler/ai-experiment/v3/d1` |
+| 混合 D1 binding target | 已執行，只讀 | Wrangler `getPlatformProxy` 明確使用 `remoteBindings:true`；D1-only 暫存設定精確複製正式實驗設定的 DB／SOURCE_DB 名稱、同 database ID 與 `DB.remote:false`／`SOURCE_DB.remote:true`，但省略 secrets 和其他 bindings。指定 `.wrangler/ai-experiment/v3` persist 後，本機 `DB` 的 `sqlite_master` 計得 8 個 `ct_ai_*` 表；遠端 `SOURCE_DB` 僅回安全計數：issue 13 published 且未標記 `1` 筆，materials 25／26 屬 issue 13 且未標記 `2` 筆。`writes:0`；未碰 `DB_AUTH`、未讀正文／作者欄。結果 `.wrangler/ai-experiment/verification/binding-target-proof.json` |
+| Privacy UI | Chromium 12 組 DOM/computed 檢查、真實頁面 PNG 與可讀 disclosure crops | 一般本機 `/privacy`：1440×1000／390×844、桌機／手機、light/dark、zh-TW/en/ja 共 12 組均確認正確 locale/theme、作者快照欄位排除／原文不脫敏揭露與無水平溢出。12 張實際瀏覽器頁面 PNG：`.wrangler/ai-experiment/verification/privacy-{zh-TW,en,ja}-{desktop,mobile}-{light,dark}.png`；摘要 `privacy-captures.json`。首次截圖嘗試 timeout，改用 `DOMContentLoaded` 後 `page.screenshot({waitForFonts:false})` 成功；已目視檢閱代表圖 zh-TW desktop light、zh-TW mobile dark、en mobile light、ja desktop dark。另以 `sips` 從既有 PNG 裁出可讀的 zh-TW mobile dark／English mobile light disclosure 檢視，檔案 `.wrangler/ai-experiment/verification/privacy-zh-TW-mobile-dark-disclosure.png`、`.wrangler/ai-experiment/verification/privacy-en-mobile-light-disclosure.png`；未重繪或擷取 OS desktop。其餘 8 張有 PNG／DOM 記錄但未逐張人工目視。外部網域被瀏覽器 allowlist 擋下，畫面使用本機 fallback 字型，不宣稱 Google Fonts 已驗。一般 `vp dev` 嘗試因 5173 listener 退出；截圖連到既有一般本機網站，不是專用 Worker |
+| 冷啟／Workflow replay | 合成情境已驗證；無 live AI | in-flight attempt 終止 `provider_uncertain`、reserved 604 microUSD、不重複呼叫；已保存 Clef raw／checkpoint gap replay 重用 3 個 raw IDs、不重複 Clairic/Clef、只新增 Gemma 一次而到達 `ai_draft`。原生 local Workflow 在 kill/restart 後先顯示 `running`，不會自行恢復；需應用程式 startup 明確呼叫 safe `restart()`。皆為合成估算／呼叫，不是帳單或 live model evidence |
+| host 修正後的早期 check／tests | 已執行；歷史階段 | `vp check --no-fmt --no-lint`：148 files；`vp test`：48 files、435 tests。stdout／status：`.wrangler/ai-experiment/verification/host-fix-typecheck.log`、`host-fix-typecheck-status.json`、`host-fix-test.log`、`host-fix-test-status.json` |
+| Cookie jar 修正後 check／tests／build | 已執行；後續 README 清理 trap 及本次文件修改前 | `vp check --no-fmt --no-lint`：150 files；`vp test`：49 files、436 tests；`vp run build` exit 0，source metadata 仍為上述 dirty build，且有既有 JS chunk >500 kB warning。log／status：`.wrangler/ai-experiment/verification/cookie-jar-{typecheck,full-test,build}.*`；不代表本次文件修改後的檢查已執行或發布 |
+| Cookie jar 清理 failure branches | 已執行；合成 loopback，不是 OAuth | 修正版 README §3 的真實 curl 401 與 stdin EOF 分支均確認只清理隔離 state 內目標，未碰 canonical listener；詳見 [`Insight.md`](./Insight.md) 的實際紀錄 |
+| canonical localhost port guard | 已安全拒絕，不殺既有 listener | config 使用 `host: 'localhost'`、`strictPort:true` 後，因既有 node PID 55197 正在 `[::1]:5173`，直接 `CIVIC_AI_EXPERIMENT=1 vp dev --mode remote` exit 1 並回 `Port 5173 is already in use`；未啟動服務，未停止該 listener。log／status：`.wrangler/ai-experiment/verification/localhost-port-conflict.log`、`localhost-port-conflict-status.json` |
+| config 修正後 temporary-port entry smoke | 已執行；不是 OAuth／callback 驗證 | 為避免碰既有 5173 listener，直接 `CIVIC_AI_EXPERIMENT=1 vp dev --mode remote --port 5174`（無 prebuild）於 `http://localhost:5174` ready。匿名 status-only 結果：`GET /` 404、job GET／POST 與 maintenance POST 均 401；無 cookie、body discarded、沒有登入／來源操作／建 job／模型呼叫。此 port 與 `BETTER_AUTH_URL` 不同，不驗證 OAuth callback。自有 PID 84596 已停止。log／status／HTTP：`.wrangler/ai-experiment/verification/entry-load-5174.log`、`entry-load-5174-status.json`、`entry-load-5174-smoke.json` |
+| host 修正前的 IPv4 entry／官方 smoke 與 HEAD | 保留為舊配置的 no-login 證據，不代表 canonical origin | 本次環境整合檢查依 `lsof` 與 loopback 結果發現既有 `[::1]:5173` listener 與舊 IPv4 bind 的 origin mismatch；先前 remote Worker 綁 `127.0.0.1:5173` 並用 `curl --resolve` 強制 IPv4，root 404、匿名 job／maintenance 401，dotenv HEAD 路徑均 403。這些 forced-IPv4 smoke **不能證明**瀏覽器 canonical `localhost` 命中實驗 Worker，也不驗 OAuth callback。舊 log／status／HTTP：`.wrangler/ai-experiment/verification/experimental-dev.log`、`experimental-no-login-smoke.json`、`experimental-dev-head-final.log`、`experimental-dotenv-head-final.json`；沒有 response body 或登入 session |
+| `.dev.vars` 靜態路徑／權限檢查 | 只查 public ASSETS 路徑與檔名／mode；未讀內容 | `dist/civic_talk/wrangler.json` 的 `assets.directory` 解析為 `dist/client`；`dist/civic_talk/.dev.vars` 位於 ASSETS 之外，mode 644 且由 `.gitignore:2 dist` 忽略；`dist/client/.dev.vars` 不存在。這不證明 Worker bundle／deploy package 是否包含它；未刪除／改權限／部署 |
+| 真實 OAuth／Workers AI 呼叫與費用 | 舊版已有使用者回報；新版未重跑 | 使用者已回報舊版三素材工作產出 `ai_draft`；歷史失敗、usage 與修正見 `Insight.md`。新版三項生成尚未新增真實模型呼叫或費用，不把舊版證據當作新版驗收；完整 OAuth 案例仍須逐項確認 |
+| 人工語義品質 | 舊版已發現問題；新版待驗收 | 使用者指出共識混入歧見、爭點遺漏及立場逐條枚舉。新版有離線校準工具，但尚無獨立真人 gold labels 或新版品質成績；不能將合成案例當作人工標準答案 |
+| 新版 SQLite／HTTP 管線 smoke | 已執行；合成 provider | 獨立 loopback 腳本執行實際 runner／SQLite：完整工作 `ai_draft`、單項中斷 `partial_draft`、生成途中清除 `erased` 均回 HTTP 200；三項依序呼叫、成功／partial 重入不新增付費嘗試、來源 fixture 未改。不是原生 Workflow 重啟或真實 provider／OAuth 驗收，臨時腳本已移除 |
+
+人工驗收者須另填實際 source／model／prompt／schema／algorithm 版本、工作 ID、hash、來源覆蓋、逐句引用查核、漏失與反例、人工修正、usage／預留／結算及未知項目。沒有真實模型呼叫或真人標註時，對應欄位留作未知，不填預期值；不得把 HTTP 200、JSON parse、unit test、隔離測試 provider 或 fixture 寫成「真實議題人工驗收完成」。Privacy 已依新增揭露更新，`TERMS_VERSION` 未改；一般 BYO prompt 與 synthesis API 保留。
+
 
 ## 部署
 

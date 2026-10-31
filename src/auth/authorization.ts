@@ -1,5 +1,5 @@
 import { createAuth } from './createAuth'
-import type { AppBindings } from '../api/types'
+import type { AuthBindings } from '../api/types'
 import { nameChangeCooldownRemainingDays } from '../lib/profile-name'
 
 /** 角色沿用 vTaiwan 的三級制；欄位就是共用 auth DB 的 user.role */
@@ -80,7 +80,7 @@ export async function hasDuplicateDisplayName(db: D1Database, userId: string, na
  * ✅ 這是伺服器端行為（從請求的 Cookie 標頭解析），**SSR 期間可以用**，
  * 不受「SSR 不得碰瀏覽器 API」限制——不變量 3 禁的是 localStorage／document／window。
  */
-export async function getAuthContext(env: AppBindings, headers: Headers): Promise<AuthContext | null> {
+export async function getAuthContext(env: AuthBindings, headers: Headers): Promise<AuthContext | null> {
   const auth = createAuth(env)
   const session = await auth.api.getSession({ headers })
   if (!session) return null
@@ -108,7 +108,7 @@ export async function getAuthContext(env: AppBindings, headers: Headers): Promis
  * 授權判斷用這支：寧可誤判為未登入回 401，也不要讓例外冒泡成 500——後者會讓
  * 「本機 dev 沒有 auth 表」這種環境問題看起來像端點壞掉。
  */
-export async function tryGetAuthContext(env: AppBindings, headers: Headers): Promise<AuthContext | null> {
+export async function tryGetAuthContext(env: AuthBindings, headers: Headers): Promise<AuthContext | null> {
   try {
     return await getAuthContext(env, headers)
   } catch (error) {

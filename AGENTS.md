@@ -24,6 +24,7 @@
 
 1. **所有資料表一律 `ct_` 前綴。** 遠端 D1 `vtaiwan-civic-talks` 位於 vTaiwan 命名空間、可能與其他專案共用，未加前綴的 `issues`／`materials`／`briefings`／`opinions` 會撞名並造成不可逆的資料破壞。所有 DDL、SQL、型別一律只碰 `ct_*`；migration 套用後查 `sqlite_master` 確認只新增 `ct_` 開頭的業務表。
 2. **內容生成與投稿安全審查分開。** 素材彙整／說明頁等**內容生成**仍由志願者使用自己的 AI token 完成，平台只產出 prompt 並收回結果；伺服器端不得代為呼叫生成模型。**例外（issue #29，使用者明確授權）**：四個投稿入口可在 Worker 內呼叫 OpenRouter 的 `openai/gpt-oss-safeguard-20b` 做投稿安全審查。審查採 **fail-open**：OpenRouter 缺 key、逾時或 5xx 等基礎設施故障時記錄結構化錯誤並放行投稿，不把故障誤判成濫用，也不因外部服務故障擋住全站投稿。
+   - **例外（Issue #183，使用者明確授權）**：只有以 `CIVIC_AI_EXPERIMENT=1 vp run dev:remote` 明確 opt-in 的隔離本機實驗入口，才可為未停權且已登入使用者呼叫固定的 Clairic／Clef／Gemma 三模型，產生私有證據草稿；不得公開、投稿或發布，也不得寫入遠端業務 DB。一般志願者 BYO token／prompt API 不變；範圍依[核准計畫](./plan.md)與[實作洞察](./Insight.md)，不授權部署或其他伺服器端內容生成。
    - **素材事實查核不是內容生成。** `POST /api/fact-check` 經登入／停權守門後，以 `FACT_CHECK_CORE` Service Binding 串流轉送到沒有公開 route 的 `fact-check-core`。Service Binding 已是核心 Worker 的 capability；不要再加入前端 API key、HMAC token 或把 session cookie 轉送給核心。
 3. **SSR 路徑絕不碰瀏覽器 API。** 任何在 SSR 期間執行的程式碼（元件 `setup`、模組頂層、共用工廠）不得使用 `window`／`document`／`localStorage`／`navigator`——需要時用 `typeof window === 'undefined'` 守衛或放到 `onMounted`。每請求新建獨立的 app 實例，嚴禁跨請求共享可變狀態。
 4. **舊網址永不失效。** 下列舊路徑必須以 301／302 導向新的乾淨路由，且此對應表只能新增、不能刪除：
@@ -553,6 +554,18 @@ npx wrangler d1 migrations apply vtaiwan-civic-talks --remote   # 🚫 需先取
 | 83-5 | `styles`        | ✅ 完成 | 流程版型 `.flow-list`／`.flow-step`／`.flow-num`／`.flow-wip` 放在 `src/styles/app.css` `@layer components`（原因見「樣式」一節的現況限制）                                                                                                                      |
 
 > 後續可選：切換到 `vue-router` 全站 hydration、擴充真實瀏覽器 E2E 與部署後 smoke automation——動工前先與使用者確認。
+
+### 進行中：#183 隔離式證據整理實驗（`plan.md` 已由使用者核准）
+
+- 實驗入口只由 `CIVIC_AI_EXPERIMENT=1 vp run dev:remote` 選取 `wrangler.ai-experiment.jsonc`；一般 `dev`／`dev:remote`、build 與 deploy 行為不變，正式環境不提供實驗 API。
+- `DB` 必須是 `.wrangler/ai-experiment` 內的隔離本機 D1；`SOURCE_DB` 是遠端業務 D1、程式只用 SELECT，禁止對來源庫執行 migration 或寫入；`DB_AUTH` 僅沿用 Better Auth 正常授權生命週期，不得新增 auth schema/migration 或直接寫 auth 資料；`AI` 使用真實 Cloudflare Workers AI；`EVIDENCE_WORKFLOW` 為本機 Workflow。
+- 實驗 migration 僅可套用本機 `DB`，並確認新表皆為 `ct_` 前綴。`ct_materials` 沒有 title 欄位；來源標題用 `source_name` 或素材 ID，不得生成預覽文字。來源 hash 欄位順序、空內容拒絕及原始內容處理依 #183 核准計畫與實作契約，不得改寫來源資料。
+- 一般志願者內容生成仍由使用者自帶模型金鑰；既有 synthesis prompt API 保留。`Issues.md` 只記錄計畫 §11.1 的兩項未實作未來工作，不建立 GitHub issue。
+- 完成度須分別記錄本機 runtime、遠端唯讀來源查核、真實模型呼叫及人工語意／OAuth 驗收；不得把 fixture／單元測試當作真實模型或人工驗收。
+- 新版管線依序執行 Gemma 共識／爭點／立場地圖三個專項，使用同一份已驗證證據與比較資料，不串接摘要；只在共識保留直接支持候選限制，爭點可提出明示類型的張力，立場允許多證據重新分群。不得恢復單次生成或單條立場枚舉 fallback。
+- 各項獨立記帳、驗證與保存；`diagnostics.generation.sections` 區分 completed／no_findings／failed／not_started，進行中另看 `generation_progress`。partial 不代表失敗空段沒有爭點；來源 fence、停權、去重及禁止自動重試仍適用。
+- Clef `symmetric-four-way-v2` 以共同問題／條件校準四分類，不追求特定分布；`scripts/evidence-clef-calibration.mjs` 只做已人工核可資料的離線對照，不呼叫模型，也不能證明人工核可／hash 的來源。新版真實模型與人工語義品質尚待驗收，不以合成 SQLite／HTTP smoke 取代。
+
 
 ### 已完成：#25 素材與意見的獨立連結（專屬路由）
 

@@ -1,0 +1,58 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "civic-talk-ai-experiment",
+  "main": "src/ai/entry.ts",
+  "compatibility_date": "2026-04-17",
+  "compatibility_flags": ["nodejs_compat"],
+  // 本設定僅由明確 opt-in 的本機 remote-dev 命令選取。
+  // 不設公開 route 或 workers.dev 入口；一般建置／部署不會選取本設定。
+  "workers_dev": false,
+  "vars": {
+    "CIVIC_AI_EXPERIMENT": "1"
+  },
+  "secrets": {
+    // 此清單也限制從 .dev.vars 載入的鍵；URL 非機密但必須設定正確的本機 OAuth origin。
+    "required": [
+      "BETTER_AUTH_URL",
+      "BETTER_AUTH_SECRET",
+      "GOOGLE_CLIENT_ID",
+      "GOOGLE_CLIENT_SECRET",
+      "GITHUB_CLIENT_ID",
+      "GITHUB_CLIENT_SECRET"
+    ]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "vtaiwan-civic-talks",
+      "database_id": "1b5f4077-f5a7-4b0d-9877-952d5726c7b8",
+      "remote": false,
+      "migrations_dir": "./migrations"
+    },
+    {
+      "binding": "SOURCE_DB",
+      "database_name": "vtaiwan-civic-talks",
+      "database_id": "1b5f4077-f5a7-4b0d-9877-952d5726c7b8",
+      "remote": true
+    },
+    {
+      // Better Auth 負責遠端認證資料庫正常的帳號／session／OAuth 寫入。
+      // 禁止把本 repo 的業務 migration 套用至 DB_AUTH。
+      "binding": "DB_AUTH",
+      "database_name": "vtaiwan-auth",
+      "database_id": "e26edd14-d163-427d-8630-9304f815e9fa",
+      "remote": true
+    }
+  ],
+  "ai": {
+    "binding": "AI",
+    "remote": true
+  },
+  "workflows": [
+    {
+      "binding": "EVIDENCE_WORKFLOW",
+      "name": "civic-talk-evidence-local",
+      "class_name": "EvidenceWorkflow"
+    }
+  ]
+}
