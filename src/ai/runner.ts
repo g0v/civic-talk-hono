@@ -12,6 +12,11 @@ const NO_RETRIES = { retries: { limit: 0, delay: '1 second' as const }, timeout:
 // Workflows paid 預設 10,000 subrequests / 10,000 steps；不修改帳戶或配置來繞過。
 const MAX_PROJECTED_SUBREQUESTS = 9000
 const MAX_WORKFLOW_STEPS = 1024
+const GENERATION_VALIDATION_CODES: readonly string[] = [
+  'generation_invalid_completion', 'generation_incomplete_completion', 'generation_refusal_or_invalid_message',
+  'generation_invalid_json', 'generation_invalid_schema', 'generation_invalid_candidate',
+  'generation_unknown_evidence', 'generation_cross_candidate_citation', 'generation_insufficient_group_citations',
+]
 
 type ActiveStatus = 'queued' | 'extracting' | 'comparing' | 'generating'
 type PaidStatus = 'ok' | 'provider_error' | 'provider_uncertain' | 'budget_exhausted' | 'source_unavailable' | 'workflow_limit'
@@ -73,6 +78,20 @@ async function save(env: EvidenceBindings, snapshot: Snapshot, kind: 'extraction
   return result.artifactId
 }
 
+function providerErrorDiagnostic(error: unknown) {
+  const detail = error !== null && typeof error === 'object' ? error as Record<string, unknown> : {}
+  const name = typeof detail.name === 'string' && ['Error', 'TypeError', 'InferenceUpstreamError', 'AiInternalError', 'AbortError', 'TimeoutError'].includes(detail.name) ? detail.name : null
+  // SDK 將 provider code 放在訊息開頭；只取數字與固定分類，絕不保存可能含輸入的原文。
+  const message = typeof detail.message === 'string' ? detail.message.slice(0, 4096) : ''
+  const code = /^(\d{3,6}):/.exec(message)
+  return {
+    error_name: name,
+    provider_code: code ? Number(code[1]) : null,
+    http_status: typeof detail.status === 'number' && Number.isInteger(detail.status) && detail.status >= 400 && detail.status <= 599 ? detail.status : null,
+    category: name === 'TimeoutError' ? 'timeout' : name === 'AbortError' ? 'aborted' : message.includes("JSON Mode couldn't be met") ? 'json_mode_unmet' : 'unknown',
+  }
+}
+
 /** 每一 provider 呼叫有自己的不可重試 step 與已持久化的付費嘗試。 */
 async function paid(
   env: EvidenceBindings,
@@ -100,11 +119,19 @@ async function paid(
   }
   let response: unknown
   try {
-    // 顯式非串流、未啟用 provider retry；不得將 cookie／憑證／作者欄送入模型。
+    // 不啟用串流或 provider retry；不得將 cookie／憑證／作者欄送入模型。
     const ai = env.AI as unknown as { run(model: string, input: unknown): Promise<unknown> }
     response = await ai.run(selector, request.input)
-  } catch {
+  } catch (error) {
     await store.settleAttempt(attempt.attemptId, null)
+    try {
+      await save(env, snapshot, 'diagnostics', {
+        stage: 'provider', code: 'provider_error', step_key: stepKey, model_selector: selector, ...providerErrorDiagnostic(error),
+      })
+    } catch {
+      // 診斷儲存失敗或來源已撤下，不覆蓋原 provider 失敗與未知費用；不輸出例外。
+      console.error('evidence_provider_diagnostic_unavailable')
+    }
     return { status: 'provider_error', artifactId: null }
   }
   const actual = actualCallCost(selector, response)
@@ -290,7 +317,7 @@ export async function runEvidenceWorkflow(env: EvidenceBindings, jobId: string, 
     const generated = await step.do('generate', NO_RETRIES, async (): Promise<PaidResult> => {
       try {
         return await paid(env, jobId, 'generate', snapshot =>
-          buildGemmaRequest(extraction.evidence, candidates, snapshot.manifest.language as GenerationLanguage, materials(snapshot)), GEMMA_PARAMETERS.max_completion_tokens)
+          buildGemmaRequest(extraction.evidence, candidates, snapshot.manifest.language as GenerationLanguage, materials(snapshot)), GEMMA_PARAMETERS.max_tokens)
       } catch (error) {
         if (!(error instanceof ModelContextLimitError)) throw error
         await recordLimit(env, jobId, error)
@@ -305,8 +332,9 @@ export async function runEvidenceWorkflow(env: EvidenceBindings, jobId: string, 
       let draft
       try {
         draft = parseGemmaResponse(raw.response, extraction.evidence, candidates, materials(snapshot))
-      } catch {
-        await save(env, snapshot, 'diagnostics', { stage: 'generation', code: 'invalid_generation' })
+      } catch (error) {
+        const validationCode = error instanceof Error && GENERATION_VALIDATION_CODES.includes(error.message) ? error.message : null
+        await save(env, snapshot, 'diagnostics', { stage: 'generation', code: 'invalid_generation', validation_code: validationCode })
         await finishFailure(env, jobId, 'invalid_generation')
         return { status: 'failed' }
       }

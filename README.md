@@ -518,7 +518,13 @@ jq '.diagnostics.comparisons | {
 
 獨立人工品質驗收依 [`plan.md` 第 10.2 節](./plan.md#102-必做實際執行)：先由人建立標準答案，再看模型結果；四種關係各至少三個明確中文案例，並涵蓋少數反對、條件支持、轉述、prompt injection、中英日／emoji、A／B 對調及非遞移支持鏈。沒有真人標註時填「未驗證」，不可捏造 gold labels。偽造／跨素材錯錨／缺引用必須被拒絕；已知明確反例若仍列為共識，即品質不通過。
 
-若 provider 用量欄位缺失或格式錯誤，`usage.uncertain`／用量狀態會保留未知結算，預留額度不當成零費用釋放；不因單獨用量缺漏抹除已通過其他 schema／來源驗證的答案。provider 回報的 `model` 名稱只是字串 metadata，不是不可變權重 revision。以上是保守帳務／版本記錄策略，不是本次真實模型已實測的結果。
+若 provider 用量欄位缺失或格式錯誤，`usage.uncertain`／用量狀態會保留未知結算，預留額度不當成零費用釋放；不因單獨用量缺漏抹除已通過其他 schema／來源驗證的答案。provider 回報的 `model` 名稱只是字串 metadata，不是不可變權重 revision。這些欄位不是 Cloudflare 帳單核對結果，每次真實驗收仍須另記證據。
+
+Gemma 生成採與 `../pocket-polis/src/sensemaking.ts` 的 `runAiModel()` 相同的最小原生文字生成參數：`messages`、`max_tokens`、`temperature:0.2`、`chat_template_kwargs.enable_thinking:false`；本站保留 8,192 tokens 輸出上限與相應費用預留，不送 `response_format/json_schema` 或其他額外選項。輸出 JSON Schema 放入可信的 system prompt，不混入來源 user message，也不宣稱 provider 保證遵循。本站仍要求單一 chat completion、明確 `finish_reason:"stop"`、原始 JSON、合法候選與逐句出處；原生完成可省略 `refusal` 或回傳 null，任何明示非 null 的 refusal 仍拒絕。截斷、拒答、工具呼叫、Markdown 包裝或引用不符都會失敗，不自動修補、重試或產生 fallback。
+
+送給 Gemma 的候選與輸出統一使用 `candidate_id`，必須逐字取自相同分區的輸入候選，不能拿 `evidence_ids` 中的證據 ID 代替。每個候選最多輸出一項；共識／爭點項目須引用至少兩份不同素材，爭點應在同一項呈現雙方，不能拆成只引用單一來源的兩項。Prompt 明示這些規則，但本站仍獨立驗證，模型不遵循時不會自動配對、改寫候選或放行。
+
+此次原生呼叫與候選契約修訂會自然改變 prompt／參數／設定指紋，因此新工作不沿用舊契約的失敗結果；舊工件、未知費用與 tombstone 保留，不能把新指紋當作舊呼叫退款或已驗收的證據。離線契約與回歸通過不能取代完整真實工作與人工品質驗收；再次送出仍是可能付費的新工作，需重新明確同意。
 
 `Source.Title` 取自 `ct_materials.source_name`，缺值才用素材 ID；來源表沒有 material title 欄，不以原文預覽或 AI 衍生標題替代。`source_hash` 是固定順序 metadata+content JSON 的 UTF-8 SHA-256，`content_hash` 是原始 content UTF-8 bytes 的 SHA-256；原文不 trim、不正規化。空白正文不會被省略，會以 `422 empty_material` 拒絕。
 
@@ -629,6 +635,33 @@ jq '{error}' "$STALE_JSON"
 ### 7. 錯誤、對帳、清除與重啟
 
 - 未登入 `401`、停權 `403`、輸入格式／language 錯誤 `400`、request body 過大 `413`、不存在／撤下／空內容／超過 64 份素材／單份 48 KiB 或總正文 512 KiB 上限 `422`、過時 revision `409`、帳號每日 20 次新工作名額或同議題 5 分鐘冷卻 `429`、每日 US$5 估算預留用盡 `503`。排隊／執行中的工作先占每日名額；已開始、結算或費用未知的 provider attempt 即使工作失敗仍計入名額與保留費用。若工作在付費 attempt 開始前終止，名額及同議題冷卻可釋放。64 份是單次實驗輸入上限，不是 #11.1 待辦的議題投稿上限；抽取後證據超過 64 段會以工作 `status:"failed"`／`error_code:"too_many_evidence"` 診斷，不會任意裁切。工作中非同步錯誤從 GET 的 `status`、`error_code`、`usage.uncertain` 與 diagnostics 查；來源失聯時 fail closed，不取回舊快照正文或自動重送付費呼叫。
+- **Provider 失敗診斷：** 新版會在仍可寫入的隔離本機工件保存 `stage:"provider"`，包含 `step_key`、固定模型 selector、白名單 `error_name`、訊息開頭的數字 `provider_code`、例外本身明確提供的數字 `http_status`（400–599）及固定分類 `category`。分類只辨識 `json_mode_unmet`、`timeout`、`aborted`，其他為 `unknown`，不是供應商根因的保證；SDK 沒提供的 HTTP 狀態保持 `null`，不把 provider code 猜成 HTTP 狀態。不保存原始訊息、stack、cause、request、prompt、素材或 Cookie。診斷寫入失敗只輸出固定的 `evidence_provider_diagnostic_unavailable`，仍保留原 `provider_error` 與未知費用。舊工作無法補回已丟棄的例外；本次改動不變更模型設定或快取鍵，也不會自動重跑失敗工作。不要為取得診斷清空狀態、修改舊工作或任意變更語言／設定；新的最小重現工作仍需另外明確同意素材與平台費用。
+- **生成內容驗證失敗：** `invalid_generation` 表示已有模型回應，但本站未接受為草稿。新版在 `stage:"generation"` 的 diagnostics 另保存白名單 `validation_code`，例如 `generation_invalid_candidate`、`generation_insufficient_group_citations`、`generation_invalid_json` 或 `generation_incomplete_completion`；非白名單例外為 null，不輸出原始錯誤訊息或模型內文。這與 `stage:"provider"` 的呼叫例外不同；內容不合格即使工作失敗，也不會退回已回報用量的費用。
+
+失敗後可從已保存的 `JOB_JSON` 只讀取安全摘要，不再送 POST：
+
+```bash
+jq '{
+  status, error_code,
+  provider_errors: [
+    (.diagnostics | if type == "array" then .[] else empty end)
+    | select(.stage == "provider")
+    | {step_key, model_selector, error_name, provider_code, http_status, category}
+  ],
+  generation_errors: [
+    (.diagnostics | if type == "array" then .[] else empty end)
+    | select(.stage == "generation")
+    | {code, validation_code}
+  ],
+  usage: {
+    attempts: .usage.attempts, uncertain: .usage.uncertain,
+    reservedMicroUsd: .usage.reservedMicroUsd, actualMicroUsd: .usage.actualMicroUsd
+  }
+}' "$JOB_JSON"
+```
+
+空的 `provider_errors`／`generation_errors` 只表示這份回應沒有對應診斷，不代表模型未被呼叫或費用為零；舊工件也可能沒有 `validation_code`。完整 `JOB_JSON` 仍含來源快照，不能貼到聊天或 PR。
+
 - 每個 DB binding 的第一個通過認證之 evidence API request 會先全量 reconcile 本機來源並修復 active Workflow；同一 isolate/binding 後續 request 不重複跑這次 startup bootstrap，失敗則下一個 request 可重試。正常 job GET 仍逐次查該 job 所依賴來源；管理員手動 reconcile 每次都全量查核並再要求 recovery。隱藏或變更只會在 startup reconcile 或下一次來源查核時發現，遠端 D1 沒有刪除通知，跨庫清除不是即時或原子同步。
 - local Wrangler／Workflow kill 後，原生 Workflow instance 曾保持 `running` 而不會自行續跑；新 process 的 startup recovery 以明確 `restart()` 請求 safe replay，不代表 Cloudflare／本機 runtime 自動恢復。儲存層用來源 generation fence 保護快照、artifact、revision、狀態完成與讀取：來源被刪除或明確 erase 時會增加 tombstone generation、將本機來源／工件／修訂 payload 清空；較晚返回的在途回應不能重新保存或提供內容。來源僅隱藏或內容變更時標為 `withdrawn` 並停止提供舊內容，這與 hard erase 不同。已送出的 AI request 不能保證撤回。
 - GET job 在載入 snapshot／artifact 後仍做最後一次狀態查核：若此時已 erase／withdrawn，只回最新狀態、時間與 usage 等 metadata，不回舊 `data`／引文／正文；正常回應亦採最新狀態，artifact ID 已變則 fail closed。核心以真正 SQLite barrier 交錯測試 erase 與 withdrawn，確認 snapshot 已讀取後才提交處置時，HTTP response 不含正文／引文／`data`；這是本機回歸測試，不是 OAuth 或 Workers AI 測試。

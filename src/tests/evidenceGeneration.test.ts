@@ -17,9 +17,7 @@ import {
 import {
   buildGemmaRequest,
   GEMMA_MAX_REQUEST_BYTES,
-  GEMMA_OUTPUT_SCHEMA,
   parseGemmaResponse,
-  pipelineSettings,
   type GenerationCandidates,
 } from '../ai/generation'
 
@@ -170,12 +168,9 @@ describe('Clef 對稱比較批次', () => {
 })
 
 describe('Gemma 結構化輸出與出處', () => {
-  it('只傳驗證後 evidence 和候選，固定精確 schema，超限明確拒絕', () => {
+  it('只傳驗證後 evidence 和候選，超限明確拒絕', () => {
     const request = buildGemmaRequest(evidence, candidates, 'zh-TW', sources)
     expect(request.selector).toBe('@cf/google/gemma-4-26b-a4b-it')
-    expect(request.input.response_format).toEqual({ type: 'json_schema', json_schema: { name: 'cited_evidence_draft_v1', strict: true, schema: GEMMA_OUTPUT_SCHEMA } })
-    expect(request.input.stream).toBe(false)
-    expect(request.input.tool_choice).toBe('none')
     const serialized = JSON.stringify(request.input)
     expect(serialized).not.toContain('不能送出的其他原文')
     expect(serialized).not.toContain('其他秘密')
@@ -195,6 +190,15 @@ describe('Gemma 結構化輸出與出處', () => {
     expect(diagnostic).toBeInstanceOf(ModelContextLimitError)
     expect(diagnostic).toMatchObject({ code: 'generation_context_limit', limit_bytes: GEMMA_MAX_REQUEST_BYTES })
     expect((diagnostic as ModelContextLimitError).request_bytes).toBeGreaterThan(GEMMA_MAX_REQUEST_BYTES)
+  })
+
+  it('原生 stop 回應省略 refusal 時仍驗證 JSON、候選與出處', () => {
+    const response = completion()
+    const message: Record<string, unknown> = response.choices[0].message
+    delete message.refusal
+    const result = parseGemmaResponse(response, evidence, candidates, sources)
+    expect(result.data.consensus.items).toEqual([{ Title: '共同方向', description: '兩份素材提出支持。' }])
+    expect(result.citation_map[0].sources.map(source => source.material_id)).toEqual([25, 26])
   })
 
   it('程式展開來源與逐句 UTF-16 offsets，連結只使用快照安全 URL 或本站實際素材頁', () => {
@@ -219,7 +223,7 @@ describe('Gemma 結構化輸出與出處', () => {
     expect(mapped.every(entry => entry.evidence_ids.length === 2)).toBe(true)
   })
 
-  it('拒絕截斷、拒答、未知完成原因、缺 refusal、工具呼叫及非原始 JSON', () => {
+  it('拒絕截斷、明示拒答、未知完成原因、工具呼叫及非原始 JSON', () => {
     for (const reason of ['length', 'content_filter', 'tool_calls', 'unknown', '']) {
       const response = completion()
       response.choices[0].finish_reason = reason
@@ -228,8 +232,6 @@ describe('Gemma 結構化輸出與出處', () => {
     const refusal = completion()
     const refusalMessage: Record<string, unknown> = refusal.choices[0].message
     refusalMessage.refusal = 'refused'
-    expect(() => parseGemmaResponse(refusal, evidence, candidates, sources)).toThrow('generation_refusal_or_invalid_message')
-    delete refusalMessage.refusal
     expect(() => parseGemmaResponse(refusal, evidence, candidates, sources)).toThrow('generation_refusal_or_invalid_message')
     refusalMessage.refusal = null
     refusalMessage.tool_calls = [{ id: 'unexpected' }]
@@ -254,7 +256,7 @@ describe('Gemma 結構化輸出與出處', () => {
     crossed.positions.items[0].name[0].evidence_ids = ['e3']
     expect(() => parseGemmaResponse(completion(crossed), evidence, candidates, sources)).toThrow('generation_cross_candidate_citation')
     const invented = generated()
-    invented.consensus.items[0].candidate_id = 'invented'
+    invented.consensus.items[0].candidate_id = evidence[0].id
     expect(() => parseGemmaResponse(completion(invented), evidence, candidates, sources)).toThrow('generation_invalid_candidate')
     const extra = generated()
     Object.assign(extra.positions.items[0], { Sources: [{ href: 'https://invented.invalid/' }] })
@@ -288,14 +290,5 @@ describe('Gemma 結構化輸出與出處', () => {
     expect(parseGemmaResponse(completion(), utf8Evidence, candidates, sources).citation_map[0].sources[0].raw_span.unit).toBe('utf8')
     utf8Evidence[0].raw_span.start++
     expect(() => buildGemmaRequest(utf8Evidence, candidates, 'en', sources)).toThrow('generation_evidence_mismatch')
-  })
-
-  it('用實際 builder 的固定請求計算 prompt、schema、參數與設定 SHA256', async () => {
-    const first = await pipelineSettings()
-    const second = await pipelineSettings()
-    expect(first).toEqual(second)
-    expect(Object.values(first.hashes)).toHaveLength(6)
-    for (const hash of Object.values(first.hashes)) expect(hash).toMatch(/^[a-f0-9]{64}$/)
-    expect(first.config.fixture_requests.gemma['zh-TW'].input.response_format.json_schema.schema).toEqual(GEMMA_OUTPUT_SCHEMA)
   })
 })

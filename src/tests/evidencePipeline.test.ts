@@ -92,17 +92,22 @@ async function model(modelName: string, input: unknown): Promise<unknown> {
     return { model: 'clef', answers: Object.fromEntries(Object.keys(questions).map(id => [id, { type: 'choice', choice: 'agree', probabilities: { agree: 0.91, disagree: 0.03, unrelated: 0.03, uncertain: 0.03 }, confidence: 0.91 }])), usage: { input_tokens: 120, output_tokens: 0 } }
   }
   if (modelName === '@cf/google/gemma-4-26b-a4b-it') {
+    // 參考 pocket-polis 的最小原生文字生成契約；不模擬 provider JSON Mode 保證。
+    const allowed = ['messages', 'max_tokens', 'temperature', 'chat_template_kwargs']
+    if (Object.keys(request).some(key => !allowed.includes(key)) || !Number.isSafeInteger(request.max_tokens) || Number(request.max_tokens) <= 0) {
+      throw new Error('unsupported native Gemma request')
+    }
     const messages = request.messages as Array<{ role: string; content: string }>
-    const generatedInput = JSON.parse(messages.find(message => message.role === 'user')!.content) as { candidates: { consensus: Array<{ id: string; evidence_ids: string[] }>; positions: Array<{ id: string; evidence_ids: string[] }> } }
+    const generatedInput = JSON.parse(messages.find(message => message.role === 'user')!.content) as { candidates: { consensus: Array<{ candidate_id: string; evidence_ids: string[] }>; positions: Array<{ candidate_id: string; evidence_ids: string[] }> } }
     const cite = (text: string, ids: string[]) => [{ text, evidence_ids: ids }]
     const group = generatedInput.candidates.consensus[0]
     const position = generatedInput.candidates.positions[0]
     const data = {
-      consensus: { Overview: null, items: group ? [{ candidate_id: group.id, Title: cite('相容主張。', group.evidence_ids), description: cite('材料呈現的主張。', group.evidence_ids) }] : [] },
+      consensus: { Overview: null, items: group ? [{ candidate_id: group.candidate_id, Title: cite('相容主張。', group.evidence_ids), description: cite('材料呈現的主張。', group.evidence_ids) }] : [] },
       disputes: { Overview: null, items: [] },
-      positions: { Overview: null, items: position ? [{ candidate_id: position.id, name: cite('能源觀點。', position.evidence_ids), Core_concern: null, opinions: [] }] : [] },
+      positions: { Overview: null, items: position ? [{ candidate_id: position.candidate_id, name: cite('能源觀點。', position.evidence_ids), Core_concern: null, opinions: [] }] : [] },
     }
-    return { model: 'gemma-4-26b-a4b-it', choices: [{ index: 0, finish_reason: 'stop', message: { role: 'assistant', content: JSON.stringify(data), refusal: null } }], usage: { prompt_tokens: 200, completion_tokens: 80 } }
+    return { model: 'gemma-4-26b-a4b-it', choices: [{ index: 0, finish_reason: 'stop', message: { role: 'assistant', content: JSON.stringify(data) } }], usage: { prompt_tokens: 200, completion_tokens: 80 } }
   }
   throw new Error('unexpected model')
 }
@@ -395,6 +400,115 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     auth.current = user('admin', 'admin')
     const admin = await (await send('GET', `/api/evidence-jobs/${created.job_id}`)).json()
     expect(admin).toMatchObject({ input_key: audit.input_key, generation_artifact: audit.generation_artifact, provenance: { artifacts: audit.provenance.artifacts } })
+  })
+
+  it('模型把 evidence ID 當成 candidate ID 時拒絕，並留下固定驗證子碼', async () => {
+    aiRun = async (modelName, input) => {
+      const response = await model(modelName, input)
+      if (modelName !== '@cf/google/gemma-4-26b-a4b-it') return response
+      const message = object(object((object(response).choices as unknown[])[0]).message)
+      const content = JSON.parse(String(message.content))
+      const request = object(input)
+      const messages = request.messages as Array<{ role: string; content: string }>
+      const evidenceInput = JSON.parse(messages.find(item => item.role === 'user')!.content)
+      content.consensus.items[0].candidate_id = evidenceInput.evidence[0].id
+      message.content = JSON.stringify(content)
+      return response
+    }
+    auth.current = user('owner')
+    const created = await (await send('POST', '/api/issues/7/evidence-jobs', { consent: true })).json() as { job_id: string }
+    expect(await runEvidenceWorkflow(env, created.job_id, testStep())).toEqual({ status: 'failed' })
+    const body = object(await (await send('GET', `/api/evidence-jobs/${created.job_id}`)).json())
+    expect(body).toMatchObject({ status: 'failed', error_code: 'invalid_generation', usage: { attempts: 4, uncertain: 0, reservedMicroUsd: 0 } })
+    expect(body.diagnostics).toContainEqual({ stage: 'generation', code: 'invalid_generation', validation_code: 'generation_invalid_candidate' })
+  })
+
+  it('Gemma 費用預留包含原生請求宣告的最大輸出 token，不只計入輸入', async () => {
+    let generationInput: Record<string, unknown> | null = null
+    aiRun = async (modelName, input) => {
+      if (modelName === '@cf/google/gemma-4-26b-a4b-it') generationInput = object(input)
+      return model(modelName, input)
+    }
+    auth.current = user('owner')
+    const created = await (await send('POST', '/api/issues/7/evidence-jobs', { consent: true })).json() as { job_id: string }
+    expect(await runEvidenceWorkflow(env, created.job_id, testStep())).toEqual({ status: 'ai_draft' })
+    const request = generationInput as Record<string, unknown> | null
+    if (!request || typeof request.max_tokens !== 'number') throw new Error('missing native output limit')
+    const inputBound = new TextEncoder().encode(JSON.stringify(request)).byteLength * 4 + 4096
+    const expectedMicroUsd = Math.ceil((inputBound * 10 + request.max_tokens * 30) / 100)
+    const attempt = local.sqlite.prepare("SELECT estimate_micro_usd FROM ct_ai_usage WHERE step_key = 'generate'").get()
+    expect(attempt).toMatchObject({ estimate_micro_usd: expectedMicroUsd })
+  })
+
+  it.each([
+    {
+      label: 'SDK JSON Mode 失敗',
+      error: Object.assign(new Error("5007: JSON Mode couldn't be met; private-provider-detail"), { name: 'InferenceUpstreamError', status: 400, request: 'private-provider-detail' }),
+      expected: { error_name: 'InferenceUpstreamError', provider_code: 5007, http_status: 400, category: 'json_mode_unmet' },
+    },
+    {
+      label: '未知例外與非數字狀態',
+      error: { name: 'private-provider-detail', message: 'private-provider-detail', status: '403', code: 'private-provider-detail', stack: 'private-provider-detail' },
+      expected: { error_name: null, provider_code: null, http_status: null, category: 'unknown' },
+    },
+    {
+      label: '逾時例外',
+      error: new DOMException('private-provider-detail', 'TimeoutError'),
+      expected: { error_name: 'TimeoutError', provider_code: null, http_status: null, category: 'timeout' },
+    },
+  ])('$label 只留下安全診斷，不重試或釋放未知費用', async ({ error, expected }) => {
+    let generationCalls = 0
+    aiRun = async (modelName, input) => {
+      if (modelName !== '@cf/google/gemma-4-26b-a4b-it') return model(modelName, input)
+      generationCalls++
+      throw error
+    }
+    auth.current = user('owner')
+    const created = await (await send('POST', '/api/issues/7/evidence-jobs', { consent: true })).json() as { job_id: string }
+    expect(await runEvidenceWorkflow(env, created.job_id, testStep())).toEqual({ status: 'failed' })
+    const response = await send('GET', `/api/evidence-jobs/${created.job_id}`)
+    expect(response.status).toBe(200)
+    const body = await response.json() as { status: string; error_code: string; diagnostics: unknown[]; usage: { attempts: number; uncertain: number; reservedMicroUsd: number } }
+    expect(body).toMatchObject({ status: 'failed', error_code: 'provider_error', usage: { attempts: 4, uncertain: 1 } })
+    expect(body.diagnostics).toContainEqual({
+      stage: 'provider', code: 'provider_error', step_key: 'generate', model_selector: '@cf/google/gemma-4-26b-a4b-it', ...expected,
+    })
+    expect(JSON.stringify(body)).not.toContain('private-provider-detail')
+    const stored = local.sqlite.prepare("SELECT payload FROM ct_ai_artifacts WHERE kind = 'diagnostics'").all()
+    expect(JSON.stringify(stored)).not.toContain('private-provider-detail')
+    const attempt = local.sqlite.prepare("SELECT state, actual_micro_usd, estimate_micro_usd FROM ct_ai_usage WHERE step_key = 'generate'").get() as { state: string; actual_micro_usd: number | null; estimate_micro_usd: number }
+    expect(attempt).toMatchObject({ state: 'unknown', actual_micro_usd: null })
+    expect(body.usage.reservedMicroUsd).toBe(attempt.estimate_micro_usd)
+    expect(generationCalls).toBe(1)
+    auth.current = user('other')
+    expect((await send('GET', `/api/evidence-jobs/${created.job_id}`)).status).toBe(404)
+  })
+
+  it('診斷儲存失敗仍保留 provider_error 與未知費用，不輸出例外內容', async () => {
+    const originalSave = EvidenceStore.prototype.saveArtifact
+    const save = vi.spyOn(EvidenceStore.prototype, 'saveArtifact').mockImplementation(function (this: EvidenceStore, input) {
+      if (input.kind === 'diagnostics' && object(input.payload).stage === 'provider') throw new Error('private-storage-detail')
+      return originalSave.call(this, input)
+    })
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+    aiRun = async (modelName, input) => {
+      if (modelName !== '@cf/google/gemma-4-26b-a4b-it') return model(modelName, input)
+      throw new Error('private-provider-detail')
+    }
+    try {
+      auth.current = user('owner')
+      const created = await (await send('POST', '/api/issues/7/evidence-jobs', { consent: true })).json() as { job_id: string }
+      expect(await runEvidenceWorkflow(env, created.job_id, testStep())).toEqual({ status: 'failed' })
+      const body = await (await send('GET', `/api/evidence-jobs/${created.job_id}`)).json()
+      expect(body).toMatchObject({ status: 'failed', error_code: 'provider_error', usage: { attempts: 4, uncertain: 1 } })
+      expect(log.mock.calls).toEqual([['evidence_provider_diagnostic_unavailable']])
+      expect(JSON.stringify(body)).not.toContain('private-provider-detail')
+      expect(JSON.stringify(body)).not.toContain('private-storage-detail')
+      expect(local.sqlite.prepare("SELECT state, actual_micro_usd FROM ct_ai_usage WHERE step_key = 'generate'").get()).toMatchObject({ state: 'unknown', actual_micro_usd: null })
+    } finally {
+      save.mockRestore()
+      log.mockRestore()
+    }
   })
 
   it('缺失或格式錯誤的 provider 用量保留未知預留，稽核摘要如實標示', async () => {

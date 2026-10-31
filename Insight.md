@@ -68,3 +68,29 @@
 ## 核心 API 契約（程式碼閱讀；專用 Worker 僅完成 no-login HTTP smoke）
 
 已閱讀核心 `src/ai/routes.ts`／維護 helper，並與 README 的六個 API 路徑、範例 schema 對照。POST job 接受 `{ consent: true, material_ids?: number[], language?: "zh-TW" | "en" | "ja" }`，語言預設 `zh-TW`；新工作 `202`／`cache:"miss"`，進行中共用 `202`／`cache:"joined"`，完成快取及既有失敗狀態 `200`。Response `input_coverage` 描述 selection/IDs/exclusions，不加入 paid cache key；GET 可讀 job 有 `initial_input_diagnostics` 與即時 `current_issue_exclusions`。GET job 有 `input_key`、`generation_artifact: { id, sha256 } | null` 及 `provenance.artifacts[]`；每個 artifact 摘要僅含 `{ id, kind, sha256, created_at, model, attempt }`，raw artifact 的 model 欄位為 `{ selector, provider_model, provider_revision, request_id, system_fingerprint, request_sha256, pricing_version, usage_status }`，attempt 為 `{ id, state, estimated_micro_usd, actual_micro_usd }`；非 raw artifact 的 model／attempt 可為 `null`，缺 provider metadata 為 `null`、沒有舊 usage record 則 `unknown`。摘要不含 raw request／response 或作者欄位。source rows 僅有 `{ kind, id, hash }`；全域 `source_checked_at` 是 job 查核時間，沒有 per-source `checked_at`。Revision POST `{ parent_revision_id, data }` 成功回 `201 { revision_id, parent_revision_id, verification:"human_unverified" }`，stale parent `409 revision_conflict`；GET revisions 回 `ai_base` 與 revisions。兩個 admin maintenance POST 見上述 JSON/body／auth 限制。本次專用 Worker 僅用無登入請求確認 `GET /` 的 404 與 GET job／POST job／admin reconcile 的 401；沒有 session，故 authenticated GET payload（包括 audit DTO）、bootstrap/recovery、其他路徑尚無 runtime 驗證，不等於真實 OAuth 或 live Workers AI request。
+
+## 2026-11-01：真實 Gemma 失敗與最小安全診斷
+
+- 本節是後續驗收紀錄；前面 2026-10-29 階段的「尚未執行」不代表本節之後的現況。使用者已執行真實工作並觀察 `GET 200 / status:failed`；只讀本機帳本與工件確認兩次 Clairic 及一次 Clef 有回應，抽取出三段證據，Gemma 呼叫拋例外而記為 `provider_error`。前三次用量估算合計 223 microUSD；Gemma 保留 5,434 microUSD、actual 為未知，不是零費用或帳單核對。
+- 原 catch 丟棄例外，現有 job、dev log 與本機 trace 無法還原 provider 原始錯誤。離線從原快照重建 Gemma request 為 6,415 bytes，通過官方同步輸入 schema，設定 hash 與舊工作一致；不經 `as unknown` 的 Gemma binding 型別檢查亦通過。這只能排除已檢查的輸入契約錯誤，不能證明 provider runtime 支援所有結構化生成限制。
+- 新版僅於既有、受來源 generation fence 保護的 diagnostics 工件保存固定模型／步驟、白名單錯誤名稱、數字 code／HTTP status 及固定分類；原始例外訊息、stack、cause 與 request 不儲存、不輸出。HTTP status 只採例外明示的數字欄位，不使用 AI binding 的共用 mutable last-request 狀態，避免混入先前或其他併發呼叫；缺值保持 null。
+- 修正前新增三種例外的 API／SQLite 回歸皆因缺診斷而失敗；修正後 `evidencePipeline.test.ts` 20 tests 通過，涵蓋私有錯誤文字不洩漏、其他帳號不可讀、單次呼叫及未知費用保留，以及診斷寫入失敗不掩蓋 provider 失敗。獨立 ephemeral loopback smoke 使用合成來源及合成 provider 例外，實際兩次 HTTP request 取得失敗與安全診斷，零真實模型呼叫，未寫入既有 sandbox 或遠端 DB；不得將其當成真實 provider 錯誤或修復證據。
+- 補診斷階段沒有改模型參數、快取鍵、migration 或舊工作狀態，也沒有新增付費呼叫。其後使用者另行明確同意一次最小重現：議題 13、素材 25、`zh-TW`；既有私有 jar 的 `/api/me` 回 200、未停權，來源只讀預檢仍可讀且 `rows_written:0`，只送一次 POST，得到 `202/cache:miss`，有限 GET 輪詢得到 `failed/provider_error`。新版診斷成功保存 `step_key:generate`、Gemma selector、`provider_code:8007`；白名單 error name／HTTP status 缺值，category 為 unknown。一次 Clairic 有回應，帳本 actual 33 microUSD；Gemma unknown、保留 5,193 microUSD。沒有重試、不清空 sandbox、不修改舊 job，也未對遠端業務／auth 資料作額外寫入。
+- `8007` 不在 [Workers AI 官方錯誤表](https://developers.cloudflare.com/workers-ai/platform/errors/)中；[Cloudflare 公開 issue #21718](https://github.com/cloudflare/cloudflare-docs/issues/21718)曾用同一 code 表示 request queuing 不支援，不能拿該案例替本次非 batch 呼叫定罪。現有 dev log 與本機 observability trace 沒有該例外的進一步紀錄；最小安全摘要沒有保留原始例外，故本次仍無法判定確切參數／服務根因，不猜測修正。這一次重現授權已使用，未再呼叫模型；需要供應商更具體且可安全取得的診斷，不能宣稱 Gemma 已修好。
+
+## 2026-11-01：對照 pocket-polis 的原生 Gemma 呼叫
+
+- 使用者指出 `../pocket-polis` 有可用的 Gemma 實作，據此核對 `src/sensemaking.ts` 的 `runAiModel()`：模型 selector 相同，但該實作只送 `messages`、`max_tokens`、`temperature:0.2` 與 `chat_template_kwargs.enable_thinking:false`，不送 `response_format/json_schema`；JSON 形狀由 prompt 指示。這是呼叫契約的可確認差異，不代表已證實 `8007` 只由某一參數造成。
+- 本站改用同樣的最小參數形狀，保留原 8,192 tokens 輸出上限，費用預留同步讀取 `max_tokens`；既有輸出 schema 移至 system prompt，仍使用本站原本的嚴格完成／拒答／JSON／候選／出處驗證。不移植 pocket-polis 的寬鬆字串擷取、JSON 補救或確定性 fallback，也不修改該 repo。
+- `gemma_prompt` 版本改為 `evidence-only-native-v2`，schema 指紋直接取既有輸出 schema；實際 request／prompt／設定 hash 自然變更，離線確認與先前失敗工作的設定不同。沒有任意改語言、清除狀態、重設舊工作或消除未知費用。
+- 測試的原生 provider 契約 fixture 不再假定支援 JSON Mode，新增的最大輸出費用預留回歸於切換前失敗、切換後通過；生成、流水線及計價三檔共 37 tests 通過。刪除只比對 schema 複本與固定 hash 形狀的實作細節斷言，保留隱私、context 上限、截斷／拒答／工具呼叫、引用及快取隔離等行為測試。
+- 獨立 ephemeral loopback smoke 用 TypeScript AST 從 pocket-polis 的實際 payload 擷取四個參數名，對照本站 builder，使用純合成素材與 provider completion 執行本站 runner／SQLite；兩次 HTTP request 得到 `ai_draft`，並驗證草稿文字與 citation 回到正確來源。這是離線契約／合成模型驗證，零真實模型呼叫；原生呼叫修正後的真實 Gemma 與人工語義品質仍未驗證。
+
+## 2026-11-01：原生完成缺欄位與候選契約診斷
+
+- 使用者自行重跑後回報失敗；本輪只讀其最新 job／隔離 SQLite，沒有新增模型呼叫。這次已非 provider error：Gemma raw artifact 存在，`finish_reason:stop`，content 是原始 JSON，使用原生四參數；四次呼叫全已回報用量，帳本合計 actual 617 microUSD（Gemma 394）、uncertain 0、reserved 0。這是該工作的 ledger，並非帳單核對，也不代表先前未知費用已退款。
+- 實際原生 message 只有 role/content、沒有 refusal。舊解析器強制 `refusal === null`，離線重播於 `generation_refusal_or_invalid_message` 誤拒；只在記憶體補 null 後仍於 `generation_invalid_candidate` 拒絕。結構摘要確認爭點／立場共五個輸出項目的 candidate_id 都是 evidence ID，不是合法候選 ID；一個爭點候選被拆成兩項，各只引用一份素材。後者確實違反既有跨素材／候選約束，不得為救結果放寬。
+- 解析器改為接受省略 refusal 或明確 null，仍要求 assistant／stop／原始 JSON，任何明示非 null refusal、工具呼叫及不完整回應照常拒絕。輸入候選從 id 改為與輸出相同的 candidate_id，system prompt 明示候選 ID／證據 ID 分工、同分區精確 ID、每候選最多一項，以及共識／爭點的跨素材引用；`gemma_prompt` 版本為 `evidence-only-native-v3`，不替既有錯誤回應猜測或重寫 ID。
+- generation diagnostics 新增固定白名單 validation_code，不保存原始例外或模型文字。新增缺 refusal 的正常完成與錯誤 evidence/candidate ID 診斷回歸，修正前兩項皆失敗，修正後生成／流水線／計價三檔共 39 tests 通過。全流程 fixture 也改為實際原生完成的缺 refusal 形狀。
+- 獨立 ephemeral loopback smoke 用合成 completion 省略 refusal，完成 `ai_draft` 與引用來源核對，零真實模型呼叫。直接重播使用者的未修改 raw response，現在精確拒絕 `generation_invalid_candidate`：只修好誤拒，不將該筆不合格結果變成草稿。新 prompt 的真實生成品質仍待另一次明確同意的工作驗收；本輪未重送 POST、改舊工作或清除 sandbox。
+- 本輪完整驗收：`vp check --no-fmt --no-lint` 通過（152 files）、`vp test` 通過（51 files／453 tests）、`vp run build` 成功；有既有 client bundle 大於 500 kB 警告。初次完整檢查指出新增測試的 JSON body 型別為 unknown，已使用既有 object guard 縮窄後重跑通過。這些結果與離線／合成 smoke 不替代新 prompt 的真實模型品質驗收。
