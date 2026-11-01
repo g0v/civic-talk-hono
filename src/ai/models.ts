@@ -15,6 +15,7 @@ export const MODEL_VERSIONS = {
   clef_batching: 'canonical-byte-budget-v1',
   gemma_prompt: 'specialized-evidence-v3',
   gemma_schema: 'specialized-cited-v1',
+  gemma_input: 'verified-relations-v2',
   gemma_completion_prompt: 'missing-fields-only-v1',
   gemma_completion_schema: 'cited-field-patches-v1',
   pricing: PRICING_VERSION,

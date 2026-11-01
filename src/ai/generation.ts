@@ -426,7 +426,7 @@ export function buildGemmaRequest(section: GenerationSection, input: GenerationI
     language: input.language,
     evidence: [...context.evidence.values()].sort((a, b) => compareStrings(a.id, b.id)).map(({ id, material_id, raw_quote, quote }) => ({ id, material_id, raw_quote, quote })),
     comparison: {
-      pairs: comparison.pairs,
+      // 配對全集由直接判斷與未完成配對表示；不重送相同 IDs 的純索引。
       direct_comparisons: comparison.direct_comparisons.map(relation),
       reverse_diagnostics: comparison.reverse_diagnostics.map(relation),
       consensus_groups: comparison.consensus_groups.map(({ id, evidence_ids }) => ({ candidate_id: id, evidence_ids })),

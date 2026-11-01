@@ -227,6 +227,33 @@ describe('Gemma 專項輸出與出處', () => {
     expect((diagnostic as ModelContextLimitError).request_bytes).toBeGreaterThan(GEMMA_MAX_REQUEST_BYTES)
   })
 
+  it('21 段跨三素材的完整關係可容納於上限內，不因重複配對索引阻止全部專項', () => {
+    const counts = [2, 3, 16]
+    const denseSources = counts.map((count, index) => material(index + 25,
+      Array.from({ length: count }, (_, item) => `證據${index}-${item}：${'可追溯的重要主張與完整適用條件'.repeat(12)}。`).join('\n')))
+    const denseEvidence = denseSources.flatMap(source => source.content.split('\n').map(quote => {
+      const start = source.content.indexOf(quote)
+      return anchored(`e:${source.id}:${start}:${start + quote.length}`, source.id, source.content, quote, quote.slice(0, quote.indexOf('：')))
+    }))
+    const pairs = createEvidencePairs(denseEvidence)
+    const direct = pairs.map((pair, index) => judgment(pair.a, pair.b, index === 0 ? 'agree' : index === 1 ? 'disagree' : index === 2 ? 'uncertain' : 'unrelated'))
+    const analysis = analyzeComparisons(denseEvidence, direct)
+    expect(pairs).toHaveLength(86)
+    for (const section of ['consensus', 'disputes', 'positions'] as const) {
+      const request = buildGemmaRequest(section, { evidence: denseEvidence, comparison: analysis, language: 'zh-TW', sources: denseSources })
+      expect(request.request_bytes).toBeLessThanOrEqual(GEMMA_MAX_REQUEST_BYTES)
+      const payload = JSON.parse(request.input.messages[1].content)
+      expect(payload.evidence.map((item: { id: string; quote: string; raw_quote: string }) => [item.id, item.quote, item.raw_quote]))
+        .toEqual([...denseEvidence].sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0).map(item => [item.id, item.quote, item.raw_quote]))
+      expect(payload.comparison.direct_comparisons.map((item: DirectComparison) => [item.evidence_ids, item.relation, item.probabilities]))
+        .toEqual(direct.map(item => [item.evidence_ids, item.relation, item.probabilities]))
+      expect(new Set([
+        ...payload.comparison.direct_comparisons.map((item: DirectComparison) => item.pair_key),
+        ...payload.comparison.incomplete_pairs.map((item: { pair_key: string }) => item.pair_key),
+      ])).toEqual(new Set(pairs.map(pair => pair.key)))
+    }
+  })
+
   it('共識可拒絕弱候選，採用時 description 必須引用每個參與來源', async () => {
     const rejected = { Overview: null, items: [], rejected_candidates: [{ candidate_id: candidateId, reason: '無法提煉具體共同命題' }] }
     const result = await parseGemmaResponse('consensus', completion(rejected), input)

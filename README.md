@@ -407,7 +407,9 @@ JOB_ID=$(jq -er '.job_id | select(type == "string" and length > 0)' "$POST_JSON"
 jq '{job_id, status, cache, input_coverage}' "$POST_JSON"
 ```
 
-`consent:true` 是每個工作的必要明確同意。新工作預期 `202`／`cache:"miss"`；同一進行中工作可能是 `202`／`cache:"joined"`；完成快取是 `200`／`cache:"hit"`。狀態欄要與 HTTP code 一起判讀，失敗工作不會被偽裝成 AI 草稿。若來源預檢或 POST 回應錯誤，先看 response 的機器錯誤碼，不要改寫遠端資料或重送空請求。
+`consent:true` 是每個工作的必要明確同意。新工作預期 `202`／`cache:"miss"`；同一進行中工作可能是 `202`／`cache:"joined"`；完成快取是 `200`／`cache:"hit"`。同設定的既有失敗工作則可能直接回 `200`／`cache:"joined"`／`status:"failed"`，這不是新一次執行，也沒有因此新增模型嘗試；不要繼續輪詢等它自行成功。先按第 7 節讀失敗原因，不刪快取、不改語言或清空隔離 DB 繞過去重。
+
+若已修正失敗原因並更新受版本管理的模型輸入／設定，待既有工作終止後重啟專用開發入口，確認載入新版，再原樣送出 POST；新設定會得到不同 input key，通過來源、冷卻、配額與預算檢查後才建立新工作。重啟本身不會清除失敗紀錄，也不會把相同設定變成新工作；新的完整管線仍可能付費，舊結果、已發生費用與 unknown 預留均保留。
 
 對實際 job ID 以兩秒間隔最多輪詢 30 次；GET 的進度以 JSON `status` 判斷，停止等待不會取消已送出的模型呼叫：
 
@@ -581,6 +583,8 @@ primary 非 null 的 Overview／Core_concern 仍須用句子物件陣列，例�
 
 Clef、三份 primary 與補完 prompt／schema、組裝政策、三語狀態文字及實際 builder 都納入設定指紋。在途舊設定工作遇設定變更會停止，不自動換版重打；已完成舊稿、未知費用與 tombstone 保留。各付費步驟獨立預留、結算與去重，補完嘗試鍵為 `complete:draft`，仍算同一個新工作日配額。新指紋不代表退款或品質改善；重新送出可能付費，仍須明確同意，不得清空狀態繞過額度。
 
+Gemma 輸入政策 `verified-relations-v2` 不再重送純索引 `comparison.pairs`：配對全集已由 `direct_comparisons` 與 `incomplete_pairs` 表達。所有已驗證引文、直接關係／機率／題目版本、反向診斷、候選群與路徑、爭點及未分類資料仍保留；完整 pair 索引也仍留在本機比較工件與診斷。這是去除重複序列化，不是截斷或刪除證據，48 KiB 請求上限不放寬。更多資料仍可能超限，須看下方 planned context_limit，不保證任意輸入都能容納。
+
 `Source.Title` 取自 `ct_materials.source_name`，缺值才用素材 ID；來源表沒有 material title 欄，不以原文預覽或 AI 衍生標題替代。`source_hash` 是固定順序 metadata+content JSON 的 UTF-8 SHA-256，`content_hash` 是原始 content UTF-8 bytes 的 SHA-256；原文不 trim、不正規化。空白正文不會被省略，會以 `422 empty_material` 拒絕。
 
 #### 5.1 Clef 人工標註與純離線對照
@@ -751,6 +755,11 @@ jq '{
     | select(.status == "failed" or .status == "not_started")
     | {section: "completion", status, reason, validation_code}
   ]) else [] end),
+  generation_limits: [
+    (.diagnostics | if type == "array" then .[] else empty end)
+    | select(.stage == "generation" and .phase == "planned")
+    | .sections[]? | {section, context_limit}
+  ],
   usage: {
     attempts: .usage.attempts, uncertain: .usage.uncertain,
     reservedMicroUsd: .usage.reservedMicroUsd, actualMicroUsd: .usage.actualMicroUsd
@@ -759,6 +768,8 @@ jq '{
 ```
 
 空的 `provider_errors`／`generation_errors` 只表示這份回應沒有對應診斷，不代表模型未被呼叫或費用為零；舊工件也可能沒有 `validation_code`。完整 `JOB_JSON` 仍含來源快照，不能貼到聊天或 PR。
+
+若 `error_code:"workflow_limit"` 且 `generation_limits[].context_limit.request_bytes` 大於 `limit_bytes`，代表專項請求在呼叫模型前就超過本機大小守門；這些專項沒有新增 Gemma 呼叫，但前段已完成的抽取／比較仍有費用。重送相同設定不會解決超限；先修正重複表示或依計畫處理輸入規模，不任意提高上限、裁掉反例或清空帳本。
 
 - 每個 DB binding 的第一個通過認證之 evidence API request 會先全量 reconcile 本機來源並修復 active Workflow；同一 isolate/binding 後續 request 不重複跑這次 startup bootstrap，失敗則下一個 request 可重試。正常 job GET 仍逐次查該 job 所依賴來源；管理員手動 reconcile 每次都全量查核並再要求 recovery。隱藏或變更只會在 startup reconcile 或下一次來源查核時發現，遠端 D1 沒有刪除通知，跨庫清除不是即時或原子同步。
 - local Wrangler／Workflow kill 後，原生 Workflow instance 曾保持 `running` 而不會自行續跑；新 process 的 startup recovery 以明確 `restart()` 請求 safe replay，不代表 Cloudflare／本機 runtime 自動恢復。儲存層用來源 generation fence 保護快照、artifact、revision、狀態完成與讀取：來源被刪除或明確 erase 時會增加 tombstone generation、將本機來源／工件／修訂 payload 清空；較晚返回的在途回應不能重新保存或提供內容。來源僅隱藏或內容變更時標為 `withdrawn` 並停止提供舊內容，這與 hard erase 不同。已送出的 AI request 不能保證撤回。

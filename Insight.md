@@ -167,3 +167,18 @@
 - 原文錨定、句子展開、去重、64 段上限及費用守門均未改。沒有新增永久的提示字面／mock 語義測試，避免把提示文字或合成輸出當成真實涵蓋率；既有抽取邊界測試保留。
 - 獨立執行實際 builder／parser／extractor，以四段合成原文和原生格式回應確認不同素材 state 分離、四段片段精確展開回各自完整原句、null 不產生證據、非原文主張拒收，並確認新版提示 hash 已變且納入 pipeline 設定。這只證明契約及後處理相容性，沒有呼叫真實模型，不能證明 Clairic 已全面抽取。
 - 完整檢查通過：157 files 型別檢查、53 test files／515 tests、build；既有 client chunk 大於 500 kB 警告仍在。本輪未 commit／push／部署、未重跑付費工作、未改既有結果或帳本。真實逐段召回與下游共識品質仍待人工實驗；證據增多可能增加 Clef 配對量與費用，上限與預算不放寬。
+
+## 2026-11-02：失敗去重與 Gemma 重複配對索引超限
+
+- 使用者重送議題 13／素材 25、26、27，直接取得 failed／cache:joined。只讀保存回應確認原失敗原因為 workflow_limit：抽取 21 段、86 組直接比較均完成，但三項 Gemma 請求都超過 49,152 bytes 守門，尚未呼叫 Gemma。原帳本 21 attempts、actual 11,181 microUSD、unknown／reserved 均零；這是應用結算，不是 Cloudflare 帳單。
+- 主因是輸入同時序列化純 comparison.pairs 索引與已含相同配對識別的直接／未完成關係。只移除模型請求內的重複索引，保留全部證據、關係／機率、候選群與路徑；原工件與診斷不改、上限不提高。新增 gemma_input:verified-relations-v2 設定版本，自然產生不同去重鍵，不改寫失敗工作或新增 force-refresh。
+- 本機業務 SQLite 確認無該檔 WAL 後，以 mode=ro／immutable=1 讀取該工作已保存的 extraction 與 comparison analysis，沒有寫 DB。使用實際快照執行新版 Gemma builder，三項均可通過既有守門；21 段原始／擴展引文、86 筆直接關係及機率／題目版本、33 條候選路徑與群組歸屬均保留，並確認同一 manifest 換成新版設定後 input key 不同。未呼叫 provider，也未將離線重算寫回原工作。
+
+|專項|保存的舊請求 bytes|新版離線請求 bytes|
+|---|---:|---:|
+|consensus|54,955|45,911|
+|disputes|55,732|46,688|
+|positions|56,090|47,046|
+
+- 新增合成 21 段／86 配對的大小邊界回歸：三專項均在既有上限內且引文／關係完整；同份合成資料若仍附重複索引，序列化大小三項均超過原守門。完整檢查通過：157 files 型別檢查、53 test files／516 tests、build；仍有既有 client chunk 大於 500 kB 警告。
+- README 補上 failed／joined 並非新執行、修正設定後再由使用者建立新付費工作，以及 context_limit 的安全診斷。原工作／帳本與保存回應未改，本輪沒有重送付費 POST、遠端寫入、migration、commit、push 或部署；真實重新生成與語義品質仍未驗收。
