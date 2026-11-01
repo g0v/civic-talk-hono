@@ -13,8 +13,10 @@ export const MODEL_VERSIONS = {
   clairic_prompt: 'claims-list-v1',
   clef_prompt: 'symmetric-four-way-v2',
   clef_batching: 'canonical-byte-budget-v1',
-  gemma_prompt: 'specialized-evidence-v2',
+  gemma_prompt: 'specialized-evidence-v3',
   gemma_schema: 'specialized-cited-v1',
+  gemma_completion_prompt: 'missing-fields-only-v1',
+  gemma_completion_schema: 'cited-field-patches-v1',
   pricing: PRICING_VERSION,
 } as const
 

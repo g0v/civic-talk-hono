@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vite-plus/test'
 import { analyzeComparisons, createEvidencePairs, pairKey, type DirectComparison, type EvidencePair, type Relation } from '../ai/comparison'
 import type { Evidence } from '../ai/evidence'
@@ -15,12 +16,23 @@ import {
 } from '../ai/models'
 import {
   assembleGeneratedDraft,
+  buildCompletionRequest,
   buildGemmaRequest,
   GEMMA_MAX_REQUEST_BYTES,
+  finalizeDraftCompletion,
+  GENERATION_VALIDATION_CODES,
+  parseCompletionResponse,
   parseGemmaResponse,
+  pipelineSettings,
+  prepareDraftCompletion,
+  type DraftCompletionPlan,
+  type GeneratedSection,
   type GenerationInput,
   type GenerationSection,
+  type SectionStates,
 } from '../ai/generation'
+import { statusOverview } from '../ai/overviewStatus'
+import { messages as englishMessages } from '../l10n/en'
 
 function anchored(id: string, material_id: number, content: string, quote: string, raw_quote = quote): Evidence {
   const quoteStart = content.indexOf(quote)
@@ -490,5 +502,270 @@ describe('Gemma 專項輸出與出處', () => {
     expect(() => buildGemmaRequest('positions', utf8Input)).toThrow('generation_evidence_mismatch')
     const splitSurrogate = [{ ...evidence[0], expanded_span: { ...evidence[0].expanded_span, start: evidence[0].expanded_span.start + 1 } }, evidence[1], evidence[2]]
     expect(() => buildGemmaRequest('positions', { ...input, evidence: splitSurrogate })).toThrow('generation_evidence_mismatch')
+  })
+})
+
+async function missingFieldsFixture() {
+  const positions = positionsOutput()
+  positions.items.push({
+    group_id: 'g2', evidence_ids: ['e3'], name: [cited('反對方案', 'e3')],
+    Core_concern: null,
+    opinions: [{ Title: [cited('另一種立場', 'e3')], description: [cited('反對方案一。', 'e3')] }],
+  })
+  positions.exclusions = []
+  const sections: GeneratedSection[] = await Promise.all([
+    parseGemmaResponse('consensus', completion(consensusOutput()), input),
+    parseGemmaResponse('disputes', completion({ ...disputeOutput(), Overview: null }), input),
+    parseGemmaResponse('positions', completion(positions), input),
+  ])
+  const draft = await assembleGeneratedDraft(sections, input)
+  const plan = await prepareDraftCompletion(draft, sections, { consensus: 'completed', disputes: 'completed', positions: 'completed' }, input)
+  return { sections, draft, plan }
+}
+
+function completionPatch(plan: DraftCompletionPlan) {
+  return {
+    base_hash: plan.base_hash,
+    fills: plan.targets.map((target, index) => ({
+      pointer: target.pointer,
+      sentences: [cited(`😀補完${index}。另一句！`, target.evidence_ids[0])],
+    })),
+  }
+}
+
+describe('必要欄位補完與不可變 primary 工件', () => {
+  it('補完固定驗證代碼可安全供工作流投影', () => {
+    expect(GENERATION_VALIDATION_CODES).toEqual(expect.arrayContaining([
+      'generation_invalid_completion_plan', 'generation_completion_base_mismatch',
+      'generation_invalid_completion_patch', 'generation_completion_not_needed', 'generation_incomplete_draft',
+    ]))
+  })
+
+  it('只補 null 白名單，保留原文、來源、順序及既有 citations，引用逐句展開', async () => {
+    const { sections, draft, plan } = await missingFieldsFixture()
+    const before = structuredClone({ sections, draft, plan })
+    expect(plan.targets).toEqual([
+      { pointer: '/disputes/Overview', evidence_ids: ['e1', 'e3'] },
+      { pointer: '/positions/items/0/Core_concern', evidence_ids: ['e1', 'e2'] },
+      { pointer: '/positions/items/1/Core_concern', evidence_ids: ['e3'] },
+    ])
+    const request = buildCompletionRequest(plan, input)
+    const payload = JSON.parse(request.input.messages[1].content)
+    expect(payload).toMatchObject({ operation: 'fill_missing_fields', base_hash: plan.base_hash, language: 'zh-TW', targets: plan.targets })
+    expect(payload.evidence.map((item: { id: string }) => item.id)).toEqual(['e1', 'e2', 'e3'])
+    expect(JSON.stringify(payload)).not.toContain('不能送出的其他原文')
+    expect(JSON.stringify(payload)).not.toContain('其他秘密')
+    expect(JSON.stringify(payload)).not.toContain('https://example.org/a')
+    expect(payload.existing_data.positions.items[0]).not.toHaveProperty('Sources')
+    expect(request.request_bytes).toBeLessThanOrEqual(GEMMA_MAX_REQUEST_BYTES)
+    await expect(finalizeDraftCompletion(plan, input)).rejects.toThrow('generation_incomplete_draft')
+
+    const result = await parseCompletionResponse(completion(completionPatch(plan)), plan, input)
+    const reordered = completionPatch(plan)
+    reordered.fills.reverse()
+    expect(await parseCompletionResponse(completion(reordered), plan, input)).toEqual(result)
+    const expected = structuredClone(draft.data)
+    expected.disputes.Overview = '😀補完0。另一句！'
+    expected.positions.items[0].Core_concern = '😀補完1。另一句！'
+    expected.positions.items[1].Core_concern = '😀補完2。另一句！'
+    expect(result.data).toEqual(expected)
+    expect(result.data.consensus.Overview).toBe(draft.data.consensus.Overview)
+    expect(result.data.positions.items.map(item => item.Sources)).toEqual(draft.data.positions.items.map(item => item.Sources))
+    expect(result.evidence).toEqual(draft.evidence)
+    expect(result.citation_map.slice(0, draft.citation_map.length)).toEqual(draft.citation_map)
+    for (const [index, target] of plan.targets.entries()) {
+      const text = `😀補完${index}。另一句！`
+      const ranges = result.citation_map.slice(draft.citation_map.length).filter(entry => entry.pointer === target.pointer)
+      expect(ranges.map(entry => text.slice(entry.start, entry.end))).toEqual([`😀補完${index}。`, '另一句！'])
+      expect(ranges.every(entry => entry.evidence_ids.length === 1 && entry.evidence_ids[0] === target.evidence_ids[0])).toBe(true)
+      expect(ranges[0].sources[0].quote).toBe(evidence.find(item => item.id === target.evidence_ids[0])!.quote)
+    }
+    expect({ sections, draft, plan }).toEqual(before)
+    expect(result.data.positions.items.every(item => typeof item.Core_concern === 'string' && item.Core_concern.trim())).toBe(true)
+    expect(['consensus', 'disputes', 'positions'].every(section => typeof result.data[section as GenerationSection].Overview === 'string' && result.data[section as GenerationSection].Overview.trim())).toBe(true)
+  })
+
+  it('未知、重複、缺漏、非法指標、覆寫、額外操作及錯誤引用全部拒收，不部分套用', async () => {
+    const { draft, plan } = await missingFieldsFixture()
+    const original = structuredClone({ draft, plan })
+    const valid = completionPatch(plan)
+    const badGroup = structuredClone(valid)
+    badGroup.fills[1].sentences[0].evidence_ids = ['e3']
+    const badOverview = structuredClone(valid)
+    badOverview.fills[0].sentences[0].evidence_ids = ['e2']
+    const unknownEvidence = structuredClone(valid)
+    unknownEvidence.fills[1].sentences[0].evidence_ids = ['missing']
+    const noEvidence = structuredClone(valid)
+    noEvidence.fills[1].sentences[0].evidence_ids = []
+    const emptyText = structuredClone(valid)
+    emptyText.fills[1].sentences[0].text = ' \n '
+    const tests: Array<{ patch: unknown; code: string }> = [
+      { patch: { ...valid, base_hash: 'stale' }, code: 'generation_completion_base_mismatch' },
+      { patch: { ...valid, fills: valid.fills.slice(1) }, code: 'generation_invalid_completion_patch' },
+      { patch: { ...valid, fills: [...valid.fills, valid.fills[0]] }, code: 'generation_invalid_completion_patch' },
+      { patch: { ...valid, fills: [...valid.fills, { pointer: '/unknown', sentences: [cited('內容', 'e1')] }] }, code: 'generation_invalid_completion_patch' },
+      { patch: { ...valid, fills: [valid.fills[0], { ...valid.fills[1], pointer: '/positions/items/00/Core_concern' }, valid.fills[2]] }, code: 'generation_invalid_completion_patch' },
+      { patch: { ...valid, fills: [valid.fills[0], { ...valid.fills[1], pointer: '/positions/items/0/name' }, valid.fills[2]] }, code: 'generation_invalid_completion_patch' },
+      { patch: { ...valid, fills: [valid.fills[0], { ...valid.fills[1], pointer: '/consensus/Overview' }, valid.fills[2]] }, code: 'generation_invalid_completion_patch' },
+      { patch: { ...valid, data: { consensus: '覆寫' } }, code: 'generation_invalid_completion_patch' },
+      { patch: { ...valid, operation: 'replace' }, code: 'generation_invalid_completion_patch' },
+      { patch: { ...valid, fills: [valid.fills[0], { ...valid.fills[1], value: '覆寫' }, valid.fills[2]] }, code: 'generation_invalid_completion_patch' },
+      { patch: badGroup, code: 'generation_cross_candidate_citation' },
+      { patch: badOverview, code: 'generation_cross_candidate_citation' },
+      { patch: unknownEvidence, code: 'generation_unknown_evidence' },
+      { patch: noEvidence, code: 'generation_invalid_schema' },
+      { patch: emptyText, code: 'generation_invalid_schema' },
+      { patch: { ...valid, fills: [valid.fills[0], { ...valid.fills[1], sentences: [] }, valid.fills[2]] }, code: 'generation_invalid_schema' },
+      { patch: { ...valid, fills: [valid.fills[0], { ...valid.fills[1], sentences: [{ text: '沒有來源' }] }, valid.fills[2]] }, code: 'generation_invalid_schema' },
+      { patch: { ...valid, fills: [valid.fills[0], { ...valid.fills[1], sentences: [{ ...valid.fills[1].sentences[0], extra: true }] }, valid.fills[2]] }, code: 'generation_invalid_schema' },
+    ]
+    for (const { patch, code } of tests) {
+      await expect(parseCompletionResponse(completion(patch), plan, input)).rejects.toThrow(code)
+      expect(GENERATION_VALIDATION_CODES).toContain(code)
+      expect({ draft, plan }).toEqual(original)
+    }
+  })
+
+  it('綁定 primary、目標、完整 base 與語言／來源 context，任何舊工件不能重放', async () => {
+    const { sections, draft, plan } = await missingFieldsFixture()
+    const changedDraft = structuredClone(draft)
+    changedDraft.data.consensus.items[0].Title = '被更改'
+    await expect(prepareDraftCompletion(changedDraft, sections, { consensus: 'completed', disputes: 'completed', positions: 'completed' }, input)).rejects.toThrow('generation_invalid_completion_plan')
+    await expect(prepareDraftCompletion(draft, sections, { consensus: 'failed', disputes: 'completed', positions: 'completed' }, input)).rejects.toThrow('generation_invalid_completion_plan')
+    const altered = structuredClone(plan)
+    altered.base.data.consensus.items[0].Title = '被更改'
+    expect(() => buildCompletionRequest(altered, input)).toThrow('generation_completion_base_mismatch')
+    await expect(parseCompletionResponse(completion(completionPatch(plan)), altered, input)).rejects.toThrow('generation_completion_base_mismatch')
+    const alteredTargets = structuredClone(plan)
+    alteredTargets.targets[1].evidence_ids.push('e3')
+    expect(() => buildCompletionRequest(alteredTargets, input)).toThrow('generation_completion_base_mismatch')
+    expect(() => buildCompletionRequest(plan, { ...input, language: 'en' })).toThrow('generation_context_mismatch')
+    await expect(parseCompletionResponse(completion(completionPatch(plan)), plan, { ...input, language: 'ja' })).rejects.toThrow('generation_context_mismatch')
+    const renamedSources = sources.map(source => source.id === 25 ? { ...source, source_name: '新名稱' } : source)
+    expect(() => buildCompletionRequest(plan, { ...input, sources: renamedSources })).toThrow('generation_context_mismatch')
+  })
+
+  it('三語狀態文案參與 pipeline 及每個 section 的 context 指紋', async () => {
+    const { plan } = await missingFieldsFixture()
+    const baseline = await pipelineSettings()
+    const catalog = englishMessages as unknown as Record<string, string>
+    const original = catalog.ai_overview_failed
+    try {
+      catalog.ai_overview_failed = `${original} changed`
+      expect((await pipelineSettings()).hashes.config).not.toBe(baseline.hashes.config)
+      const generated = await parseGemmaResponse('disputes', completion(disputeOutput()), input)
+      expect(generated.context_hash).not.toBe(plan.context_hash)
+      expect(() => buildCompletionRequest(plan, input)).toThrow('generation_context_mismatch')
+    } finally {
+      catalog.ai_overview_failed = original
+    }
+  })
+
+  it('即使重新計算 base hash，目標清單也必須由 null 值和原有引用重新推導', async () => {
+    const { plan } = await missingFieldsFixture()
+    const forged = structuredClone(plan)
+    forged.targets[1].evidence_ids.push('e3')
+    const stable = JSON.stringify({ context_hash: forged.context_hash, base: forged.base, targets: forged.targets, status_overviews: forged.status_overviews }, (_key, value: unknown) => {
+      if (value === null || typeof value !== 'object' || Array.isArray(value)) return value
+      const object = value as Record<string, unknown>
+      return Object.fromEntries(Object.keys(object).sort().map(key => [key, object[key]]))
+    })
+    forged.base_hash = createHash('sha256').update(stable, 'utf8').digest('hex')
+    expect(() => buildCompletionRequest(forged, input)).toThrow('generation_invalid_completion_plan')
+    await expect(parseCompletionResponse(completion(completionPatch(forged)), forged, input)).rejects.toThrow('generation_invalid_completion_plan')
+  })
+
+  it('補完請求使用相同 byte 上限，過大時拒絕而不截斷既有內容', async () => {
+    const positions = positionsOutput()
+    positions.items[0].opinions[0].description = [cited('長'.repeat(30_000), 'e1', 'e2')]
+    const sections = await Promise.all([
+      parseGemmaResponse('consensus', completion(consensusOutput()), input),
+      parseGemmaResponse('disputes', completion(disputeOutput()), input),
+      parseGemmaResponse('positions', completion(positions), input),
+    ])
+    const draft = await assembleGeneratedDraft(sections, input)
+    const plan = await prepareDraftCompletion(draft, sections, { consensus: 'completed', disputes: 'completed', positions: 'completed' }, input)
+    expect(() => buildCompletionRequest(plan, input)).toThrow(ModelContextLimitError)
+    expect(plan.base.data.positions.items[0].opinions[0].description).toHaveLength(30_000)
+  })
+
+  it('三語空分區的三種處理狀態由程式產生，不偽造引用，也不用呼叫模型', async () => {
+    for (const language of ['zh-TW', 'en', 'ja'] as const) {
+      const localizedInput = { ...input, language }
+      const empty = { Overview: null, items: [], rejected_candidates: [{ candidate_id: candidateId, reason: '不足' }] }
+      const section = await parseGemmaResponse('consensus', completion(empty), localizedInput)
+      const draft = await assembleGeneratedDraft([section], localizedInput)
+      const plan = await prepareDraftCompletion(draft, [section], { consensus: 'no_findings', disputes: 'failed', positions: 'not_started' }, localizedInput)
+      expect(plan.targets).toEqual([])
+      expect(plan.status_overviews).toEqual([
+        { section: 'consensus', pointer: '/consensus/Overview', kind: 'status', status: 'no_findings', origin: 'program' },
+        { section: 'disputes', pointer: '/disputes/Overview', kind: 'status', status: 'failed', origin: 'program' },
+        { section: 'positions', pointer: '/positions/Overview', kind: 'status', status: 'not_started', origin: 'program' },
+      ])
+      expect(() => buildCompletionRequest(plan, localizedInput)).toThrow('generation_completion_not_needed')
+      const final = await finalizeDraftCompletion(plan, localizedInput)
+      expect(final.data.consensus.Overview).toBe(statusOverview('consensus', 'no_findings', language))
+      expect(final.data.disputes.Overview).toBe(statusOverview('disputes', 'failed', language))
+      expect(final.data.positions.Overview).toBe(statusOverview('positions', 'not_started', language))
+      expect(final.citation_map).toEqual([])
+      expect(draft.data.consensus.Overview).toBeNull()
+      const emptyOutputs: Record<GenerationSection, unknown> = {
+        consensus: empty,
+        disputes: { Overview: null, items: [] },
+        positions: { Overview: null, items: [], exclusions: evidence.map(item => ({ evidence_id: item.id, reason: '不足' })) },
+      }
+      for (const sectionName of ['consensus', 'disputes', 'positions'] as const) {
+        for (const state of ['no_findings', 'failed', 'not_started'] as const) {
+          const primary = state === 'no_findings' ? [await parseGemmaResponse(sectionName, completion(emptyOutputs[sectionName]), localizedInput)] : []
+          const states: SectionStates = { consensus: 'not_started', disputes: 'not_started', positions: 'not_started' }
+          states[sectionName] = state
+          const emptyDraft = await assembleGeneratedDraft(primary, localizedInput)
+          const emptyPlan = await prepareDraftCompletion(emptyDraft, primary, states, localizedInput)
+          const emptyFinal = await finalizeDraftCompletion(emptyPlan, localizedInput)
+          expect(emptyFinal.data[sectionName].Overview).toBe(statusOverview(sectionName, state, language))
+          expect(emptyPlan.status_overviews.find(item => item.section === sectionName)).toMatchObject({ status: state, origin: 'program' })
+          expect(emptyFinal.citation_map).toEqual([])
+        }
+      }
+    }
+  })
+
+  it('完整 primary 直接完成，保留所有引用且不發出補完請求', async () => {
+    const positions = positionsOutput()
+    const fullPositions = { ...positions, items: positions.items.map(item => ({ ...item, Core_concern: [cited('關注方案一。', 'e1')] })) }
+    const sections = await Promise.all([
+      parseGemmaResponse('consensus', completion(consensusOutput()), input),
+      parseGemmaResponse('disputes', completion(disputeOutput()), input),
+      parseGemmaResponse('positions', completion(fullPositions), input),
+    ])
+    const draft = await assembleGeneratedDraft(sections, input)
+    const plan = await prepareDraftCompletion(draft, sections, { consensus: 'completed', disputes: 'completed', positions: 'completed' }, input)
+    expect(plan.targets).toEqual([])
+    expect(plan.status_overviews).toEqual([])
+    expect(() => buildCompletionRequest(plan, input)).toThrow('generation_completion_not_needed')
+    await expect(parseCompletionResponse(completion({ base_hash: plan.base_hash, fills: [] }), plan, input)).rejects.toThrow('generation_completion_not_needed')
+    const final = await finalizeDraftCompletion(plan, input)
+    expect(final).toEqual(draft)
+    expect(final.data.positions.items[0].Core_concern).toBe('關注方案一。')
+  })
+
+  it('補完沿用 stop、拒答、工具呼叫及單一完整 JSON 外框規則', async () => {
+    const { plan } = await missingFieldsFixture()
+    const patch = completionPatch(plan)
+    const fenced = completion(patch)
+    fenced.choices[0].message.content = ` \r\n\`\`\`json\r\n${JSON.stringify(patch)}\r\n\`\`\`\r\n`
+    await expect(parseCompletionResponse(fenced, plan, input)).resolves.toMatchObject({ data: { disputes: { Overview: '😀補完0。另一句！' } } })
+    const invalidFence = completion(patch)
+    invalidFence.choices[0].message.content = `說明\n\`\`\`json\n${JSON.stringify(patch)}\n\`\`\``
+    await expect(parseCompletionResponse(invalidFence, plan, input)).rejects.toThrow('generation_invalid_json')
+    const truncated = completion(patch)
+    truncated.choices[0].finish_reason = 'length'
+    await expect(parseCompletionResponse(truncated, plan, input)).rejects.toThrow('generation_incomplete_completion')
+    const refusal = completion(patch)
+    ;(refusal.choices[0].message as Record<string, unknown>).refusal = 'refused'
+    await expect(parseCompletionResponse(refusal, plan, input)).rejects.toThrow('generation_refusal_or_invalid_message')
+    const tools = completion(patch)
+    ;(tools.choices[0].message as Record<string, unknown>).tool_calls = [{ id: 'tool' }]
+    await expect(parseCompletionResponse(tools, plan, input)).rejects.toThrow('generation_refusal_or_invalid_message')
   })
 })

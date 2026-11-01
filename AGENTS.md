@@ -564,6 +564,8 @@ npx wrangler d1 migrations apply vtaiwan-civic-talks --remote   # 🚫 需先取
 - 完成度須分別記錄本機 runtime、遠端唯讀來源查核、真實模型呼叫及人工語意／OAuth 驗收；不得把 fixture／單元測試當作真實模型或人工驗收。
 - 新版管線依序執行 Gemma 共識／爭點／立場地圖三個專項，使用同一份已驗證證據與比較資料，不串接摘要；只在共識保留直接支持候選限制，爭點可提出明示類型的張力，立場允許多證據重新分群。不得恢復單次生成或單條立場枚舉 fallback。
 - 各項獨立記帳、驗證與保存；`diagnostics.generation.sections` 區分 completed／no_findings／failed／not_started，進行中另看 `generation_progress`。partial 不代表失敗空段沒有爭點；來源 fence、停權、去重及禁止自動重試仍適用。
+- 最終三段 Overview 與每組 Core_concern 均須非空；Core_concern 可依明示主張有據綜整，不推測動機。三項後僅在有內容的必填仍為 null 時，最多一輪 Gemma 白名單補完，不能改已有值、來源、順序或舊引用。空／失敗／未啟動分區的 Overview 由程式以三語狀態文字明示，不偽造來源結論或 citation。
+- 補完獨立預留／結算且仍屬同一工作，進度可為 completion；無缺值不付費，必要補完失敗不交付缺值草稿。原始分項、舊結果、unknown 費用與 tombstone 不覆寫；不新增第五輪、自動重試或格式修復。真實模型補完品質須另經付費／人工驗收，不以合成 provider 證據取代。
 - Clef `symmetric-four-way-v2` 以共同問題／條件校準四分類，不追求特定分布；`scripts/evidence-clef-calibration.mjs` 只做已人工核可資料的離線對照，不呼叫模型，也不能證明人工核可／hash 的來源。新版真實模型與人工語義品質尚待驗收，不以合成 SQLite／HTTP smoke 取代。
 
 

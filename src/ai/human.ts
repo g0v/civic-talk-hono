@@ -9,10 +9,6 @@ function nonempty(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0
 }
 
-function nullableText(value: unknown): boolean {
-  return value === null || nonempty(value)
-}
-
 function opinion(value: unknown): boolean {
   return exactObject(value, ['Title', 'description']) && nonempty(value.Title) && nonempty(value.description)
 }
@@ -22,13 +18,13 @@ export function validateHumanData(value: unknown, materials: MaterialSource[]): 
   if (!exactObject(value, ['consensus', 'disputes', 'positions'])) return false
   for (const field of ['consensus', 'disputes'] as const) {
     const section = value[field]
-    if (!exactObject(section, ['Overview', 'items']) || !nullableText(section.Overview) || !Array.isArray(section.items) || !section.items.every(opinion)) return false
+    if (!exactObject(section, ['Overview', 'items']) || !nonempty(section.Overview) || !Array.isArray(section.items) || !section.items.every(opinion)) return false
   }
   const positions = value.positions
-  if (!exactObject(positions, ['Overview', 'items']) || !nullableText(positions.Overview) || !Array.isArray(positions.items)) return false
+  if (!exactObject(positions, ['Overview', 'items']) || !nonempty(positions.Overview) || !Array.isArray(positions.items)) return false
   const sources = new Map(materials.map(material => [material.id, sourceFor(material)]))
   return positions.items.every(item => {
-    if (!exactObject(item, ['name', 'Sources', 'Core_concern', 'opinions']) || !nonempty(item.name) || !nullableText(item.Core_concern) || !Array.isArray(item.Sources) || !Array.isArray(item.opinions) || !item.opinions.every(opinion)) return false
+    if (!exactObject(item, ['name', 'Sources', 'Core_concern', 'opinions']) || !nonempty(item.name) || !nonempty(item.Core_concern) || !Array.isArray(item.Sources) || !Array.isArray(item.opinions) || !item.opinions.every(opinion)) return false
     return item.Sources.every(source => {
       if (!exactObject(source, ['Title', 'href', 'material_id']) || !Number.isSafeInteger(source.material_id)) return false
       const expected = sources.get(source.material_id as number)

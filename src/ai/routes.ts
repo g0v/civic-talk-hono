@@ -11,7 +11,7 @@ import { readMaterialStatuses, readSourceInput, sha256, SOURCE_NAMESPACE, Source
 import { EvidenceStore, type ExecutionStatus, type InputManifest } from './store'
 
 export type EvidenceApp = Hono<{ Bindings: EvidenceBindings }>
-const CONSENT_VERSION = 'evidence-processing-2026-10-29-v1'
+const CONSENT_VERSION = 'evidence-processing-2026-11-02-v2'
 const BODY_LIMIT = 256 * 1024
 
 class RequestProblem extends Error {
@@ -114,16 +114,37 @@ function generationProgress(events: unknown[], status: ExecutionStatus, errorCod
   const sections = Object.fromEntries(GENERATION_SECTIONS.map(section => [
     section, { status: 'pending', reason: null as string | null, artifact_id: null as string | null, raw_artifact_id: null as string | null },
   ])) as Record<GenerationSection, { status: string; reason: string | null; artifact_id: string | null; raw_artifact_id: string | null }>
-  let currentSection: GenerationSection | null = null
+  let currentSection: GenerationSection | 'completion' | null = null
+  let completion: { status: string; reason: string | null; artifact_id: string | null; raw_artifact_id: string | null } = {
+    status: 'pending', reason: null, artifact_id: null, raw_artifact_id: null,
+  }
   let estimatedMicroUsd: number | null = null
   let present = false
   for (const event of events) {
-    if (!object(event) || event.stage !== 'generation') continue
+    if (!object(event)) continue
+    if (event.stage === 'completion') {
+      present = true
+      if (event.phase === 'started') {
+        currentSection = 'completion'
+        completion.status = 'running'
+      }
+      if (event.phase === 'finished' && object(event.outcome) && ['completed', 'not_needed', 'failed', 'not_started'].includes(String(event.outcome.status))) {
+        completion = {
+          status: String(event.outcome.status),
+          reason: typeof event.outcome.reason === 'string' ? event.outcome.reason : null,
+          artifact_id: typeof event.outcome.artifact_id === 'string' ? event.outcome.artifact_id : null,
+          raw_artifact_id: typeof event.outcome.raw_artifact_id === 'string' ? event.outcome.raw_artifact_id : null,
+        }
+        if (currentSection === 'completion') currentSection = null
+      }
+      continue
+    }
+    if (event.stage !== 'generation') continue
     present = true
     if (event.phase === 'planned' && typeof event.estimated_micro_usd === 'number') estimatedMicroUsd = event.estimated_micro_usd
     if (event.phase === 'started' && GENERATION_SECTIONS.includes(event.section as GenerationSection)) {
       currentSection = event.section as GenerationSection
-      sections[currentSection].status = 'running'
+      sections[event.section as GenerationSection].status = 'running'
     }
     if (event.phase === 'finished' && object(event.outcome) && GENERATION_SECTIONS.includes(event.outcome.section as GenerationSection)) {
       const outcome = event.outcome
@@ -146,9 +167,14 @@ function generationProgress(events: unknown[], status: ExecutionStatus, errorCod
         sections[section].reason = errorCode
       }
     }
+    if (completion.status === 'pending' || completion.status === 'running') {
+      completion.status = completion.status === 'running' ? 'failed' : 'not_started'
+      completion.reason = errorCode
+    }
     currentSection = null
   }
-  return { current_section: currentSection, estimated_micro_usd: estimatedMicroUsd, sections }
+  if ((status === 'ai_draft' || status === 'partial_draft') && completion.status === 'pending') completion.status = 'not_started'
+  return { current_section: currentSection, estimated_micro_usd: estimatedMicroUsd, sections, completion }
 }
 
 export function registerEvidenceRoutes(app: EvidenceApp): void {

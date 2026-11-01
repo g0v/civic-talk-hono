@@ -169,12 +169,12 @@ vp run dev
 
 ## #183 隔離本機證據實驗：真實議題驗收手冊
 
-**目前管線：** Clairic 逐素材抽取 → Clef 四分類比較 → Gemma 依序執行共識、爭點、立場地圖三次專項生成 → 驗證後組裝。三項共用同一份已驗證證據／比較資料，不以前項摘要代替來源；一般站與 BYO token 流程不變。Clef prompt 為 `symmetric-four-way-v2`，Gemma prompt／schema 為 `specialized-evidence-v2`／`specialized-cited-v1`。三項 v1 的真實工作已有回應但未通過格式驗證；使用者已核准本輪只辨識完整單一 JSON 外框並強化提示。**v2 尚未新增付費呼叫或通過真實模型／人工語義驗收**，離線重播不會改變原失敗工作。
+**目前管線：** Clairic 逐素材抽取 → Clef 四分類比較 → Gemma 依序執行共識、爭點、立場地圖三項生成 → 必要時單輪「只補缺值」→ 驗證組裝。三項共用已驗證證據／比較資料，不以前項摘要代替來源；一般站與 BYO token 不變。Clef prompt 為 `symmetric-four-way-v2`，Gemma primary prompt／schema 為 `specialized-evidence-v3`／`specialized-cited-v1`，補完為 `missing-fields-only-v1`／`cited-field-patches-v1`。使用者回報前版草稿品質改善，但 Overview／Core_concern 仍有 null；**本輪 v3 補完尚未新增真實付費呼叫或通過人工語義驗收**，舊工作與結果不會被自動回填。
 
 
 本節是操作步驟，不代表未執行的 runtime／OAuth／模型／人工品質案例已通過。實驗 API 只會在明確 opt-in 的專用本機 remote-dev 入口註冊；`DB`、Workflow 與工件留在本機隔離目錄，`SOURCE_DB` 連遠端業務 D1、程式只用來源 SELECT，`DB_AUTH` 僅供 Better Auth 正常 OAuth／session 生命週期（此為唯一預期遠端 auth 寫入），`AI` 使用平台 Cloudflare Workers AI。遠端 D1 binding 並非資料庫唯讀 credential；不得對 `SOURCE_DB` 執行任何寫入或 migration，也不得對 `DB_AUTH` 建表、migration 或直接 SQL 寫入。
 
-一般志願者內容生成維持 BYO AI token 與既有 synthesis prompt API；實驗不寫入既有 briefing、不改議題狀態、不自動發布。Cloudflare Workers AI 的費用由平台帳號承擔；US$5／日是應用程式估算預留，不是 Cloudflare 帳單硬上限。
+一般志願者內容生成維持 BYO AI token 與既有 synthesis prompt API；實驗不寫入既有 briefing、不改議題狀態、不自動發布。Workers AI 由平台帳號計費；三項後若必要欄位仍缺值，最多另付一次 Gemma 補完費，沒有缺值就不呼叫。補完也受同一工作／日額度、預留及未知費用政策約束，US$5／日不是 Cloudflare 帳單硬上限。處理告知版本為 `evidence-processing-2026-11-02-v2`，請先確認同意這項條件式成本。
 
 **狀態：INITIAL DRAFT AWAITING REAL SMOKE/ACCEPTANCE；不可合併。** 真實 OAuth、付費三模型流程及獨立人工語義品質尚未驗收；自動測試與合成 smoke 不能替代它們。按下列編號手冊操作前，先由人工確認此分支、費用、來源與隱私風險；本草稿也尚未解決一般 migration 目錄的誤用風險。
 
@@ -442,7 +442,7 @@ while [ "$i" -lt 30 ]; do
 done
 ```
 
-若 30 次後仍在執行，記下當下 status／section 並停止；三個生成專項依序執行，可能超過這次等待時間。可稍後重新執行同一 job ID 的 GET 輪詢區塊，不重送 POST，也不假設在途 provider request 已取消。只有 `ai_draft`／`partial_draft` 才檢視草稿；`failed` 應連同 `error_code`、分項進度與 usage 記錄，`withdrawn`／`erased` 不可再展示內容。
+若 30 次後仍在執行，記下 status／section 並停止；三個專項與可能的補完可超過這次等待時間，`section=completion` 表示最終缺值補完階段（進度包含規劃／驗證，不保證一定新增付費呼叫）。可稍後重跑同一 job ID 的 GET 輪詢，不重送 POST，也不假設在途 provider request 已取消。只有 `ai_draft`／`partial_draft` 才檢視草稿；`failed` 應連同 `error_code`、分項／補完進度與 usage 記錄，`withdrawn`／`erased` 不可再展示內容。
 快取驗證的精確重複 POST 與 GET usage ledger 前後比較見第 6 節；僅在第一工作已完成為 draft 且來源／設定未變時執行。
 若輪詢因網路、HTTP 或 JSON 錯誤而停止，不要檢視可能留在磁碟上的舊 `JOB_JSON`，也不要重送 POST；先依本機錯誤與帳務狀態人工判斷。
 
@@ -484,6 +484,10 @@ esac
      generation_sections: (.generation.sections // {} | with_entries(.value |= {
        status, reason, artifact_id, raw_artifact_id, validation_code
      })),
+     generation_completion: (.generation.completion | if type == "object" then {
+       status, reason, validation_code, artifact_id, raw_artifact_id, targets
+     } else null end),
+     status_overviews: (.generation.status_overviews // []),
      candidate_paths: .comparisons.candidate_paths,
      incomplete_pairs: .comparisons.incomplete_pairs,
      unclassified_evidence_ids: .comparisons.unclassified_evidence_ids
@@ -563,11 +567,15 @@ Gemma 每個專項採與 `../pocket-polis/src/sensemaking.ts` 的 `runAiModel()`
 
 共識模型輸入與輸出都使用 `candidate_id`，不可拿 evidence ID 代替；爭點以 sides 表示各側，立場以 `group_id`／`evidence_ids` 提交新分群，不再受原本單條立場候選限制。組裝仍維持既有 data 三分區與 citation pointers；各分項的 context hash 須符合相同來源、證據、比較、語言與設定。分項工件及原生回應只留隔離本機 D1，Workflows checkpoint 不帶正文。
 
-`Overview` 採最佳努力生成：有項目時提示中性概括已採用內容，每句只能引用這些項目已使用的證據；沒有項目時必須為 null。有項目但無可靠概述仍可為 null，不因單獨缺概述拒收可讀分項，也不自動補寫。共識概述只能是共同命題，不能把歧見搬進概述；立場概述不宣稱共識，`Core_concern` 證據不足仍可為 null。
+新版最終三類 `Overview` 與每組 `Core_concern` 都必須是非空字串。Overview 只概括所屬已採用內容並引用其證據；共識不得把歧見搬進概述，立場概述不宣稱共識。Core_concern 可從群內明示主張作有引用支持的綜整，但不猜作者動機、人格或未表達價值。primary 的 null 只作中間值，不能直接交付新版最終草稿。
 
-非 null 的 Overview 必須使用句子物件陣列，例如 `[{"text":"單句概述","evidence_ids":["既有證據ID"]}]`；即使只有一句也要保留外層陣列，兩句則各用一個物件。v2 提示明列單句物件的錯誤對照，並要求 items 為空時 Overview 必須為 null；解析器仍拒絕單一 Overview 物件、text 陣列或無項目可支持的概述，不會自動搬動欄位、包成陣列、刪掉概述或推測逐句引用。
+primary 非 null 的 Overview／Core_concern 仍須用句子物件陣列，例如 `[{"text":"單句概述","evidence_ids":["既有證據ID"]}]`；單句也不能省略陣列。空 items 的 primary Overview 仍須 null，不允許模型為空清單編造概述；最終改由程式依 no_findings／failed／not_started 填入明確狀態文字，透過 `.diagnostics.generation.status_overviews` 的 `origin:"program"`／`kind:"status"` 標示，沒有虛假 citation，也不代表素材不存在相關觀點。
 
-Clef 題目、三份 Gemma prompt／schema、組裝政策及所有語言的實際 builder 都納入設定指紋，新工作不誤用舊的一次生成工件。在途舊設定工作若遇程式設定改變會明確停止，不自動換新版重打；已完成的舊草稿與未知費用／tombstone 保留。新版三項分別原子預留、結算與去重；不因拆成三項而把一個工作算成三次帳號日配額，也不宣稱整條管線費用必然乘三。新指紋不代表退款或品質改善；重新送出是可能付費的新工作，仍需明確同意。
+有內容的 Overview 或 Core_concern 仍為 null 時，程式保存不可改的 base hash 與精確指標／證據白名單，最多增加一次 Gemma 補完。回應僅為 `{base_hash,fills:[{pointer,sentences:[{text,evidence_ids}]}]}`，不允許整份 data 重寫。未知／重複／缺漏指標、已有值覆寫、額外欄位、錯 base、空值或錯群／缺引用全部拒收；所有 patch 驗完才套用，既有文字、來源、順序與引用保持原樣，只為新值附加計算後的 citation ranges。
+
+沒有缺值時 `.diagnostics.generation.completion.status` 為 `not_needed`，不啟動補完模型。有缺值卻因 provider／schema／引用／context／預算失敗，工作會 failed、不交付仍缺必填的 data，但保留可用分項工件及費用；不再補第五次或重試。補完完成的 status 為 `completed`，診斷含 targets、原始與驗證工件 ID；機器進度另看 `.generation_progress.completion`，原 `.generation_progress.sections` 仍只有三個專項。
+
+Clef、三份 primary 與補完 prompt／schema、組裝政策、三語狀態文字及實際 builder 都納入設定指紋。在途舊設定工作遇設定變更會停止，不自動換版重打；已完成舊稿、未知費用與 tombstone 保留。各付費步驟獨立預留、結算與去重，補完嘗試鍵為 `complete:draft`，仍算同一個新工作日配額。新指紋不代表退款或品質改善；重新送出可能付費，仍須明確同意，不得清空狀態繞過額度。
 
 `Source.Title` 取自 `ct_materials.source_name`，缺值才用素材 ID；來源表沒有 material title 欄，不以原文預覽或 AI 衍生標題替代。`source_hash` 是固定順序 metadata+content JSON 的 UTF-8 SHA-256，`content_hash` 是原始 content UTF-8 bytes 的 SHA-256；原文不 trim、不正規化。空白正文不會被省略，會以 `422 empty_material` 拒絕。
 
@@ -663,7 +671,7 @@ printf '%s\n' 'Same job/cache hit; GET usage ledger unchanged'
 快取命中不應扣新工作配額；此 HTTP 比較直接觀察的是同工作與 usage ledger，不能單憑它證明完整配額實作。配額／冷卻邊界另參照第 7 節的隔離自動測試，不為示範而燒滿額度或重建狀態。
 
 
-先取得 AI 基底，再於本機複製並人工編輯 `data`，不要覆寫 AI 原稿：
+先取得 AI 基底，再於本機複製並人工編輯 `data`，不要覆寫 AI 原稿。人改提交的三類 Overview 與每組 Core_concern 也須非空；含 null 的舊稿仍可只讀，但提交修訂前須人工補齊，不會在保存人改時暗中呼叫模型：
 
 ```bash
 REV_JSON="$PWD/.wrangler/ai-experiment/revisions.json"
@@ -710,7 +718,7 @@ jq '{error}' "$STALE_JSON"
 
 - 未登入 `401`、停權 `403`、輸入格式／language 錯誤 `400`、request body 過大 `413`、不存在／撤下／空內容／超過 64 份素材／單份 48 KiB 或總正文 512 KiB 上限 `422`、過時 revision `409`、帳號每日 20 次新工作名額或同議題 5 分鐘冷卻 `429`、每日 US$5 估算預留用盡 `503`。排隊／執行中的工作先占每日名額；已開始、結算或費用未知的 provider attempt 即使工作失敗仍計入名額與保留費用。若工作在付費 attempt 開始前終止，名額及同議題冷卻可釋放。64 份是單次實驗輸入上限，不是 #11.1 待辦的議題投稿上限；抽取後證據超過 64 段會以工作 `status:"failed"`／`error_code:"too_many_evidence"` 診斷，不會任意裁切。工作中非同步錯誤從 GET 的 `status`、`error_code`、`usage.uncertain` 與 diagnostics 查；來源失聯時 fail closed，不取回舊快照正文或自動重送付費呼叫。
 - **Provider 失敗診斷：** 新版會在仍可寫入的隔離本機工件保存 `stage:"provider"`，包含 `step_key`、固定模型 selector、白名單 `error_name`、訊息開頭的數字 `provider_code`、例外本身明確提供的數字 `http_status`（400–599）及固定分類 `category`。分類只辨識 `json_mode_unmet`、`timeout`、`aborted`，其他為 `unknown`，不是供應商根因的保證；SDK 沒提供的 HTTP 狀態保持 `null`，不把 provider code 猜成 HTTP 狀態。不保存原始訊息、stack、cause、request、prompt、素材或 Cookie。診斷寫入失敗只輸出固定的 `evidence_provider_diagnostic_unavailable`，仍保留原 `provider_error` 與未知費用。舊工作無法補回已丟棄的例外；本次改動不變更模型設定或快取鍵，也不會自動重跑失敗工作。不要為取得診斷清空狀態、修改舊工作或任意變更語言／設定；新的最小重現工作仍需另外明確同意素材與平台費用。
-- **生成內容驗證失敗：** `invalid_generation` 表示已有模型回應，但本站未接受為草稿。三項生成的 `stage:"generation"`／`phase:"finished"` 診斷在 `outcome.validation_code` 保存白名單子碼；完成的 partial 草稿則在 `diagnostics.generation.sections.<專項>.validation_code`。例如 `generation_invalid_candidate`、`generation_insufficient_group_citations`、`generation_invalid_json` 或 `generation_incomplete_completion`；非白名單例外為 null，不輸出原始錯誤訊息或模型內文。這不同於 provider 呼叫例外，也不是 session 失效；內容不合格即使工作失敗，也不退回已回報用量的費用。
+- **生成內容驗證失敗：** `invalid_generation` 表示已有回應但本站未接受為草稿。三項的 `stage:"generation"` 與補完的 `stage:"completion"`／`phase:"finished"` 在 `outcome.validation_code` 保存固定子碼；完成草稿另看 `.diagnostics.generation.sections.<專項>` 與 `.diagnostics.generation.completion`。補完可能有 `generation_invalid_completion_patch`、`generation_completion_base_mismatch`、`generation_incomplete_draft`；非白名單例外保持 null，不輸出原始錯誤或模型內文。這不同於 provider 例外，也不是 session 失效；格式不合格不退回已回報用量費用。
 
 失敗後可從已保存的 `JOB_JSON` 只讀取安全摘要，不再送 POST：
 
@@ -723,17 +731,22 @@ jq '{
     | {step_key, model_selector, error_name, provider_code, http_status, category}
   ],
   generation_errors: (if (.diagnostics | type) == "array" then [
-    .diagnostics[] | select(.stage == "generation")
+    .diagnostics[] | select(.stage == "generation" or .stage == "completion") | . as $event
     | if (.outcome | type) == "object" then .outcome
       | select(.status == "failed" or .status == "not_started")
-      | {section, status, reason, validation_code}
+      | {section: (.section // (if $event.stage == "completion" then "completion" else null end)),
+         status, reason, validation_code}
       else select(.code != null) | {code, validation_code} end
-  ] elif (.diagnostics | type) == "object" then [
+  ] elif (.diagnostics | type) == "object" then ([
     (.diagnostics.generation.sections // {} | to_entries[])
     | select(.value.status == "failed" or .value.status == "not_started")
     | {section: .key, status: .value.status, reason: .value.reason,
        validation_code: .value.validation_code}
-  ] else [] end),
+  ] + [
+    .diagnostics.generation.completion // empty
+    | select(.status == "failed" or .status == "not_started")
+    | {section: "completion", status, reason, validation_code}
+  ]) else [] end),
   usage: {
     attempts: .usage.attempts, uncertain: .usage.uncertain,
     reservedMicroUsd: .usage.reservedMicroUsd, actualMicroUsd: .usage.actualMicroUsd

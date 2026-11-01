@@ -2,7 +2,7 @@ import type { WorkflowStep } from 'cloudflare:workers'
 import type { EvidenceBindings } from './env'
 import { analyzeComparisons, createEvidencePairs, type ComparisonAnalysis, type ComparisonFailure, type DirectComparison } from './comparison'
 import { extractClairicEvidence, MAX_EVIDENCE, type Evidence, type EvidenceExtraction } from './evidence'
-import { assembleGeneratedDraft, buildGemmaRequest, GENERATION_SECTIONS, GENERATION_VALIDATION_CODES, parseGemmaResponse, pipelineSettings, type GeneratedSection, type GenerationInput, type GenerationSection, type GemmaRequest } from './generation'
+import { assembleGeneratedDraft, buildCompletionRequest, buildGemmaRequest, finalizeDraftCompletion, GEMMA_PARAMETERS, GENERATION_SECTIONS, GENERATION_VALIDATION_CODES, parseCompletionResponse, parseGemmaResponse, pipelineSettings, prepareDraftCompletion, type CompletedDraft, type DraftCompletionPlan, type GeneratedSection, type GenerationInput, type GenerationSection, type GemmaRequest, type SectionStates } from './generation'
 import { checkInitiator, checkedSnapshot, SourceUnavailable } from './lifecycle'
 import { buildClairicRequest, buildClefBatches, modelUsageStatus, ModelContextLimitError, parseClairicResponse, parseClefResponse, type ClefBatch, type ModelRequest } from './models'
 import { actualCallCost, estimateCall, requestProvenance, type ModelSelector } from './pricing'
@@ -38,6 +38,16 @@ type SectionOutcome = {
   validation_code: string | null
 }
 type SectionArtifact = { stage: 'generation_section'; raw_artifact_id: string; result: GeneratedSection }
+type CompletionPlanArtifact = { stage: 'completion_plan'; plan: DraftCompletionPlan }
+type CompletionArtifact = { stage: 'completion_result'; plan_artifact_id: string; raw_artifact_id: string | null; result: CompletedDraft }
+type CompletionOutcome = {
+  status: 'not_needed' | 'completed' | 'failed' | 'not_started'
+  reason: ErrorCode | null
+  validation_code: string | null
+  artifact_id: string | null
+  raw_artifact_id: string | null
+  targets: string[]
+}
 
 class PipelineStop extends Error {
   constructor(readonly code: ErrorCode) { super(code) }
@@ -101,6 +111,10 @@ function providerErrorDiagnostic(error: unknown) {
     http_status: typeof detail.status === 'number' && Number.isInteger(detail.status) && detail.status >= 400 && detail.status <= 599 ? detail.status : null,
     category: name === 'TimeoutError' ? 'timeout' : name === 'AbortError' ? 'aborted' : message.includes("JSON Mode couldn't be met") ? 'json_mode_unmet' : 'unknown',
   }
+}
+
+function generationValidationCode(error: unknown): string | null {
+  return error instanceof Error && GENERATION_VALIDATION_CODES.includes(error.message) ? error.message : null
 }
 
 /** 每一 provider 呼叫有自己的不可重試 step 與已持久化的付費嘗試。 */
@@ -194,8 +208,8 @@ export async function runEvidenceWorkflow(env: EvidenceBindings, jobId: string, 
     }
     const materialIds = materials(initial).map(material => material.id)
     const sourceCount = initial.sources.length
-    const extractionProjection = materialIds.length * (sourceCount + 8) + 180
-    if (extractionProjection > MAX_PROJECTED_SUBREQUESTS || materialIds.length + 12 > MAX_WORKFLOW_STEPS) {
+    const extractionProjection = materialIds.length * (sourceCount + 8) + 220
+    if (extractionProjection > MAX_PROJECTED_SUBREQUESTS || materialIds.length + 16 > MAX_WORKFLOW_STEPS) {
       const snapshot = await current(env, jobId)
       await save(env, snapshot, 'diagnostics', { code: 'workflow_limit', projected_subrequests: extractionProjection, limit: MAX_PROJECTED_SUBREQUESTS })
       throw new PipelineStop('workflow_limit')
@@ -263,9 +277,9 @@ export async function runEvidenceWorkflow(env: EvidenceBindings, jobId: string, 
       const snapshot = await current(env, jobId)
       try {
         const batches = buildClefBatches(extraction.evidence, createEvidencePairs(extraction.evidence))
-        const projection = extractionProjection + batches.length * (sourceCount + 8) + 8 * (sourceCount + 12) + 80
-        if (projection > MAX_PROJECTED_SUBREQUESTS || materialIds.length + batches.length + 12 > MAX_WORKFLOW_STEPS) {
-          await save(env, snapshot, 'diagnostics', { code: 'workflow_limit', projected_subrequests: projection, projected_steps: materialIds.length + batches.length + 12, limit: MAX_PROJECTED_SUBREQUESTS })
+        const projection = extractionProjection + batches.length * (sourceCount + 8) + 12 * (sourceCount + 12) + 80
+        if (projection > MAX_PROJECTED_SUBREQUESTS || materialIds.length + batches.length + 16 > MAX_WORKFLOW_STEPS) {
+          await save(env, snapshot, 'diagnostics', { code: 'workflow_limit', projected_subrequests: projection, projected_steps: materialIds.length + batches.length + 16, limit: MAX_PROJECTED_SUBREQUESTS })
           await finishFailure(env, jobId, 'workflow_limit')
           return { status: 'failed', artifactId: null }
         }
@@ -432,30 +446,149 @@ export async function runEvidenceWorkflow(env: EvidenceBindings, jobId: string, 
       await save(env, snapshot, 'diagnostics', { stage: 'generation', phase: 'finished', outcome })
       outcomes.push(outcome)
     }
+    // 若失敗診斷已落盤但 checkpoint／狀態尚未提交，重放不得再次嘗試補完。
+    const completionEvents = await store.listArtifacts(job.executionId, 'diagnostics')
+    let previousCompletion: CompletionOutcome | undefined
+    for (const item of completionEvents) {
+      const event = item.payload as { stage?: string; phase?: string; outcome?: CompletionOutcome } | null
+      if (event?.stage === 'completion' && event.phase === 'finished') previousCompletion = event.outcome
+    }
+    if (previousCompletion?.status === 'failed') {
+      await finishFailure(env, jobId, previousCompletion.reason ?? 'invalid_generation')
+      return { status: 'failed' }
+    }
+
+    const plannedCompletion = await step.do('plan-completion', NO_RETRIES, async (): Promise<ArtifactRef> => {
+      const snapshot = await current(env, jobId, true)
+      const sections: GeneratedSection[] = []
+      for (const outcome of outcomes) {
+        if (outcome.artifact_id) sections.push((await artifact<SectionArtifact>(env, snapshot.executionId, outcome.artifact_id)).result)
+      }
+      if (sections.length === 0) {
+        await finishFailure(env, jobId, outcomes.find(item => item.status === 'failed')?.reason ?? outcomes.find(item => item.reason)?.reason ?? 'invalid_generation')
+        return { status: 'failed', artifactId: null }
+      }
+      await save(env, snapshot, 'diagnostics', { stage: 'completion', phase: 'started' })
+      const saved = (await store.listArtifacts(snapshot.executionId, 'generation'))
+        .find(item => (item.payload as Partial<CompletionPlanArtifact> | null)?.stage === 'completion_plan')
+      if (saved) return { status: 'ok', artifactId: saved.id }
+      let plan: DraftCompletionPlan
+      try {
+        const input = generationInput(snapshot)
+        const draft = await assembleGeneratedDraft(sections, input)
+        const states = Object.fromEntries(outcomes.map(outcome => [outcome.section, outcome.status])) as SectionStates
+        plan = await prepareDraftCompletion(draft, sections, states, input)
+      } catch (error) {
+        if (error instanceof PipelineStop || error instanceof SourceUnavailable) throw error
+        const outcome: CompletionOutcome = {
+          status: 'failed', reason: 'invalid_generation', validation_code: generationValidationCode(error),
+          artifact_id: null, raw_artifact_id: null, targets: [],
+        }
+        await save(env, snapshot, 'diagnostics', { stage: 'completion', phase: 'finished', outcome })
+        await finishFailure(env, jobId, outcome.reason!)
+        return { status: 'failed', artifactId: null }
+      }
+      const artifactId = await save(env, snapshot, 'generation', { stage: 'completion_plan', plan } satisfies CompletionPlanArtifact)
+      return { status: 'ok', artifactId }
+    })
+    if (plannedCompletion.status !== 'ok' || !plannedCompletion.artifactId) return { status: 'failed' }
+    const completionPlanId = plannedCompletion.artifactId
+    const completionPlan = await artifact<CompletionPlanArtifact>(env, job.executionId, completionPlanId)
+    const targets = completionPlan.plan.targets.map(target => target.pointer)
+    let completionRawId: string | null = null
+    if (targets.length) {
+      const completionPaid = await step.do('complete-draft', NO_RETRIES, async (): Promise<PaidResult | ArtifactRef> => {
+        const snapshot = await current(env, jobId, true)
+        let result: PaidResult
+        let validationCode: string | null = null
+        try {
+          result = await paid(env, jobId, 'complete:draft', async live => {
+            const saved = await artifact<CompletionPlanArtifact>(env, live.executionId, completionPlanId)
+            return buildCompletionRequest(saved.plan, generationInput(live))
+          }, GEMMA_PARAMETERS.max_tokens)
+        } catch (error) {
+          if (error instanceof ModelContextLimitError) {
+            await recordLimit(env, jobId, error)
+            result = { status: 'workflow_limit', artifactId: null }
+          } else {
+            validationCode = generationValidationCode(error)
+            if (!validationCode) throw error
+            const outcome: CompletionOutcome = { status: 'failed', reason: 'invalid_generation', validation_code: validationCode, artifact_id: null, raw_artifact_id: null, targets }
+            await save(env, snapshot, 'diagnostics', { stage: 'completion', phase: 'finished', outcome })
+            await finishFailure(env, jobId, outcome.reason!)
+            return { status: 'failed', artifactId: null }
+          }
+        }
+        if (result.status === 'source_unavailable') throw new PipelineStop('source_unavailable')
+        if (result.status !== 'ok' || !result.artifactId) {
+          const reason = result.status === 'budget_exhausted' || result.status === 'workflow_limit' || result.status === 'provider_uncertain'
+            ? result.status : 'provider_error'
+          const outcome: CompletionOutcome = { status: 'failed', reason, validation_code: validationCode, artifact_id: null, raw_artifact_id: null, targets }
+          await save(env, snapshot, 'diagnostics', { stage: 'completion', phase: 'finished', outcome })
+          await finishFailure(env, jobId, reason)
+        }
+        return result
+      })
+      if (completionPaid.status !== 'ok' || !completionPaid.artifactId) return { status: 'failed' }
+      completionRawId = completionPaid.artifactId
+    }
+    const completed = await step.do('validate-completion', NO_RETRIES, async (): Promise<ArtifactRef> => {
+      const snapshot = await current(env, jobId, true)
+      const savedPlan = await artifact<CompletionPlanArtifact>(env, snapshot.executionId, completionPlanId)
+      const existing = (await store.listArtifacts(snapshot.executionId, 'generation')).find(item => {
+        const payload = item.payload as Partial<CompletionArtifact> | null
+        return payload?.stage === 'completion_result' && payload.plan_artifact_id === completionPlanId && payload.raw_artifact_id === completionRawId
+      })
+      let artifactId = existing?.id ?? null
+      if (!artifactId) {
+        let result: CompletedDraft
+        try {
+          const input = generationInput(snapshot)
+          result = completionRawId
+            ? await parseCompletionResponse((await artifact<RawPayload>(env, snapshot.executionId, completionRawId)).response, savedPlan.plan, input)
+            : await finalizeDraftCompletion(savedPlan.plan, input)
+        } catch (error) {
+          if (error instanceof PipelineStop || error instanceof SourceUnavailable) throw error
+          const outcome: CompletionOutcome = {
+            status: 'failed', reason: 'invalid_generation', validation_code: generationValidationCode(error),
+            artifact_id: null, raw_artifact_id: completionRawId, targets,
+          }
+          await save(env, snapshot, 'diagnostics', { stage: 'completion', phase: 'finished', outcome })
+          await finishFailure(env, jobId, outcome.reason!)
+          return { status: 'failed', artifactId: null }
+        }
+        artifactId = await save(env, snapshot, 'generation', { stage: 'completion_result', plan_artifact_id: completionPlanId, raw_artifact_id: completionRawId, result } satisfies CompletionArtifact)
+      }
+      const outcome: CompletionOutcome = {
+        status: completionRawId ? 'completed' : 'not_needed', reason: null, validation_code: null,
+        artifact_id: artifactId, raw_artifact_id: completionRawId, targets,
+      }
+      await save(env, snapshot, 'diagnostics', { stage: 'completion', phase: 'finished', outcome })
+      return { status: 'ok', artifactId }
+    })
+    if (completed.status !== 'ok' || !completed.artifactId) return { status: 'failed' }
     return await step.do('assemble-generation', NO_RETRIES, async () => {
       const snapshot = await current(env, jobId, true)
       const sections: GeneratedSection[] = []
       for (const outcome of outcomes) {
-        if (outcome.artifact_id) {
-          const saved = await artifact<SectionArtifact>(env, snapshot.executionId, outcome.artifact_id)
-          sections.push(saved.result)
-        }
+        if (outcome.artifact_id) sections.push((await artifact<SectionArtifact>(env, snapshot.executionId, outcome.artifact_id)).result)
       }
-      if (sections.length === 0) {
-        await finishFailure(env, jobId, outcomes.find(item => item.status === 'failed')?.reason ?? outcomes.find(item => item.reason)?.reason ?? 'invalid_generation')
-        return { status: 'failed' }
-      }
-      const draft = await assembleGeneratedDraft(sections, generationInput(snapshot))
+      const draft = (await artifact<CompletionArtifact>(env, snapshot.executionId, completed.artifactId!)).result
+      const plan = (await artifact<CompletionPlanArtifact>(env, snapshot.executionId, completionPlanId)).plan
       const partial = comparison.partial || sections.length !== GENERATION_SECTIONS.length
       const sectionDiagnostics = Object.fromEntries(outcomes.map(outcome => [
         outcome.section, { ...outcome, details: sections.find(section => section.section === outcome.section)?.diagnostics ?? null },
       ]))
+      const completion: CompletionOutcome = {
+        status: completionRawId ? 'completed' : 'not_needed', reason: null, validation_code: null,
+        artifact_id: completed.artifactId, raw_artifact_id: completionRawId, targets,
+      }
       const payload = {
         ...draft,
         verification: 'ai_unverified',
         diagnostics: {
           coverage: extraction.coverage, partial, comparisons: comparison.analysis,
-          generation: { sections: sectionDiagnostics, estimated_micro_usd: generationPlan.estimated_micro_usd },
+          generation: { sections: sectionDiagnostics, completion, status_overviews: plan.status_overviews, estimated_micro_usd: generationPlan.estimated_micro_usd },
         },
         provenance: {
           input_manifest: snapshot.manifest,
@@ -463,7 +596,10 @@ export async function runEvidenceWorkflow(env: EvidenceBindings, jobId: string, 
           comparison_artifact_id: compared.artifactId,
           generation_plan_artifact_id: plannedGeneration.artifactId,
           generation_sections: outcomes.map(({ section, artifact_id, raw_artifact_id }) => ({ section, artifact_id, raw_artifact_id })),
-          raw_artifact_ids: [...extraction.raw_artifact_ids, ...comparison.raw_artifact_ids, ...outcomes.flatMap(item => item.raw_artifact_id ? [item.raw_artifact_id] : [])],
+          completion_plan_artifact_id: completionPlanId,
+          completion_artifact_id: completed.artifactId,
+          completion_raw_artifact_id: completionRawId,
+          raw_artifact_ids: [...extraction.raw_artifact_ids, ...comparison.raw_artifact_ids, ...outcomes.flatMap(item => item.raw_artifact_id ? [item.raw_artifact_id] : []), ...(completionRawId ? [completionRawId] : [])],
         },
       }
       const id = await save(env, snapshot, 'generation', payload)

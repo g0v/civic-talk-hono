@@ -150,3 +150,13 @@
 - 兩個合法完整外框的回歸案例於修改前均失敗；修改後保留混雜文字、畸形 JSON、欄位錯誤及引用錯誤的拒絕測試。用未修改的真實 raw completions 執行新版解析，結果為立場有效、共識及爭點仍 generation_invalid_schema；只組裝有效立場可通過，原工作仍 failed。這證明只拆外框、不修欄位；不是新增真實模型工作或人工語義驗收。
 - README 的安全診斷指令改為讀取各分項 outcome.validation_code，並支援 partial 草稿內的分項失敗，避免只讀舊的頂層 validation_code 而漏掉原因。不輸出來源正文或模型內文。
 - 本輪完整驗證通過：`vp check --no-fmt --no-lint` 為 155 files、零型別錯誤；`vp test` 為 52 test files／475 tests 全通過；`vp run build` 成功，仍有既有 client chunk 大於 500 kB 警告，建置 metadata 為 dirty、未發布。README 診斷 jq 已以實際保存的 failed 回應驗證可列出三項錯誤，並以合成 partial 回應驗證只輸出失敗項的機器欄位；bash 語法、本機連結與 fenced blocks 亦通過。本輪未 commit／push／部署，未建立新付費工作，也不以這些離線結果宣稱 v2 真實模型品質通過。
+
+## 2026-11-02：最終必填與條件式缺值補完
+
+- 使用者回報三項生成比前版改善，但爭點 Overview 與立場 Core_concern 仍為 null。只讀最新已保存 ai_draft，觀察到共識 2 項、爭點 1 項、立場 2 組：爭點概述缺值，兩組核心關注皆缺值；沒有重送 POST、呼叫真實模型或修改既有工作。
+- 使用者核准最多一輪 Gemma 補完，明確禁止更動已有值，允許 Core_concern 從群內明示主張有據綜整；空／失敗／未啟動分區則採程式產生的明確狀態 Overview，不當作素材結論、不附虛假 citation。
+- primary prompt 為 specialized-evidence-v3，nullable specialized-cited-v1 僅作中間契約；最終 Overview／Core_concern 均為非空，人改保存亦同。補完採 missing-fields-only-v1／cited-field-patches-v1，只回傳精確目標的句子 patch；驗證 base/context、白名單完整性與各群引用後才套用，原值／來源／順序／既有引用不改。
+- 工作流另存 completion_plan／completion_result 與原始回應，嘗試鍵 complete:draft，獨立預留及結算但不扣第二個新工作名額；沒有缺值時 not_needed，不呼叫補完。必要補完失敗或額度／context 不足則 failed，不交付仍缺必填的 data，也不自動第五次補完；未知費用與來源／帳號 fence 沿用。
+- 獨立 Node 執行實際 runEvidenceWorkflow 與 SQLite repository、使用記憶體 DB 與合成 provider，通過七個場景：三個缺值一次補齊、全部已填跳過、空段狀態跳過、非法覆寫拒收、部分 primary 失敗保留 partial、缺 usage 保留 unknown 預留、補完回應前清除來源後維持 erased 且沒有 payload 復活。成功場景逐一確認既有值與舊 citation map 不變、完成後重用工作不再呼叫模型、checkpoint 不含正文。這不是原生 Workflow 重啟、真實模型品質或 OAuth 驗收。
+- 完整檢查通過：vp check --no-fmt --no-lint 為 157 files、零型別錯誤；vp test 為 53 files／515 tests 全過；vp run build 成功，保留既有 client chunk 大於 500 kB 警告，metadata 為 dirty、未發布。本輪未 commit／push／部署、未執行 migration 或遠端寫入，也未新增真實付費呼叫。既有結果檔與帳本保留；真實補完內容與人工語義品質仍待下次明確授權實驗。
+- README 29 個 bash 區塊通過語法檢查；安全摘要／錯誤 jq 分別以已保存前版草稿、合成補完失敗 array、partial object、缺 diagnostics 共八個組合執行，補完錯誤可見且不洩露測試私密欄位；本機文件連結核對通過。現有 localhost:5173 實驗入口的匿名 GET 回 401，沒有帶 Cookie、建立工作或呼叫模型；不代表登入驗收。已保存真實 job.json 的 SHA-256 前後相同。

@@ -2,6 +2,12 @@ export const messages = {
   site_tagline: '公共議題審議平台',
   back_to_issues: '← 返回所有議題',
   loading: '載入中…',
+  ai_overview_section_consensus: '共識',
+  ai_overview_section_disputes: '爭點',
+  ai_overview_section_positions: '立場地圖',
+  ai_overview_no_findings: '本次未整理出經驗證的「{section}」項目。這是本次處理狀態，不代表相關觀點不存在。',
+  ai_overview_failed: '「{section}」分項生成或驗證失敗，尚無可用的內容概述。這是處理狀態，不是素材結論。',
+  ai_overview_not_started: '「{section}」分項尚未啟動，尚無可用的內容概述。這是處理狀態，不是素材結論。',
   // 送出鈕在請求進行中的共用文案（#97）
   submitting_pending: '資料處理中，請稍候…',
   cancel: '取消',
