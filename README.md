@@ -169,7 +169,7 @@ vp run dev
 
 ## #183 隔離本機證據實驗：真實議題驗收手冊
 
-**目前管線：** Clairic 逐素材抽取 → Clef 四分類比較 → Gemma 依序執行共識、爭點、立場地圖三次專項生成 → 驗證後組裝。三項共用同一份已驗證證據／比較資料，不以前項摘要代替來源；一般站與 BYO token 流程不變。Clef prompt 為 `symmetric-four-way-v2`，Gemma prompt／schema 為 `specialized-evidence-v1`／`specialized-cited-v1`。新版已完成離線合成流程驗證，**尚未新增真實模型呼叫或通過新版人工語義驗收**；舊版成功草稿不能當作新版品質證據。
+**目前管線：** Clairic 逐素材抽取 → Clef 四分類比較 → Gemma 依序執行共識、爭點、立場地圖三次專項生成 → 驗證後組裝。三項共用同一份已驗證證據／比較資料，不以前項摘要代替來源；一般站與 BYO token 流程不變。Clef prompt 為 `symmetric-four-way-v2`，Gemma prompt／schema 為 `specialized-evidence-v2`／`specialized-cited-v1`。三項 v1 的真實工作已有回應但未通過格式驗證；使用者已核准本輪只辨識完整單一 JSON 外框並強化提示。**v2 尚未新增付費呼叫或通過真實模型／人工語義驗收**，離線重播不會改變原失敗工作。
 
 
 本節是操作步驟，不代表未執行的 runtime／OAuth／模型／人工品質案例已通過。實驗 API 只會在明確 opt-in 的專用本機 remote-dev 入口註冊；`DB`、Workflow 與工件留在本機隔離目錄，`SOURCE_DB` 連遠端業務 D1、程式只用來源 SELECT，`DB_AUTH` 僅供 Better Auth 正常 OAuth／session 生命週期（此為唯一預期遠端 auth 寫入），`AI` 使用平台 Cloudflare Workers AI。遠端 D1 binding 並非資料庫唯讀 credential；不得對 `SOURCE_DB` 執行任何寫入或 migration，也不得對 `DB_AUTH` 建表、migration 或直接 SQL 寫入。
@@ -489,7 +489,10 @@ esac
      unclassified_evidence_ids: .comparisons.unclassified_evidence_ids
    } else (if type == "array" then map({
      stage, phase, code, validation_code, step_key, model_selector,
-     error_name, provider_code, http_status, category
+     error_name, provider_code, http_status, category,
+     outcome: (if (.outcome | type) == "object" then .outcome | {
+       section, status, reason, validation_code
+     } else null end)
    }) else [] end) end)
  }' "$JOB_JSON"
  jq '{attempts: .usage.attempts, uncertain: .usage.uncertain,
@@ -546,7 +549,9 @@ printf '私有審閱結果已保存：%s\n' "$REVIEW_JSON"
 
 若 provider 用量欄位缺失或格式錯誤，`usage.uncertain`／用量狀態會保留未知結算，預留額度不當成零費用釋放；不因單獨用量缺漏抹除已通過其他 schema／來源驗證的答案。provider 回報的 `model` 名稱只是字串 metadata，不是不可變權重 revision。這些欄位不是 Cloudflare 帳單核對結果，每次真實驗收仍須另記證據。
 
-Gemma 每個專項採與 `../pocket-polis/src/sensemaking.ts` 的 `runAiModel()` 相同的最小原生文字生成參數：`messages`、`max_tokens:8192`、`temperature:0.2`、`chat_template_kwargs.enable_thinking:false`；不送 `response_format/json_schema`。各項 JSON Schema 與格式例放入可信的 system prompt，不宣稱 provider 保證遵循。每項獨立預留輸入及最大輸出成本、保存回應並驗證；截斷、拒答、工具呼叫、Markdown 包裝或引用不符只拒收該項，不自動修補或重試。原生完成可省略 refusal 或回傳 null，明示非 null 仍拒絕。
+Gemma 每個專項採與 `../pocket-polis/src/sensemaking.ts` 的 `runAiModel()` 相同的最小原生文字生成參數：`messages`、`max_tokens:8192`、`temperature:0.2`、`chat_template_kwargs.enable_thinking:false`；不送 `response_format/json_schema`。各項 JSON Schema 與格式例放入可信的 system prompt，不宣稱 provider 保證遵循。每項獨立預留輸入及最大輸出成本、保存回應並驗證；截斷、拒答、工具呼叫、非法 JSON 或引用不符只拒收該項，不自動修補或重試。原生完成可省略 refusal 或回傳 null，明示非 null 仍拒絕。
+
+**完整單一外框例外（使用者已核准）：** 除原始 JSON 外，也接受整份回應恰好是單一三反引號 code fence，語言標記僅可省略或為小寫 `json`；開閉符各自獨立一行，可有外側空白與 CRLF。程式只拆外框，裡面仍須是完整合法 JSON 並通過原 schema／引用守門。前後說明、多個或未閉合外框、其他語言標記、JSON 尾逗號及相連多份 JSON 一律拒絕，不從混雜文字猜取片段。原始回應保持不變；解析政策 `plain-or-single-json-fence-v1` 納入設定與 context 指紋。
 
 三項的整理責任與診斷如下；它們不是把原本的大型請求重送三遍：
 
@@ -560,7 +565,7 @@ Gemma 每個專項採與 `../pocket-polis/src/sensemaking.ts` 的 `runAiModel()`
 
 `Overview` 採最佳努力生成：有項目時提示中性概括已採用內容，每句只能引用這些項目已使用的證據；沒有項目時必須為 null。有項目但無可靠概述仍可為 null，不因單獨缺概述拒收可讀分項，也不自動補寫。共識概述只能是共同命題，不能把歧見搬進概述；立場概述不宣稱共識，`Core_concern` 證據不足仍可為 null。
 
-非 null 的 Overview 必須使用句子物件陣列，例如 `[{"text":"單句概述","evidence_ids":["既有證據ID"]}]`；即使只有一句也要保留外層陣列，兩句則各用一個物件。不能改成單一物件，也不能把 `text` 寫成字串陣列。Prompt 提供明確格式示例，但解析器仍嚴格驗證，不會自動搬動欄位、串接 `text` 陣列或推測逐句引用。
+非 null 的 Overview 必須使用句子物件陣列，例如 `[{"text":"單句概述","evidence_ids":["既有證據ID"]}]`；即使只有一句也要保留外層陣列，兩句則各用一個物件。v2 提示明列單句物件的錯誤對照，並要求 items 為空時 Overview 必須為 null；解析器仍拒絕單一 Overview 物件、text 陣列或無項目可支持的概述，不會自動搬動欄位、包成陣列、刪掉概述或推測逐句引用。
 
 Clef 題目、三份 Gemma prompt／schema、組裝政策及所有語言的實際 builder 都納入設定指紋，新工作不誤用舊的一次生成工件。在途舊設定工作若遇程式設定改變會明確停止，不自動換新版重打；已完成的舊草稿與未知費用／tombstone 保留。新版三項分別原子預留、結算與去重；不因拆成三項而把一個工作算成三次帳號日配額，也不宣稱整條管線費用必然乘三。新指紋不代表退款或品質改善；重新送出是可能付費的新工作，仍需明確同意。
 
@@ -705,7 +710,7 @@ jq '{error}' "$STALE_JSON"
 
 - 未登入 `401`、停權 `403`、輸入格式／language 錯誤 `400`、request body 過大 `413`、不存在／撤下／空內容／超過 64 份素材／單份 48 KiB 或總正文 512 KiB 上限 `422`、過時 revision `409`、帳號每日 20 次新工作名額或同議題 5 分鐘冷卻 `429`、每日 US$5 估算預留用盡 `503`。排隊／執行中的工作先占每日名額；已開始、結算或費用未知的 provider attempt 即使工作失敗仍計入名額與保留費用。若工作在付費 attempt 開始前終止，名額及同議題冷卻可釋放。64 份是單次實驗輸入上限，不是 #11.1 待辦的議題投稿上限；抽取後證據超過 64 段會以工作 `status:"failed"`／`error_code:"too_many_evidence"` 診斷，不會任意裁切。工作中非同步錯誤從 GET 的 `status`、`error_code`、`usage.uncertain` 與 diagnostics 查；來源失聯時 fail closed，不取回舊快照正文或自動重送付費呼叫。
 - **Provider 失敗診斷：** 新版會在仍可寫入的隔離本機工件保存 `stage:"provider"`，包含 `step_key`、固定模型 selector、白名單 `error_name`、訊息開頭的數字 `provider_code`、例外本身明確提供的數字 `http_status`（400–599）及固定分類 `category`。分類只辨識 `json_mode_unmet`、`timeout`、`aborted`，其他為 `unknown`，不是供應商根因的保證；SDK 沒提供的 HTTP 狀態保持 `null`，不把 provider code 猜成 HTTP 狀態。不保存原始訊息、stack、cause、request、prompt、素材或 Cookie。診斷寫入失敗只輸出固定的 `evidence_provider_diagnostic_unavailable`，仍保留原 `provider_error` 與未知費用。舊工作無法補回已丟棄的例外；本次改動不變更模型設定或快取鍵，也不會自動重跑失敗工作。不要為取得診斷清空狀態、修改舊工作或任意變更語言／設定；新的最小重現工作仍需另外明確同意素材與平台費用。
-- **生成內容驗證失敗：** `invalid_generation` 表示已有模型回應，但本站未接受為草稿。新版在 `stage:"generation"` 的 diagnostics 另保存白名單 `validation_code`，例如 `generation_invalid_candidate`、`generation_insufficient_group_citations`、`generation_invalid_json` 或 `generation_incomplete_completion`；非白名單例外為 null，不輸出原始錯誤訊息或模型內文。這與 `stage:"provider"` 的呼叫例外不同；內容不合格即使工作失敗，也不會退回已回報用量的費用。
+- **生成內容驗證失敗：** `invalid_generation` 表示已有模型回應，但本站未接受為草稿。三項生成的 `stage:"generation"`／`phase:"finished"` 診斷在 `outcome.validation_code` 保存白名單子碼；完成的 partial 草稿則在 `diagnostics.generation.sections.<專項>.validation_code`。例如 `generation_invalid_candidate`、`generation_insufficient_group_citations`、`generation_invalid_json` 或 `generation_incomplete_completion`；非白名單例外為 null，不輸出原始錯誤訊息或模型內文。這不同於 provider 呼叫例外，也不是 session 失效；內容不合格即使工作失敗，也不退回已回報用量的費用。
 
 失敗後可從已保存的 `JOB_JSON` 只讀取安全摘要，不再送 POST：
 
@@ -717,11 +722,18 @@ jq '{
     | select(.stage == "provider")
     | {step_key, model_selector, error_name, provider_code, http_status, category}
   ],
-  generation_errors: [
-    (.diagnostics | if type == "array" then .[] else empty end)
-    | select(.stage == "generation")
-    | {code, validation_code}
-  ],
+  generation_errors: (if (.diagnostics | type) == "array" then [
+    .diagnostics[] | select(.stage == "generation")
+    | if (.outcome | type) == "object" then .outcome
+      | select(.status == "failed" or .status == "not_started")
+      | {section, status, reason, validation_code}
+      else select(.code != null) | {code, validation_code} end
+  ] elif (.diagnostics | type) == "object" then [
+    (.diagnostics.generation.sections // {} | to_entries[])
+    | select(.value.status == "failed" or .value.status == "not_started")
+    | {section: .key, status: .value.status, reason: .value.reason,
+       validation_code: .value.validation_code}
+  ] else [] end),
   usage: {
     attempts: .usage.attempts, uncertain: .usage.uncertain,
     reservedMicroUsd: .usage.reservedMicroUsd, actualMicroUsd: .usage.actualMicroUsd

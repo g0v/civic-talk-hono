@@ -389,13 +389,70 @@ describe('Gemma 專項輸出與出處', () => {
     }
   })
 
-  it('三段各自拒絕截斷、拒答、工具呼叫及非原始 JSON', async () => {
+  it('完整單一 json 外框可解析，保留 CRLF、引用與字串內的反引號，不改寫原回應', async () => {
+    const output = positionsOutput()
+    output.items[0].opinions[0].description = [cited('文字可提及 ```json，不能因此截斷。', 'e1', 'e2')]
+    const response = completion(output)
+    delete (response.choices[0].message as Record<string, unknown>).refusal
+    const wrapped = ` \r\n\`\`\`json\r\n${JSON.stringify(output)}\r\n\`\`\`\t\r\n`
+    response.choices[0].message.content = wrapped
+    const result = await parseGemmaResponse('positions', response, input)
+    if (result.section !== 'positions') throw new Error('unexpected section')
+    expect(result.data.items[0].opinions[0].description).toBe('文字可提及 ```json，不能因此截斷。')
+    expect(result.data.items[0].Sources.map(source => source.material_id)).toEqual([25, 26])
+    expect(result.citation_map.find(entry => entry.pointer === '/positions/items/0/opinions/0/description')?.evidence_ids).toEqual(['e1', 'e2'])
+    expect(response.choices[0].message.content).toBe(wrapped)
+  })
+
+  it('無語言標記的完整單一外框可保留合法的空分區', async () => {
+    const response = completion({ Overview: null, items: [] })
+    response.choices[0].message.content = `\`\`\`\n${response.choices[0].message.content}\n\`\`\``
+    const result = await parseGemmaResponse('disputes', response, input)
+    expect(result.data).toEqual({ Overview: null, items: [] })
+    expect(result.citation_map).toEqual([])
+  })
+
+  it('拒絕外框前後說明、多個／未閉合外框、其他語言及不合法 JSON，不猜測可用片段', async () => {
+    const body = JSON.stringify({ Overview: null, items: [] })
+    for (const content of [
+      `說明\n\`\`\`json\n${body}\n\`\`\``,
+      `\`\`\`json\n${body}\n\`\`\`\n說明`,
+      `\`\`\`json\n${body}\n\`\`\`\n\`\`\`json\n${body}\n\`\`\``,
+      `\`\`\`json\n${body}`,
+      `\`\`\`json\n${body}\n\`\`\`\``,
+      `\`\`\`javascript\n${body}\n\`\`\``,
+      `\`\`\`json\n${body}${body}\n\`\`\``,
+      '```json\n{"Overview":null,"items":[],}\n```',
+    ]) {
+      const response = completion(null)
+      response.choices[0].message.content = content
+      await expect(parseGemmaResponse('disputes', response, input)).rejects.toThrow('generation_invalid_json')
+    }
+  })
+
+  it('完整外框內仍拒絕單句概述物件、空清單附概述及未知引用，不正規化欄位', async () => {
+    const objectOverview = completion({ ...consensusOutput(), Overview: cited('共同方向。', 'e1', 'e2') })
+    objectOverview.choices[0].message.content = `\`\`\`json\n${objectOverview.choices[0].message.content}\n\`\`\``
+    await expect(parseGemmaResponse('consensus', objectOverview, input)).rejects.toThrow('generation_invalid_schema')
+    const emptyWithOverview = completion({ Overview: [cited('沒有項目可供支持。', 'e1')], items: [] })
+    emptyWithOverview.choices[0].message.content = `\`\`\`json\n${emptyWithOverview.choices[0].message.content}\n\`\`\``
+    await expect(parseGemmaResponse('disputes', emptyWithOverview, input)).rejects.toThrow('generation_invalid_schema')
+    const output = positionsOutput()
+    output.items[0].opinions[0].description[0].evidence_ids = ['unknown']
+    const unknown = completion(output)
+    unknown.choices[0].message.content = `\`\`\`json\n${unknown.choices[0].message.content}\n\`\`\``
+    await expect(parseGemmaResponse('positions', unknown, input)).rejects.toThrow('generation_unknown_evidence')
+  })
+
+  it('三段各自拒絕截斷、拒答與工具呼叫', async () => {
     const fixtures: Record<GenerationSection, unknown> = { consensus: consensusOutput(), disputes: disputeOutput(), positions: positionsOutput() }
     for (const section of ['consensus', 'disputes', 'positions'] as const) {
       const native = completion(fixtures[section])
       const message: Record<string, unknown> = native.choices[0].message
       delete message.refusal
-      expect((await parseGemmaResponse(section, native, input)).citation_map.length).toBeGreaterThan(0)
+      const nativeResult = await parseGemmaResponse(section, native, input)
+      const pointer = `/${section}/items/0/${section === 'positions' ? 'name' : 'Title'}`
+      expect(nativeResult.citation_map.find(entry => entry.pointer === pointer)?.sources.map(source => source.material_id)).toEqual(section === 'disputes' ? [25, 27] : [25])
       for (const reason of ['length', 'content_filter', 'tool_calls', 'unknown', '']) {
         const response = completion(fixtures[section])
         response.choices[0].finish_reason = reason
@@ -408,9 +465,6 @@ describe('Gemma 專項輸出與出處', () => {
       refusalMessage.refusal = null
       refusalMessage.tool_calls = [{ id: 'unexpected' }]
       await expect(parseGemmaResponse(section, refusal, input)).rejects.toThrow('generation_refusal_or_invalid_message')
-      const fenced = completion(fixtures[section])
-      fenced.choices[0].message.content = '```json\n{}\n```'
-      await expect(parseGemmaResponse(section, fenced, input)).rejects.toThrow('generation_invalid_json')
       await expect(parseGemmaResponse(section, { ...completion(fixtures[section]), truncated: true }, input)).rejects.toThrow('generation_invalid_completion')
       await expect(parseGemmaResponse(section, { ...completion(fixtures[section]), model: null }, input)).rejects.toThrow('generation_invalid_completion')
     }

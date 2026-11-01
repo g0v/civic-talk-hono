@@ -139,3 +139,14 @@
 - `vp run build` 通過：client／Worker 均成功，保留既有 client chunk 大於 500 kB 警告；來源 metadata 為 dirty，未將此建置當發布版本。
 - README 的 29 個 bash 區塊通過語法檢查；新版安全 jq 摘要在 object／array／缺失 diagnostics 下均可執行，並確認排除來源正文、state_mapping 及分項私有 details。文件本機連結、章節引用與 fenced blocks 核對通過。
 - canonical `http://localhost:5173` 的實際專用 Worker 匿名 smoke：`GET /api/me`、`POST /api/issues/13/evidence-jobs`、`GET /api/evidence-jobs/<UUID>` 全部 401；未帶 Cookie、未建立工作、未觸發來源讀取或模型呼叫。這只確認實際入口載入與未登入守門，不是 authenticated pipeline／OAuth 驗收。
+
+## 2026-11-02：三項皆正常完成但被 JSON 格式拒收
+
+- 使用者回報輪詢依序經過 consensus、disputes、positions，最後 failed。本輪只讀最新本機 job 與保存工件，沒有重送 POST、使用 Cookie、呼叫模型或改變工作。錯誤為 invalid_generation，三項均 generation_invalid_json；三份原生完成皆 stop，內容各自是完整單一 JSON code fence。不是登入 session 失效，section 為空只代表沒有正在執行的生成專項。
+- 該工作帳本 attempts 12、actual 6,124 microUSD、unknown／reserved 均零；是應用結算紀錄，不是 Cloudflare 帳單核對，也不退款其他工作的未知費用。
+- 僅在記憶體拆外框後，立場段通過 schema／引用並可組裝；共識仍因 Overview 為單句物件而非陣列拒收，爭點則因空 items 附非空 Overview 拒收。後者雖符合 JSON Schema 的 nullable 類型，仍違反概述只能引用已採用項目的契約。原回應與 failed 狀態均保留，不把離線反事實驗證寫成成功草稿。
+- 使用者明確選擇「只處理完整單一外框，並強化提示」，未授權概述正規化或清掉不合格欄位。解析器只接受原始 JSON，或整份回應恰好是一個標記省略／小寫 json 的三反引號外框；開閉各獨立一行，可有外側空白與 CRLF。前後說明、多個／未閉合外框、其他語言、非法 JSON 均拒絕；不掃描尋找看似可用的 JSON。
+- Gemma prompt 改為 specialized-evidence-v2，schema 維持 specialized-cited-v1；明列敘述欄位的句子陣列形狀、單句 Overview 正誤對照、空 items 必須 null Overview，並區分識別碼／排除理由的原 schema 型別。完成解析政策 plain-or-single-json-fence-v1 納入設定與 context 指紋；不改模型、原生參數或舊工件／帳本。
+- 兩個合法完整外框的回歸案例於修改前均失敗；修改後保留混雜文字、畸形 JSON、欄位錯誤及引用錯誤的拒絕測試。用未修改的真實 raw completions 執行新版解析，結果為立場有效、共識及爭點仍 generation_invalid_schema；只組裝有效立場可通過，原工作仍 failed。這證明只拆外框、不修欄位；不是新增真實模型工作或人工語義驗收。
+- README 的安全診斷指令改為讀取各分項 outcome.validation_code，並支援 partial 草稿內的分項失敗，避免只讀舊的頂層 validation_code 而漏掉原因。不輸出來源正文或模型內文。
+- 本輪完整驗證通過：`vp check --no-fmt --no-lint` 為 155 files、零型別錯誤；`vp test` 為 52 test files／475 tests 全通過；`vp run build` 成功，仍有既有 client chunk 大於 500 kB 警告，建置 metadata 為 dirty、未發布。README 診斷 jq 已以實際保存的 failed 回應驗證可列出三項錯誤，並以合成 partial 回應驗證只輸出失敗項的機器欄位；bash 語法、本機連結與 fenced blocks 亦通過。本輪未 commit／push／部署，未建立新付費工作，也不以這些離線結果宣稱 v2 真實模型品質通過。
