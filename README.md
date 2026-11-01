@@ -553,6 +553,10 @@ printf '私有審閱結果已保存：%s\n' "$REVIEW_JSON"
 
 若 provider 用量欄位缺失或格式錯誤，`usage.uncertain`／用量狀態會保留未知結算，預留額度不當成零費用釋放；不因單獨用量缺漏抹除已通過其他 schema／來源驗證的答案。provider 回報的 `model` 名稱只是字串 metadata，不是不可變權重 revision。這些欄位不是 Cloudflare 帳單核對結果，每次真實驗收仍須另記證據。
 
+Clairic 抽取提示 `claims-list-v2` 明確要求逐段全面涵蓋重要論點／觀點、風險、挑戰及建議，包含後段與少數／反向觀點，保留必要條件、限定與轉述歸屬。仍是一素材一個 state、一次呼叫、單一 `claims` list；按原文順序擷取連續 exact spans，再由程式擴展完整句子，不改寫、不拼接跨段文字，不強制最低筆數或每段一筆。沒有明示主張就接受 null，不從沉默推論；不預先指定應產生何種共識。
+
+此輪只改提示與版本，不增加抽取呼叫或調高 64 段證據上限。提示及抽取／後處理相容性的離線 smoke 已驗證，但真正涵蓋率仍待人工逐段對照新模型回應；證據增加可能提高 Clef 配對量與費用。新設定不沿用舊版快取，不自動重跑或覆寫舊結果，需另行同意付費實驗。
+
 Gemma 每個專項採與 `../pocket-polis/src/sensemaking.ts` 的 `runAiModel()` 相同的最小原生文字生成參數：`messages`、`max_tokens:8192`、`temperature:0.2`、`chat_template_kwargs.enable_thinking:false`；不送 `response_format/json_schema`。各項 JSON Schema 與格式例放入可信的 system prompt，不宣稱 provider 保證遵循。每項獨立預留輸入及最大輸出成本、保存回應並驗證；截斷、拒答、工具呼叫、非法 JSON 或引用不符只拒收該項，不自動修補或重試。原生完成可省略 refusal 或回傳 null，明示非 null 仍拒絕。
 
 **完整單一外框例外（使用者已核准）：** 除原始 JSON 外，也接受整份回應恰好是單一三反引號 code fence，語言標記僅可省略或為小寫 `json`；開閉符各自獨立一行，可有外側空白與 CRLF。程式只拆外框，裡面仍須是完整合法 JSON 並通過原 schema／引用守門。前後說明、多個或未閉合外框、其他語言標記、JSON 尾逗號及相連多份 JSON 一律拒絕，不從混雜文字猜取片段。原始回應保持不變；解析政策 `plain-or-single-json-fence-v1` 納入設定與 context 指紋。

@@ -160,3 +160,10 @@
 - 獨立 Node 執行實際 runEvidenceWorkflow 與 SQLite repository、使用記憶體 DB 與合成 provider，通過七個場景：三個缺值一次補齊、全部已填跳過、空段狀態跳過、非法覆寫拒收、部分 primary 失敗保留 partial、缺 usage 保留 unknown 預留、補完回應前清除來源後維持 erased 且沒有 payload 復活。成功場景逐一確認既有值與舊 citation map 不變、完成後重用工作不再呼叫模型、checkpoint 不含正文。這不是原生 Workflow 重啟、真實模型品質或 OAuth 驗收。
 - 完整檢查通過：vp check --no-fmt --no-lint 為 157 files、零型別錯誤；vp test 為 53 files／515 tests 全過；vp run build 成功，保留既有 client chunk 大於 500 kB 警告，metadata 為 dirty、未發布。本輪未 commit／push／部署、未執行 migration 或遠端寫入，也未新增真實付費呼叫。既有結果檔與帳本保留；真實補完內容與人工語義品質仍待下次明確授權實驗。
 - README 29 個 bash 區塊通過語法檢查；安全摘要／錯誤 jq 分別以已保存前版草稿、合成補完失敗 array、partial object、缺 diagnostics 共八個組合執行，補完錯誤可見且不洩露測試私密欄位；本機文件連結核對通過。現有 localhost:5173 實驗入口的匿名 GET 回 401，沒有帶 Cookie、建立工作或呼叫模型；不代表登入驗收。已保存真實 job.json 的 SHA-256 前後相同。
+
+## 2026-11-02：Clairic 逐段涵蓋提示
+
+- 依使用者要求，將抽取提示從 claims-list-v1 改為 claims-list-v2，明列逐段全面涵蓋重要論點／觀點、風險、挑戰及建議，包括後段與少數／反向觀點，保留條件、限定及轉述歸屬。仍是一素材一個 state、一次呼叫、單一 list，不新增模型步驟、不預設共識目標、不強制筆數、不從沉默或 null 補造主張。
+- 原文錨定、句子展開、去重、64 段上限及費用守門均未改。沒有新增永久的提示字面／mock 語義測試，避免把提示文字或合成輸出當成真實涵蓋率；既有抽取邊界測試保留。
+- 獨立執行實際 builder／parser／extractor，以四段合成原文和原生格式回應確認不同素材 state 分離、四段片段精確展開回各自完整原句、null 不產生證據、非原文主張拒收，並確認新版提示 hash 已變且納入 pipeline 設定。這只證明契約及後處理相容性，沒有呼叫真實模型，不能證明 Clairic 已全面抽取。
+- 完整檢查通過：157 files 型別檢查、53 test files／515 tests、build；既有 client chunk 大於 500 kB 警告仍在。本輪未 commit／push／部署、未重跑付費工作、未改既有結果或帳本。真實逐段召回與下游共識品質仍待人工實驗；證據增多可能增加 Clef 配對量與費用，上限與預算不放寬。
