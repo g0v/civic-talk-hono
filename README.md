@@ -169,7 +169,7 @@ vp run dev
 
 ## #183 隔離本機證據實驗：真實議題驗收手冊
 
-**目前管線：** Clairic 逐素材抽取 → Clef 四分類比較 → Gemma 依序執行共識、爭點、立場地圖三項生成 → 必要時單輪「只補缺值」→ 驗證組裝。三項使用同一份完整已驗證證據及必要關係投影，不串接前項摘要；一般站與 BYO token 不變。Clairic 為 `claims-list-v3`，Clef 為 `symmetric-four-way-v2`；Gemma primary prompt／schema／input 為 `specialized-evidence-v4`／`specialized-cited-v2`／`section-values-v3`，補完仍是 `missing-fields-only-v1`／`cited-field-patches-v1`。使用者回報前版項目過度合併及立場引用失敗；**本輪 v4 尚未新增真實付費呼叫或通過人工語義驗收**，舊工作與結果不會自動回填。
+**目前管線：** Clairic 逐素材抽取 → Clef 四分類比較 → Gemma 依序執行共識、爭點、立場地圖三項生成 → 必要時單輪「只補缺值」→ 驗證組裝。三項使用同一份完整已驗證證據及必要關係投影，不串接前項摘要；一般站與 BYO token 不變。Clairic 為 `claims-list-v3`，Clef 為 `symmetric-four-way-v2`；Gemma primary prompt／schema／input 為 `specialized-evidence-v5`／`specialized-cited-v3`／`section-values-v3`，補完仍是 `missing-fields-only-v1`／`cited-field-patches-v1`。使用者回報 v4 爭點與立場改善，但共識因引用宣告不符而失敗；本輪只調整共識的共同基礎分型與引用稽核提示，**v5 尚未新增真實付費呼叫或通過人工語義驗收**，舊工作與結果不會自動回填。下一次驗收前先重啟 opt-in 實驗 server，再依下列步驟建立新設定工作；不重用舊 JOB_ID 當作新版結果。
 
 
 本節是操作步驟，不代表未執行的 runtime／OAuth／模型／人工品質案例已通過。實驗 API 只會在明確 opt-in 的專用本機 remote-dev 入口註冊；`DB`、Workflow 與工件留在本機隔離目錄，`SOURCE_DB` 連遠端業務 D1、程式只用來源 SELECT，`DB_AUTH` 僅供 Better Auth 正常 OAuth／session 生命週期（此為唯一預期遠端 auth 寫入），`AI` 使用平台 Cloudflare Workers AI。遠端 D1 binding 並非資料庫唯讀 credential；不得對 `SOURCE_DB` 執行任何寫入或 migration，也不得對 `DB_AUTH` 建表、migration 或直接 SQL 寫入。
@@ -571,11 +571,37 @@ Gemma 每個專項採與 `../pocket-polis/src/sensemaking.ts` 的 `runAiModel()`
 
 |專項|生成與驗證重點|本機審閱位置|
 |---|---|---|
-|共識|從一般支持候選提煉具體共同命題，保留條件，每個參與來源都須支持 description；不能用並列歧見充當共識。可採候選子集，無可靠共同命題就拒絕候選並附理由。|`.diagnostics.generation.sections.consensus.details` 的 adopted／rejected_candidates／coverage|
+|共識|從既有直接支持候選提煉跨來源共同基礎，區分共享事實／共同挑戰／共同主張；每型均保留條件、至少兩素材且逐來源支持 description，不開放候選外另提案。無可靠共同點就拒絕候選並附理由。|`.diagnostics.generation.sections.consensus.details` 的 adopted（含 kind／classification_source）／rejected_candidates／coverage|
 |爭點|即使沒有 Clef disagree 也檢視可並存張力；每項至少兩素材、逐側引用，區分 `contradiction`／`opposition`／`tension`。細分類始終待人工確認，程式推導 direct_clef／gemma_proposal，不讓模型冒充新的正式 Clef 判斷。|`.diagnostics.generation.sections.disputes.details.items` 的 sides／comparison_conditions／relations／origin／formal_relation|
 |立場地圖|依明示關注、主張與應對方式重新分群並在群內綜整，不強制一素材一立場或固定群數；不混合已知對立。每條納入證據須被群內論點引用，未納入須有理由，保留少數觀點與重疊歸屬。|`.diagnostics.generation.sections.positions.details` 的 groups／coverage|
 
 共識輸入與輸出都使用原始 `candidate_id`，不可拿 evidence ID 代替；同一候選與證據集合可支持不同獨立命題，但完全相同的重複項目仍拒收。爭點以 sides 表示各側。立場原生 item 改為 `{group_id,name,Core_concern,opinions}`，**不再接受群組級 evidence_ids**；程式從 opinions 的 Title／description 有效引用推導群組成員、Sources 及覆蓋。群名與 Core_concern 只能引用實際群內成員，未知引用、已知直接相反證據同群、漏納入卻沒有排除理由等仍拒收；不能靠刪掉舊宣告欄位而把漏引證據默默忽略。公開 data／citation pointers 不變，舊 raw 不轉換或覆寫，分項工件只留隔離本機 D1，checkpoint 不帶正文。
+
+**共識共同基礎分層（v5）：** 原生項目新增必填 `kind`，僅留在 `.diagnostics.generation.sections.consensus.details.adopted[]`，`classification_source` 由程式固定為 `gemma_proposal`，不是新的 Clef 正式判斷。公開 `data.consensus.items` 維持 `{Title,description}`，人改 API 與 citation pointers 不變；舊原始回應不補分類、不自動重播。
+
+|kind|人工審閱判準|
+|---|---|
+|`shared_fact`|各參與素材明示或報告同一事實命題，條件可對照；不表示平台已獨立查證事實為真。|
+|`shared_challenge`|各參與素材明示承認同一具體問題或限制；解法可不同，不冒充共同贊同某個方案。|
+|`shared_position`|各參與素材支持同一判斷、立場或建議；一般相容、共同話題或互補解法不等於共同主張。|
+
+三型都仍受既有 Clef 候選及其有效子集限制。提示先逐來源找出可支持的交集，再寫單一共同點；不把問句當答案、轉述當作者認可，或把單一來源建議與另一來源風險併成共同立場。Overview 只概括採用項目的共同基礎及範圍，不將共享事實／挑戰升格成共同解法。
+
+**保留宣告、加強模型自檢，不改為程式修剪：** 項目 `evidence_ids` 必須等於 Title／description 實際引用的聯集，每個宣告來源也須出現在 description 引用；不能整組照抄候選成員後漏引，也不能靠裝飾性引文湊來源。漏引、未知／候選外引用或不足兩素材仍使該分項失敗，不自動刪 ID、改寫或再呼叫模型修復。分類不豁免既有守門，也不以不同分類重複列出同一命題湊數；格式／引用驗證不證明語義支持。
+
+可將分類與同索引的共識內容一起查看（只有成功採用項目會列出；失敗原因仍看分項 `status`／`validation_code`）：
+
+```bash
+jq '
+  . as $job |
+  (.diagnostics.generation.sections.consensus.details.adopted // []) |
+  to_entries[] |
+  {index: .key, kind: .value.kind,
+   classification_source: .value.classification_source,
+   candidate_id: .value.candidate_id, evidence_ids: .value.evidence_ids,
+   item: $job.data.consensus.items[.key]}
+' "$JOB_JSON"
+```
 
 新版最終三類 `Overview` 與每組 `Core_concern` 都必須是非空字串。Overview 只概括所屬已採用內容並引用其證據；共識不得把歧見搬進概述，立場概述不宣稱共識。Core_concern 可從群內明示主張作有引用支持的綜整，但不猜作者動機、人格或未表達價值。primary 的 null 只作中間值，不能直接交付新版最終草稿。
 

@@ -81,7 +81,7 @@ const cited = (text: string, ...evidence_ids: string[]) => ({ text, evidence_ids
 function consensusOutput() {
   return {
     Overview: [cited('😀第一句。第二句！', 'e1', 'e2')],
-    items: [{ candidate_id: candidateId, evidence_ids: ['e1', 'e2'], Title: [cited('共同方向', 'e1')], description: [cited('兩份素材提出支持。', 'e1', 'e2')] }],
+    items: [{ candidate_id: candidateId, evidence_ids: ['e1', 'e2'], kind: 'shared_position', Title: [cited('共同方向', 'e1')], description: [cited('兩份素材提出支持。', 'e1', 'e2')] }],
     rejected_candidates: [] as Array<{ candidate_id: string; reason: string }>,
   }
 }
@@ -320,6 +320,79 @@ describe('Gemma 專項輸出與出處', () => {
     await expect(parseGemmaResponse('consensus', completion(dishonest), input)).rejects.toThrow('generation_invalid_candidate')
   })
 
+  it('共識三型僅存診斷，分類不冒充 Clef 判斷或改變 data 與引用格式', async () => {
+    const commonSources = [material(41, '路線週末停駛。交通受限影響就醫。建議增加週末班次。'), material(42, '路線週末停駛。交通受限影響就醫。建議增加週末班次。')]
+    const commonEvidence = commonSources.map((source, index) => anchored(`c${index + 1}`, source.id, source.content, source.content))
+    const commonComparison = analyzeComparisons(commonEvidence, [judgment('c1', 'c2', 'agree')])
+    const commonInput: GenerationInput = { evidence: commonEvidence, comparison: commonComparison, sources: commonSources, language: 'zh-TW' }
+    const commonItems = [
+      { kind: 'shared_fact', text: '路線週末停駛。' },
+      { kind: 'shared_challenge', text: '交通受限影響就醫。' },
+      { kind: 'shared_position', text: '建議增加週末班次。' },
+    ].map(({ kind, text }) => ({
+      kind, candidate_id: commonComparison.consensus_groups[0].id, evidence_ids: ['c1', 'c2'],
+      Title: [cited(text, 'c1', 'c2')], description: [cited(text, 'c1', 'c2')],
+    }))
+    const result = await parseGemmaResponse('consensus', completion({ Overview: null, items: commonItems, rejected_candidates: [] }), commonInput)
+    if (result.section !== 'consensus') throw new Error('unexpected section')
+    expect(result.diagnostics.adopted.map(item => ({ kind: item.kind, classification_source: item.classification_source }))).toEqual([
+      { kind: 'shared_fact', classification_source: 'gemma_proposal' },
+      { kind: 'shared_challenge', classification_source: 'gemma_proposal' },
+      { kind: 'shared_position', classification_source: 'gemma_proposal' },
+    ])
+    expect(result.data.items).toEqual(commonItems.map(item => ({ Title: item.Title[0].text, description: item.description[0].text })))
+    expect(result.citation_map.map(item => item.pointer)).toEqual(commonItems.flatMap((_, index) => [`/consensus/items/${index}/Title`, `/consensus/items/${index}/description`]))
+    const duplicate = { ...commonItems[0], kind: 'shared_challenge' }
+    await expect(parseGemmaResponse('consensus', completion({ Overview: null, items: [commonItems[0], duplicate], rejected_candidates: [] }), commonInput)).rejects.toThrow('generation_invalid_candidate')
+  })
+
+  it('共識拒絕缺少或未知分類，以及模型偽造分類來源', async () => {
+    for (const kind of [undefined, null, 'agree', 'shared_topic']) {
+      const output = consensusOutput()
+      const item: Record<string, unknown> = output.items[0]
+      if (kind === undefined) delete item.kind
+      else item.kind = kind
+      await expect(parseGemmaResponse('consensus', completion(output), input)).rejects.toThrow('generation_invalid_schema')
+    }
+    const forged = consensusOutput()
+    Object.assign(forged.items[0], { classification_source: 'clef' })
+    await expect(parseGemmaResponse('consensus', completion(forged), input)).rejects.toThrow('generation_invalid_schema')
+  })
+
+  it('共享事實與挑戰仍受跨素材候選限制，不能用分類繞過支持範圍', async () => {
+    for (const kind of ['shared_fact', 'shared_challenge']) {
+      const outside = consensusOutput()
+      outside.items[0].kind = kind
+      outside.items[0].evidence_ids = ['e1', 'e3']
+      outside.items[0].description[0].evidence_ids = ['e1', 'e3']
+      await expect(parseGemmaResponse('consensus', completion(outside), input)).rejects.toThrow('generation_cross_candidate_citation')
+      const single = consensusOutput()
+      single.items[0].kind = kind
+      single.items[0].evidence_ids = ['e1']
+      single.items[0].description[0].evidence_ids = ['e1']
+      await expect(parseGemmaResponse('consensus', completion(single), input)).rejects.toThrow('generation_insufficient_group_citations')
+    }
+  })
+
+  it('共識引用宣告漏引即拒收，不自動修剪成可用子集', async () => {
+    const sameSource = anchored('e4', 25, sources[0].content, '不能送出的其他原文。')
+    const extended = [...evidence, sameSource]
+    const extendedComparison = analyzeComparisons(extended, [...comparison.direct_comparisons, judgment('e2', 'e4', 'agree'), judgment('e3', 'e4', 'unrelated')])
+    const selected = extendedComparison.consensus_groups.find(group => ['e1', 'e2', 'e4'].every(id => group.evidence_ids.includes(id)))!
+    const extendedInput = { ...input, evidence: extended, comparison: extendedComparison }
+    const output = consensusOutput()
+    output.items[0].candidate_id = selected.id
+    output.items[0].evidence_ids.push('e4')
+    output.rejected_candidates = extendedComparison.consensus_groups.filter(group => group.id !== selected.id).map(group => ({ candidate_id: group.id, reason: '未採用' }))
+    const response = completion(output)
+    const original = structuredClone(response)
+    await expect(parseGemmaResponse('consensus', response, extendedInput)).rejects.toThrow('generation_insufficient_group_citations')
+    expect(response).toEqual(original)
+    output.items[0].evidence_ids = ['e1', 'e2']
+    const validSubset = await parseGemmaResponse('consensus', completion(output), extendedInput)
+    expect(validSubset.diagnostics).toMatchObject({ adopted: [{ evidence_ids: ['e1', 'e2'] }] })
+  })
+
   it('直接支持的較大候選可採用子集，缺邊與反例不能冒充支持', async () => {
     const extraSource = material(28, '額外可引用的內容。')
     const extraEvidence = anchored('e4', 28, extraSource.content, extraSource.content)
@@ -544,6 +617,7 @@ describe('Gemma 專項輸出與出處', () => {
     const dimensions = ['改善道路', '增加照明', '整修排水']
     const consensusItems = dimensions.map(dimension => ({
       candidate_id: dimensionComparison.consensus_groups[0].id,
+      kind: 'shared_position',
       evidence_ids: ['d1', 'd2'],
       Title: [cited(dimension, 'd1', 'd2')],
       description: [cited(`兩份素材支持${dimension}。`, 'd1', 'd2')],

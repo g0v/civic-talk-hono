@@ -121,7 +121,7 @@ async function model(modelName: string, input: unknown): Promise<unknown> {
     const data = generatedInput.section === 'consensus'
       ? {
           Overview: group ? cite('相容主張的摘要。', group.evidence_ids) : null,
-          items: group ? [{ candidate_id: group.candidate_id, evidence_ids: group.evidence_ids, Title: cite('相容主張。', group.evidence_ids), description: cite('材料呈現的主張。', group.evidence_ids) }] : [],
+          items: group ? [{ candidate_id: group.candidate_id, evidence_ids: group.evidence_ids, kind: 'shared_position', Title: cite('相容主張。', group.evidence_ids), description: cite('材料呈現的主張。', group.evidence_ids) }] : [],
           rejected_candidates: groups.slice(1).map(candidate => ({ candidate_id: candidate.candidate_id, reason: 'not_selected' })),
         }
       : generatedInput.section === 'disputes'
@@ -958,6 +958,34 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     expect(await runEvidenceWorkflow(env, created.job_id, testStep())).toEqual({ status: 'partial_draft' })
     expect(recordedRequests).toHaveLength(requestsBefore)
     expect((await (await send('POST', '/api/issues/7/evidence-jobs', { consent: true })).json())).toMatchObject({ cache: 'hit', status: 'partial_draft' })
+  })
+
+  it('共識宣告來源只在標題引用仍拒收，其他分項可交付且不自動修復或重打', async () => {
+    aiRun = async (modelName, input) => {
+      const response = await model(modelName, input)
+      if (gemmaPayload(modelName, input)?.section !== 'consensus') return response
+      const message = responseMessage(response)
+      const data = JSON.parse(String(message.content))
+      data.items[0].description[0].evidence_ids = [data.items[0].evidence_ids[0]]
+      message.content = JSON.stringify(data)
+      return response
+    }
+    auth.current = user('owner')
+    const created = await (await send('POST', '/api/issues/7/evidence-jobs', { consent: true })).json() as { job_id: string }
+    expect(await runEvidenceWorkflow(env, created.job_id, testStep())).toEqual({ status: 'partial_draft' })
+    const detail = await (await send('GET', `/api/evidence-jobs/${created.job_id}`)).json() as DraftResponse
+    expect(detail).toMatchObject({
+      status: 'partial_draft',
+      data: { consensus: { Overview: statusOverview('consensus', 'failed', 'zh-TW'), items: [] } },
+      diagnostics: { generation: { sections: {
+        consensus: { status: 'failed', reason: 'invalid_generation', validation_code: 'generation_insufficient_group_citations' },
+        disputes: { status: 'no_findings' }, positions: { status: 'completed' },
+      } } },
+    })
+    const requestsBefore = recordedRequests.length
+    expect(await runEvidenceWorkflow(env, created.job_id, testStep())).toEqual({ status: 'partial_draft' })
+    expect(recordedRequests).toHaveLength(requestsBefore)
+    expect(local.sqlite.prepare("SELECT COUNT(*) AS n FROM ct_ai_usage WHERE step_key = 'complete:draft'").get()).toMatchObject({ n: 0 })
   })
 
   it.each(['zh-TW', 'en', 'ja'] as const)('三段皆無內容以 %s 狀態文字呈現，不呼叫補完或建立引用', async language => {

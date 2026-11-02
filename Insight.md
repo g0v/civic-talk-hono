@@ -201,3 +201,13 @@
 - 用這輪真實保存快照只執行新版 builder，三項均保留 20 段原文與 81 筆直接關係，候選／種子只在對應專項提供，config hash 已變；沒有 provider 呼叫或 DB 寫入。立場 user payload（不含 system）由 30,763 bytes 降至 8,847 bytes；新版共識／爭點 user payload 分別 9,910／8,997 bytes，全部 native 請求在既有上限內。這是封裝與出處資訊完整性證據，不是新模型品質。
 - 獨立 Node 執行實際 runner／SQLite repository、使用記憶體 DB 與合成 provider，七場景通過：有缺值單輪補完、無缺值跳過、空分區狀態、非法 patch 拒收、partial 保留有效段、unknown 費用保留及補完途中清除維持 erased。另從實際 opinion citation map 核對公開 Sources；既有文字／引用不變，重放不再呼叫模型，checkpoint 不含正文。
 - 完整檢查通過：157 files 型別檢查、53 test files／526 tests、build；既有 client chunk 大於 500 kB 警告仍在。新測試涵蓋多命題共用候選、衍生成員／來源、空／少量／多項結果及越界、漏覆蓋、反例、舊欄位拒收。本輪未 commit／push／部署、未執行 migration、遠端寫入或付費 POST，review.json／舊工件與帳本不改；真實內容豐富性、群組合理性與引用成功率仍待人工實驗。
+
+## 共識分項：共同基礎分層與引用宣告稽核
+
+- 只讀本輪 review.json 與共識原始工件：20 段證據、81 組直接比較完整，六組共識候選；共識 finish_reason 為 stop 且原始 items 有兩項。第一項宣告一段證據卻未實際引用，觸發 generation_insufficient_group_citations，整個共識分項拒收；不是沒有候選或已證實的輸出截斷。原始內容也有單一來源建議過度合併、把差異對照當共同命題的風險，修引用格式本身不證明語義改善。
+- 使用者決定共同基礎區分共享事實／共同挑戰／共同主張，但三型仍沿用既有 Clef 直接支持候選；保留模型宣告 evidence_ids，不改為程式推導或自動修剪。分類只放 diagnostics，不擴充公開 data 或人改格式，不新增模型判官／修復步驟。
+- 共識提示改為先逐來源辨認有條件、具歸屬的共同交集，再寫單一共同點並分型；問句不是答案，轉述不是作者認可，風險與相容建議不自動成為共同立場。要求送出前核對宣告與 Title／description 引用聯集完全一致，各來源須在正文引用，不整組照抄候選、不靠裝飾性引文補帳；Overview 不將共享事實／挑戰升格成共同解法。
+- 原生 schema 增必填 kind，僅接受 shared_fact／shared_challenge／shared_position；程式將 kind 與固定 classification_source:gemma_proposal 保存於分項 adopted 診斷，公開 data／citation pointers 不變。分類不豁免兩素材／候選限制，也不能靠換型繞過重複檢查。prompt／schema 為 specialized-evidence-v5／specialized-cited-v3，input、爭點／立場提示、Clairic／Clef、原生參數與補完政策不變。
+- 新三型回歸於實作前重現 generation_invalid_candidate；實作後涵蓋分類與公開資料分離、缺／未知 kind、偽造分類來源、候選外與單來源拒收、同素材額外宣告漏引不自動修剪，以及正文缺來源導致 partial 而保留其他段、重入不重打。首次全測發現新增工作流斷言將公開 validation_code 誤放 outcome，依既有 API 修正測試層級；未修改 API 配合錯誤預期。
+- 獨立程序執行實際 builder／parser／assembler／補完規劃：合成三型可通過，未知分類、缺來源及候選外拒收；正常空共識可接受，無缺值時沒有補完目標。保存快照的 20 段證據與 81 筆比較完整保留，三項 request 均未超過既有 48 KiB 上限。只有合成完成與離線封裝，沒有新模型語義或 OAuth 驗收；review.json hash 未變、零 provider 呼叫／DB 寫入。
+- 完整檢查通過：157 files 型別檢查、53 test files／531 tests、build；仍有既有 client chunk 大於 500 kB 警告。README／plan 同步分類判準、診斷路徑、引用稽核與下次需重啟 opt-in server；舊結果、原始工件、帳本與未知費用均不改，未 commit／push／部署或執行 migration。新提示能否改善共識內容與成功率，仍待使用者另一次真實模型與人工檢閱。
