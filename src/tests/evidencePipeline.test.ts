@@ -125,11 +125,11 @@ async function model(modelName: string, input: unknown): Promise<unknown> {
     const questions = object(request.questions)
     return { model: 'clef', answers: Object.fromEntries(Object.keys(questions).map(id => [id, { type: 'choice', choice: 'agree', probabilities: { agree: 0.91, disagree: 0.03, unrelated: 0.03, uncertain: 0.03 }, confidence: 0.91 }])), usage: { input_tokens: 120, output_tokens: 0 } }
   }
-  if (modelName === '@cf/google/gemma-4-26b-a4b-it') {
-    // 參考 pocket-polis 的最小原生文字生成契約；不模擬 provider JSON Mode 保證。
-    const allowed = ['messages', 'max_tokens', 'temperature', 'chat_template_kwargs']
-    if (Object.keys(request).some(key => !allowed.includes(key)) || !Number.isSafeInteger(request.max_tokens) || Number(request.max_tokens) <= 0) {
-      throw new Error('unsupported native Gemma request')
+  if (modelName === '@cf/openai/gpt-oss-120b') {
+    // 合成 provider 只接受本輪使用的原生結構化輸入，不模擬語義品質保證。
+    const allowed = ['messages', 'max_tokens', 'temperature', 'response_format']
+    if (Object.keys(request).some(key => !allowed.includes(key)) || !Number.isSafeInteger(request.max_tokens) || Number(request.max_tokens) <= 0 || object(request.response_format).type !== 'json_schema') {
+      throw new Error('unsupported native generation request')
     }
     const messages = request.messages as Array<{ role: string; content: string }>
     const generatedInput = JSON.parse(messages.find(message => message.role === 'user')!.content) as
@@ -141,7 +141,7 @@ async function model(modelName: string, input: unknown): Promise<unknown> {
         base_hash: generatedInput.base_hash,
         fills: generatedInput.targets.map(target => ({ pointer: target.pointer, sentences: [{ text: '補完欄位。', evidence_ids: target.evidence_ids }] })),
       }
-      return { model: 'gemma-4-26b-a4b-it', choices: [{ index: 0, finish_reason: 'stop', message: { role: 'assistant', content: JSON.stringify(data) } }], usage: { prompt_tokens: 200, completion_tokens: 80 } }
+      return { model: 'gpt-oss-120b', choices: [{ index: 0, finish_reason: 'stop', message: { role: 'assistant', content: JSON.stringify(data) } }], usage: { prompt_tokens: 200, completion_tokens: 80 } }
     }
     const cite = (text: string, ids: string[]) => [{ text, evidence_ids: ids }]
     const groups = generatedInput.section === 'consensus' ? generatedInput.comparison.consensus_groups : []
@@ -160,13 +160,13 @@ async function model(modelName: string, input: unknown): Promise<unknown> {
             items: [{ group_id: 'energy', name: cite('能源觀點。', ids), Core_concern: cite('素材中的能源關注。', ids), opinions: [{ Title: cite('能源轉型。', ids), description: cite('素材呈現能源主張。', ids) }] }],
             exclusions: [],
           }
-    return { model: 'gemma-4-26b-a4b-it', choices: [{ index: 0, finish_reason: 'stop', message: { role: 'assistant', content: JSON.stringify(data) } }], usage: { prompt_tokens: 200, completion_tokens: 80 } }
+    return { model: 'gpt-oss-120b', choices: [{ index: 0, finish_reason: 'stop', message: { role: 'assistant', content: JSON.stringify(data) } }], usage: { prompt_tokens: 200, completion_tokens: 80 } }
   }
   throw new Error('unexpected model')
 }
 
-function gemmaPayload(modelName: string, input: unknown): Record<string, unknown> | null {
-  if (modelName !== '@cf/google/gemma-4-26b-a4b-it') return null
+function generationPayload(modelName: string, input: unknown): Record<string, unknown> | null {
+  if (modelName !== '@cf/openai/gpt-oss-120b') return null
   const messages = object(input).messages as Array<{ role: string; content: string }>
   return object(JSON.parse(messages.find(message => message.role === 'user')!.content))
 }
@@ -182,7 +182,7 @@ function addThirdMaterial() {
 // 保留一個既有 Overview，讓工作流測試同時檢查缺值補完與不可改動的欄位。
 async function missingFieldsModel(modelName: string, input: unknown): Promise<unknown> {
   const response = await model(modelName, input)
-  const request = gemmaPayload(modelName, input)
+  const request = generationPayload(modelName, input)
   if (request?.section === 'consensus' || request?.section === 'disputes' || request?.section === 'positions') {
     const message = responseMessage(response)
     const data = object(JSON.parse(String(message.content)))
@@ -192,6 +192,7 @@ async function missingFieldsModel(modelName: string, input: unknown): Promise<un
       const cite = (text: string, evidence_ids: string[]) => [{ text, evidence_ids }]
       data.items = [{
         kind: 'tension',
+        question: cite('如何衡量能源轉型的取捨？', ids),
         sides: ids.map(id => ({ evidence_ids: [id], claim: cite('一方的主張。', [id]) })),
         comparison_conditions: cite('比較條件。', ids),
         Title: cite('待審爭點。', ids),
@@ -502,7 +503,7 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     const { promise: called, resolve: started } = Promise.withResolvers<void>()
     let disputeCalls = 0
     aiRun = async (modelName, input) => {
-      if (gemmaPayload(modelName, input)?.section === 'disputes') {
+      if (generationPayload(modelName, input)?.section === 'disputes') {
         disputeCalls++
         started()
         await waiting
@@ -625,6 +626,7 @@ describe('evidence API 與實際 SQLite 工作流', () => {
       input_manifest: unknown
       generation_artifact: { id: string; sha256: string }
       provenance: { artifacts: ArtifactSummary[] }
+      diagnostics: { generation: { sections: { consensus: { details: { candidate_map: Array<{ candidate_id: string; canonical_id: string }>; adopted: Array<{ candidate_id: string }> } } } } }
     }
     expect(audit.input_key).toBe(await sha256(JSON.stringify(audit.input_manifest)))
     const generation = local.sqlite.prepare('SELECT payload_hash, payload FROM ct_ai_artifacts WHERE id = ? AND kind = ?').get(audit.generation_artifact.id, 'generation') as { payload_hash: string; payload: string }
@@ -632,7 +634,7 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     expect(audit.generation_artifact.sha256).toBe(await sha256(generation.payload))
     const raw = audit.provenance.artifacts.filter(item => item.kind === 'raw')
     expect(raw).toHaveLength(6)
-    expect(new Set(raw.map(item => item.model?.selector))).toEqual(new Set(['@cf/cloudflare/clairic', '@cf/cloudflare/clef', '@cf/google/gemma-4-26b-a4b-it']))
+    expect(new Set(raw.map(item => item.model?.selector))).toEqual(new Set(['@cf/cloudflare/clairic', '@cf/cloudflare/clef', '@cf/openai/gpt-oss-120b']))
     for (const summary of raw) {
       expect(Object.keys(summary).sort()).toEqual(['attempt', 'created_at', 'id', 'kind', 'model', 'sha256'])
       expect(Object.keys(summary.model!).sort()).toEqual(['pricing_version', 'provider_model', 'provider_revision', 'request_id', 'request_sha256', 'selector', 'system_fingerprint', 'usage_status'])
@@ -645,6 +647,17 @@ describe('evidence API 與實際 SQLite 工作流', () => {
       expect(summary.model?.request_sha256).toBe(await sha256(JSON.stringify(payload.request)))
       expect(summary.attempt).toMatchObject({ state: 'settled' })
     }
+    // 模型只見短 ID，擁有者的診斷仍能追溯到原始比較候選；不可改寫 raw 回應。
+    const comparisons = local.sqlite.prepare("SELECT payload FROM ct_ai_artifacts WHERE kind = 'comparison'").all() as Array<{ payload: string }>
+    const analysis = comparisons.map(row => object(JSON.parse(row.payload))).find(payload => payload.analysis !== undefined)!
+    const canonical = object((object(analysis.analysis).consensus_groups as unknown[])[0]).id
+    const consensusDetails = audit.diagnostics.generation.sections.consensus.details
+    expect(consensusDetails.candidate_map).toEqual([{ candidate_id: 'C1', canonical_id: canonical }])
+    expect(consensusDetails.adopted[0].candidate_id).toBe(canonical)
+    const consensusRaw = local.sqlite.prepare("SELECT a.payload FROM ct_ai_artifacts a JOIN ct_ai_usage u ON u.id = a.attempt_id WHERE a.kind = 'raw' AND u.step_key = 'generate:consensus'").get() as { payload: string }
+    const native = object(JSON.parse(consensusRaw.payload))
+    const adoptedRaw = object(JSON.parse(String(responseMessage(native.response).content)))
+    expect(object((adoptedRaw.items as unknown[])[0]).candidate_id).toBe('C1')
     const summaryJson = JSON.stringify(audit.provenance.artifacts)
     expect(summaryJson).not.toContain('"request":')
     expect(summaryJson).not.toContain('"response":')
@@ -665,7 +678,7 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     addThirdMaterial()
     aiRun = async (modelName, input) => {
       const response = await model(modelName, input)
-      const request = gemmaPayload(modelName, input)
+      const request = generationPayload(modelName, input)
       if (request?.section !== 'positions') return response
       const evidence = request.evidence as Array<{ id: string; material_id: number }>
       const first = evidence.find(item => item.material_id === 2)!.id
@@ -760,7 +773,7 @@ describe('evidence API 與實際 SQLite 工作流', () => {
         }
         return response
       }
-      const request = gemmaPayload(modelName, input)
+      const request = generationPayload(modelName, input)
       if (request?.section !== 'disputes' && request?.section !== 'positions') return response
       const evidence = request.evidence as Array<{ id: string; material_id: number }>
       const first = evidence.find(item => item.material_id === 2)!.id
@@ -773,6 +786,7 @@ describe('evidence API 與實際 SQLite 工作流', () => {
           Overview: cite('爭點摘要。', ids),
           items: [{
             kind: 'tension', sides: ids.map(id => ({ evidence_ids: [id], claim: cite('一方主張。', [id]) })),
+            question: cite('如何衡量能源轉型的取捨？', ids),
             comparison_conditions: cite('比較條件。', ids), Title: cite('待審爭點。', ids), description: cite('兩方素材的敘述。', ids),
           }],
         })
@@ -845,7 +859,7 @@ describe('evidence API 與實際 SQLite 工作流', () => {
   it('共識候選無效只拒收該段，其他有效分項仍可檢視且有固定驗證子碼', async () => {
     aiRun = async (modelName, input) => {
       const response = await model(modelName, input)
-      if (modelName !== '@cf/google/gemma-4-26b-a4b-it') return response
+      if (modelName !== '@cf/openai/gpt-oss-120b') return response
       const messages = object(input).messages as Array<{ role: string; content: string }>
       const generationInput = JSON.parse(messages.find(item => item.role === 'user')!.content)
       if (generationInput.section !== 'consensus') return response
@@ -870,10 +884,10 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     })
   })
 
-  it('Gemma 費用預留包含原生請求宣告的最大輸出 token，不只計入輸入', async () => {
+  it('生成費用預留包含原生請求宣告的最大輸出 token，不只計入輸入', async () => {
     const generationInputs: Record<string, unknown>[] = []
     aiRun = async (modelName, input) => {
-      if (modelName === '@cf/google/gemma-4-26b-a4b-it') generationInputs.push(object(input))
+      if (modelName === '@cf/openai/gpt-oss-120b') generationInputs.push(object(input))
       return model(modelName, input)
     }
     auth.current = user('owner')
@@ -883,7 +897,7 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     for (const request of generationInputs) {
       if (typeof request.max_tokens !== 'number') throw new Error('missing native output limit')
       const inputBound = new TextEncoder().encode(JSON.stringify(request)).byteLength * 4 + 4096
-      const expectedMicroUsd = Math.ceil((inputBound * 10 + request.max_tokens * 30) / 100)
+      const expectedMicroUsd = Math.ceil((inputBound * 35 + request.max_tokens * 75) / 100)
       const messages = request.messages as Array<{ role: string; content: string }>
       const { section } = JSON.parse(messages.find(item => item.role === 'user')!.content)
       const attempt = local.sqlite.prepare('SELECT estimate_micro_usd, state FROM ct_ai_usage WHERE step_key = ?').get(`generate:${section}`)
@@ -910,7 +924,7 @@ describe('evidence API 與實際 SQLite 工作流', () => {
   ])('$label 只留下安全診斷，不重試或釋放未知費用', async ({ error, expected }) => {
     let generationCalls = 0
     aiRun = async (modelName, input) => {
-      if (modelName !== '@cf/google/gemma-4-26b-a4b-it') return model(modelName, input)
+      if (modelName !== '@cf/openai/gpt-oss-120b') return model(modelName, input)
       generationCalls++
       throw error
     }
@@ -923,7 +937,7 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     expect(body).toMatchObject({ status: 'failed', error_code: 'provider_error', usage: { attempts: 6, uncertain: 3 } })
     for (const section of ['consensus', 'disputes', 'positions']) {
       expect(body.diagnostics).toContainEqual({
-        stage: 'provider', code: 'provider_error', step_key: `generate:${section}`, model_selector: '@cf/google/gemma-4-26b-a4b-it', ...expected,
+        stage: 'provider', code: 'provider_error', step_key: `generate:${section}`, model_selector: '@cf/openai/gpt-oss-120b', ...expected,
       })
     }
     expect(JSON.stringify(body)).not.toContain('private-provider-detail')
@@ -946,7 +960,7 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     })
     const log = vi.spyOn(console, 'error').mockImplementation(() => {})
     aiRun = async (modelName, input) => {
-      if (modelName !== '@cf/google/gemma-4-26b-a4b-it') return model(modelName, input)
+      if (modelName !== '@cf/openai/gpt-oss-120b') return model(modelName, input)
       throw new Error('private-provider-detail')
     }
     try {
@@ -988,6 +1002,34 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     }
     expect(audit.usage.uncertain).toBe(2)
     expect(audit.usage.reservedMicroUsd).toBeGreaterThan(0)
+  })
+
+  it('重放遇到其他模型的舊 raw 不以新單價結算或重送，未知預留維持原值', async () => {
+    auth.current = user('owner')
+    const created = await (await send('POST', '/api/issues/7/evidence-jobs', { consent: true })).json() as { job_id: string }
+    const store = new EvidenceStore(local.asD1())
+    const job = await store.getJob(created.job_id, 'owner')
+    const snapshot = await store.getSnapshot(job!.executionId)
+    const attempt = await store.beginAttempt({
+      executionId: job!.executionId, stepKey: 'generate:consensus', estimateMicroUsd: 1000, generations: snapshot!.generations,
+    })
+    if (attempt.outcome !== 'started') throw new Error('failed to seed interrupted attempt')
+    const saved = await store.saveArtifact({
+      executionId: job!.executionId, attemptId: attempt.attemptId, kind: 'raw', generations: snapshot!.generations,
+      payload: { selector: '@cf/google/gemma-4-26b-a4b-it', request: {}, response: { usage: { prompt_tokens: 200, completion_tokens: 80 } }, provenance: {} },
+    })
+    expect(saved.outcome).toBe('saved')
+    const originalReservation = local.sqlite.prepare('SELECT estimate_micro_usd FROM ct_ai_usage WHERE id = ?').get(attempt.attemptId) as { estimate_micro_usd: number }
+    expect(await runEvidenceWorkflow(env, created.job_id, testStep())).toEqual({ status: 'partial_draft' })
+    expect(local.sqlite.prepare("SELECT state, actual_micro_usd, estimate_micro_usd FROM ct_ai_usage WHERE id = ?").get(attempt.attemptId))
+      .toMatchObject({ state: 'unknown', actual_micro_usd: null, estimate_micro_usd: originalReservation.estimate_micro_usd })
+    expect(recordedRequests.filter(request => object(request).messages !== undefined)
+      .map(request => object(JSON.parse(String((object(request).messages as Array<{ role: string; content: string }>).find(message => message.role === 'user')!.content))).section))
+      .toEqual(['disputes', 'positions'])
+    const result = object(await (await send('GET', `/api/evidence-jobs/${created.job_id}`)).json())
+    expect(object(result.usage)).toMatchObject({ uncertain: 1, reservedMicroUsd: originalReservation.estimate_micro_usd })
+    const old = await store.getArtifact(job!.executionId, saved.outcome === 'saved' ? saved.artifactId : '')
+    expect(object(old!.payload).selector).toBe('@cf/google/gemma-4-26b-a4b-it')
   })
 
 
@@ -1354,7 +1396,7 @@ describe('evidence API 與實際 SQLite 工作流', () => {
 
   it('爭點 provider 失敗保留其他兩段，失敗空段不冒充 no_findings', async () => {
     aiRun = async (modelName, input) => {
-      if (modelName === '@cf/google/gemma-4-26b-a4b-it') {
+      if (modelName === '@cf/openai/gpt-oss-120b') {
         const messages = object(input).messages as Array<{ role: string; content: string }>
         if (JSON.parse(messages.find(item => item.role === 'user')!.content).section === 'disputes') throw new Error('private-provider-failure')
       }
@@ -1386,7 +1428,7 @@ describe('evidence API 與實際 SQLite 工作流', () => {
   it('共識宣告來源只在標題引用仍拒收，其他分項可交付且不自動修復或重打', async () => {
     aiRun = async (modelName, input) => {
       const response = await model(modelName, input)
-      if (gemmaPayload(modelName, input)?.section !== 'consensus') return response
+      if (generationPayload(modelName, input)?.section !== 'consensus') return response
       const message = responseMessage(response)
       const data = JSON.parse(String(message.content))
       data.items[0].description[0].evidence_ids = [data.items[0].evidence_ids[0]]
@@ -1414,7 +1456,7 @@ describe('evidence API 與實際 SQLite 工作流', () => {
   it.each(['zh-TW', 'en', 'ja'] as const)('三段皆無內容以 %s 狀態文字呈現，不呼叫補完或建立引用', async language => {
     aiRun = async (modelName, input) => {
       const response = await model(modelName, input)
-      if (modelName !== '@cf/google/gemma-4-26b-a4b-it') return response
+      if (modelName !== '@cf/openai/gpt-oss-120b') return response
       const messages = object(input).messages as Array<{ role: string; content: string }>
       const body = JSON.parse(messages.find(item => item.role === 'user')!.content)
       const data = body.section === 'consensus'
@@ -1478,7 +1520,7 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     const { promise: waiting, resolve: release } = Promise.withResolvers<void>()
     const { promise: called, resolve: started } = Promise.withResolvers<void>()
     aiRun = async (modelName, input) => {
-      if (modelName === '@cf/google/gemma-4-26b-a4b-it') {
+      if (modelName === '@cf/openai/gpt-oss-120b') {
         const messages = object(input).messages as Array<{ role: string; content: string }>
         if (JSON.parse(messages.find(item => item.role === 'user')!.content).section === 'disputes') { started(); await waiting }
       }
@@ -1504,7 +1546,7 @@ describe('evidence API 與實際 SQLite 工作流', () => {
   it('已保存共識後來源清除，後段回應與成功分項均不可復活', async () => {
     let generationCalls = 0
     aiRun = async (modelName, input) => {
-      if (modelName === '@cf/google/gemma-4-26b-a4b-it') {
+      if (modelName === '@cf/openai/gpt-oss-120b') {
         generationCalls++
         const messages = object(input).messages as Array<{ role: string; content: string }>
         if (JSON.parse(messages.find(item => item.role === 'user')!.content).section === 'disputes') {
@@ -1560,7 +1602,7 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     let nativeResponse: unknown
     aiRun = async (modelName, input) => {
       const response = await missingFieldsModel(modelName, input)
-      if (gemmaPayload(modelName, input)?.operation === 'fill_missing_fields') nativeResponse = structuredClone(response)
+      if (generationPayload(modelName, input)?.operation === 'fill_missing_fields') nativeResponse = structuredClone(response)
       return response
     }
     auth.current = user('owner')
@@ -1615,20 +1657,20 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     const rawPayload = object(raw!.payload)
     expect(rawPayload.response).toEqual(nativeResponse)
     const request = object(rawPayload.request)
-    const requestBody = gemmaPayload('@cf/google/gemma-4-26b-a4b-it', request)!
+    const requestBody = generationPayload('@cf/openai/gpt-oss-120b', request)!
     expect(requestBody).toMatchObject({ operation: 'fill_missing_fields', targets: plan.targets })
     expect(JSON.parse(String(responseMessage(rawPayload.response).content))).toMatchObject({ base_hash: requestBody.base_hash })
     expect(JSON.stringify(request)).not.toContain('private-author')
     expect(JSON.stringify(stepOutputs)).not.toContain('補完欄位。')
     expect(JSON.stringify(stepOutputs)).not.toContain('支持再生能源')
     const inputBound = new TextEncoder().encode(JSON.stringify(request)).byteLength * 4 + 4096
-    const estimate = Math.ceil((inputBound * 10 + Number(request.max_tokens) * 30) / 100)
+    const estimate = Math.ceil((inputBound * 35 + Number(request.max_tokens) * 75) / 100)
     expect(local.sqlite.prepare("SELECT state, estimate_micro_usd, actual_micro_usd FROM ct_ai_usage WHERE step_key = 'complete:draft'").get())
-      .toMatchObject({ state: 'settled', estimate_micro_usd: estimate, actual_micro_usd: 44 })
+      .toMatchObject({ state: 'settled', estimate_micro_usd: estimate, actual_micro_usd: 130 })
     expect(detail.usage).toMatchObject({ attempts: 7, uncertain: 0 })
     expect(recordedRequests).toHaveLength(7)
     expect(local.sqlite.prepare('SELECT consent_version FROM ct_ai_jobs WHERE id = ?').get(created.job_id))
-      .toMatchObject({ consent_version: 'evidence-processing-2026-11-02-v2' })
+      .toMatchObject({ consent_version: 'evidence-processing-2026-11-02-v3' })
     expect(await (await send('POST', '/api/issues/7/evidence-jobs', { consent: true })).json()).toMatchObject({ job_id: created.job_id, cache: 'hit' })
     expect(local.sqlite.prepare('SELECT COUNT(*) AS n FROM ct_ai_executions').get()).toMatchObject({ n: 1 })
     expect(local.sqlite.prepare('SELECT COUNT(*) AS n FROM ct_ai_jobs').get()).toMatchObject({ n: 1 })
@@ -1661,7 +1703,7 @@ describe('evidence API 與實際 SQLite 工作流', () => {
 
   it('有效分項有缺值且其他分項失敗時，補完後仍是標明失敗段的 partial', async () => {
     aiRun = async (modelName, input) => {
-      if (gemmaPayload(modelName, input)?.section === 'disputes') throw new Error('private-provider-detail')
+      if (generationPayload(modelName, input)?.section === 'disputes') throw new Error('private-provider-detail')
       return missingFieldsModel(modelName, input)
     }
     auth.current = user('owner')
@@ -1689,7 +1731,7 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     '拒絕補完回應 %s，保留成功分項與原始回應但不交付不完整資料', async corruption => {
       aiRun = async (modelName, input) => {
         const response = await missingFieldsModel(modelName, input)
-        if (gemmaPayload(modelName, input)?.operation !== 'fill_missing_fields') return response
+        if (generationPayload(modelName, input)?.operation !== 'fill_missing_fields') return response
         const message = responseMessage(response)
         const patch = object(JSON.parse(String(message.content)))
         const fills = patch.fills as Array<Record<string, unknown>>
@@ -1727,7 +1769,7 @@ describe('evidence API 與實際 SQLite 工作流', () => {
   it('補完核心關注不得引用其他立場群組的有效證據', async () => {
     aiRun = async (modelName, input) => {
       const response = await missingFieldsModel(modelName, input)
-      const request = gemmaPayload(modelName, input)
+      const request = generationPayload(modelName, input)
       if (request?.section === 'positions') {
         const ids = (request.evidence as Array<{ id: string }>).map(item => item.id)
         const cite = (text: string, id: string) => [{ text, evidence_ids: [id] }]
@@ -1796,7 +1838,7 @@ describe('evidence API 與實際 SQLite 工作流', () => {
   it('補完請求超出 context 上限時不付費、不交付缺值結果', async () => {
     aiRun = async (modelName, input) => {
       const response = await missingFieldsModel(modelName, input)
-      if (gemmaPayload(modelName, input)?.section === 'consensus') {
+      if (generationPayload(modelName, input)?.section === 'consensus') {
         const message = responseMessage(response)
         const data = object(JSON.parse(String(message.content)))
         object((object((data.items as unknown[])[0]).description as unknown[])[0]).text = 'x'.repeat(60_000)
@@ -1817,7 +1859,7 @@ describe('evidence API 與實際 SQLite 工作流', () => {
   it('補完 provider 失敗保留未知成本，不重試、不洩漏例外或假裝完成', async () => {
     let completionCalls = 0
     aiRun = async (modelName, input) => {
-      if (gemmaPayload(modelName, input)?.operation === 'fill_missing_fields') {
+      if (generationPayload(modelName, input)?.operation === 'fill_missing_fields') {
         completionCalls++
         throw new Error('private-completion-provider-detail')
       }
@@ -1841,7 +1883,7 @@ describe('evidence API 與實際 SQLite 工作流', () => {
   it('補完回應合法但缺用量時僅保留未知費用，不把預留當退款', async () => {
     aiRun = async (modelName, input) => {
       const response = object(await missingFieldsModel(modelName, input))
-      if (gemmaPayload(modelName, input)?.operation !== 'fill_missing_fields') return response
+      if (generationPayload(modelName, input)?.operation !== 'fill_missing_fields') return response
       const { usage: _usage, ...withoutUsage } = response
       return withoutUsage
     }
@@ -1899,7 +1941,7 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     const { promise: waiting, resolve: release } = Promise.withResolvers<void>()
     const { promise: called, resolve: started } = Promise.withResolvers<void>()
     aiRun = async (modelName, input) => {
-      if (gemmaPayload(modelName, input)?.operation === 'fill_missing_fields') { started(); await waiting }
+      if (generationPayload(modelName, input)?.operation === 'fill_missing_fields') { started(); await waiting }
       return missingFieldsModel(modelName, input)
     }
     auth.current = user('owner')
@@ -1927,7 +1969,7 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     const { promise: called, resolve: started } = Promise.withResolvers<void>()
     let calls = 0
     aiRun = async (modelName, input) => {
-      if (gemmaPayload(modelName, input)?.operation === 'fill_missing_fields') {
+      if (generationPayload(modelName, input)?.operation === 'fill_missing_fields') {
         calls++
         started()
         await waiting
@@ -1978,7 +2020,7 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     const { promise: waiting, resolve: release } = Promise.withResolvers<void>()
     const { promise: called, resolve: started } = Promise.withResolvers<void>()
     aiRun = async (modelName, input) => {
-      if (gemmaPayload(modelName, input)?.operation === 'fill_missing_fields') { started(); await waiting }
+      if (generationPayload(modelName, input)?.operation === 'fill_missing_fields') { started(); await waiting }
       return missingFieldsModel(modelName, input)
     }
     auth.current = user('owner')

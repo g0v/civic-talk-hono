@@ -119,8 +119,8 @@ type ComparisonDiagnostics = {
 type SideRelation = { evidence_ids: [string, string]; pair_key: string | null; relation: Relation | null; status: 'direct' | 'missing' | 'failed' | 'same_material' }
 type EvidenceCoverage = { evidence_id: string; item_indices: number[]; status: 'selected' | 'not_selected'; reason: 'not_selected_by_model' | null }
 export type GenerationSectionDiagnostics =
-  | { section: 'consensus'; adopted: Array<{ candidate_id: string; evidence_ids: string[]; kind: 'shared_fact' | 'shared_challenge' | 'shared_position'; classification_source: 'gemma_proposal' }>; rejected_candidates: Array<{ candidate_id: string; reason: string }>; coverage: EvidenceCoverage[]; comparison: ComparisonDiagnostics }
-  | { section: 'disputes'; items: Array<{ kind: 'contradiction' | 'opposition' | 'tension'; classification_source: 'gemma_proposal'; origin: 'direct_clef' | 'gemma_proposal'; formal_relation: 'disagree' | null; sides: Array<{ evidence_ids: string[]; claim: CitedSentence[] }>; comparison_conditions: CitedSentence[]; relations: SideRelation[] }>; coverage: EvidenceCoverage[]; comparison: ComparisonDiagnostics }
+  | { section: 'consensus'; candidate_map: Array<{ candidate_id: string; canonical_id: string }>; adopted: Array<{ candidate_id: string; evidence_ids: string[]; kind: 'shared_fact' | 'shared_challenge' | 'shared_position'; classification_source: 'generation_proposal' }>; rejected_candidates: Array<{ candidate_id: string; reason: string }>; coverage: EvidenceCoverage[]; comparison: ComparisonDiagnostics }
+  | { section: 'disputes'; items: Array<{ kind: 'contradiction' | 'opposition' | 'tension'; classification_source: 'generation_proposal'; origin: 'direct_clef' | 'generation_proposal'; formal_relation: 'disagree' | null; question: CitedSentence[]; sides: Array<{ evidence_ids: string[]; claim: CitedSentence[] }>; comparison_conditions: CitedSentence[]; relations: SideRelation[] }>; coverage: EvidenceCoverage[]; comparison: ComparisonDiagnostics }
   | { section: 'positions'; groups: Array<{ group_id: string; evidence_ids: string[] }>; coverage: Array<{ evidence_id: string; group_ids: string[]; status: 'grouped' | 'overlapping' | 'excluded'; reason: string | null }>; comparison: ComparisonDiagnostics }
 
 export type GeneratedSection = {
@@ -140,7 +140,7 @@ export const GENERATION_VALIDATION_CODES: readonly string[] = [
   'generation_evidence_mismatch', 'generation_invalid_comparison', 'generation_invalid_candidates',
   'generation_invalid_candidate', 'generation_unknown_evidence', 'generation_cross_candidate_citation',
   'generation_invalid_schema', 'generation_insufficient_group_citations', 'generation_incomplete_coverage',
-  'generation_contradictory_group', 'generation_invalid_dispute_relation',
+  'generation_contradictory_group', 'generation_invalid_dispute_relation', 'generation_duplicate_question',
   'generation_invalid_completion', 'generation_incomplete_completion', 'generation_refusal_or_invalid_message',
   'generation_invalid_json', 'generation_duplicate_section', 'generation_context_mismatch', 'generation_invalid_section_artifact',
   'generation_invalid_completion_plan', 'generation_completion_base_mismatch',
@@ -148,7 +148,7 @@ export const GENERATION_VALIDATION_CODES: readonly string[] = [
 ]
 
 const nonemptyString = { type: 'string', minLength: 1 } as const
-const evidenceIdsSchema = { type: 'array', minItems: 1, uniqueItems: true, items: nonemptyString } as const
+const evidenceIdsSchema = { type: 'array', minItems: 1, items: nonemptyString } as const
 const sentenceSchema = {
   type: 'object', additionalProperties: false,
   properties: { text: nonemptyString, evidence_ids: evidenceIdsSchema },
@@ -176,9 +176,9 @@ const disputeItemSchema = {
   properties: {
     kind: { type: 'string', enum: ['contradiction', 'opposition', 'tension'] },
     sides: { type: 'array', minItems: 2, items: disputeSideSchema },
-    comparison_conditions: sentencesSchema, Title: sentencesSchema, description: sentencesSchema,
+    question: sentencesSchema, comparison_conditions: sentencesSchema, Title: sentencesSchema, description: sentencesSchema,
   },
-  required: ['kind', 'sides', 'comparison_conditions', 'Title', 'description'],
+  required: ['kind', 'sides', 'question', 'comparison_conditions', 'Title', 'description'],
 } as const
 const positionItemSchema = {
   type: 'object', additionalProperties: false,
@@ -189,7 +189,7 @@ const positionItemSchema = {
   required: ['group_id', 'name', 'Core_concern', 'opinions'],
 } as const
 
-export const GEMMA_OUTPUT_SCHEMAS = {
+export const GENERATION_OUTPUT_SCHEMAS = {
   consensus: {
     type: 'object', additionalProperties: false,
     properties: {
@@ -232,7 +232,7 @@ export const GENERATION_COMPLETION_OUTPUT_SCHEMA = {
 } as const
 
 const exampleSentence = (text: string, ...evidence_ids: string[]) => ({ text, evidence_ids })
-const GEMMA_EXAMPLES = {
+const GENERATION_EXAMPLES = {
   consensus: {
     Overview: [exampleSentence('A supported shared proposition.', 'E1', 'E2')],
     items: [{ candidate_id: 'C1', evidence_ids: ['E1', 'E2'], kind: 'shared_position', Title: [exampleSentence('Shared proposition', 'E1', 'E2')], description: [exampleSentence('A supported shared proposition.', 'E1', 'E2')] }],
@@ -240,7 +240,7 @@ const GEMMA_EXAMPLES = {
   },
   disputes: {
     Overview: [exampleSentence('A comparison of two claims.', 'E1', 'E2')],
-    items: [{ kind: 'tension', sides: [{ evidence_ids: ['E1'], claim: [exampleSentence('First claim.', 'E1')] }, { evidence_ids: ['E2'], claim: [exampleSentence('Second claim.', 'E2')] }], comparison_conditions: [exampleSentence('The comparable conditions.', 'E1', 'E2')], Title: [exampleSentence('A comparison', 'E1', 'E2')], description: [exampleSentence('The two claims and their conditions.', 'E1', 'E2')] }],
+    items: [{ kind: 'tension', question: [exampleSentence('此範圍內應如何取捨？', 'E1', 'E2')], sides: [{ evidence_ids: ['E1'], claim: [exampleSentence('First claim.', 'E1')] }, { evidence_ids: ['E2'], claim: [exampleSentence('Second claim.', 'E2')] }], comparison_conditions: [exampleSentence('The comparable conditions.', 'E1', 'E2')], Title: [exampleSentence('A comparison', 'E1', 'E2')], description: [exampleSentence('The two claims and their conditions.', 'E1', 'E2')] }],
   },
   positions: {
     Overview: [exampleSentence('A distribution of claims.', 'E1', 'E2')],
@@ -257,17 +257,18 @@ const COMMON_SYSTEM_PROMPT =
 const SECTION_INSTRUCTIONS = {
   consensus: 'Inspect all verified evidence and relationships for distinct cross-source common ground, classified by kind. shared_fact means each participating material explicitly reports or supports the same factual proposition under compatible population, time and conditions; it does not mean the platform has independently fact-checked it. shared_challenge means each participating material explicitly recognizes the same concrete problem, constraint or challenge, even if their responses differ; do not imply agreement on solutions. shared_position means each participating material supports the same judgment, position or recommendation, not merely complementary approaches. The kind is a diagnostic proposal, not a new Clef judgment or proof of semantic agreement; do not prepend enum codes to narrative fields.\n' +
     'Work source by source before composing each item: identify what each material actually states and whose view it reports, find the narrow supported intersection with its necessary conditions, choose its kind, and only then write that single common point. A question alone does not establish its answer, and reporting another person’s view does not establish author endorsement. Never infer shared concern from silence, a shared topic, generic aspirations, tone, or the mere coexistence of a risk and compatible advice. Advice from one material cannot be attributed to another merely because the latter describes a risk. A contrast such as "although one source questions the situation, another reports growth" is not itself common ground. Remove unsupported subclaims from your proposed item rather than appending more citations to disguise them; different responses belong in disputes or positions, not in a bundled consensus recommendation.\n' +
+    '務必逐一核對每份參與素材實際支持的命題、對象、時間及條件，只輸出每份素材都支持的最窄交集。例如一份談工作被取代的風險，另一份談需求回升，並不因此有共同事實、共同挑戰或共同立場；一份描述取代風險，另一份建議學習技能，也不因此有共同事實、共同挑戰或共同立場。只有逐份素材明確支持同一具體命題及其條件時才能採用。\n' +
     'All three kinds remain restricted to comparison.consensus_groups. Copy candidate_id exactly; never invent one or substitute an evidence ID. An agree candidate is a search lead, not an established shared proposition. Select only a supported subset of that candidate with at least two different material_id values; every participating material must independently support the same common point in description. Do not copy the entire candidate membership into item evidence_ids when only some quotes support that point. If no cross-source common point remains after narrowing, reject the candidate with a reason instead of promoting a single-source insight.\n' +
     'Keep item evidence_ids explicitly declared. Before returning, audit each item against its actual Title and description sentence citations: their union must exactly equal the declared evidence_ids, with no unused declaration, missing declaration, unknown ID or ID outside the selected candidate. Every declared material must appear in description citations; Title-only citations cannot supply a second material. Use a genuine narrower selection and its supporting text, or reject it; do not add decorative citations merely to make the sets match. This audit is your responsibility before emitting JSON, not a request for the program to repair the response.\n' +
-    'Aim for about three independently supported common points when warranted. Inspect all candidates and dimensions, but do not split one finding into duplicate items or relabel it under multiple kinds, bundle independent points into an omnibus item, pad the count or invent agreement. Zero, one or two items are valid when that is all the evidence supports. The same candidate and evidence may support distinct common points. Overview summarizes only adopted points and preserves their scope and differing kinds; do not turn a shared fact or challenge into endorsement of a shared solution, or describe a subset as agreement by every material. Record every candidate yielding no adopted common point in rejected_candidates with a reason; never both adopt and reject the same candidate.',
-  disputes: 'Independently inspect all verified evidence and relationships, not only the disagreement seeds, for distinct disputed questions. Aim for about three independently supported items when the evidence warrants them; do not stop after the first, combine unrelated questions into one omnibus item, repeat one question as separate items, pad the count, or invent conflict. Zero, one, or two items are valid when that is all the evidence supports. For each question identify all relevant sides, their evidence-backed claims, and the comparable population, time, and conditions. Different conditions can make claims coexist: aggregate growth and subgroup risk are not necessarily contradictory. A contradiction is incompatible factual conclusions under comparable conditions; opposition is opposed explicit positions or recommendations; tension is potentially coexisting strategy, priority, or value tension. Do not invent contradiction from tone or conflate tension with formal disagree. Do not portray an agree pair as a contradiction or opposition. Cite each listed side evidence in that side claim and cite each side in the description. comparison_conditions and side claims are cited arrays. Do not provide an origin or formal relation: the program derives provenance from direct comparisons.',
+    '逐一檢視所有候選及不同面向，輸出所有有獨立支持的共同命題；零、一、二或更多項都可能正確，不為湊數拆分、重複、合併或虛構命題。同一候選和證據可支持不同命題。Overview 只能概述採用項目，保留各項範圍、條件與類型，不得將共同事實或挑戰說成共同方案，亦不得擴大到未參與的素材。沒有任何採用命題的候選必須在 rejected_candidates 說明理由；同一候選不得同時採用和拒絕。',
+  disputes: '先檢視所有已驗證證據與關係，而非只看分歧種子；依可獨立回答的爭議問題分組，每個問題只產生一項。對同一問題的多組統計數據與證據配對應彙整在該項，保留所有相關側、各自主張及可比較的人群、時間和條件，不得每個配對另列一項；不同問題則不可合併。同一證據可以支持不同問題。逐一檢視所有獨立問題，零、一、二或更多項均可，不為湊數拆分、重複或虛構爭議。question 是逐句附引用的陣列，具體寫出單一可回答的問題及其範圍，引用必須屬於該項的 sides。不同條件下的主張可能並存：整體增長與特定群體的風險未必矛盾。contradiction 是可比條件下不相容的事實結論；opposition 是相反的明示立場或建議；tension 是可能並存的策略、優先順序或價值張力。不可憑語氣虛構矛盾，或把張力當作正式 disagree；agree 配對不可說成矛盾或對立。每側 claim 必須引用該側全部證據，description 必須引用每側；comparison_conditions 和 side claim 均為逐句附引用的陣列。不得提供 origin 或 formal relation，程式會依直接比較推導。',
   positions: 'Independently group explicit concerns, claims, or approaches from all evidence; preserve independent concerns, minority views, and conditions without requiring one group per material or a fixed number of groups. One material may occur in multiple groups and one group may include multiple materials. Do not mix opposite claims or infer hidden motives. Supply a unique group_id for each group. Group membership is derived from evidence IDs actually cited in the Title or description of that group’s opinions; do not declare group evidence_ids. Opinions must contain real, substantive cited narrative sentences, not dummy text or decorative lists of IDs; use multiple opinions when needed to represent the evidence. The group name and non-null Core_concern may cite only evidence used by those opinions. Actively provide a concise Core_concern supported by the group: it may synthesize explicitly stated claims, but never invent a hidden motive or personality. Use null only if no supported synthesis is possible. List each evidence ID not cited by any opinion exactly once in exclusions with a reason; do not exclude evidence adopted by an opinion. Overlap is allowed and will be calculated by the program.',
 } as const
 
-// 原生文字生成；schema 由可信 system 訊息描述，回應仍逐段嚴格驗證。
-export const GEMMA_SYSTEM_PROMPTS = Object.fromEntries(GENERATION_SECTIONS.map(section => [
+// 原生結構化輸出仍逐段嚴格驗證，提示中的範例只說明格式。
+export const GENERATION_SYSTEM_PROMPTS = Object.fromEntries(GENERATION_SECTIONS.map(section => [
   section,
-  COMMON_SYSTEM_PROMPT + SECTION_INSTRUCTIONS[section] + '\nExample:\n' + JSON.stringify(GEMMA_EXAMPLES[section]) + '\nJSON Schema:\n' + JSON.stringify(GEMMA_OUTPUT_SCHEMAS[section]),
+  COMMON_SYSTEM_PROMPT + SECTION_INSTRUCTIONS[section] + '\nExample:\n' + JSON.stringify(GENERATION_EXAMPLES[section]) + '\nJSON Schema:\n' + JSON.stringify(GENERATION_OUTPUT_SCHEMAS[section]),
 ])) as Record<GenerationSection, string>
 
 export const GENERATION_COMPLETION_SYSTEM_PROMPT =
@@ -277,22 +278,22 @@ export const GENERATION_COMPLETION_SYSTEM_PROMPT =
   'Example structure only; use the real base hash, targets, supported text and allowed IDs, not these placeholders:\n' + JSON.stringify({ base_hash: 'BASE_HASH', fills: [{ pointer: '/positions/items/0/Core_concern', sentences: [{ text: 'The stated claims concern the proposal.', evidence_ids: ['E1'] }] }] }) + '\n' +
   'JSON Schema:\n' + JSON.stringify(GENERATION_COMPLETION_OUTPUT_SCHEMA)
 
-export const GEMMA_PARAMETERS = {
+export const GENERATION_PARAMETERS = {
   max_tokens: 8192,
   temperature: 0.2,
-  chat_template_kwargs: { enable_thinking: false },
 } as const
 
-// 256K context 以 bytes × 4 加 4096 包裝和 8192 輸出預留；這是保守估算，不是精確 token 數。
-export const GEMMA_MAX_REQUEST_BYTES = 48 * 1024
+// 128K 是模型宣告的 context；48 KiB 僅為既有請求封裝的位元組守門，不能證明 tokenizer 必然容納。
+// 帳務另以 bytes × 4 加 4096 及最多 8192 輸出估算預留，並非精確 token 數或 context 上限。
+export const GENERATION_MAX_REQUEST_BYTES = 48 * 1024
 
-export interface GemmaInput {
+export interface GenerationModelInput {
   messages: ({ role: 'system'; content: string } | { role: 'user'; content: string })[]
   max_tokens: 8192
   temperature: 0.2
-  chat_template_kwargs: { enable_thinking: false }
+  response_format: { type: 'json_schema'; json_schema: Record<string, unknown> }
 }
-export type GemmaRequest = ModelRequest<GemmaInput> & { request_bytes: number }
+export type GenerationRequest = ModelRequest<GenerationModelInput> & { request_bytes: number }
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -422,7 +423,43 @@ function comparisonDiagnostics(context: GenerationContext): ComparisonDiagnostic
   }
 }
 
-function gemmaPayload(section: GenerationSection, input: GenerationInput) {
+interface ConsensusCandidate {
+  candidate_id: string
+  canonical_id: string
+  evidence_ids: string[]
+}
+
+// canonical ID 排序決定短 ID，成員排序避免輸入排列影響送往模型的映射。
+function consensusCandidates(comparison: ComparisonAnalysis): ConsensusCandidate[] {
+  return [...comparison.consensus_groups].sort((a, b) => compareStrings(a.id, b.id)).map(({ id, evidence_ids }, index) => ({
+    candidate_id: `C${index + 1}`,
+    canonical_id: id,
+    evidence_ids: [...evidence_ids].sort(compareStrings),
+  }))
+}
+
+function generationSchema(section: GenerationSection, candidates: ConsensusCandidate[]): Record<string, unknown> {
+  if (section !== 'consensus') return GENERATION_OUTPUT_SCHEMAS[section]
+  const ids = candidates.map(candidate => candidate.candidate_id)
+  const base = GENERATION_OUTPUT_SCHEMAS.consensus
+  const item = base.properties.items.items
+  const rejected = base.properties.rejected_candidates.items
+  const candidateId = { type: 'string', enum: ids }
+  return {
+    ...base,
+    properties: {
+      ...base.properties,
+      items: ids.length
+        ? { ...base.properties.items, items: { ...item, properties: { ...item.properties, candidate_id: candidateId } } }
+        : { ...base.properties.items, maxItems: 0 },
+      rejected_candidates: ids.length
+        ? { ...base.properties.rejected_candidates, items: { ...rejected, properties: { ...rejected.properties, candidate_id: candidateId } } }
+        : { ...base.properties.rejected_candidates, maxItems: 0 },
+    },
+  }
+}
+
+function generationPayload(section: GenerationSection, input: GenerationInput, candidates: ConsensusCandidate[]) {
   const relation = ({ evidence_ids, relation }: DirectComparison) => ({ evidence_ids, relation })
   const comparison = input.comparison
   return {
@@ -433,23 +470,25 @@ function gemmaPayload(section: GenerationSection, input: GenerationInput) {
       direct_comparisons: comparison.direct_comparisons.map(relation),
       reverse_diagnostics: comparison.reverse_diagnostics.map(relation),
       incomplete_pairs: comparison.incomplete_pairs.map(({ evidence_ids, status }) => ({ evidence_ids, status })),
-      ...(section === 'consensus' ? { consensus_groups: comparison.consensus_groups.map(({ id, evidence_ids }) => ({ candidate_id: id, evidence_ids })) } : {}),
+      ...(section === 'consensus' ? { consensus_groups: candidates.map(({ candidate_id, evidence_ids }) => ({ candidate_id, evidence_ids })) } : {}),
       ...(section === 'disputes' ? { disputes: comparison.disputes.map(({ evidence_ids }) => ({ evidence_ids })) } : {}),
     },
   }
 }
 
-export function buildGemmaRequest(section: GenerationSection, input: GenerationInput): GemmaRequest {
+export function buildGenerationRequest(section: GenerationSection, input: GenerationInput): GenerationRequest {
   if (!validSection(section)) throw new Error('generation_invalid_section')
   generationContext(input)
-  const payload = gemmaPayload(section, input)
-  const requestInput: GemmaInput = {
-    messages: [{ role: 'system', content: GEMMA_SYSTEM_PROMPTS[section] }, { role: 'user', content: JSON.stringify(payload) }],
-    ...GEMMA_PARAMETERS,
+  const candidates = section === 'consensus' ? consensusCandidates(input.comparison) : []
+  const payload = generationPayload(section, input, candidates)
+  const requestInput: GenerationModelInput = {
+    messages: [{ role: 'system', content: GENERATION_SYSTEM_PROMPTS[section] }, { role: 'user', content: JSON.stringify(payload) }],
+    ...GENERATION_PARAMETERS,
+    response_format: { type: 'json_schema', json_schema: generationSchema(section, candidates) },
   }
   const request_bytes = utf8Bytes(JSON.stringify(requestInput))
-  if (request_bytes > GEMMA_MAX_REQUEST_BYTES) throw new ModelContextLimitError('generation_context_limit', request_bytes, GEMMA_MAX_REQUEST_BYTES)
-  return { selector: MODEL_SELECTORS.gemma, input: requestInput, request_bytes }
+  if (request_bytes > GENERATION_MAX_REQUEST_BYTES) throw new ModelContextLimitError('generation_context_limit', request_bytes, GENERATION_MAX_REQUEST_BYTES)
+  return { selector: MODEL_SELECTORS.generation, input: requestInput, request_bytes }
 }
 
 export function sourceFor(material: MaterialPayload): Source {
@@ -540,14 +579,17 @@ function evidenceCoverage(context: GenerationContext, groups: Array<{ evidence_i
 function consensusSection(value: unknown, context: GenerationContext, map: CitationMapEntry[]): { data: DraftGenerationData['consensus']; diagnostics: Extract<GenerationSectionDiagnostics, { section: 'consensus' }> } {
   if (!exactObject(value, ['Overview', 'items', 'rejected_candidates']) || !Array.isArray(value.items) || !Array.isArray(value.rejected_candidates)) throw new Error('generation_invalid_schema')
   const adopted: Extract<GenerationSectionDiagnostics, { section: 'consensus' }>['adopted'] = []
+  const candidate_map = consensusCandidates(context.comparison).map(({ candidate_id, canonical_id }) => ({ candidate_id, canonical_id }))
+  const canonicalIds = new Map(candidate_map.map(({ candidate_id, canonical_id }) => [candidate_id, canonical_id]))
   const used = new Set<string>()
   const propositions = new Set<string>()
   const items = value.items.map((item, index) => {
     if (!exactObject(item, ['candidate_id', 'evidence_ids', 'kind', 'Title', 'description']) || !['shared_fact', 'shared_challenge', 'shared_position'].includes(item.kind as string)) throw new Error('generation_invalid_schema')
-    if (typeof item.candidate_id !== 'string' || !context.consensus.has(item.candidate_id)) throw new Error('generation_invalid_candidate')
+    if (typeof item.candidate_id !== 'string' || !canonicalIds.has(item.candidate_id)) throw new Error('generation_invalid_candidate')
+    const canonicalId = canonicalIds.get(item.candidate_id)!
     const kind = item.kind as 'shared_fact' | 'shared_challenge' | 'shared_position'
     const ids = checkedIds(item.evidence_ids, context)
-    const candidate = context.consensus.get(item.candidate_id)!
+    const candidate = context.consensus.get(canonicalId)!
     if ([...ids].some(id => !candidate.has(id))) throw new Error('generation_cross_candidate_citation')
     const materialIds = new Set([...ids].map(id => context.evidence.get(id)!.material_id))
     if (materialIds.size < 2) throw new Error('generation_insufficient_group_citations')
@@ -562,18 +604,18 @@ function consensusSection(value: unknown, context: GenerationContext, map: Citat
     const usedIds = citedIds(itemMap)
     if ([...materialIds].some(id => !describedMaterials.has(id)) || [...ids].some(id => !usedIds.has(id))) throw new Error('generation_insufficient_group_citations')
     used.add(item.candidate_id)
-    adopted.push({ candidate_id: item.candidate_id, evidence_ids: [...ids], kind, classification_source: 'gemma_proposal' })
+    adopted.push({ candidate_id: canonicalId, evidence_ids: [...ids], kind, classification_source: 'generation_proposal' })
     return opinion
   })
   const rejected_candidates: Array<{ candidate_id: string; reason: string }> = []
   for (const rejected of value.rejected_candidates) {
-    if (!exactObject(rejected, ['candidate_id', 'reason']) || typeof rejected.candidate_id !== 'string' || !context.consensus.has(rejected.candidate_id) || used.has(rejected.candidate_id)) throw new Error('generation_invalid_candidate')
+    if (!exactObject(rejected, ['candidate_id', 'reason']) || typeof rejected.candidate_id !== 'string' || !canonicalIds.has(rejected.candidate_id) || used.has(rejected.candidate_id)) throw new Error('generation_invalid_candidate')
     used.add(rejected.candidate_id)
-    rejected_candidates.push({ candidate_id: rejected.candidate_id, reason: stringReason(rejected.reason) })
+    rejected_candidates.push({ candidate_id: canonicalIds.get(rejected.candidate_id)!, reason: stringReason(rejected.reason) })
   }
   if (used.size !== context.consensus.size) throw new Error('generation_incomplete_coverage')
   const Overview = overview(value.Overview, 'consensus', map, context, map)
-  return { data: { Overview, items }, diagnostics: { section: 'consensus', adopted, rejected_candidates, coverage: evidenceCoverage(context, adopted), comparison: comparisonDiagnostics(context) } }
+  return { data: { Overview, items }, diagnostics: { section: 'consensus', candidate_map, adopted, rejected_candidates, coverage: evidenceCoverage(context, adopted), comparison: comparisonDiagnostics(context) } }
 }
 
 function assertNoDirectDisagreement(ids: Set<string>, context: GenerationContext): void {
@@ -602,8 +644,9 @@ function sideRelations(sides: Array<{ evidence_ids: string[] }>, context: Genera
 function disputesSection(value: unknown, context: GenerationContext, map: CitationMapEntry[]): { data: DraftGenerationData['disputes']; diagnostics: Extract<GenerationSectionDiagnostics, { section: 'disputes' }> } {
   if (!exactObject(value, ['Overview', 'items']) || !Array.isArray(value.items)) throw new Error('generation_invalid_schema')
   const diagnostics: Extract<GenerationSectionDiagnostics, { section: 'disputes' }> = { section: 'disputes', items: [], coverage: [], comparison: comparisonDiagnostics(context) }
+  const questions = new Set<string>()
   const items = value.items.map((item, index) => {
-    if (!exactObject(item, ['kind', 'sides', 'comparison_conditions', 'Title', 'description']) || !['contradiction', 'opposition', 'tension'].includes(item.kind as string) || !Array.isArray(item.sides) || item.sides.length < 2) throw new Error('generation_invalid_schema')
+    if (!exactObject(item, ['kind', 'sides', 'question', 'comparison_conditions', 'Title', 'description']) || !['contradiction', 'opposition', 'tension'].includes(item.kind as string) || !Array.isArray(item.sides) || item.sides.length < 2) throw new Error('generation_invalid_schema')
     const kind = item.kind as 'contradiction' | 'opposition' | 'tension'
     const allIds = new Set<string>()
     const sides = item.sides.map((side, sideIndex) => {
@@ -621,15 +664,20 @@ function disputesSection(value: unknown, context: GenerationContext, map: Citati
     if (new Set([...allIds].map(id => context.evidence.get(id)!.material_id)).size < 2) throw new Error('generation_insufficient_group_citations')
     const relations = sideRelations(sides, context)
     if (kind !== 'tension' && relations.some(relation => relation.relation === 'agree')) throw new Error('generation_invalid_dispute_relation')
-    const origin = kind !== 'tension' && relations.length > 0 && relations.every(relation => relation.relation === 'disagree') ? 'direct_clef' : 'gemma_proposal'
+    const origin = kind !== 'tension' && relations.length > 0 && relations.every(relation => relation.relation === 'disagree') ? 'direct_clef' : 'generation_proposal'
+    const questionMap: CitationMapEntry[] = []
+    const question = citedText(item.question, `/diagnostics/disputes/items/${index}/question`, allIds, context, questionMap)
+    const questionKey = question.trim().replace(/\s+/gu, ' ').toLowerCase()
+    if (questions.has(questionKey)) throw new Error('generation_duplicate_question')
+    questions.add(questionKey)
     const conditionsMap: CitationMapEntry[] = []
     citedText(item.comparison_conditions, `/diagnostics/disputes/items/${index}/comparison_conditions`, allIds, context, conditionsMap)
     const start = map.length
     const opinion = generatedOpinion({ Title: item.Title, description: item.description }, `/disputes/items/${index}`, allIds, context, map)
     const descriptionIds = citedIds(map.slice(start).filter(entry => entry.pointer.endsWith('/description')))
     if (sides.some(side => !side.evidence_ids.some(id => descriptionIds.has(id)))) throw new Error('generation_insufficient_group_citations')
-    // Clef 只有四類關係；矛盾／對立／張力的細分類始終是 Gemma 待審提案。
-    diagnostics.items.push({ kind, classification_source: 'gemma_proposal', origin, formal_relation: origin === 'direct_clef' ? 'disagree' : null, sides, comparison_conditions: item.comparison_conditions as CitedSentence[], relations })
+    // Clef 只有四類關係；矛盾／對立／張力的細分類始終是生成模型的待審提案。
+    diagnostics.items.push({ kind, classification_source: 'generation_proposal', origin, formal_relation: origin === 'direct_clef' ? 'disagree' : null, question: item.question as CitedSentence[], sides, comparison_conditions: item.comparison_conditions as CitedSentence[], relations })
     return opinion
   })
   diagnostics.coverage = evidenceCoverage(context, diagnostics.items.map(item => ({ evidence_ids: item.sides.flatMap(side => side.evidence_ids) })))
@@ -677,7 +725,7 @@ function positionsSection(value: unknown, context: GenerationContext, map: Citat
   return { data: { Overview, items }, diagnostics: { section: 'positions', groups, coverage, comparison: comparisonDiagnostics(context) } }
 }
 
-export const GEMMA_GENERATION_VERSIONS = { prompt: MODEL_VERSIONS.gemma_prompt, schema: MODEL_VERSIONS.gemma_schema } as const
+export const GENERATION_VERSIONS = { prompt: MODEL_VERSIONS.generation_prompt, schema: MODEL_VERSIONS.generation_schema } as const
 export const CITATION_ALGORITHM_VERSION = 'citation-map-v1'
 export const GENERATION_ASSEMBLY_POLICY_VERSION = 'section-opinion-membership-v2'
 const GENERATION_RESPONSE_POLICY_VERSION = 'plain-or-single-json-fence-v1'
@@ -688,13 +736,13 @@ const completionPolicy = () => ({
   response_policy: GENERATION_RESPONSE_POLICY_VERSION,
   operation: 'fill_missing_fields',
   request_payload: 'base_hash,language,existing_data-without-sources,targets,verified-target-quotes; consensus-overview-only: adopted-item-pointer-kind-evidence-ids; no raw source records',
-  request_limit_bytes: GEMMA_MAX_REQUEST_BYTES,
+  request_limit_bytes: GENERATION_MAX_REQUEST_BYTES,
   targets: 'null-content-overviews-and-null-position-cores; overview-from-adopted-item-citations; core-from-group-opinion-citations; no-empty-section-targets',
   binding: 'sha256-context-and-full-base-targets-consensus-item-classifications-statuses; exact-one-patch-per-target; no-other-keys',
   finalization: 'no-other-value-source-order-or-prior-citation-changes; nonempty-required-fields; full-sentence-citation-coverage; program-status-no-citation',
   prompt: GENERATION_COMPLETION_SYSTEM_PROMPT,
   schema: GENERATION_COMPLETION_OUTPUT_SCHEMA,
-  parameters: GEMMA_PARAMETERS,
+  parameters: GENERATION_PARAMETERS,
   status_translations: Object.fromEntries((['zh-TW', 'en', 'ja'] as const).map(language => [
     language, Object.fromEntries(GENERATION_SECTIONS.map(section => [
       section, Object.fromEntries((['no_findings', 'failed', 'not_started'] as const).map(status => [status, statusOverview(section, status, language)])),
@@ -710,16 +758,18 @@ function stableJson(value: unknown): string {
   })
 }
 function contextFingerprint(input: GenerationInput): string {
+  const candidates = consensusCandidates(input.comparison)
   return stableJson({
     input,
-    generation_payloads: Object.fromEntries(GENERATION_SECTIONS.map(section => [section, gemmaPayload(section, input)])),
+    generation_payloads: Object.fromEntries(GENERATION_SECTIONS.map(section => [section, generationPayload(section, input, candidates)])),
     versions: { ...MODEL_VERSIONS, evidence: EVIDENCE_ALGORITHM_VERSION, comparison: COMPARISON_ALGORITHM_VERSION, citation: CITATION_ALGORITHM_VERSION, assembly: GENERATION_ASSEMBLY_POLICY_VERSION },
-    selector: MODEL_SELECTORS.gemma,
-    parameters: GEMMA_PARAMETERS,
-    prompts: GEMMA_SYSTEM_PROMPTS,
-    schemas: GEMMA_OUTPUT_SCHEMAS,
+    selector: MODEL_SELECTORS.generation,
+    parameters: GENERATION_PARAMETERS,
+    prompts: GENERATION_SYSTEM_PROMPTS,
+    candidate_map: candidates.map(({ candidate_id, canonical_id }) => ({ candidate_id, canonical_id })),
+    schemas: Object.fromEntries(GENERATION_SECTIONS.map(section => [section, generationSchema(section, candidates)])),
     completion: completionPolicy(),
-    max_request_bytes: GEMMA_MAX_REQUEST_BYTES,
+    max_request_bytes: GENERATION_MAX_REQUEST_BYTES,
   })
 }
 function contextHash(input: GenerationInput): string {
@@ -741,7 +791,7 @@ function parseNativeJson(value: unknown): unknown {
   try { return JSON.parse(fenced ? fenced[1] : message.content) } catch { throw new Error('generation_invalid_json') }
 }
 
-export async function parseGemmaResponse(section: GenerationSection, value: unknown, input: GenerationInput): Promise<GeneratedSection> {
+export async function parseGenerationResponse(section: GenerationSection, value: unknown, input: GenerationInput): Promise<GeneratedSection> {
   if (!validSection(section)) throw new Error('generation_invalid_section')
   const context = generationContext(input)
   const parsed = parseNativeJson(value)
@@ -943,7 +993,7 @@ export async function prepareDraftCompletion(draft: GeneratedDraft, sections: Ge
   return plan
 }
 
-export function buildCompletionRequest(plan: DraftCompletionPlan, input: GenerationInput): GemmaRequest {
+export function buildCompletionRequest(plan: DraftCompletionPlan, input: GenerationInput): GenerationRequest {
   const context = validateCompletionPlan(plan, input)
   if (plan.targets.length === 0) throw new Error('generation_completion_not_needed')
   const allowedIds = new Set(plan.targets.flatMap(target => target.evidence_ids))
@@ -965,13 +1015,14 @@ export function buildCompletionRequest(plan: DraftCompletionPlan, input: Generat
     ...(plan.targets.some(target => target.pointer === '/consensus/Overview') ? { consensus_items: plan.consensus_items } : {}),
     evidence: [...context.evidence.values()].filter(item => allowedIds.has(item.id)).sort((a, b) => compareStrings(a.id, b.id)).map(({ id, quote, raw_quote }) => ({ id, quote, raw_quote })),
   }
-  const requestInput: GemmaInput = {
+  const requestInput: GenerationModelInput = {
     messages: [{ role: 'system', content: GENERATION_COMPLETION_SYSTEM_PROMPT }, { role: 'user', content: JSON.stringify(payload) }],
-    ...GEMMA_PARAMETERS,
+    ...GENERATION_PARAMETERS,
+    response_format: { type: 'json_schema', json_schema: GENERATION_COMPLETION_OUTPUT_SCHEMA },
   }
   const request_bytes = utf8Bytes(JSON.stringify(requestInput))
-  if (request_bytes > GEMMA_MAX_REQUEST_BYTES) throw new ModelContextLimitError('generation_context_limit', request_bytes, GEMMA_MAX_REQUEST_BYTES)
-  return { selector: MODEL_SELECTORS.gemma, input: requestInput, request_bytes }
+  if (request_bytes > GENERATION_MAX_REQUEST_BYTES) throw new ModelContextLimitError('generation_context_limit', request_bytes, GENERATION_MAX_REQUEST_BYTES)
+  return { selector: MODEL_SELECTORS.generation, input: requestInput, request_bytes }
 }
 
 function completedDraft(base: GeneratedDraft, statuses: StatusOverview[], input: GenerationInput, context: GenerationContext): CompletedDraft {
@@ -1031,18 +1082,18 @@ export async function pipelineSettings() {
     { id: 2, issue_id: 1, source_name: null, source_url: null, content: 'B', content_hash: 'fixture' },
   ]
   const evidence: Evidence[] = sources.map(source => ({ id: `e${source.id}`, material_id: source.id, quote: source.content, raw_quote: source.content, raw_span: { start: 0, end: 1, unit: 'utf16' }, expanded_span: { start: 0, end: 1, unit: 'utf16' } }))
-  const gemmaSources: MaterialPayload[] = [
+  const generationSources: MaterialPayload[] = [
     ...sources,
     { id: 3, issue_id: 1, source_name: null, source_url: null, content: 'C', content_hash: 'fixture' },
     { id: 4, issue_id: 1, source_name: null, source_url: null, content: 'D', content_hash: 'fixture' },
   ]
-  const gemmaEvidence: Evidence[] = gemmaSources.map(source => ({ id: `e${source.id}`, material_id: source.id, quote: source.content, raw_quote: source.content, raw_span: { start: 0, end: 1, unit: 'utf16' }, expanded_span: { start: 0, end: 1, unit: 'utf16' } }))
+  const generationEvidence: Evidence[] = generationSources.map(source => ({ id: `e${source.id}`, material_id: source.id, quote: source.content, raw_quote: source.content, raw_span: { start: 0, end: 1, unit: 'utf16' }, expanded_span: { start: 0, end: 1, unit: 'utf16' } }))
   const judgment = (a: string, b: string, relation: Relation): DirectComparison => ({
     pair_key: pairKey(a, b), evidence_ids: [a, b], relation, question_version: 'fixture',
     probabilities: { agree: Number(relation === 'agree'), disagree: Number(relation === 'disagree'), unrelated: Number(relation === 'unrelated'), uncertain: Number(relation === 'uncertain') },
     provider_diagnostics: null,
   })
-  const comparison = analyzeComparisons(gemmaEvidence, [
+  const comparison = analyzeComparisons(generationEvidence, [
     judgment('e1', 'e2', 'agree'), judgment('e1', 'e3', 'disagree'),
     judgment('e1', 'e4', 'unrelated'), judgment('e2', 'e3', 'uncertain'),
   ], [{ pair_key: pairKey('e2', 'e4'), error_code: 'fixture_failure' }], [
@@ -1050,22 +1101,22 @@ export async function pipelineSettings() {
   ])
   const clairic = buildClairicRequest('A')
   const clef = buildClefBatches(evidence, createEvidencePairs(evidence))[0]
-  const gemma = Object.fromEntries(GENERATION_SECTIONS.map(section => [section, Object.fromEntries((['zh-TW', 'en', 'ja'] as const).map(language => [language, buildGemmaRequest(section, { evidence: gemmaEvidence, comparison, language, sources: gemmaSources })]))]))
+  const generation = Object.fromEntries(GENERATION_SECTIONS.map(section => [section, Object.fromEntries((['zh-TW', 'en', 'ja'] as const).map(language => [language, buildGenerationRequest(section, { evidence: generationEvidence, comparison, language, sources: generationSources })]))]))
   const config = {
     versions: { ...MODEL_VERSIONS, evidence_algorithm: EVIDENCE_ALGORITHM_VERSION, comparison_algorithm: COMPARISON_ALGORITHM_VERSION, citation_algorithm: CITATION_ALGORITHM_VERSION, generation_assembly_policy: GENERATION_ASSEMBLY_POLICY_VERSION, generation_completion_policy: GENERATION_COMPLETION_POLICY_VERSION },
-    limits: { clairic_state_bytes: CLAIRIC_MAX_STATE_BYTES, clef_questions: CLEF_MAX_QUESTIONS, clef_request_bytes: CLEF_MAX_REQUEST_BYTES, gemma_request_bytes: GEMMA_MAX_REQUEST_BYTES },
-    fixture_requests: { clairic, clef, gemma },
-    generation_schemas: GEMMA_OUTPUT_SCHEMAS,
+    limits: { clairic_state_bytes: CLAIRIC_MAX_STATE_BYTES, clef_questions: CLEF_MAX_QUESTIONS, clef_request_bytes: CLEF_MAX_REQUEST_BYTES, generation_request_bytes: GENERATION_MAX_REQUEST_BYTES },
+    fixture_requests: { clairic, clef, generation },
+    generation_schemas: GENERATION_OUTPUT_SCHEMAS,
     completion: completionPolicy(),
     workflow_control: WORKFLOW_CONTROL_POLICY,
   }
   const hashes = {
     clairic_prompt: await sha256(clairic.input.fields.claims.instructions),
     clef_prompt: await sha256(JSON.stringify(clef.input.questions.q0)),
-    gemma_prompt: await sha256(stableJson(GEMMA_SYSTEM_PROMPTS)),
-    gemma_schema: await sha256(stableJson(GEMMA_OUTPUT_SCHEMAS)),
-    gemma_completion_prompt: await sha256(GENERATION_COMPLETION_SYSTEM_PROMPT),
-    gemma_completion_schema: await sha256(stableJson(GENERATION_COMPLETION_OUTPUT_SCHEMA)),
+    generation_prompt: await sha256(stableJson(GENERATION_SYSTEM_PROMPTS)),
+    generation_schema: await sha256(stableJson(GENERATION_OUTPUT_SCHEMAS)),
+    generation_completion_prompt: await sha256(GENERATION_COMPLETION_SYSTEM_PROMPT),
+    generation_completion_schema: await sha256(stableJson(GENERATION_COMPLETION_OUTPUT_SCHEMA)),
     parameters: await sha256(stableJson(config.fixture_requests)),
     config: await sha256(stableJson(config)),
   }

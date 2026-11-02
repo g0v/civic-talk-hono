@@ -1,6 +1,6 @@
 # Issue #183：證據抽取、跨素材判斷與結構化彙整實驗計畫
 
-> **狀態：已接上 Clef 新判準、Gemma 三項專項生成，以及使用者後續核准的單輪「只補缺值」流程。新版最終三段 Overview 與每組 Core_concern 均須非空，空／失敗段使用明示處理狀態。合成 provider 的獨立 SQLite 工作流 smoke 已通過；使用者回報前版品質改善，但本輪補完尚無真實模型／人工語義驗收證據，本 draft 暫不合併。**
+> **狀態：依使用者後續裁示，生成改用 GPT-OSS-120B，保留三個專項與最多單輪「只補缺值」；共識使用短候選 ID／動態 enum 並保留 canonical 對照，爭點按有引用的問題整理及去重，不以清單筆數判定品質。三段最終 Overview 與每組 Core_concern 仍須非空。先前 GPT-OSS 凍結輸入實測不是本修正版的語義驗收；本 draft 暫不合併。**
 >
 > 本文件依修改後的 [#183](https://github.com/g0v/civic-talk-hono/issues/183)、[工程師人工檢閱](./plan_review.md) 與後續使用者裁示修訂，取代原本的 #107 計畫。檢閱要求與後續裁示有差異時，以使用者裁示為準；本次新增決策詳見第 5.2、5.3、9、10 節。**使用者已於計畫修訂後明確要求依新版實作；程式與離線驗證不表示已完成新一輪付費或人工品質驗收。** 既有實驗／安全範圍不變，每次新付費工作仍須明確同意。過往 commit／push／更新 draft PR #191 的個別授權不視為本次自動授權，不授權合併、部署、遠端 migration 或遠端業務資料庫寫入。
 
@@ -18,7 +18,7 @@
 |認證例外|DB_AUTH 允許既有 Better Auth 正常登入與 session 生命週期；不新增角色、人工停權／解停權操作或 auth schema|
 |來源留存|保存完整私有輸入快照；來源隱藏時停用結果，刪除時清除相關原文／引文 payload，保留雜湊與處置紀錄|
 |判斷類別|agree／disagree／unrelated／uncertain；先對照共同問題、條件與歸屬，校準被誤判為 unrelated 的支持或對立；一般支持／相容不等於共同命題，不以類別配額硬湊判斷|
-|生成方式|Gemma 分別執行共識、爭點、立場地圖三個專項，共用同一份已驗證證據與必要關係資料；最後僅在有內容的 Overview／Core_concern 為 null 時，最多增加一次白名單缺值補完，不改已有值|
+|生成方式|GPT-OSS-120B 分別執行共識、爭點、立場地圖三個專項，共用已驗證證據與必要關係，以原生 JSON Schema 約束；必要時最多增加一次白名單缺值補完，不改已有值|
 |帳號日限額|每帳號每日 20 次新付費任務|
 |議題冷卻|同議題新付費任務間隔 5 分鐘|
 |比較規模|最多 64 段驗證後證據；不同素材的無向配對最多 2,016 組，排除同素材配對後通常較少；不是全站素材投稿上限|
@@ -109,7 +109,7 @@
 |---|---|---|
 |Clairic|`@cf/cloudflare/clairic`|每份素材獨立抽取原文主張／條件，使用 text／list primitive，不要求 #181 巢狀結構|
 |Clef|`@cf/cloudflare/clef`|跨素材證據關係的四選一判斷；不是生成最終摘要|
-|Gemma 4|`@cf/google/gemma-4-26b-a4b-it`|三次專項生成：共同命題提煉、爭點／張力整理、立場分群綜整；依已驗證證據及關係資料輸出受約束文字與逐句引用|
+|GPT-OSS-120B|`@cf/openai/gpt-oss-120b`|取代原 Gemma，三次專項生成共同命題、爭點／張力、立場分群；依已驗證證據及關係輸出受約束文字與逐句引用，結構化輸出不能替代語義檢核|
 
 ### 5.1 Clairic：逐素材抽取與原文錨定
 
@@ -134,8 +134,8 @@
 - provider 每次最多 64 題；依實際 state 大小再縮小批次，不把 64 題誤認為無限長 context 或原生 async Batch 能力。
 - 使用固定排序與已記錄的批次策略。無法完整容納的 state 明確失敗，不接受服務端截斷後仍冒充完整比較。
 - **遞移只用於找候選、安排驗證。** 已知 A-B、B-C 為 agree 時，可以提出 A-B-C 候選群並將 A-C 列為待直接比較；不能推定 A-C 為 agree。只要共識候選仍依賴 A-C 的關係，就不能為了節省費用省略這個必要配對。
-- 程式以直接 agree 邊產生**待提煉共同命題的候選**：至少兩個不同素材，群內所需的跨素材配對均有直接 agree，且相關證據間沒有已接受的反例。候選不是已成立的共識；Gemma 仍須找到各參與來源真正支持的共同命題。若 A-C 為 disagree／unrelated／uncertain、漏比或失敗，三者不能因支持路徑相連就合併成共識；可保留較小候選群與未分類證據。
-- 直接 disagree 提供明確對立候選；Gemma 可另從已驗證證據提出可並存的策略／價值張力，但必須與直接矛盾分開標記，不能改寫 Clef 原始關係。不能用遞移候選覆蓋反例；支持鏈與直接比較衝突時，診斷保留鏈、直接判斷與排除原因。
+- 程式以直接 agree 邊產生**待提煉共同命題的候選**：至少兩個不同素材，所需跨素材配對均有直接 agree，且沒有已接受反例。候選不是已成立的共識；生成模型仍須找到各參與來源真正支持的共同命題。A-C 為 disagree／unrelated／uncertain、漏比或失敗時，不能因支持路徑相連合併；可保留較小候選與未分類證據。
+- 直接 disagree 提供對立候選；生成模型可另從已驗證證據提出可並存的策略／價值張力，但必須與直接矛盾分開，不改寫 Clef 原始關係。不能以遞移覆蓋反例；支持鏈與直接比較衝突時保留鏈、直接判斷與排除原因。
 - 計算節省來自無向配對去重與既有有效工件快取；遞移候選可協助群組搜尋與比較排程，但不保證減少必要的模型題數。診斷分開列出符合資格的無向配對數、直接判斷數、快取命中數、僅推導的候選及未完成配對；後兩者不算已比較或已支持。
 - 立場地圖整理素材明示的主張／關注點；證據清單與關係圖是分群輸入，不再把「一條證據一個候選，加上共識群」當成唯一合法分群。分群提案及證據歸屬須可追溯，不推定作者人格、隱藏動機或公眾支持比例。
 - 中文人工標註樣本須抽查對調 A／B 的結果及非遞移支持鏈，揭露方向偏差與錯誤合併。反向抽查是品質診斷，不覆寫正式關係；其付費呼叫仍須記帳。若必須全面雙向判斷才能達到品質，先回來討論成本與計畫，不暗中把所有呼叫加倍。
@@ -149,15 +149,18 @@
 - 不規定每份素材或每批必須產生幾個 agree／disagree，不重分配機率、不覆寫原始 choice、不把最高分或 provider confidence 當作已校準正確率。保留機率與模糊案例；如需採用差距／信心門檻，須先以人工樣本校準、版本化並揭露影響，不能臨時選數字讓結果過關。
 - 用同一份凍結證據比較候選版本，先排查組題與解析邏輯，再安排有明確同意且受預算控制的真實模型對照；保留失敗案例與人工保留樣本，避免只針對議題 13 的字面內容調參。prompt、criteria、上下文／比較演算法版本納入 manifest 與快取鍵；舊判斷不冒充新版結果。
 
-### 5.3 Gemma 4：共識、爭點、立場地圖三次專項生成
+### 5.3 GPT-OSS-120B：共識、爭點、立場地圖三次專項生成
 
 **取代一次生成三類內容的流程，不是把相同請求重送三遍。** 每項各有 prompt、schema、驗證、原始回應與費用工件；由程式合併為既有 `data.consensus`／`data.disputes`／`data.positions` 形狀。
+
+固定模型 `@cf/openai/gpt-oss-120b`，原生參數為 messages、max_tokens:8192、temperature:0.2、`response_format:{type:"json_schema",json_schema:<schema物件>}`，不送 Gemma 的 thinking-disable。primary／條件式補完都使用本模型，不新增備援、裁判或付費重試。provider 不接受 uniqueItems，因此不送此關鍵字；程式仍拒絕重複證據 ID。完整 schema 計入輸入，每百萬 input／output tokens 依官方價目 US$0.35／0.75 預留與結算；不另加 message 的重複 reasoning 字串，缺失／異常費用仍未知。128K 是模型宣告的 context，48 KiB 是既有封裝守門，bytes×4 帳務預留不是 tokenizer 或容量證明。
+
 
 #### 5.3.1 共用輸入與來源邊界
 
 - 三項均以同一份凍結且通過來源驗證的證據、來源識別及必要關係資料為依據；包含直接關係、模糊／未完成配對與候選來源。不得讓後項只讀前項摘要，或把前項生成文字當作原始證據。
 - 不回頭把全部素材正文塞給模型自由重判；原始與擴展 quote、必要條件及歸屬沿用第 5.1 節。各項可按職責選取必要資料，但須記錄覆蓋與排除，不默默丟棄反例或少數證據；context 超限就明示停止，不截斷輸入。
-- Gemma 輸入政策 `section-values-v3`：三項均取得全部已驗證引文的 `{id,material_id,quote}`，quote 為完整擴展原文；不重複傳 raw_quote。共用直接／反向資訊僅 `{evidence_ids,relation}`、未完成配對僅 `{evidence_ids,status}`；只有共識另收原始 `{candidate_id,evidence_ids}` 候選，只有爭點另收 `{evidence_ids}` 種子，立場不收共識候選、推導路徑或統計。完整 pairs、機率、題目版本、原始／擴展 quote、候選來源與路徑仍保存在本機工件及診斷，後端用完整圖驗證，不削弱反例／未知關係或放寬 48 KiB 守門。政策納入指紋，不覆寫舊執行、費用或 tombstone，不新增重試入口。
+- 生成輸入政策 `section-values-v4`：三項均取得全部已驗證 `{id,material_id,quote}`，quote 為完整擴展原文，不重複傳 raw_quote。共用直接／反向資訊僅 `{evidence_ids,relation}`，未完成配對僅 `{evidence_ids,status}`；只有共識另收短 `{candidate_id,evidence_ids}`，只有爭點另收 `{evidence_ids}` 種子。canonical 對照由程式依確定性排序建立與保留，不讓模型抄寫長 ID。完整圖、機率、版本與路徑仍存本機，後端完整驗證；不削弱反例／未知關係或放寬 48 KiB 守門。真實模型、請求、提示與動態 schema 納入指紋，不覆寫舊執行、費用或 tombstone，不新增重試入口。
 - Clef／程式候選是不同強度的線索，不是不可質疑的語義真相。共識只能在滿足第 5.2 節直接支持條件的候選或其有效子集內提煉；爭點可另提張力、立場可重新分群，但不得冒充新的 Clef 正式判斷。
 - 素材文字一律當作不可信資料，不執行其中指令、不開工具、不讓它覆蓋 system／schema／來源規則；不修改原議題標題。
 
@@ -170,11 +173,12 @@
 |立場地圖|先依明示的核心關注、主張或應對方式形成可追溯分群，再以群內子項綜整各論點；合併重複但保留不同條件與少數觀點，Overview 概括分布與主要維度。|一條證據一個立場、逐份素材摘要、用模糊的「綜合觀點」混合相反主張，或只靠限制筆數假裝完成綜整。|
 
 - **共識可拒絕候選。** 有 agree 邊仍可能沒有足夠具體的共同基礎；須保留未採用原因，不能改寫來源以湊出結果。Overview 與 description 都遵守相同語義與分型範圍，不把歧見移到 Overview 後假裝解決，也不把共同挑戰包裝成共同解法。
-- **項目豐富性以證據優先。** 共識／爭點目標約三個獨立命題／問題，檢視所有有據維度，不在第一項就停止或過度合併；不足時零至兩項仍合法，不硬設 minItems:3、不湊數、不重複拆同一問題。每個共識子命題均須跨參與來源支持，不將單一來源建議藉相容引用冒充共同立場。同一候選與證據集合可支持不同命題，只有候選／成員／渲染文字相同的完全重複項目拒收。items 與引用筆數是不同概念。
+- **項目品質不靠筆數。** 不設定約三項或其他目標；檢視所有有據維度，零項、一項或更多項均可。共識先逐來源找到同一具體命題的有據交集，不能把 AI 取代風險與需求回升、風險與另一來源的技能建議並成共同挑戰／立場。相同爭議的多筆統計、來源配對與相近條件應在單一爭點逐側綜整，不拆項充數；真正獨立的問題與必要條件仍保留。同一候選／證據可支持不同共同命題，完全相同的項目仍拒收；items 與引用筆數不同。
 - **共同基礎三型（本輪使用者裁示）。** `shared_fact` 要求各參與素材明示或報告同一可對照的事實命題，不代表平台已獨立查證；`shared_challenge` 要求各素材明示承認同一具體問題／限制，解法可不同；`shared_position` 要求共同支持同一判斷、立場或建議。三型均沿用第 5.2 節既有跨素材直接 agree 候選及有效子集，不開放候選外新提案、不改寫 Clef 原判斷。問題、沉默、相容風險與建議不能代替逐來源支持，轉述亦不得冒充作者認可。
-- **分類只放診斷。** 原生共識 item 的必填 `kind` 由程式驗證枚舉並保存於 `diagnostics.generation.sections.consensus.details.adopted[]`，`classification_source` 固定由程式標為 `gemma_proposal`；`data.consensus.items` 仍為 `{Title,description}`，人改與引用契約不變。不能藉重新分類重複相同候選／成員／渲染文字，亦不將分型當成語義證明。prompt／schema 為 `specialized-evidence-v5`／`specialized-cited-v3`，input 保持 `section-values-v3`；爭點、立場與抽取／比較規則不變，補完須依第 5.3.5 節繼承共識分型，不新增付費步驟。
+- **分類只放診斷。** 原生共識 item 必填 kind，驗證後保存於 adopted[]；新輸出的 classification_source 固定為 `generation_proposal`，不是新的 Clef 正式判斷。data.consensus.items 仍為 Title／description，人改與引用契約不變，舊標記不回填。prompt／schema／input 為 `specialized-evidence-v6`／`specialized-cited-v4`／`section-values-v4`，Clairic／Clef 不變，補完仍須繼承共識分型，不新增步驟。
 - **保留共識證據宣告，只強化提示。** 模型先逐來源找共同點的有據交集、窄化範圍，再選型與撰文；送出前自行核對宣告 evidence_ids 等於 Title／description 的實際引用聯集，各宣告來源均在 description 引用。可先選真正支持的候選子集，不整組照抄後漏引、不加裝飾性引用湊數。程式仍嚴格拒收漏引、未知／候選外引用、不足兩素材、非法分類或偽造來源欄位；不改成自動推導成員、修剪、改寫、部分救回或另叫模型修復。無發現與驗證失敗仍分別記錄，舊工作與原始回應不回填。
-- **爭點不以非空 disagree 候選為啟動條件。** 此專項仍讀取同一證據與關係資料，檢查可追溯的張力提案。每項至少引用兩個不同素材，逐側記錄證據、比較條件、類型及來源是直接判斷還是 Gemma 提案；未獲 Clef 直接支持的矛盾提案保留為待審，不升格成已確認 disagree。若確無足夠證據，允許空結果。
+- **短候選與完整交代。** 每輪依 canonical ID 排序編號 C1…Cn；模型 payload／輸出只用精確短 ID，動態 schema enum 同時約束 items 與 rejected_candidates。空候選時兩陣列 maxItems:0，不提供非法空 enum。程式驗證短 ID 後才映回 canonical，診斷保留 candidate_map:[{candidate_id,canonical_id}]，adopted／rejected 的 candidate_id 仍記 canonical。長字串、evidence ID、改寫／未知 ID 直接拒收，不猜測還原。每候選須採用或有理由拒絕；重複拒絕、採用又拒絕及漏交代仍拒收。映射與動態 schema 綁定 context／設定，不重用不同輪映射。
+- **爭點先組題再綜整。** 每個原生 item 新增 `question:CitedSentence[]`，與逐側 claim／comparison_conditions 均須引用該項合法證據；至少兩素材，保留既有關係與側內不可對立守門。question 僅放 diagnostics，不擴充 data.items。模型須合併同問題的數據／配對，程式正規化問題文字的空白與大小寫後，重複即以 `generation_duplicate_question` 拒收，不靠換標題、分類或佐證重列。不做模糊刪除、語義判官或自動合併，換句話說的近似重複仍須人工驗收。來源標為 direct_clef 或 generation_proposal，不冒充新 Clef 判斷；確無有據爭點時可空。
 - **立場重新分群，不強制一素材一立場。** 同一素材可出現在不同關注群，多素材也可支持同一群；不要求每群必須跨素材，不把素材數當支持人數。不得將相反主張壓成同一立場，亦不靠固定群數裁掉內容；無法合併的少數觀點可獨立保留，不推測作者動機。
 - 立場原生 item 僅有 `{group_id,name,Core_concern,opinions}`，不再由模型重複宣告群組 evidence_ids；程式從每個 opinion 的 Title／description 有效引用聯集推導成員與 Sources，再驗證群名／Core_concern 僅引用群內成員、已知 direct disagree 不同群及全證據覆蓋／排除。未納入的證據須明示排除理由，不能因移除宣告就默默丟失；舊 evidence_ids 額外欄位仍嚴格拒收。保留重疊／少數觀點及原有引用順序。Core_concern 可有據綜整明示主張，不推測動機；primary null 仍僅能依第 5.3.5 節補完。
 
@@ -196,17 +200,17 @@
 - **生成銜接也必須受控。** `bounded-generation-handoffs-v2` 將分項工件復用及生成前／後來源與帳號查核、完成診斷寫入放進 `load-generation-state`、`prepare-generation-*`、`finish-generation-*`。已確認可冪等的銜接／清理每次 30 秒、最多重試三次（首次加三次共四次，1 秒起指數退避）；其餘非模型規劃／驗證／組裝每次 30 秒、零重試；模型呼叫保留 10 分鐘、零重試。不讓這些跨服務銜接 I/O 在 step 外無界等待，亦不把未確認冪等的步驟盲目加重試。
 - **重試不繞過守門與費用。** 完成事件須處理寫入成功但回應遺失，以及 checkpoint gap 的冪等重放；來源撤下、停權、配置改變與非法儲存輸入等確定性失敗不重試。暫時 I/O 錯誤只交固定機器碼給 native SDK，不洩漏原始例外。checkpoint 只存識別符、狀態與數量／費用，不存原文、請求或生成 data；比較階段預估納入新增控制步驟及其重試，不放寬既有上限。
 - **失敗收尾與終態對帳。** 銜接重試耗盡經受控 `fail-workflow` 處理，不啟動下一個付費階段，保留已結算費用與成功工件；仍未結算的呼叫才標 unknown。清理本身也耗盡時拋固定安全錯誤讓原生引擎 errored，不吞掉後假裝完成。GET 對 active 工作僅觀察既有 instance，明確 complete／errored／terminated 才依既有 fence 收斂；觀察 RPC 失聯或 unknown 不誤改在途工作與費用，也不從輪詢重啟或建立 instance。
-- 控制政策與實際 step 選項納入 pipelineSettings 指紋；本輪僅強化生成階段銜接，不改三模型提示、呼叫參數、attempt key、單輪補完或來源／停權守門。舊在途工作不得跨配置換版續跑，不為救結果清庫、退未知費用或 force-refresh。
+- 控制政策與實際 step 選項納入 pipelineSettings；保留既有短時限銜接、attempt key、單輪補完及來源／停權守門。GPT-OSS 與新契約自然改變設定指紋，舊在途工作不得跨配置付費續跑；不清庫、退未知費用或 force-refresh 來救結果。
 
 #### 5.3.5 最終必填與單輪缺值補完（使用者後續核准）
 
 - 新版最終三段 Overview 與每組 Core_concern 均為非空字串。三項 primary 的 nullable schema 只作中間格式；有內容時提示先完成有據概述與核心關注，不以歧見概括假裝共識。
 - no_findings／failed／not_started 且空清單的 Overview 由程式依語言填入明確處理狀態，標記於 `diagnostics.generation.status_overviews` 的 `origin:program`、`kind:status`；不宣稱素材不存在相關觀點，不附虛假引用，不讓模型為失敗段編造結論。
-- 有內容且必填仍為 null 時，程式從既有採用項目的引用推導白名單 JSON Pointer 與各自證據範圍，保存補完計畫與 base/context hash。最多增加一次 Gemma 呼叫，只回傳 `{base_hash, fills:[{pointer, sentences:[{text,evidence_ids}]}]}`，不回傳整份可覆寫 data。不得修改任何已有值、來源、清單結構或順序、舊 citation map，也不得重分群或新增論點。
+- 有內容且必填仍為 null 時，程式從已採用項目的引用推導白名單 JSON Pointer 與證據範圍，保存補完計畫及 base/context hash。最多增加一次 GPT-OSS-120B 呼叫，只回傳 `{base_hash,fills:[{pointer,sentences:[{text,evidence_ids}]}]}`，不得改寫任何已有值、來源、清單／順序或舊引用，不重分群或新增論點。
 - Overview 只能引用所屬分區已採用項目使用的證據；Core_concern 只能引用該群證據。程式拒收未知／重複／缺漏指標、舊 base、非白名單覆寫、額外欄位、空值及錯群／缺引用，所有 patch 驗完才套用。原始三項與補完回應分別保存；只為新文字附加由程式計算的引用範圍。
 - 補 `/consensus/Overview` 時須將已驗證 adopted 的類型、項目 pointer 與 evidence_ids 投影成唯讀 consensus_items，讓補完模型保留 shared_fact／shared_challenge／shared_position 的差別，不把共享事實／挑戰升格成共同解法或超出原來源範圍。此投影納入計畫 hash，索引、枚舉、項目數與引用須符合 base，不能重用不同分類的補完；其他補完目標不額外傳入。data 與 patch schema 不加 kind，補完 prompt／計畫政策分別為 missing-fields-only-v2／required-fields-exact-cited-patches-v2；不改寫已有值、不新增呼叫或放寬語義品質的人工驗收。
 - 沒有缺值則不呼叫補完。必要補完失敗、context／額度不足或無可靠回應時，保留可用 primary 工件與費用，但工作為 failed，不交付仍缺必填的 data；不作第五次補完、重試、JSON 修復或改用其他模型。來源／授權失效仍依原 fence 停止，不洩露快照。
-- 補完使用 `complete:draft` 嘗試鍵，獨立預留輸入／最大輸出、結算及重放復用，仍只算同一個新工作。進度使用 `generation_progress.current_section:completion` 與獨立 completion 狀態；原 sections 保持三項。補完診斷、工件、目標與狀態來源納入 provenance／設定指紋，處理告知版本為 `evidence-processing-2026-11-02-v2`。
+- 補完使用 `complete:draft` 嘗試鍵，獨立預留完整 schema 請求與最大輸出、結算及重放復用，仍算同一工作。進度的 current_section:completion 與 completion 狀態不改，sections 保持三項。告知版本為 `evidence-processing-2026-11-02-v3`；模型及 primary／completion 原生 schema 都納入指紋，既有結果與未知費用不改。
 
 
 ## 6. 結構化輸出與版本
@@ -335,9 +339,9 @@ stateDiagram-v2
 
 1. **人工標註小樣本：** 四種關係各至少三個明確中文例子，另涵蓋相容但無共同命題、同題不同維度、策略／價值張力、少數反對、條件式支持、文內轉述他人、prompt injection 及中英日／emoji 定位。包含 A／B 對調與 A-B／B-C 支持但 A-C 衝突或不確定的支持鏈。對固定輸入比較舊／新 Clef 的混淆矩陣、逐類 precision／recall、模糊配對及人工保留樣本；先有人標準答案，不讓模型評自己，也不以關係分布符合期望取代正確性。
 2. **真實議題與三項生成：** 優先使用議題 13、素材 25／26／27，先確認仍可讀且與基準 hash 一致；來源變更時記錄差異，不假稱同樣本對照。人工分別檢查共同命題及條件、明確對立／可並存張力與兩側證據、立場分群／群內綜整、少數觀點及遺漏。沿用本次已發現的三類品質失敗作回歸案例，不把它們變成強迫非空輸出的模板。
-3. **成本與失敗對照：** 在相同證據與語言下記錄舊的一次生成與新版三項生成的各項 token、預留／實際／未知費用、時間及分項結果；Clairic／Clef 與 Gemma 費用分開。若同時修改 Clef 與生成，報告揭露兩項變因，不把全部改善歸因於拆呼叫。優先使用已保存的基準，不為補齊表格自動重跑付費模型。
+3. **成本與失敗對照：** 記錄相同證據／語言下的 token、預留／實際／未知費用、時間與結果，抽取／比較與生成費用分開。比較 Gemma 與 GPT-OSS 時揭露同時改原生 JSON Schema、短 ID／enum、question 去重及提示，不把全部改善歸因於模型。推理與輸出量可能增加，不以單價倍數冒充實際費用；優先用保存基準，不為補表自動重跑付費模型。
 
-機械門檻：偽造出處、跨素材錯錨與缺引用必須被拒絕；未直接驗證的遞移候選或 Gemma 張力提案不得計為 Clef 已確認關係。品質報告列出抽取／關係混淆、方向偏差、支持鏈反例、三項各自的缺漏與人工修正，不以 HTTP 200、schema 通過或高 confidence 宣稱品質過關。已知反例仍被寫成共識、明確對立被漏掉／混作共識、或立場仍只逐條枚舉而未綜整時，品質驗收不通過；不得以所有清單變非空或程式檢查全綠取代此門檻。
+機械門檻：偽造出處、跨素材錯錨、缺引用、漏交代候選、未知／舊格式候選 ID、已知對立同群及重複問題都必須拒收；未直接驗證的候選或生成張力不得算 Clef 已確認關係。品質報告保留抽取／關係混淆、方向偏差、支持鏈反例與三項缺漏／人工修正，不以 HTTP 200、schema、items 數量或 confidence 宣稱品質過關。已知反例仍列共識、對立漏掉／混作共識、或立場只逐條枚舉未綜整時，品質驗收不通過；程式檢查全綠不取代此門檻。
 
 本輪不新增一鍵 UI；若為隱私告知而修改既有介面文字，仍須 zh-TW／en／ja 同步，並以真實瀏覽器檢查桌機／手機、淺色／深色與 hydration。未實測的登入、語言或正式站行為不得在報告勾成通過。
 
@@ -415,6 +419,6 @@ README 必須有獨立的 #183 實驗驗收章節，讓未參與開發的檢閱�
 - [工程師人工檢閱與決策](./plan_review.md)；交換律／遞移範圍及再彙整 API 的取捨，以本文件第 1、5.2、11.1 節記錄的本次使用者裁示為準。
 - [PR #187](https://github.com/g0v/civic-talk-hono/pull/187)、[PR #188](https://github.com/g0v/civic-talk-hono/pull/188)
 - [Jigsaw #124：span 抽取](https://github.com/Jigsaw-Code/sensemaking-tools/pull/124)、[#125：摘錄與判斷的品質限制](https://github.com/Jigsaw-Code/sensemaking-tools/pull/125)
-- [Clairic](https://developers.cloudflare.com/workers-ai/models/clairic/)、[Clef](https://developers.cloudflare.com/workers-ai/models/clef/)、[Gemma 4](https://developers.cloudflare.com/workers-ai/models/gemma-4-26b-a4b-it/)、[JSON Mode 限制](https://developers.cloudflare.com/workers-ai/features/json-mode/)
+- [Clairic](https://developers.cloudflare.com/workers-ai/models/clairic/)、[Clef](https://developers.cloudflare.com/workers-ai/models/clef/)、[GPT-OSS-120B](https://developers.cloudflare.com/workers-ai/models/gpt-oss-120b/)、[JSON Mode 限制](https://developers.cloudflare.com/workers-ai/features/json-mode/)；Gemma 僅為歷史基準，不再是本輪生成模型。
 - [本機／遠端 binding 支援表](https://developers.cloudflare.com/workers/local-development/bindings-per-env/)、[本機 Workflows 存取遠端資源](https://developers.cloudflare.com/workers/local-development/#using-remote-resources-with-durable-objects-and-workflows)、[Workflows 冪等與持久化規則](https://developers.cloudflare.com/workflows/build/rules-of-workflows/)
 - [Workflows step、subrequest 與 checkpoint 限額](https://developers.cloudflare.com/workflows/reference/limits/)

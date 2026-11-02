@@ -2,9 +2,9 @@ import type { WorkflowStep } from 'cloudflare:workers'
 import type { EvidenceBindings } from './env'
 import { analyzeComparisons, createEvidencePairs, type ComparisonAnalysis, type ComparisonFailure, type DirectComparison } from './comparison'
 import { extractClairicEvidence, MAX_EVIDENCE, type Evidence, type EvidenceExtraction } from './evidence'
-import { assembleGeneratedDraft, buildCompletionRequest, buildGemmaRequest, finalizeDraftCompletion, GEMMA_PARAMETERS, GENERATION_SECTIONS, GENERATION_VALIDATION_CODES, parseCompletionResponse, parseGemmaResponse, pipelineSettings, prepareDraftCompletion, type CompletedDraft, type DraftCompletionPlan, type GeneratedSection, type GenerationInput, type GenerationSection, type GemmaRequest, type SectionStates } from './generation'
+import { assembleGeneratedDraft, buildCompletionRequest, buildGenerationRequest, finalizeDraftCompletion, GENERATION_PARAMETERS, GENERATION_SECTIONS, GENERATION_VALIDATION_CODES, parseCompletionResponse, parseGenerationResponse, pipelineSettings, prepareDraftCompletion, type CompletedDraft, type DraftCompletionPlan, type GeneratedSection, type GenerationInput, type GenerationSection, type GenerationRequest, type SectionStates } from './generation'
 import { checkInitiator, checkedSnapshot, SourceUnavailable } from './lifecycle'
-import { buildClairicRequest, buildClefBatches, modelUsageStatus, ModelContextLimitError, parseClairicResponse, parseClefResponse, type ClefBatch, type ModelRequest } from './models'
+import { buildClairicRequest, buildClefBatches, modelUsageStatus, ModelContextLimitError, MODEL_SELECTORS, parseClairicResponse, parseClefResponse, type ClefBatch, type ModelRequest } from './models'
 import { actualCallCost, estimateCall, requestProvenance, type ModelSelector } from './pricing'
 import { EvidenceStore, EvidenceStoreError, type ErrorCode, type Snapshot } from './store'
 import { WORKFLOW_CONTROL_POLICY } from './workflowPolicy'
@@ -26,7 +26,7 @@ type ComparisonPlan = { batches: ClefBatch[] }
 type ComparisonPayload = { analysis: ComparisonAnalysis; partial: boolean; raw_artifact_ids: string[] }
 type GenerationPlan = {
   stage: 'generation_plan'
-  requests: Partial<Record<GenerationSection, GemmaRequest>>
+  requests: Partial<Record<GenerationSection, GenerationRequest>>
   estimates: Partial<Record<GenerationSection, number>>
   limits: Partial<Record<GenerationSection, { request_bytes: number; limit_bytes: number }>>
   estimated_micro_usd: number
@@ -166,8 +166,8 @@ async function paid(
   const store = new EvidenceStore(env.DB)
   const snapshot = await current(env, jobId, true)
   const request = await build(snapshot)
-  const selector = request.selector as ModelSelector
-  if (!['@cf/cloudflare/clairic', '@cf/cloudflare/clef', '@cf/google/gemma-4-26b-a4b-it'].includes(selector)) throw new PipelineStop('internal_error')
+  const selector = request.selector
+  if (selector !== MODEL_SELECTORS.clairic && selector !== MODEL_SELECTORS.clef && selector !== MODEL_SELECTORS.generation) throw new PipelineStop('internal_error')
   const attempt = await store.beginAttempt({ executionId: snapshot.executionId, stepKey, estimateMicroUsd: estimateCall(selector, request.input, maxOutput), generations: snapshot.generations })
   if (attempt.outcome === 'budget') return { status: 'budget_exhausted', artifactId: null }
   if (attempt.outcome === 'fenced') return { status: 'source_unavailable', artifactId: null }
@@ -177,6 +177,10 @@ async function paid(
       return { status: 'provider_uncertain', artifactId: null }
     }
     const raw = await artifact<RawPayload>(env, snapshot.executionId, attempt.artifactId)
+    if (raw.selector !== selector) {
+      await store.settleAttempt(attempt.attemptId, null)
+      return { status: 'provider_uncertain', artifactId: null }
+    }
     await store.settleAttempt(attempt.attemptId, actualCallCost(selector, raw.response))
     return { status: 'ok', artifactId: attempt.artifactId }
   }
@@ -201,7 +205,7 @@ async function paid(
   try {
     const provenance = await requestProvenance(selector, request.input, response)
     const usage = response && typeof response === 'object' && 'usage' in response ? response.usage : undefined
-    provenance.usage_status = selector === '@cf/google/gemma-4-26b-a4b-it'
+    provenance.usage_status = selector === MODEL_SELECTORS.generation
       ? usage === undefined ? 'missing' : actual === null ? 'malformed' : 'reported'
       : modelUsageStatus(usage)
     const result = await store.saveArtifact({
@@ -386,7 +390,7 @@ export async function runEvidenceWorkflow(env: EvidenceBindings, jobId: string, 
       const plan: GenerationPlan = { stage: 'generation_plan', requests: {}, estimates: {}, limits: {}, estimated_micro_usd: 0 }
       for (const section of GENERATION_SECTIONS) {
         try {
-          const request = buildGemmaRequest(section, input)
+          const request = buildGenerationRequest(section, input)
           plan.requests[section] = request
           const estimate = estimateCall(request.selector as ModelSelector, request.input, request.input.max_tokens)
           plan.estimates[section] = estimate
@@ -481,7 +485,7 @@ export async function runEvidenceWorkflow(env: EvidenceBindings, jobId: string, 
             const raw = await artifact<RawPayload>(env, snapshot.executionId, rawId)
             let parsed: GeneratedSection
             try {
-              parsed = await parseGemmaResponse(section, raw.response, generationInput(snapshot))
+              parsed = await parseGenerationResponse(section, raw.response, generationInput(snapshot))
             } catch (error) {
               const validationCode = error instanceof Error && GENERATION_VALIDATION_CODES.includes(error.message) ? error.message : null
               return { section, status: 'failed', reason: 'invalid_generation', artifact_id: null, raw_artifact_id: rawId, validation_code: validationCode }
@@ -557,7 +561,7 @@ export async function runEvidenceWorkflow(env: EvidenceBindings, jobId: string, 
           result = await paid(env, jobId, 'complete:draft', async live => {
             const saved = await artifact<CompletionPlanArtifact>(env, live.executionId, completionPlanId)
             return buildCompletionRequest(saved.plan, generationInput(live))
-          }, GEMMA_PARAMETERS.max_tokens)
+          }, GENERATION_PARAMETERS.max_tokens)
         } catch (error) {
           if (error instanceof ModelContextLimitError) {
             await recordLimit(env, jobId, error)

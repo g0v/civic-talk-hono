@@ -6,18 +6,18 @@ import { PRICING_VERSION } from './pricing'
 export const MODEL_SELECTORS = {
   clairic: '@cf/cloudflare/clairic',
   clef: '@cf/cloudflare/clef',
-  gemma: '@cf/google/gemma-4-26b-a4b-it',
+  generation: '@cf/openai/gpt-oss-120b',
 } as const
 
 export const MODEL_VERSIONS = {
   clairic_prompt: 'claims-list-v3',
   clef_prompt: 'symmetric-four-way-v2',
   clef_batching: 'canonical-byte-budget-v1',
-  gemma_prompt: 'specialized-evidence-v5',
-  gemma_schema: 'specialized-cited-v3',
-  gemma_input: 'section-values-v3',
-  gemma_completion_prompt: 'missing-fields-only-v2',
-  gemma_completion_schema: 'cited-field-patches-v1',
+  generation_prompt: 'specialized-evidence-v6',
+  generation_schema: 'specialized-cited-v4',
+  generation_input: 'section-values-v4',
+  generation_completion_prompt: 'missing-fields-only-v2',
+  generation_completion_schema: 'cited-field-patches-v1',
   pricing: PRICING_VERSION,
 } as const
 

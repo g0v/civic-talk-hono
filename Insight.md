@@ -232,3 +232,18 @@
 - 獨立 Miniflare／workerd 與真正本機 D1、原生 Workflow 執行八種隔離情境：正常完成、首次強制 timeout 後成功、四次 timeout 耗盡、清理耗盡、寫入後回應遺失、native checkpoint restart、實際 Hono GET 終態對帳，以及不使用 force timeout 的懸置 I/O。最後一項第一回 attempt 實際約 30.007 秒才 timeout，第二回成功；合成 provider 呼叫未增加、完成事件未重複，先前 raw 保留。native 事件確認三種 step 選項，非空實際 step outputs 不含內容／請求。
 - GET smoke 在工作前暖起真實 route，清理耗盡後觀察 native errored，HTTP 200 收斂 failed/provider_uncertain；startup 對帳次數未增加，沒有 restart/create 或新 provider 呼叫，所有工件 hash 與用量保留。來源、session provider 與 AI 都是合成 adapter，未建 auth schema，外部網路封鎖；強制 timeout 案例不是實際等待三十秒，與真正懸置 I/O 案例分開記錄，均不代表真實模型或 OAuth 品質驗收。
 - 暫存 harness 已移除，5173 維持停止，未 commit／push／部署或執行遠端寫入／migration。README 與 plan 同步短時限、非模型安全重試、觀察終態及不重送 POST 的操作限制；模型內容品質與新設定的真人實測仍待後續驗收。
+
+## 2026-11-03：GPT-OSS-120B 實測與短候選／爭點組題契約
+
+- 使用者先核准只試 GPT-OSS-120B、不用 GLM，之後另同意補測共識／爭點。修改正式管線前，使用同一份已保存的議題 13／素材 25、26、27 證據與關係做私有 probe，未重跑 Clairic／Clef。原生 JSON Schema 初期有兩筆呼叫未取得用量，其中第二筆明確回報 `8007 / BadRequestError 400 / Unimplemented keys: ["uniqueItems"]`；第一筆未保留詳細錯誤，不能斷言同因，兩筆費用仍未知。
+- provider schema 只移除不支援的 uniqueItems、保留原程式重複 ID 與關係守門後，三份真實回應均為合法 JSON／stop。立場三群及爭點三項通過既有驗證，共識三項因六組 candidate_id 都被改寫為另一種括號／引號格式而拒收。依回報 token 與官方單價計算，三筆已知生成費用約 US$0.01487755，不含兩筆未知費用；不是 Cloudflare 帳單核對。原始資料及完整報告留在私有 `.wrangler/ai-experiment/gpt-oss-120b-ngljzop0/`，未修補／覆寫原回應，也未寫回原工作。
+- 人工閱讀 probe 仍發現爭點近似重複、共識把風險與需求／技能建議並列的問題，不能因 JSON 或引用通過便宣稱語義改善。使用者據此核准正式實驗改用 GPT-OSS-120B，加上最小契約修正；先前 probe 不是以下修正版的真實生成驗收。
+- primary 與單輪補完均切到固定 `@cf/openai/gpt-oss-120b`，移除執行期 Gemma selector／thinking-disable，匯出與版本鍵改為模型中性 generation 名稱，沒有舊名稱 shim。請求帶原生 response_format/json_schema，保留 max_tokens:8192、temperature:0.2；程式仍拒收截斷、拒答、工具呼叫、非法 JSON 或引用不符，無 JSON 修補、模型裁判、備援或付費重試。
+- 共識依 canonical ID 確定性排序編號 C1…Cn，只向模型提供短 ID，items 與 rejected_candidates 共用當輪動態 enum；空候選時兩陣列 maxItems:0。解析只接受當輪短 ID，將驗證後採用／拒絕映回 canonical ID，並在 candidate_map 保存對照；未知／長格式／錯輪 ID、漏交代、重複拒絕與採用後再拒絕仍拒收，不由原文形狀猜測修復。映射與動態 schema 納入 context／配置指紋。
+- 共識提示加強逐來源尋找共同具體命題，不將取代風險與招募復甦或技能建議自動並成共同立場。爭點先按獨立問題合併多組統計／配對，再整理各側及條件；原生新增有引用的 question，只存 diagnostics，對外 data.items 仍為 Title／description。空白與大小寫正規化後的同問題以 generation_duplicate_question 拒收，不靠改標題、分類、佐證集合湊項，也不以模糊字串相似度刪掉不同問題。換句話說的語義重複仍需人工檢查；共識／爭點都移除約三項目標，不用清單長度當品質代理。
+- prompt／schema／input 為 specialized-evidence-v6／specialized-cited-v4／section-values-v4，同意版本 evidence-processing-2026-11-02-v3。計價改為每百萬 input／output US$0.35／0.75，預留包含完整 schema 請求與最大輸出，使用原生 prompt_tokens／completion_tokens，不重複加 message 的 reasoning；缺失、異常或互相衝突的用量維持未知。不同 selector 的舊 raw 不按新價目重結算或重打，原有設定指紋與來源／停權 fence 不變。
+- 永久行為回歸涵蓋短 ID 的確定性對照、空候選、未知／長格式 ID、完整交代、重複／越界引文、重複問題與不同問題共用證據，以及原生用量、完整請求／最大輸出預留、舊 raw 模型不符的未知費用保留。移除僅複製固定驗證常數的斷言，保留實際 parser／工作流／API 行為檢查。首次全測發現新增預留測試未計入 admission 原額度的移轉，改為核對執行前真實預留保持不變，不重釘 incidental 金額；後續型別檢查通過 158 files、53 test files／555 tests 全通過。
+- 獨立 Node 程序執行實際 runner、repository、來源查核及記憶體 SQLite，五情境通過：正常 ai_draft、canonical 長 ID 拒收後 partial、重複問題拒收後 partial、只補缺值一輪、缺用量但有效內容保留未知預留。各情境終態重放均零額外呼叫，來源 SQL 資料未變，checkpoint 不含正文；只有合成 provider 與帳號查詢 adapter，零付費模型／遠端 D1 存取，未建立 auth schema。安全摘要留在 `.wrangler/ai-experiment/verification/gpt-oss-contract-smoke.json`，暫時執行器於驗證後移除。
+- 對既有真實凍結輸入只跑新版 builder，20 段證據、81 組直接比較完整保留；共識六組短 ID／enum 相符。三項請求分別為 20,746／19,018／18,386 bytes，均低於既有 48 KiB 守門，未新增模型呼叫或 DB 寫入。新 config hash 與保存舊工作不同，原始工作、review 與費用帳本均不改。
+
+- `vp run build` 成功，client／Worker 與 notices／source manifests 均生成；版本為 `97bcdd3e771d874997a6dfbe45551e80ef616ec8 (dirty)`，有既有 client chunk 大於 500 kB 警告，未部署。README、plan 與 AGENTS 的實驗模型／契約已同步；本輪未修改 UI、一般登入或 BYO token 流程，未重啟或停止既有 5173、未新增付費模型請求、未改遠端 DB／migration，未 commit／push。新版模型內容與近似重複的語義品質，仍待使用者重啟 opt-in server 後另建工作驗收。

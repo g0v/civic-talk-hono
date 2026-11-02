@@ -24,7 +24,7 @@
 
 1. **所有資料表一律 `ct_` 前綴。** 遠端 D1 `vtaiwan-civic-talks` 位於 vTaiwan 命名空間、可能與其他專案共用，未加前綴的 `issues`／`materials`／`briefings`／`opinions` 會撞名並造成不可逆的資料破壞。所有 DDL、SQL、型別一律只碰 `ct_*`；migration 套用後查 `sqlite_master` 確認只新增 `ct_` 開頭的業務表。
 2. **內容生成與投稿安全審查分開。** 素材彙整／說明頁等**內容生成**仍由志願者使用自己的 AI token 完成，平台只產出 prompt 並收回結果；伺服器端不得代為呼叫生成模型。**例外（issue #29，使用者明確授權）**：四個投稿入口可在 Worker 內呼叫 OpenRouter 的 `openai/gpt-oss-safeguard-20b` 做投稿安全審查。審查採 **fail-open**：OpenRouter 缺 key、逾時或 5xx 等基礎設施故障時記錄結構化錯誤並放行投稿，不把故障誤判成濫用，也不因外部服務故障擋住全站投稿。
-   - **例外（Issue #183，使用者明確授權）**：只有以 `CIVIC_AI_EXPERIMENT=1 vp run dev:remote` 明確 opt-in 的隔離本機實驗入口，才可為未停權且已登入使用者呼叫固定的 Clairic／Clef／Gemma 三模型，產生私有證據草稿；不得公開、投稿或發布，也不得寫入遠端業務 DB。一般志願者 BYO token／prompt API 不變；範圍依[核准計畫](./plan.md)與[實作洞察](./Insight.md)，不授權部署或其他伺服器端內容生成。
+   - **例外（Issue #183，使用者明確授權）**：只有以 `CIVIC_AI_EXPERIMENT=1 vp run dev:remote` 明確 opt-in 的隔離本機實驗入口，才可為未停權且已登入使用者呼叫固定的 Clairic／Clef／GPT-OSS-120B 三模型，產生私有證據草稿；GPT-OSS-120B 取代原 Gemma（使用者後續裁示），共識以短候選 ID 與動態 schema enum 約束，程式保留 canonical 對照及完整引用／關係驗證，不修補模型輸出放行。不得公開、投稿或發布，也不得寫入遠端業務 DB。一般志願者 BYO token／prompt API 不變；範圍依[核准計畫](./plan.md)與[實作洞察](./Insight.md)，不授權部署或其他伺服器端內容生成。
    - **素材事實查核不是內容生成。** `POST /api/fact-check` 經登入／停權守門後，以 `FACT_CHECK_CORE` Service Binding 串流轉送到沒有公開 route 的 `fact-check-core`。Service Binding 已是核心 Worker 的 capability；不要再加入前端 API key、HMAC token 或把 session cookie 轉送給核心。
 3. **SSR 路徑絕不碰瀏覽器 API。** 任何在 SSR 期間執行的程式碼（元件 `setup`、模組頂層、共用工廠）不得使用 `window`／`document`／`localStorage`／`navigator`——需要時用 `typeof window === 'undefined'` 守衛或放到 `onMounted`。每請求新建獨立的 app 實例，嚴禁跨請求共享可變狀態。
 4. **舊網址永不失效。** 下列舊路徑必須以 301／302 導向新的乾淨路由，且此對應表只能新增、不能刪除：
@@ -562,11 +562,11 @@ npx wrangler d1 migrations apply vtaiwan-civic-talks --remote   # 🚫 需先取
 - 實驗 migration 僅可套用本機 `DB`，並確認新表皆為 `ct_` 前綴。`ct_materials` 沒有 title 欄位；來源標題用 `source_name` 或素材 ID，不得生成預覽文字。來源 hash 欄位順序、空內容拒絕及原始內容處理依 #183 核准計畫與實作契約，不得改寫來源資料。
 - 一般志願者內容生成仍由使用者自帶模型金鑰；既有 synthesis prompt API 保留。`Issues.md` 只記錄計畫 §11.1 的兩項未實作未來工作，不建立 GitHub issue。
 - 完成度須分別記錄本機 runtime、遠端唯讀來源查核、真實模型呼叫及人工語意／OAuth 驗收；不得把 fixture／單元測試當作真實模型或人工驗收。
-- 新版管線依序執行 Gemma 共識／爭點／立場地圖三個專項，使用同一份已驗證證據與比較資料，不串接摘要；只在共識保留直接支持候選限制，爭點可提出明示類型的張力，立場允許多證據重新分群。不得恢復單次生成或單條立場枚舉 fallback。
-- 共識／爭點以約三項獨立有據內容為目標，不硬設最少三項；不同命題可共用同一候選與證據，但完全重複內容拒收。每項仍須實質跨來源支持或呈現同一可對照問題的各側，不以多塞 items 當品質。
-- Gemma `section-values-v3` 各項收到完整已驗證 quote、ID／素材 ID 及必要關係投影，詳細 metadata 仍保存在本機。立場原生 item 不再含群組級 evidence_ids；以 opinions 有效引用推導群組／Sources，群名／Core 引用範圍、直接反例、全證據覆蓋／排除仍驗證。不得刪舊欄位後假裝舊 raw 通過，也不新增相容 fallback 或付費呼叫。
+- 新版管線依序執行固定 `@cf/openai/gpt-oss-120b` 的共識／爭點／立場地圖三個專項，使用同一份已驗證證據與必要比較資料，不串接摘要。primary／單輪補完均採原生 JSON Schema，不送 provider 不支援的 `uniqueItems`，程式仍拒絕重複 ID；不得恢復單次生成、備援或格式修復。
+- 共識／爭點不設約三項或其他筆數目標。不同共同命題可共用同一候選／證據，完全重複項目仍拒收；共同命題須由各參與來源獨立支持，不把風險與需求回升或技能建議的並列當共識。爭點先按問題合併多組佐證，原生 `question` 須有引用且只放診斷；空白／大小寫正規化後同問題拒收，不模糊刪除或自動合併，語義近似重複仍需人工驗收。
+- 生成 `section-values-v4` 各項收到完整已驗證 quote、ID／素材 ID 及必要關係投影，詳細 metadata 留在本機。共識依 canonical ID 排序建立 C1…Cn，動態 schema enum 限制採用／拒絕 ID，空候選時兩清單必須為空；程式保留 `candidate_map`，驗證後診斷使用 canonical ID，未知／舊格式 ID、漏交代、重複拒絕或採用又拒絕都拒收，不猜測修補。立場仍由 opinions 引用推導成員／Sources，保留群內引用、direct disagree 互斥與完整覆蓋／排除守門；不修改舊 raw 或新增相容 fallback。
 - 各項獨立記帳、驗證與保存；`diagnostics.generation.sections` 區分 completed／no_findings／failed／not_started，進行中另看 `generation_progress`。partial 不代表失敗空段沒有爭點；來源 fence、停權、去重及禁止自動重試仍適用。
-- 最終三段 Overview 與每組 Core_concern 均須非空；Core_concern 可依明示主張有據綜整，不推測動機。三項後僅在有內容的必填仍為 null 時，最多一輪 Gemma 白名單補完，不能改已有值、來源、順序或舊引用。空／失敗／未啟動分區的 Overview 由程式以三語狀態文字明示，不偽造來源結論或 citation。
+- 最終三段 Overview 與每組 Core_concern 均須非空；Core_concern 可依明示主張有據綜整，不推測動機。三項後僅在有內容的必填仍為 null 時，最多一輪 GPT-OSS-120B 白名單補完，不能改已有值、來源、順序或舊引用。空／失敗／未啟動分區的 Overview 由程式以三語狀態文字明示，不偽造來源結論或 citation。
 - 補完獨立預留／結算且仍屬同一工作，進度可為 completion；無缺值不付費，必要補完失敗不交付缺值草稿。原始分項、舊結果、unknown 費用與 tombstone 不覆寫；不新增第五輪、自動重試或格式修復。真實模型補完品質須另經付費／人工驗收，不以合成 provider 證據取代。
 - Clef `symmetric-four-way-v2` 以共同問題／條件校準四分類，不追求特定分布；`scripts/evidence-clef-calibration.mjs` 只做已人工核可資料的離線對照，不呼叫模型，也不能證明人工核可／hash 的來源。新版真實模型與人工語義品質尚待驗收，不以合成 SQLite／HTTP smoke 取代。
 
