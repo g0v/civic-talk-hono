@@ -103,6 +103,28 @@ describe('Clairic 證據來源定位', () => {
     expect(sliceEvidenceSpan(content, crossSentence.evidence[0].raw_span)).toBe(long)
   })
 
+  it('單一核心主張可保留多段條件、反例與少數觀點，不因超過三段裁切', () => {
+    const sentences = [
+      '市府主張應增加偏遠地區公車。',
+      '此主張僅在已有合格司機時適用。',
+      '經費必須先取得議會核准。',
+      '反對者認為現行試辦的載客量不足。',
+      '少數居民仍要求保留低使用量路線。',
+    ]
+    const content = sentences.join('\r\n')
+    const values = ['增加偏遠地區公車', '已有合格司機', '議會核准', '載客量不足', '保留低使用量路線']
+    const result = extract(content, values, values.map(value => offsets(content, value, 'utf16')))
+    expect(result.evidence.map(item => item.quote)).toEqual(sentences)
+    for (const [index, item] of result.evidence.entries()) {
+      expect(sliceEvidenceSpan(content, item.raw_span)).toBe(values[index])
+      expect(sliceEvidenceSpan(content, item.expanded_span)).toBe(sentences[index])
+    }
+    expect(result.rejected).toEqual([])
+    const stitched = extract(content, [`${sentences[0]}${sentences[4]}`])
+    expect(stitched.evidence).toEqual([])
+    expect(stitched.rejected).toEqual([{ index: 0, reason: 'not_found' }])
+  })
+
   it('句尾引號與數值小數點不被誤當下一句', () => {
     const content = 'The rate is 3.14%. 「這是句子。」Next sentence!'
     const result = extract(content, ['3.14', '這是句子', 'Next'])
