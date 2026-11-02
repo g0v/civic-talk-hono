@@ -172,7 +172,7 @@
 - **共識可拒絕候選。** 有 agree 邊仍可能沒有足夠具體的共同基礎；須保留未採用原因，不能改寫來源以湊出結果。Overview 與 description 都遵守相同語義與分型範圍，不把歧見移到 Overview 後假裝解決，也不把共同挑戰包裝成共同解法。
 - **項目豐富性以證據優先。** 共識／爭點目標約三個獨立命題／問題，檢視所有有據維度，不在第一項就停止或過度合併；不足時零至兩項仍合法，不硬設 minItems:3、不湊數、不重複拆同一問題。每個共識子命題均須跨參與來源支持，不將單一來源建議藉相容引用冒充共同立場。同一候選與證據集合可支持不同命題，只有候選／成員／渲染文字相同的完全重複項目拒收。items 與引用筆數是不同概念。
 - **共同基礎三型（本輪使用者裁示）。** `shared_fact` 要求各參與素材明示或報告同一可對照的事實命題，不代表平台已獨立查證；`shared_challenge` 要求各素材明示承認同一具體問題／限制，解法可不同；`shared_position` 要求共同支持同一判斷、立場或建議。三型均沿用第 5.2 節既有跨素材直接 agree 候選及有效子集，不開放候選外新提案、不改寫 Clef 原判斷。問題、沉默、相容風險與建議不能代替逐來源支持，轉述亦不得冒充作者認可。
-- **分類只放診斷。** 原生共識 item 的必填 `kind` 由程式驗證枚舉並保存於 `diagnostics.generation.sections.consensus.details.adopted[]`，`classification_source` 固定由程式標為 `gemma_proposal`；`data.consensus.items` 仍為 `{Title,description}`，人改與引用契約不變。不能藉重新分類重複相同候選／成員／渲染文字，亦不將分型當成語義證明。prompt／schema 為 `specialized-evidence-v5`／`specialized-cited-v3`，input 保持 `section-values-v3`；爭點、立場、抽取／比較及補完規則不變，不新增付費步驟。
+- **分類只放診斷。** 原生共識 item 的必填 `kind` 由程式驗證枚舉並保存於 `diagnostics.generation.sections.consensus.details.adopted[]`，`classification_source` 固定由程式標為 `gemma_proposal`；`data.consensus.items` 仍為 `{Title,description}`，人改與引用契約不變。不能藉重新分類重複相同候選／成員／渲染文字，亦不將分型當成語義證明。prompt／schema 為 `specialized-evidence-v5`／`specialized-cited-v3`，input 保持 `section-values-v3`；爭點、立場與抽取／比較規則不變，補完須依第 5.3.5 節繼承共識分型，不新增付費步驟。
 - **保留共識證據宣告，只強化提示。** 模型先逐來源找共同點的有據交集、窄化範圍，再選型與撰文；送出前自行核對宣告 evidence_ids 等於 Title／description 的實際引用聯集，各宣告來源均在 description 引用。可先選真正支持的候選子集，不整組照抄後漏引、不加裝飾性引用湊數。程式仍嚴格拒收漏引、未知／候選外引用、不足兩素材、非法分類或偽造來源欄位；不改成自動推導成員、修剪、改寫、部分救回或另叫模型修復。無發現與驗證失敗仍分別記錄，舊工作與原始回應不回填。
 - **爭點不以非空 disagree 候選為啟動條件。** 此專項仍讀取同一證據與關係資料，檢查可追溯的張力提案。每項至少引用兩個不同素材，逐側記錄證據、比較條件、類型及來源是直接判斷還是 Gemma 提案；未獲 Clef 直接支持的矛盾提案保留為待審，不升格成已確認 disagree。若確無足夠證據，允許空結果。
 - **立場重新分群，不強制一素材一立場。** 同一素材可出現在不同關注群，多素材也可支持同一群；不要求每群必須跨素材，不把素材數當支持人數。不得將相反主張壓成同一立場，亦不靠固定群數裁掉內容；無法合併的少數觀點可獨立保留，不推測作者動機。
@@ -200,6 +200,7 @@
 - no_findings／failed／not_started 且空清單的 Overview 由程式依語言填入明確處理狀態，標記於 `diagnostics.generation.status_overviews` 的 `origin:program`、`kind:status`；不宣稱素材不存在相關觀點，不附虛假引用，不讓模型為失敗段編造結論。
 - 有內容且必填仍為 null 時，程式從既有採用項目的引用推導白名單 JSON Pointer 與各自證據範圍，保存補完計畫與 base/context hash。最多增加一次 Gemma 呼叫，只回傳 `{base_hash, fills:[{pointer, sentences:[{text,evidence_ids}]}]}`，不回傳整份可覆寫 data。不得修改任何已有值、來源、清單結構或順序、舊 citation map，也不得重分群或新增論點。
 - Overview 只能引用所屬分區已採用項目使用的證據；Core_concern 只能引用該群證據。程式拒收未知／重複／缺漏指標、舊 base、非白名單覆寫、額外欄位、空值及錯群／缺引用，所有 patch 驗完才套用。原始三項與補完回應分別保存；只為新文字附加由程式計算的引用範圍。
+- 補 `/consensus/Overview` 時須將已驗證 adopted 的類型、項目 pointer 與 evidence_ids 投影成唯讀 consensus_items，讓補完模型保留 shared_fact／shared_challenge／shared_position 的差別，不把共享事實／挑戰升格成共同解法或超出原來源範圍。此投影納入計畫 hash，索引、枚舉、項目數與引用須符合 base，不能重用不同分類的補完；其他補完目標不額外傳入。data 與 patch schema 不加 kind，補完 prompt／計畫政策分別為 missing-fields-only-v2／required-fields-exact-cited-patches-v2；不改寫已有值、不新增呼叫或放寬語義品質的人工驗收。
 - 沒有缺值則不呼叫補完。必要補完失敗、context／額度不足或無可靠回應時，保留可用 primary 工件與費用，但工作為 failed，不交付仍缺必填的 data；不作第五次補完、重試、JSON 修復或改用其他模型。來源／授權失效仍依原 fence 停止，不洩露快照。
 - 補完使用 `complete:draft` 嘗試鍵，獨立預留輸入／最大輸出、結算及重放復用，仍只算同一個新工作。進度使用 `generation_progress.current_section:completion` 與獨立 completion 狀態；原 sections 保持三項。補完診斷、工件、目標與狀態來源納入 provenance／設定指紋，處理告知版本為 `evidence-processing-2026-11-02-v2`。
 

@@ -835,6 +835,7 @@ describe('必要欄位補完與不可變 primary 工件', () => {
     expect(JSON.stringify(payload)).not.toContain('其他秘密')
     expect(JSON.stringify(payload)).not.toContain('https://example.org/a')
     expect(payload.existing_data.positions.items[0]).not.toHaveProperty('Sources')
+    expect(payload).not.toHaveProperty('consensus_items')
     expect(request.request_bytes).toBeLessThanOrEqual(GEMMA_MAX_REQUEST_BYTES)
     await expect(finalizeDraftCompletion(plan, input)).rejects.toThrow('generation_incomplete_draft')
 
@@ -865,6 +866,31 @@ describe('必要欄位補完與不可變 primary 工件', () => {
     expect({ sections, draft, plan }).toEqual(before)
     expect(result.data.positions.items.every(item => typeof item.Core_concern === 'string' && item.Core_concern.trim())).toBe(true)
     expect(['consensus', 'disputes', 'positions'].every(section => typeof result.data[section as GenerationSection].Overview === 'string' && result.data[section as GenerationSection].Overview.trim())).toBe(true)
+  })
+
+  it('共識 Overview 缺值補完保留事實／挑戰分型，分型綁定 base 且不改 data', async () => {
+    const plans: DraftCompletionPlan[] = []
+    for (const kind of ['shared_fact', 'shared_challenge']) {
+      const primary = consensusOutput()
+      primary.items[0].kind = kind
+      const section = await parseGemmaResponse('consensus', completion({ ...primary, Overview: null }), input)
+      const draft = await assembleGeneratedDraft([section], input)
+      const plan = await prepareDraftCompletion(draft, [section], { consensus: 'completed', disputes: 'failed', positions: 'not_started' }, input)
+      const before = structuredClone({ section, draft, plan })
+      const payload = JSON.parse(buildCompletionRequest(plan, input).input.messages[1].content)
+      expect(payload.consensus_items).toEqual([{ pointer: '/consensus/items/0', kind, evidence_ids: ['e1', 'e2'] }])
+      expect(payload.existing_data.consensus.items[0]).not.toHaveProperty('kind')
+      expect(plan.targets).toEqual([{ pointer: '/consensus/Overview', evidence_ids: ['e1', 'e2'] }])
+      const result = await parseCompletionResponse(completion(completionPatch(plan)), plan, input)
+      expect(result.data.consensus.items).toEqual(draft.data.consensus.items)
+      expect(result.data.consensus.Overview).toBe('😀補完0。另一句！')
+      expect(result.citation_map.slice(0, draft.citation_map.length)).toEqual(draft.citation_map)
+      expect({ section, draft, plan }).toEqual(before)
+      plans.push(plan)
+    }
+    expect(plans[0].base).toEqual(plans[1].base)
+    expect(plans[0].base_hash).not.toBe(plans[1].base_hash)
+    await expect(parseCompletionResponse(completion(completionPatch(plans[0])), plans[1], input)).rejects.toThrow('generation_completion_base_mismatch')
   })
 
   it('未知、重複、缺漏、非法指標、覆寫、額外操作及錯誤引用全部拒收，不部分套用', async () => {
@@ -969,18 +995,28 @@ describe('必要欄位補完與不可變 primary 工件', () => {
     }
   })
 
-  it('即使重新計算 base hash，目標清單也必須由 null 值和原有引用重新推導', async () => {
+  it('重新計算 base hash 仍須驗證 null 目標及共識分型索引與引用範圍', async () => {
     const { plan } = await missingFieldsFixture()
-    const forged = structuredClone(plan)
-    forged.targets[1].evidence_ids.push('e3')
-    const stable = JSON.stringify({ context_hash: forged.context_hash, base: forged.base, targets: forged.targets, status_overviews: forged.status_overviews }, (_key, value: unknown) => {
-      if (value === null || typeof value !== 'object' || Array.isArray(value)) return value
-      const object = value as Record<string, unknown>
-      return Object.fromEntries(Object.keys(object).sort().map(key => [key, object[key]]))
-    })
-    forged.base_hash = createHash('sha256').update(stable, 'utf8').digest('hex')
-    expect(() => buildCompletionRequest(forged, input)).toThrow('generation_invalid_completion_plan')
-    await expect(parseCompletionResponse(completion(completionPatch(forged)), forged, input)).rejects.toThrow('generation_invalid_completion_plan')
+    const wrongTarget = structuredClone(plan)
+    wrongTarget.targets[1].evidence_ids.push('e3')
+    const missingKind = structuredClone(plan)
+    missingKind.consensus_items = []
+    const wrongKind = structuredClone(plan)
+    Object.assign(wrongKind.consensus_items[0], { kind: 'shared_topic' })
+    const wrongPointer = structuredClone(plan)
+    wrongPointer.consensus_items[0].pointer = '/consensus/items/1'
+    const wrongEvidence = structuredClone(plan)
+    wrongEvidence.consensus_items[0].evidence_ids.push('e3')
+    for (const forged of [wrongTarget, missingKind, wrongKind, wrongPointer, wrongEvidence]) {
+      const stable = JSON.stringify({ context_hash: forged.context_hash, base: forged.base, targets: forged.targets, consensus_items: forged.consensus_items, status_overviews: forged.status_overviews }, (_key, value: unknown) => {
+        if (value === null || typeof value !== 'object' || Array.isArray(value)) return value
+        const object = value as Record<string, unknown>
+        return Object.fromEntries(Object.keys(object).sort().map(key => [key, object[key]]))
+      })
+      forged.base_hash = createHash('sha256').update(stable, 'utf8').digest('hex')
+      expect(() => buildCompletionRequest(forged, input)).toThrow('generation_invalid_completion_plan')
+      await expect(parseCompletionResponse(completion(completionPatch(forged)), forged, input)).rejects.toThrow('generation_invalid_completion_plan')
+    }
   })
 
   it('補完請求使用相同 byte 上限，過大時拒絕而不截斷既有內容', async () => {

@@ -211,3 +211,11 @@
 - 新三型回歸於實作前重現 generation_invalid_candidate；實作後涵蓋分類與公開資料分離、缺／未知 kind、偽造分類來源、候選外與單來源拒收、同素材額外宣告漏引不自動修剪，以及正文缺來源導致 partial 而保留其他段、重入不重打。首次全測發現新增工作流斷言將公開 validation_code 誤放 outcome，依既有 API 修正測試層級；未修改 API 配合錯誤預期。
 - 獨立程序執行實際 builder／parser／assembler／補完規劃：合成三型可通過，未知分類、缺來源及候選外拒收；正常空共識可接受，無缺值時沒有補完目標。保存快照的 20 段證據與 81 筆比較完整保留，三項 request 均未超過既有 48 KiB 上限。只有合成完成與離線封裝，沒有新模型語義或 OAuth 驗收；review.json hash 未變、零 provider 呼叫／DB 寫入。
 - 完整檢查通過：157 files 型別檢查、53 test files／531 tests、build；仍有既有 client chunk 大於 500 kB 警告。README／plan 同步分類判準、診斷路徑、引用稽核與下次需重啟 opt-in server；舊結果、原始工件、帳本與未知費用均不改，未 commit／push／部署或執行 migration。新提示能否改善共識內容與成功率，仍待使用者另一次真實模型與人工檢閱。
+
+## 共識 Overview 缺值補完繼承共同基礎分型
+
+- 首筆共識分層提交後核對漏網路徑：primary 的 Overview 允許 null，但舊補完提示只要求概括已採用項目，請求沒有 adopted.kind，因此缺乏保留共同基礎類型的上下文。新增 shared_fact／shared_challenge + null Overview 回歸，在修正前確實得到缺少 consensus_items 的請求；這是請求契約遺漏，不是假定已觀察到模型語義誤寫。
+- 補完計畫保存每個共識項目的 pointer／kind／evidence_ids，取自已驗證分項並納入 base hash；驗證類型、索引、項目數與原有引用一致。只有補 /consensus/Overview 時才傳唯讀投影，提示禁止將共享事實／挑戰升格為共同解法、重分型或擴張來源範圍。data、citation pointers、patch schema、原值不可改與單輪上限不變；prompt／計畫政策為 missing-fields-only-v2／required-fields-exact-cited-patches-v2。
+- 回歸確認同一 data 不同分型得到不同 base hash，舊分類 patch 不能重用；即使重算 hash，未知類型、缺項、錯索引、額外引用與錯誤目標仍拒收。無共識概述缺值的補完請求不攜帶額外分類投影；人改格式不受影響。
+- 獨立程序以合成原生完成執行實際 builder／parser／assembler／補完規劃與補完解析，事實／挑戰兩型皆只改缺值 Overview、保留既有文字與引用，分類竄改 hash 拒收。保存快照 builder 仍保留 20 段證據與 81 筆比較；review.json hash 未變，零真實模型呼叫／DB 寫入。這不證明補完模型已正確理解分型，仍需人工驗收。
+- 完整型別檢查通過 157 files、53 test files／532 tests 全通過、build 成功，既有 client chunk 大於 500 kB 警告仍在。README／plan 同步補完規則與版本，未改舊結果、帳本或遠端資源；原提交保留，補充修正另以一筆 commit 記錄。

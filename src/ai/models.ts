@@ -16,7 +16,7 @@ export const MODEL_VERSIONS = {
   gemma_prompt: 'specialized-evidence-v5',
   gemma_schema: 'specialized-cited-v3',
   gemma_input: 'section-values-v3',
-  gemma_completion_prompt: 'missing-fields-only-v1',
+  gemma_completion_prompt: 'missing-fields-only-v2',
   gemma_completion_schema: 'cited-field-patches-v1',
   pricing: PRICING_VERSION,
 } as const

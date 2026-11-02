@@ -169,7 +169,7 @@ vp run dev
 
 ## #183 隔離本機證據實驗：真實議題驗收手冊
 
-**目前管線：** Clairic 逐素材抽取 → Clef 四分類比較 → Gemma 依序執行共識、爭點、立場地圖三項生成 → 必要時單輪「只補缺值」→ 驗證組裝。三項使用同一份完整已驗證證據及必要關係投影，不串接前項摘要；一般站與 BYO token 不變。Clairic 為 `claims-list-v3`，Clef 為 `symmetric-four-way-v2`；Gemma primary prompt／schema／input 為 `specialized-evidence-v5`／`specialized-cited-v3`／`section-values-v3`，補完仍是 `missing-fields-only-v1`／`cited-field-patches-v1`。使用者回報 v4 爭點與立場改善，但共識因引用宣告不符而失敗；本輪只調整共識的共同基礎分型與引用稽核提示，**v5 尚未新增真實付費呼叫或通過人工語義驗收**，舊工作與結果不會自動回填。下一次驗收前先重啟 opt-in 實驗 server，再依下列步驟建立新設定工作；不重用舊 JOB_ID 當作新版結果。
+**目前管線：** Clairic 逐素材抽取 → Clef 四分類比較 → Gemma 依序執行共識、爭點、立場地圖三項生成 → 必要時單輪「只補缺值」→ 驗證組裝。三項使用同一份完整已驗證證據及必要關係投影，不串接前項摘要；一般站與 BYO token 不變。Clairic 為 `claims-list-v3`，Clef 為 `symmetric-four-way-v2`；Gemma primary prompt／schema／input 為 `specialized-evidence-v5`／`specialized-cited-v3`／`section-values-v3`，補完為 `missing-fields-only-v2`／`cited-field-patches-v1`。使用者回報 v4 爭點與立場改善，但共識因引用宣告不符而失敗；本輪只調整共識的共同基礎分型與引用稽核提示，**v5 尚未新增真實付費呼叫或通過人工語義驗收**，舊工作與結果不會自動回填。下一次驗收前先重啟 opt-in 實驗 server，再依下列步驟建立新設定工作；不重用舊 JOB_ID 當作新版結果。
 
 
 本節是操作步驟，不代表未執行的 runtime／OAuth／模型／人工品質案例已通過。實驗 API 只會在明確 opt-in 的專用本機 remote-dev 入口註冊；`DB`、Workflow 與工件留在本機隔離目錄，`SOURCE_DB` 連遠端業務 D1、程式只用來源 SELECT，`DB_AUTH` 僅供 Better Auth 正常 OAuth／session 生命週期（此為唯一預期遠端 auth 寫入），`AI` 使用平台 Cloudflare Workers AI。遠端 D1 binding 並非資料庫唯讀 credential；不得對 `SOURCE_DB` 執行任何寫入或 migration，也不得對 `DB_AUTH` 建表、migration 或直接 SQL 寫入。
@@ -577,7 +577,7 @@ Gemma 每個專項採與 `../pocket-polis/src/sensemaking.ts` 的 `runAiModel()`
 
 共識輸入與輸出都使用原始 `candidate_id`，不可拿 evidence ID 代替；同一候選與證據集合可支持不同獨立命題，但完全相同的重複項目仍拒收。爭點以 sides 表示各側。立場原生 item 改為 `{group_id,name,Core_concern,opinions}`，**不再接受群組級 evidence_ids**；程式從 opinions 的 Title／description 有效引用推導群組成員、Sources 及覆蓋。群名與 Core_concern 只能引用實際群內成員，未知引用、已知直接相反證據同群、漏納入卻沒有排除理由等仍拒收；不能靠刪掉舊宣告欄位而把漏引證據默默忽略。公開 data／citation pointers 不變，舊 raw 不轉換或覆寫，分項工件只留隔離本機 D1，checkpoint 不帶正文。
 
-**共識共同基礎分層（v5）：** 原生項目新增必填 `kind`，僅留在 `.diagnostics.generation.sections.consensus.details.adopted[]`，`classification_source` 由程式固定為 `gemma_proposal`，不是新的 Clef 正式判斷。公開 `data.consensus.items` 維持 `{Title,description}`，人改 API 與 citation pointers 不變；舊原始回應不補分類、不自動重播。
+**共識共同基礎分層（v5）：** 原生項目新增必填 `kind`，對外分類僅呈現在 `.diagnostics.generation.sections.consensus.details.adopted[]`，`classification_source` 由程式固定為 `gemma_proposal`，不是新的 Clef 正式判斷。回應 `data.consensus.items` 維持 `{Title,description}`，人改 API 與 citation pointers 不變；舊原始回應不補分類、不自動重播。
 
 |kind|人工審閱判準|
 |---|---|
@@ -608,6 +608,8 @@ jq '
 primary 非 null 的 Overview／Core_concern 仍須用句子物件陣列，例如 `[{"text":"單句概述","evidence_ids":["既有證據ID"]}]`；單句也不能省略陣列。空 items 的 primary Overview 仍須 null，不允許模型為空清單編造概述；最終改由程式依 no_findings／failed／not_started 填入明確狀態文字，透過 `.diagnostics.generation.status_overviews` 的 `origin:"program"`／`kind:"status"` 標示，沒有虛假 citation，也不代表素材不存在相關觀點。
 
 有內容的 Overview 或 Core_concern 仍為 null 時，程式保存不可改的 base hash 與精確指標／證據白名單，最多增加一次 Gemma 補完。回應僅為 `{base_hash,fills:[{pointer,sentences:[{text,evidence_ids}]}]}`，不允許整份 data 重寫。未知／重複／缺漏指標、已有值覆寫、額外欄位、錯 base、空值或錯群／缺引用全部拒收；所有 patch 驗完才套用，既有文字、來源、順序與引用保持原樣，只為新值附加計算後的 citation ranges。
+
+補完 `/consensus/Overview` 時，另提供唯讀 `consensus_items:[{pointer,kind,evidence_ids}]`，分類取自已驗證分項的 adopted，與原項目索引／引用一致並納入計畫 base hash。提示要求保留各項類型、條件與來源範圍，不將共享事實／挑戰升格成共同解法、不新增共同立場；分類不寫入 data。只有共識概述是目標時才送這份投影，其他補完不額外傳入。補完提示為 `missing-fields-only-v2`，計畫政策為 `required-fields-exact-cited-patches-v2`；patch 回應 schema／最多單輪呼叫不變，引用驗證仍不等於程式能證明概述語義正確。
 
 沒有缺值時 `.diagnostics.generation.completion.status` 為 `not_needed`，不啟動補完模型。有缺值卻因 provider／schema／引用／context／預算失敗，工作會 failed、不交付仍缺必填的 data，但保留可用分項工件及費用；不再補第五次或重試。補完完成的 status 為 `completed`，診斷含 targets、原始與驗證工件 ID；機器進度另看 `.generation_progress.completion`，原 `.generation_progress.sections` 仍只有三個專項。
 
