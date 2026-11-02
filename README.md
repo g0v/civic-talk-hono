@@ -169,7 +169,7 @@ vp run dev
 
 ## #183 隔離本機證據實驗：真實議題驗收手冊
 
-**目前管線：** Clairic 逐素材抽取 → Clef 四分類比較 → Gemma 依序執行共識、爭點、立場地圖三項生成 → 必要時單輪「只補缺值」→ 驗證組裝。三項共用已驗證證據／比較資料，不以前項摘要代替來源；一般站與 BYO token 不變。Clef prompt 為 `symmetric-four-way-v2`，Gemma primary prompt／schema 為 `specialized-evidence-v3`／`specialized-cited-v1`，補完為 `missing-fields-only-v1`／`cited-field-patches-v1`。使用者回報前版草稿品質改善，但 Overview／Core_concern 仍有 null；**本輪 v3 補完尚未新增真實付費呼叫或通過人工語義驗收**，舊工作與結果不會被自動回填。
+**目前管線：** Clairic 逐素材抽取 → Clef 四分類比較 → Gemma 依序執行共識、爭點、立場地圖三項生成 → 必要時單輪「只補缺值」→ 驗證組裝。三項使用同一份完整已驗證證據及必要關係投影，不串接前項摘要；一般站與 BYO token 不變。Clairic 為 `claims-list-v3`，Clef 為 `symmetric-four-way-v2`；Gemma primary prompt／schema／input 為 `specialized-evidence-v4`／`specialized-cited-v2`／`section-values-v3`，補完仍是 `missing-fields-only-v1`／`cited-field-patches-v1`。使用者回報前版項目過度合併及立場引用失敗；**本輪 v4 尚未新增真實付費呼叫或通過人工語義驗收**，舊工作與結果不會自動回填。
 
 
 本節是操作步驟，不代表未執行的 runtime／OAuth／模型／人工品質案例已通過。實驗 API 只會在明確 opt-in 的專用本機 remote-dev 入口註冊；`DB`、Workflow 與工件留在本機隔離目錄，`SOURCE_DB` 連遠端業務 D1、程式只用來源 SELECT，`DB_AUTH` 僅供 Better Auth 正常 OAuth／session 生命週期（此為唯一預期遠端 auth 寫入），`AI` 使用平台 Cloudflare Workers AI。遠端 D1 binding 並非資料庫唯讀 credential；不得對 `SOURCE_DB` 執行任何寫入或 migration，也不得對 `DB_AUTH` 建表、migration 或直接 SQL 寫入。
@@ -509,7 +509,7 @@ esac
 
 上方安全摘要的來源投影只顯示 `{kind,id,hash}`；**原始 `JOB_JSON` 的 `.sources` 包含完整來源 payload**，可能含個資，必須依私有資料保護，不能把整份 response 當成去識別摘要。`source_checked_at` 是整份 job 的查核時間，不存在 per-source `checked_at`。`input_key`、`generation_artifact` 與 `provenance.artifacts` 只摘要 artifact ID／hash／建立時間、model selector/provider metadata 與 attempt ledger；缺值如實為 `null`／`unknown`。此 safe summary 不含 raw request／response 或作者欄位；它不是 provider 權重 revision 或帳單證明。
 
-`generation_progress.current_section` 顯示正在呼叫的專項；進行中各項可能是 `pending`／`running`。最終以 `diagnostics.generation.sections` 判讀：`completed` 是有內容且驗證通過，`no_findings` 是驗證通過但沒有可整理內容，`failed` 是該項呼叫／驗證失敗，`not_started` 是因預算／context 等原因未啟動。至少一項有效而其餘失敗或未啟動時為 `partial_draft`，全失敗則不交付草稿。data 中的 null／空陣列也可能只是失敗段的相容占位，**不能不看分項狀態就斷言「沒有爭點」**。
+`generation_progress.current_section` 顯示正在處理的專項或 completion 階段；進行中可能為 `pending`／`running`。最終以 `diagnostics.generation.sections` 判讀：`completed` 是有內容且驗證通過，`no_findings` 是驗證通過但沒有可整理內容，`failed` 是呼叫／驗證失敗，`not_started` 是因預算／context 等原因未啟動。有有效分項但仍有失敗／未啟動或上游覆蓋缺漏時為 `partial_draft`，全失敗不交付草稿；必要補完失敗亦不交付缺值 data。新版最終 Overview 不為 null：空分區使用明示處理狀態，不能只看空 items 就斷言「沒有爭點」。items 不足三項本身不會使工作變成 partial。
 
 只在 draft 狀態下檢視分區輸出及引用：
 
@@ -567,13 +567,15 @@ Gemma 每個專項採與 `../pocket-polis/src/sensemaking.ts` 的 `runAiModel()`
 
 三項的整理責任與診斷如下；它們不是把原本的大型請求重送三遍：
 
+共識與爭點以約三個獨立、有證據支持的項目為提示目標；逐一檢視不同命題／問題，不將多個維度塞成一個大段落，也不重複拆分同一問題湊數。只支持零至兩項時如實保留，沒有 schema 最少三項限制。items 是共同命題／爭點，不是佐證筆數：同一項可有多段引用；每個共識子命題仍須由各參與來源實質支持，Clef agree 不等於整串建議都獲共同認可。整體需求與特定族群的取代風險可能並存，不自動視為矛盾。
+
 |專項|生成與驗證重點|本機審閱位置|
 |---|---|---|
 |共識|從一般支持候選提煉具體共同命題，保留條件，每個參與來源都須支持 description；不能用並列歧見充當共識。可採候選子集，無可靠共同命題就拒絕候選並附理由。|`.diagnostics.generation.sections.consensus.details` 的 adopted／rejected_candidates／coverage|
 |爭點|即使沒有 Clef disagree 也檢視可並存張力；每項至少兩素材、逐側引用，區分 `contradiction`／`opposition`／`tension`。細分類始終待人工確認，程式推導 direct_clef／gemma_proposal，不讓模型冒充新的正式 Clef 判斷。|`.diagnostics.generation.sections.disputes.details.items` 的 sides／comparison_conditions／relations／origin／formal_relation|
 |立場地圖|依明示關注、主張與應對方式重新分群並在群內綜整，不強制一素材一立場或固定群數；不混合已知對立。每條納入證據須被群內論點引用，未納入須有理由，保留少數觀點與重疊歸屬。|`.diagnostics.generation.sections.positions.details` 的 groups／coverage|
 
-共識模型輸入與輸出都使用 `candidate_id`，不可拿 evidence ID 代替；爭點以 sides 表示各側，立場以 `group_id`／`evidence_ids` 提交新分群，不再受原本單條立場候選限制。組裝仍維持既有 data 三分區與 citation pointers；各分項的 context hash 須符合相同來源、證據、比較、語言與設定。分項工件及原生回應只留隔離本機 D1，Workflows checkpoint 不帶正文。
+共識輸入與輸出都使用原始 `candidate_id`，不可拿 evidence ID 代替；同一候選與證據集合可支持不同獨立命題，但完全相同的重複項目仍拒收。爭點以 sides 表示各側。立場原生 item 改為 `{group_id,name,Core_concern,opinions}`，**不再接受群組級 evidence_ids**；程式從 opinions 的 Title／description 有效引用推導群組成員、Sources 及覆蓋。群名與 Core_concern 只能引用實際群內成員，未知引用、已知直接相反證據同群、漏納入卻沒有排除理由等仍拒收；不能靠刪掉舊宣告欄位而把漏引證據默默忽略。公開 data／citation pointers 不變，舊 raw 不轉換或覆寫，分項工件只留隔離本機 D1，checkpoint 不帶正文。
 
 新版最終三類 `Overview` 與每組 `Core_concern` 都必須是非空字串。Overview 只概括所屬已採用內容並引用其證據；共識不得把歧見搬進概述，立場概述不宣稱共識。Core_concern 可從群內明示主張作有引用支持的綜整，但不猜作者動機、人格或未表達價值。primary 的 null 只作中間值，不能直接交付新版最終草稿。
 
@@ -585,7 +587,7 @@ primary 非 null 的 Overview／Core_concern 仍須用句子物件陣列，例�
 
 Clef、三份 primary 與補完 prompt／schema、組裝政策、三語狀態文字及實際 builder 都納入設定指紋。在途舊設定工作遇設定變更會停止，不自動換版重打；已完成舊稿、未知費用與 tombstone 保留。各付費步驟獨立預留、結算與去重，補完嘗試鍵為 `complete:draft`，仍算同一個新工作日配額。新指紋不代表退款或品質改善；重新送出可能付費，仍須明確同意，不得清空狀態繞過額度。
 
-Gemma 輸入政策 `verified-relations-v2` 不再重送純索引 `comparison.pairs`：配對全集已由 `direct_comparisons` 與 `incomplete_pairs` 表達。所有已驗證引文、直接關係／機率／題目版本、反向診斷、候選群與路徑、爭點及未分類資料仍保留；完整 pair 索引也仍留在本機比較工件與診斷。這是去除重複序列化，不是截斷或刪除證據，48 KiB 請求上限不放寬。更多資料仍可能超限，須看下方 planned context_limit，不保證任意輸入都能容納。
+Gemma 輸入政策 `section-values-v3`：每個專項都收到全部已驗證證據的 `{id,material_id,quote}`，其中 quote 為完整擴展原文，不截斷、不重寫；原始 raw_quote 仍留在證據工件及 citation map，不重複送模型。共用關係只帶直接／反向的 `{evidence_ids,relation}` 與未完成的 `{evidence_ids,status}`；反向診斷不升格為正式判斷。只有共識收到候選 `{candidate_id,evidence_ids}`，只有爭點收到 `{evidence_ids}` 種子，立場不收共識候選或推導路徑。pair key、機率、題目版本、完整路徑及統計仍留在本機原始／比較工件與診斷，程式也仍用完整圖驗證；不是刪證據或放寬 48 KiB 守門。輸入更小不代表語義或引用品質已通過驗收。
 
 `Source.Title` 取自 `ct_materials.source_name`，缺值才用素材 ID；來源表沒有 material title 欄，不以原文預覽或 AI 衍生標題替代。`source_hash` 是固定順序 metadata+content JSON 的 UTF-8 SHA-256，`content_hash` 是原始 content UTF-8 bytes 的 SHA-256；原文不 trim、不正規化。空白正文不會被省略，會以 `422 empty_material` 拒絕。
 

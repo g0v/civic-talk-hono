@@ -190,3 +190,14 @@
 - 沒有新增後裁前三筆、關鍵字濾除、模型步驟或配額例外；全工作 64 段上限、出處驗證、去重及 Gemma／Clef／引用守門未改。這項抽取策略不會自動修正前次 Overview 跨採用證據引用或立場群組缺引用，原工作與回應不覆寫。
 - 新增永久邊界測試：同一素材可保留五段主張／條件／反例／少數觀點的原文與完整句子，不因超過三段裁切，非相鄰句子拼接仍拒收。獨立 Node smoke 執行實際 builder／parser／extractor，另確認各素材 state 分離、單一 list、null 不產生證據，以及新版 prompt／config hash 不同於保存的舊設定。回應為合成資料，只證明契約，不代表真實模型選取或語義品質。
 - 完整檢查通過：157 files 型別檢查、53 test files／517 tests、build；既有 client chunk 大於 500 kB 警告仍在。本輪沒有呼叫真實模型、付費 POST、遠端寫入、migration、commit、push 或部署；核心主張選取與下游引用成功率仍待人工實驗。
+
+## 2026-11-02：分項必要值輸入與立場引用推導
+
+- 使用者檢閱新一輪 review.json：20 段證據、81 組直接比較完成，共識／爭點各一項通過，立場為 generation_insufficient_group_citations。只讀原始立場回應確認 finish_reason:stop、completion_tokens:3066，已生成四群，但其中三群宣告成員未完整出現在 opinions 引用（缺 1／1／2 筆）；不是已證實的截斷，也不能僅憑此認定輸入過多是因果。
+- 使用者選擇「證據優先，三項為目標」與「立場成員由實際引用推導」。prompt 改 specialized-evidence-v4，schema 改 specialized-cited-v2，input 改 section-values-v3，assembly policy 為 section-opinion-membership-v2；Clairic、Clef、單輪缺值補完、原生參數及呼叫數不變。
+- 三項保留同一份全部已驗證完整 quote、證據 ID／素材 ID 及直接／反向／未完成關係的必要值；共識獨有原候選，爭點獨有種子，立場不再讀候選或推導路徑。原始 quote、機率、版本、pair key、路徑等 metadata 仍存本機工件及診斷，後端仍依完整圖做守門，不刪反例或未知資訊。
+- 共識／爭點提示要求檢視獨立有據維度，避免一大段混合多個命題或同題重複湊數；零至兩項仍合法，整體趨勢與局部風險不自動當矛盾。另修正原先候選＋證據集合排重會拒絕不同命題共用證據的限制，保留完全相同項目的拒收；這不等於程式能證明語義獨立或來源蘊含。
+- 立場原生回應移除重複群組 evidence_ids，從有效 opinion Title／description 引用聯集推導成員、Sources 與覆蓋；群名／Core 越界、未知引用、direct disagree 同群、未納入未排除或非法排除仍拒收，舊欄位不相容、不自動正規化。公開 data 及原有引用順序不變。Gemma 固定哨兵涵蓋四種直接關係、反向、missing／failed、候選與種子及三語，Clairic／Clef 哨兵保持原樣。
+- 用這輪真實保存快照只執行新版 builder，三項均保留 20 段原文與 81 筆直接關係，候選／種子只在對應專項提供，config hash 已變；沒有 provider 呼叫或 DB 寫入。立場 user payload（不含 system）由 30,763 bytes 降至 8,847 bytes；新版共識／爭點 user payload 分別 9,910／8,997 bytes，全部 native 請求在既有上限內。這是封裝與出處資訊完整性證據，不是新模型品質。
+- 獨立 Node 執行實際 runner／SQLite repository、使用記憶體 DB 與合成 provider，七場景通過：有缺值單輪補完、無缺值跳過、空分區狀態、非法 patch 拒收、partial 保留有效段、unknown 費用保留及補完途中清除維持 erased。另從實際 opinion citation map 核對公開 Sources；既有文字／引用不變，重放不再呼叫模型，checkpoint 不含正文。
+- 完整檢查通過：157 files 型別檢查、53 test files／526 tests、build；既有 client chunk 大於 500 kB 警告仍在。新測試涵蓋多命題共用候選、衍生成員／來源、空／少量／多項結果及越界、漏覆蓋、反例、舊欄位拒收。本輪未 commit／push／部署、未執行 migration、遠端寫入或付費 POST，review.json／舊工件與帳本不改；真實內容豐富性、群組合理性與引用成功率仍待人工實驗。

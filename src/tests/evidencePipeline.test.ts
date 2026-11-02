@@ -103,14 +103,10 @@ async function model(modelName: string, input: unknown): Promise<unknown> {
       throw new Error('unsupported native Gemma request')
     }
     const messages = request.messages as Array<{ role: string; content: string }>
-    const generatedInput = JSON.parse(messages.find(message => message.role === 'user')!.content) as {
-      operation?: string
-      base_hash: string
-      targets: Array<{ pointer: string; evidence_ids: string[] }>
-      section: string
-      evidence: Array<{ id: string }>
-      comparison: { consensus_groups: Array<{ candidate_id: string; evidence_ids: string[] }> }
-    }
+    const generatedInput = JSON.parse(messages.find(message => message.role === 'user')!.content) as
+      | { operation: 'fill_missing_fields'; base_hash: string; targets: Array<{ pointer: string; evidence_ids: string[] }>; section?: never }
+      | { section: 'consensus'; evidence: Array<{ id: string }>; comparison: { consensus_groups: Array<{ candidate_id: string; evidence_ids: string[] }> }; operation?: never }
+      | { section: 'disputes' | 'positions'; evidence: Array<{ id: string }>; operation?: never }
     if (generatedInput.operation === 'fill_missing_fields') {
       const data = {
         base_hash: generatedInput.base_hash,
@@ -119,19 +115,20 @@ async function model(modelName: string, input: unknown): Promise<unknown> {
       return { model: 'gemma-4-26b-a4b-it', choices: [{ index: 0, finish_reason: 'stop', message: { role: 'assistant', content: JSON.stringify(data) } }], usage: { prompt_tokens: 200, completion_tokens: 80 } }
     }
     const cite = (text: string, ids: string[]) => [{ text, evidence_ids: ids }]
-    const group = generatedInput.comparison.consensus_groups[0]
+    const groups = generatedInput.section === 'consensus' ? generatedInput.comparison.consensus_groups : []
+    const group = groups[0]
     const ids = generatedInput.evidence.map(item => item.id)
     const data = generatedInput.section === 'consensus'
       ? {
           Overview: group ? cite('相容主張的摘要。', group.evidence_ids) : null,
           items: group ? [{ candidate_id: group.candidate_id, evidence_ids: group.evidence_ids, Title: cite('相容主張。', group.evidence_ids), description: cite('材料呈現的主張。', group.evidence_ids) }] : [],
-          rejected_candidates: generatedInput.comparison.consensus_groups.slice(1).map(candidate => ({ candidate_id: candidate.candidate_id, reason: 'not_selected' })),
+          rejected_candidates: groups.slice(1).map(candidate => ({ candidate_id: candidate.candidate_id, reason: 'not_selected' })),
         }
       : generatedInput.section === 'disputes'
         ? { Overview: null, items: [] }
         : {
             Overview: cite('能源觀點的摘要。', ids),
-            items: [{ group_id: 'energy', evidence_ids: ids, name: cite('能源觀點。', ids), Core_concern: cite('素材中的能源關注。', ids), opinions: [{ Title: cite('能源轉型。', ids), description: cite('素材呈現能源主張。', ids) }] }],
+            items: [{ group_id: 'energy', name: cite('能源觀點。', ids), Core_concern: cite('素材中的能源關注。', ids), opinions: [{ Title: cite('能源轉型。', ids), description: cite('素材呈現能源主張。', ids) }] }],
             exclusions: [],
           }
     return { model: 'gemma-4-26b-a4b-it', choices: [{ index: 0, finish_reason: 'stop', message: { role: 'assistant', content: JSON.stringify(data) } }], usage: { prompt_tokens: 200, completion_tokens: 80 } }
@@ -147,6 +144,10 @@ function gemmaPayload(modelName: string, input: unknown): Record<string, unknown
 
 function responseMessage(response: unknown): Record<string, unknown> {
   return object(object((object(response).choices as unknown[])[0]).message)
+}
+
+function addThirdMaterial() {
+  source.sqlite.exec("INSERT INTO ct_materials VALUES (6, 7, '丙', 'https://example.test/third', '亦關注能源政策。', 0, 'private-author', 'private@example.test')")
 }
 
 // 保留一個既有 Overview，讓工作流測試同時檢查缺值補完與不可改動的欄位。
@@ -462,6 +463,187 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     auth.current = user('admin', 'admin')
     const admin = await (await send('GET', `/api/evidence-jobs/${created.job_id}`)).json()
     expect(admin).toMatchObject({ input_key: audit.input_key, generation_artifact: audit.generation_artifact, provenance: { artifacts: audit.provenance.artifacts } })
+  })
+
+  it('工作流依意見標題及敘述引用推導群組來源、重疊與排除', async () => {
+    addThirdMaterial()
+    aiRun = async (modelName, input) => {
+      const response = await model(modelName, input)
+      const request = gemmaPayload(modelName, input)
+      if (request?.section !== 'positions') return response
+      const evidence = request.evidence as Array<{ id: string; material_id: number }>
+      const first = evidence.find(item => item.material_id === 2)!.id
+      const second = evidence.find(item => item.material_id === 4)!.id
+      const excluded = evidence.find(item => item.material_id === 6)!.id
+      const cite = (text: string, id: string) => [{ text, evidence_ids: [id] }]
+      responseMessage(response).content = JSON.stringify({
+        Overview: cite('立場摘要。', first),
+        items: [
+          {
+            group_id: 'shared', name: cite('共同群組。', first), Core_concern: cite('群組關注。', first),
+            opinions: [{ Title: cite('第一則標題。', first), description: cite('第二份素材的敘述。', second) }],
+          },
+          {
+            group_id: 'second', name: cite('另一群組。', second), Core_concern: cite('另一關注。', second),
+            opinions: [{ Title: cite('第二則標題。', second), description: cite('第二則敘述。', second) }],
+          },
+        ],
+        exclusions: [{ evidence_id: excluded, reason: '無法歸入這些群組' }],
+      })
+      return response
+    }
+    auth.current = user('owner')
+    const created = await (await send('POST', '/api/issues/7/evidence-jobs', { consent: true })).json() as { job_id: string }
+    expect(await runEvidenceWorkflow(env, created.job_id, testStep())).toEqual({ status: 'ai_draft' })
+    const response = await send('GET', `/api/evidence-jobs/${created.job_id}`)
+    expect(response.status).toBe(200)
+    const detail = await response.json() as DraftResponse & {
+      status: string
+      diagnostics: { partial: boolean; generation: { sections: { positions: { details: {
+        groups: Array<{ group_id: string; evidence_ids: string[] }>
+        coverage: Array<{ evidence_id: string; group_ids: string[]; status: string; reason: string | null }>
+      } } } } }
+    }
+    const byMaterial = new Map(detail.evidence.map(item => [item.material_id, item.id]))
+    const first = byMaterial.get(2)!
+    const second = byMaterial.get(4)!
+    const excluded = byMaterial.get(6)!
+    const firstSource = { Title: '甲', href: 'https://example.test/', material_id: 2 }
+    const secondSource = { Title: '乙', href: '/issues/7/source/4', material_id: 4 }
+    expect(detail).toMatchObject({ status: 'ai_draft', diagnostics: { partial: false, generation: { sections: { positions: { status: 'completed' } } } } })
+    expect(detail.data.positions).toEqual({
+      Overview: '立場摘要。',
+      items: [
+        { name: '共同群組。', Sources: [firstSource, secondSource], Core_concern: '群組關注。', opinions: [{ Title: '第一則標題。', description: '第二份素材的敘述。' }] },
+        { name: '另一群組。', Sources: [secondSource], Core_concern: '另一關注。', opinions: [{ Title: '第二則標題。', description: '第二則敘述。' }] },
+      ],
+    })
+    const details = detail.diagnostics.generation.sections.positions.details
+    expect(details.groups.map(group => [group.group_id, new Set(group.evidence_ids)])).toEqual([
+      ['shared', new Set([first, second])],
+      ['second', new Set([second])],
+    ])
+    expect(details.coverage).toHaveLength(3)
+    expect(details.coverage).toEqual(expect.arrayContaining([
+      { evidence_id: first, group_ids: ['shared'], status: 'grouped', reason: null },
+      { evidence_id: second, group_ids: ['shared', 'second'], status: 'overlapping', reason: null },
+      { evidence_id: excluded, group_ids: [], status: 'excluded', reason: '無法歸入這些群組' },
+    ]))
+    expect(detail.citation_map.filter(entry => entry.pointer.startsWith('/positions/items/0/')).map(entry => [entry.pointer, entry.evidence_ids])).toEqual([
+      ['/positions/items/0/name', [first]],
+      ['/positions/items/0/Core_concern', [first]],
+      ['/positions/items/0/opinions/0/Title', [first]],
+      ['/positions/items/0/opinions/0/description', [second]],
+    ])
+    expect(detail.citation_map.find(entry => entry.pointer === '/positions/items/0/opinions/0/description')).toMatchObject({
+      evidence_ids: [second], sources: [{ evidence_id: second, material_id: 4, source: secondSource }],
+    })
+    const revisions = await send('GET', `/api/evidence-jobs/${created.job_id}/revisions`)
+    expect(revisions.status).toBe(200)
+    const revisionBody = await revisions.json() as { ai_base: { data: CompletedDraft['data']; citation_map: CompletedDraft['citation_map'] } }
+    expect(revisionBody.ai_base.data.positions).toEqual(detail.data.positions)
+    expect(revisionBody.ai_base.citation_map).toEqual(detail.citation_map)
+    expect(recordedRequests).toHaveLength(7)
+  })
+
+  it.each([
+    ['群組名稱引用另一群組的證據', 'name', 'generation_cross_candidate_citation'],
+    ['核心關注引用已排除的證據', 'Core_concern', 'generation_cross_candidate_citation'],
+    ['證據沒有出現在意見或排除清單', 'missing_coverage', 'generation_incomplete_coverage'],
+    ['同組意見引用直接反對的證據', 'direct_disagree', 'generation_contradictory_group'],
+  ] as const)('%s 時只拒收立場，保留其他分項且不重試', async (_label, violation, validationCode) => {
+    addThirdMaterial()
+    let contraryIds: string[] = []
+    aiRun = async (modelName, input) => {
+      const response = await model(modelName, input)
+      if (modelName === '@cf/cloudflare/clef' && violation === 'direct_disagree') {
+        const answers = object(object(response).answers)
+        answers[Object.keys(answers)[0]] = {
+          type: 'choice', choice: 'disagree',
+          probabilities: { agree: 0.03, disagree: 0.91, unrelated: 0.03, uncertain: 0.03 }, confidence: 0.91,
+        }
+        return response
+      }
+      const request = gemmaPayload(modelName, input)
+      if (request?.section !== 'disputes' && request?.section !== 'positions') return response
+      const evidence = request.evidence as Array<{ id: string; material_id: number }>
+      const first = evidence.find(item => item.material_id === 2)!.id
+      const second = evidence.find(item => item.material_id === 4)!.id
+      const third = evidence.find(item => item.material_id === 6)!.id
+      const cite = (text: string, ids: string[]) => [{ text, evidence_ids: ids }]
+      if (request.section === 'disputes') {
+        const ids = [first, second]
+        responseMessage(response).content = JSON.stringify({
+          Overview: cite('爭點摘要。', ids),
+          items: [{
+            kind: 'tension', sides: ids.map(id => ({ evidence_ids: [id], claim: cite('一方主張。', [id]) })),
+            comparison_conditions: cite('比較條件。', ids), Title: cite('待審爭點。', ids), description: cite('兩方素材的敘述。', ids),
+          }],
+        })
+        return response
+      }
+      let items = [
+        { group_id: 'first', name: cite('第一群組。', [first]), Core_concern: cite('第一關注。', [first]), opinions: [{ Title: cite('第一主張。', [first]), description: cite('第一敘述。', [first]) }] },
+        { group_id: 'second', name: cite('第二群組。', [second]), Core_concern: cite('第二關注。', [second]), opinions: [{ Title: cite('第二主張。', [second]), description: cite('第二敘述。', [second]) }] },
+      ]
+      let exclusions = [{ evidence_id: third, reason: '無法歸入這些群組' }]
+      if (violation === 'name') items[0].name = cite('跨群組名稱。', [second])
+      if (violation === 'Core_concern') items[0].Core_concern = cite('排除證據的關注。', [third])
+      if (violation === 'missing_coverage') exclusions = []
+      if (violation === 'direct_disagree') {
+        const direct = (object(request.comparison).direct_comparisons as Array<{ evidence_ids: string[]; relation: string }>).find(item => item.relation === 'disagree')!
+        contraryIds = direct.evidence_ids
+        const [left, right] = contraryIds
+        items = [{
+          group_id: 'conflicted', name: cite('群組。', [left]), Core_concern: cite('關注。', [left]),
+          opinions: [{ Title: cite('一方標題。', [left]), description: cite('另一方敘述。', [right]) }],
+        }]
+        exclusions = [{ evidence_id: evidence.find(item => !contraryIds.includes(item.id))!.id, reason: '無法歸入這些群組' }]
+      }
+      responseMessage(response).content = JSON.stringify({
+        Overview: cite('立場摘要。', items[0].opinions[0].Title[0].evidence_ids), items, exclusions,
+      })
+      return response
+    }
+    auth.current = user('owner')
+    const created = await (await send('POST', '/api/issues/7/evidence-jobs', { consent: true })).json() as { job_id: string }
+    expect(await runEvidenceWorkflow(env, created.job_id, testStep())).toEqual({ status: 'partial_draft' })
+    const response = await send('GET', `/api/evidence-jobs/${created.job_id}`)
+    expect(response.status).toBe(200)
+    const detail = await response.json() as DraftResponse & {
+      diagnostics: { comparisons: { direct_comparisons: Array<{ evidence_ids: string[]; relation: string }> } }
+    }
+    expect(detail).toMatchObject({
+      status: 'partial_draft', error_code: null, usage: { attempts: 7, uncertain: 0, reservedMicroUsd: 0 },
+      data: {
+        consensus: { Overview: '相容主張的摘要。', items: [{ Title: '相容主張。', description: '材料呈現的主張。' }] },
+        disputes: { Overview: '爭點摘要。', items: [{ Title: '待審爭點。', description: '兩方素材的敘述。' }] },
+        positions: { Overview: statusOverview('positions', 'failed', 'zh-TW'), items: [] },
+      },
+      diagnostics: { partial: true, generation: {
+        sections: {
+          consensus: { status: 'completed' }, disputes: { status: 'completed' },
+          positions: { status: 'failed', reason: 'invalid_generation', validation_code: validationCode, artifact_id: null },
+        },
+        completion: { status: 'not_needed', targets: [] },
+      } },
+    })
+    expect(detail.citation_map.some(entry => entry.pointer.startsWith('/consensus/items/'))).toBe(true)
+    expect(detail.citation_map.some(entry => entry.pointer.startsWith('/disputes/items/'))).toBe(true)
+    expect(detail.citation_map.some(entry => entry.pointer.startsWith('/positions/'))).toBe(false)
+    if (violation === 'direct_disagree') {
+      expect(contraryIds).toHaveLength(2)
+      expect(detail.diagnostics.comparisons.direct_comparisons).toContainEqual(expect.objectContaining({ evidence_ids: contraryIds, relation: 'disagree' }))
+    }
+    expect(local.sqlite.prepare("SELECT step_key, state FROM ct_ai_usage WHERE step_key LIKE 'generate:%' ORDER BY step_key").all()).toEqual([
+      { step_key: 'generate:consensus', state: 'settled' },
+      { step_key: 'generate:disputes', state: 'settled' },
+      { step_key: 'generate:positions', state: 'settled' },
+    ])
+    expect(local.sqlite.prepare("SELECT COUNT(*) AS n FROM ct_ai_usage WHERE step_key = 'complete:draft'").get()).toMatchObject({ n: 0 })
+    expect(await runEvidenceWorkflow(env, created.job_id, testStep())).toEqual({ status: 'partial_draft' })
+    expect(await (await send('POST', '/api/issues/7/evidence-jobs', { consent: true })).json()).toMatchObject({ job_id: created.job_id, cache: 'hit', status: 'partial_draft' })
+    expect(recordedRequests).toHaveLength(7)
   })
 
   it('共識候選無效只拒收該段，其他有效分項仍可檢視且有固定驗證子碼', async () => {
@@ -1095,7 +1277,7 @@ describe('evidence API 與實際 SQLite 工作流', () => {
         const message = responseMessage(response)
         const data = object(JSON.parse(String(message.content)))
         data.items = ids.map((id, index) => ({
-          group_id: `group-${index}`, evidence_ids: [id], name: cite('群組。', id),
+          group_id: `group-${index}`, name: cite('群組。', id),
           Core_concern: index === 0 ? null : cite('既有關注。', id),
           opinions: [{ Title: cite('主張。', id), description: cite('敘述。', id) }],
         }))

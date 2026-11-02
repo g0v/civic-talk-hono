@@ -563,6 +563,8 @@ npx wrangler d1 migrations apply vtaiwan-civic-talks --remote   # 🚫 需先取
 - 一般志願者內容生成仍由使用者自帶模型金鑰；既有 synthesis prompt API 保留。`Issues.md` 只記錄計畫 §11.1 的兩項未實作未來工作，不建立 GitHub issue。
 - 完成度須分別記錄本機 runtime、遠端唯讀來源查核、真實模型呼叫及人工語意／OAuth 驗收；不得把 fixture／單元測試當作真實模型或人工驗收。
 - 新版管線依序執行 Gemma 共識／爭點／立場地圖三個專項，使用同一份已驗證證據與比較資料，不串接摘要；只在共識保留直接支持候選限制，爭點可提出明示類型的張力，立場允許多證據重新分群。不得恢復單次生成或單條立場枚舉 fallback。
+- 共識／爭點以約三項獨立有據內容為目標，不硬設最少三項；不同命題可共用同一候選與證據，但完全重複內容拒收。每項仍須實質跨來源支持或呈現同一可對照問題的各側，不以多塞 items 當品質。
+- Gemma `section-values-v3` 各項收到完整已驗證 quote、ID／素材 ID 及必要關係投影，詳細 metadata 仍保存在本機。立場原生 item 不再含群組級 evidence_ids；以 opinions 有效引用推導群組／Sources，群名／Core 引用範圍、直接反例、全證據覆蓋／排除仍驗證。不得刪舊欄位後假裝舊 raw 通過，也不新增相容 fallback 或付費呼叫。
 - 各項獨立記帳、驗證與保存；`diagnostics.generation.sections` 區分 completed／no_findings／failed／not_started，進行中另看 `generation_progress`。partial 不代表失敗空段沒有爭點；來源 fence、停權、去重及禁止自動重試仍適用。
 - 最終三段 Overview 與每組 Core_concern 均須非空；Core_concern 可依明示主張有據綜整，不推測動機。三項後僅在有內容的必填仍為 null 時，最多一輪 Gemma 白名單補完，不能改已有值、來源、順序或舊引用。空／失敗／未啟動分區的 Overview 由程式以三語狀態文字明示，不偽造來源結論或 citation。
 - 補完獨立預留／結算且仍屬同一工作，進度可為 completion；無缺值不付費，必要補完失敗不交付缺值草稿。原始分項、舊結果、unknown 費用與 tombstone 不覆寫；不新增第五輪、自動重試或格式修復。真實模型補完品質須另經付費／人工驗收，不以合成 provider 證據取代。
