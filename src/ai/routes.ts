@@ -60,21 +60,37 @@ function validJobId(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
 }
 
+async function failStoppedWorkflow(env: EvidenceBindings, job: { executionId: string; status: ExecutionStatus }): Promise<void> {
+  const store = new EvidenceStore(env.DB)
+  const snapshot = await store.getSnapshot(job.executionId)
+  if (snapshot && ['queued', 'extracting', 'comparing', 'generating'].includes(job.status)) {
+    await store.markAttemptsUnknown(job.executionId)
+    await store.setStatus({ executionId: job.executionId, expected: job.status as 'queued' | 'extracting' | 'comparing' | 'generating', next: 'failed', errorCode: 'provider_uncertain', generations: snapshot.generations })
+  }
+}
+
 /** 同一 execution 使用固定 Workflow ID；冷啟安全重放只會重用已記錄的 paid attempt。 */
-async function ensureWorkflow(env: EvidenceBindings, job: { id: string; executionId: string; status: ExecutionStatus }, coldStart = false): Promise<void> {
+async function ensureWorkflow(env: EvidenceBindings, job: { id: string; executionId: string; status: ExecutionStatus }, options: { coldStart?: boolean; observeOnly?: boolean } = {}): Promise<void> {
+  if (options.observeOnly) {
+    let status: string
+    try {
+      const instance = await env.EVIDENCE_WORKFLOW.get(job.executionId)
+      status = (await instance.status()).status
+    } catch {
+      // 查詢失聯不是終態，不可因此標記未知費用或失敗。
+      return
+    }
+    if (status === 'errored' || status === 'terminated' || status === 'complete') await failStoppedWorkflow(env, job)
+    return
+  }
   let instance: WorkflowInstance | null = null
   try {
     instance = await env.EVIDENCE_WORKFLOW.get(job.executionId)
     const state = await instance.status()
     if (state.status === 'errored' || state.status === 'terminated' || state.status === 'complete' || state.status === 'unknown') {
-      const store = new EvidenceStore(env.DB)
-      const snapshot = await store.getSnapshot(job.executionId)
-      if (snapshot && ['queued', 'extracting', 'comparing', 'generating'].includes(job.status)) {
-        await store.markAttemptsUnknown(job.executionId)
-        await store.setStatus({ executionId: job.executionId, expected: job.status as 'queued' | 'extracting' | 'comparing' | 'generating', next: 'failed', errorCode: 'provider_uncertain', generations: snapshot.generations })
-      }
+      await failStoppedWorkflow(env, job)
     }
-    else if (coldStart && (state.status === 'running' || state.status === 'waiting')) {
+    else if (options.coldStart && (state.status === 'running' || state.status === 'waiting')) {
       // 本機 runtime 重啟後可能仍顯示 running；D1 attempt fence 禁止重打已送出的推論。
       await instance.restart()
     }
@@ -102,7 +118,7 @@ async function ensureWorkflow(env: EvidenceBindings, job: { id: string; executio
 
 export async function recoverActiveWorkflows(env: EvidenceBindings, coldStart = false): Promise<void> {
   const store = new EvidenceStore(env.DB)
-  for (const job of await store.listActiveWorkflowJobs()) await ensureWorkflow(env, job, coldStart)
+  for (const job of await store.listActiveWorkflowJobs()) await ensureWorkflow(env, job, { coldStart })
 }
 
 function sourceMetadata(): { commit: string | null; dirty: boolean } {
@@ -301,8 +317,14 @@ export function registerEvidenceRoutes(app: EvidenceApp): void {
     const admin = isAdminRole(auth.context.role)
     if (!await store.getJob(jobId, auth.context.user.id, admin)) return c.json({ error: 'Not found' }, 404)
     await ensureStartup(c.env)
-    const job = await store.getJob(jobId, auth.context.user.id, admin)
+    let job = await store.getJob(jobId, auth.context.user.id, admin)
     if (!job) return c.json({ error: 'Not found' }, 404)
+    if (['queued', 'extracting', 'comparing', 'generating'].includes(job.status)) {
+      // 僅明確終態可收斂；查詢失聯或 unknown 不能推定工作失敗。
+      await ensureWorkflow(c.env, job, { observeOnly: true })
+      job = await store.getJob(jobId, auth.context.user.id, admin)
+      if (!job) return c.json({ error: 'Not found' }, 404)
+    }
     const base = { job_id: job.id, input_key: job.inputKey, status: job.status, error_code: job.errorCode, created_at: job.createdAt, updated_at: job.updatedAt, source_checked_at: job.sourceCheckedAt, usage: job.usage }
     if (job.status === 'erased') return c.json(base)
     if (job.status === 'withdrawn') {

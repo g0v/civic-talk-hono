@@ -10,7 +10,7 @@ import type { EvidenceBindings } from '../ai/env'
 import { registerEvidenceRoutes } from '../ai/routes'
 import { runEvidenceWorkflow } from '../ai/runner'
 import { statusOverview } from '../ai/overviewStatus'
-import { EvidenceStore, type ArtifactSummary } from '../ai/store'
+import { EvidenceStore, EvidenceStoreError, type ArtifactSummary } from '../ai/store'
 import { sha256, SOURCE_NAMESPACE } from '../ai/source'
 import type { CompletedDraft } from '../ai/generation'
 
@@ -62,8 +62,10 @@ let app!: Hono<{ Bindings: EvidenceBindings }>
 let env!: EvidenceBindings
 let recordedRequests: unknown[]
 let stepOutputs: unknown[]
-let instances: Set<string>
+let instances: Map<string, 'running' | 'waiting' | 'errored' | 'complete' | 'terminated' | 'unknown'>
 let restarts: number
+let workflowCreates: number
+let workflowProbeFailure: 'get' | 'status' | null
 let aiRun: (model: string, input: unknown) => Promise<unknown>
 
 const requestHeaders = { 'Content-Type': 'application/json', Origin: 'http://localhost' }
@@ -72,13 +74,40 @@ function send(method: string, path: string, body?: unknown) {
 }
 function testStep() {
   return {
-    async do(_name: string, config: { retries: { limit: number } }, callback: () => Promise<unknown>) {
-      expect(config.retries.limit).toBe(0)
+    async do(_name: string, _config: unknown, callback: () => Promise<unknown>) {
       const result = await callback()
       stepOutputs.push(result)
       return result
     },
   } as unknown as WorkflowStep
+}
+
+type RetryStepConfig = { retries: { limit: number; delay?: string; backoff?: string }; timeout?: string }
+function retryingStep(invoke?: (name: string, attempt: number, callback: () => Promise<unknown>) => Promise<unknown>) {
+  const attempts = new Map<string, number>()
+  const configs = new Map<string, RetryStepConfig>()
+  const failures = new Map<string, unknown[]>()
+  const step = {
+    async do(name: string, config: RetryStepConfig, callback: () => Promise<unknown>) {
+      configs.set(name, config)
+      let number = 0
+      while (true) {
+        number++
+        attempts.set(name, number)
+        try {
+          const result = invoke ? await invoke(name, number, callback) : await callback()
+          stepOutputs.push(result)
+          return result
+        } catch (error) {
+          const previous = failures.get(name)
+          if (previous) previous.push(error)
+          else failures.set(name, [error])
+          if (number > config.retries.limit) throw error
+        }
+      }
+    },
+  } as unknown as WorkflowStep
+  return { step, attempts, configs, failures }
 }
 function object(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object') throw new Error('invalid test input')
@@ -179,8 +208,10 @@ beforeEach(() => {
   auth.current = null
   recordedRequests = []
   stepOutputs = []
-  instances = new Set()
+  instances = new Map()
   restarts = 0
+  workflowCreates = 0
+  workflowProbeFailure = null
   aiRun = model
   local = new SQLiteD1(readFileSync(new URL('../../migrations/0017_evidence_pipeline.sql', import.meta.url), 'utf8'))
   source = new SQLiteD1(`
@@ -200,8 +231,19 @@ beforeEach(() => {
     },
   } as unknown as D1Database
   const workflow = {
-    async get(id: string) { return { async status() { if (!instances.has(id)) throw new Error('not found'); return { status: 'running' } }, async restart() { restarts++ } } },
-    async create({ id }: { id: string }) { instances.add(id); return { id } },
+    async get(id: string) {
+      if (workflowProbeFailure === 'get') throw new Error('workflow_get_unavailable')
+      return {
+        async status() {
+          if (workflowProbeFailure === 'status') throw new Error('workflow_status_unavailable')
+          const status = instances.get(id)
+          if (!status) throw new Error('not found')
+          return { status }
+        },
+        async restart() { restarts++ },
+      }
+    },
+    async create({ id }: { id: string }) { workflowCreates++; instances.set(id, 'running'); return { id } },
   }
   env = { DB: local.asD1(), SOURCE_DB: source.asD1(), DB_AUTH: dbAuth, AI: { run: (modelName: string, input: unknown) => aiRun(modelName, input) }, EVIDENCE_WORKFLOW: workflow } as unknown as EvidenceBindings
   app = new Hono<{ Bindings: EvidenceBindings }>()
@@ -359,6 +401,160 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     expect((await send('GET', `/api/evidence-jobs/${created.job_id}`)).status).toBe(200)
     expect(restarts).toBe(1)
   })
+  it('一般輪詢不重啟進行中工作，也不因 instance 暫時不存在而建立新工作', async () => {
+    auth.current = user('owner')
+    const created = await (await send('POST', '/api/issues/7/evidence-jobs', { consent: true })).json() as { job_id: string }
+    const store = new EvidenceStore(local.asD1())
+    const job = await store.getJob(created.job_id, 'owner')
+    expect(workflowCreates).toBe(1)
+    for (const status of ['running', 'waiting'] as const) {
+      instances.set(job!.executionId, status)
+      expect(await (await send('GET', `/api/evidence-jobs/${created.job_id}`)).json()).toMatchObject({ status: 'queued' })
+    }
+    instances.delete(job!.executionId)
+    expect(await (await send('GET', `/api/evidence-jobs/${created.job_id}`)).json()).toMatchObject({ status: 'queued' })
+    expect(restarts).toBe(0)
+    expect(workflowCreates).toBe(1)
+    expect(recordedRequests).toHaveLength(0)
+  })
+
+  it.each(['errored', 'complete', 'terminated'] as const)('清理 step 失敗後 native 為 %s，授權輪詢收斂工作而不重打', async state => {
+    let validated = false
+    const brokenCleanup = retryingStep(async (name, _attempt, callback) => {
+      if (name === 'finish-generation-disputes' || name === 'fail-workflow') throw new Error('private_step_failure')
+      const result = await callback()
+      if (name === 'validate-generation-disputes') validated = true
+      return result
+    })
+    auth.current = user('owner')
+    const created = await (await send('POST', '/api/issues/7/evidence-jobs', { consent: true })).json() as { job_id: string }
+    await expect(runEvidenceWorkflow(env, created.job_id, brokenCleanup.step)).rejects.toThrow('evidence_workflow_cleanup_failed')
+    expect(validated).toBe(true)
+    for (const name of ['finish-generation-disputes', 'fail-workflow']) {
+      expect(brokenCleanup.attempts.get(name)).toBe(4)
+      expect(brokenCleanup.configs.get(name)).toMatchObject({ retries: { limit: 3, delay: '1 second', backoff: 'exponential' }, timeout: '30 seconds' })
+    }
+    const store = new EvidenceStore(local.asD1())
+    const before = await store.getJob(created.job_id, 'owner')
+    expect(before).toMatchObject({ status: 'generating', usage: { attempts: 5, uncertain: 0 } })
+    const savedRaw = await store.listArtifacts(before!.executionId, 'raw')
+    const savedSections = (await store.listArtifacts(before!.executionId, 'generation')).filter(item => object(item.payload).stage === 'generation_section')
+    expect(savedRaw).toHaveLength(5)
+    expect(savedSections).toHaveLength(2)
+    instances.set(before!.executionId, state)
+
+    auth.current = user('other')
+    expect((await send('GET', `/api/evidence-jobs/${created.job_id}`)).status).toBe(404)
+    expect((await store.getJob(created.job_id, 'owner'))?.status).toBe('generating')
+    auth.current = user('owner')
+    const response = await send('GET', `/api/evidence-jobs/${created.job_id}`)
+    expect(response.status).toBe(200)
+    const body = object(await response.json())
+    expect(body).toMatchObject({ status: 'failed', error_code: 'provider_uncertain', usage: before!.usage })
+    expect(body.data).toBeUndefined()
+    expect(JSON.stringify(body)).not.toContain('private_step_failure')
+    expect(await store.listArtifacts(before!.executionId, 'raw')).toEqual(savedRaw)
+    expect((await store.listArtifacts(before!.executionId, 'generation')).filter(item => object(item.payload).stage === 'generation_section')).toEqual(savedSections)
+    expect(local.sqlite.prepare("SELECT step_key, state FROM ct_ai_usage WHERE step_key LIKE 'generate:%' ORDER BY step_key").all()).toEqual([
+      { step_key: 'generate:consensus', state: 'settled' },
+      { step_key: 'generate:disputes', state: 'settled' },
+    ])
+    expect(recordedRequests).toHaveLength(5)
+    expect(workflowCreates).toBe(1)
+    expect(restarts).toBe(0)
+    expect(await (await send('GET', `/api/evidence-jobs/${created.job_id}`)).json()).toMatchObject({ status: 'failed', usage: before!.usage })
+  })
+
+  it('失敗清理遇暫時儲存故障會重試，再將工作收斂為失敗而不重打模型', async () => {
+    const originalMark = EvidenceStore.prototype.markAttemptsUnknown
+    let markCalls = 0
+    const mark = vi.spyOn(EvidenceStore.prototype, 'markAttemptsUnknown').mockImplementation(function (this: EvidenceStore, executionId, now) {
+      markCalls++
+      if (markCalls === 1) throw new EvidenceStoreError('storage_error')
+      return originalMark.call(this, executionId, now)
+    })
+    const workflow = retryingStep(async (name, _attempt, callback) => {
+      if (name === 'finish-generation-disputes') throw new Error('simulated_step_timeout')
+      return callback()
+    })
+    try {
+      auth.current = user('owner')
+      const created = await (await send('POST', '/api/issues/7/evidence-jobs', { consent: true })).json() as { job_id: string }
+      expect(await runEvidenceWorkflow(env, created.job_id, workflow.step)).toEqual({ status: 'failed' })
+      expect(workflow.attempts.get('finish-generation-disputes')).toBe(4)
+      expect(workflow.attempts.get('fail-workflow')).toBe(2)
+      expect(markCalls).toBe(2)
+      const response = await send('GET', `/api/evidence-jobs/${created.job_id}`)
+      expect(response.status).toBe(200)
+      expect(await response.json()).toMatchObject({ status: 'failed', error_code: 'internal_error', usage: { attempts: 5, uncertain: 0, reservedMicroUsd: 0 } })
+      expect(local.sqlite.prepare("SELECT step_key, state FROM ct_ai_usage WHERE step_key LIKE 'generate:%' ORDER BY step_key").all()).toEqual([
+        { step_key: 'generate:consensus', state: 'settled' },
+        { step_key: 'generate:disputes', state: 'settled' },
+      ])
+      expect(recordedRequests).toHaveLength(5)
+    } finally {
+      mark.mockRestore()
+    }
+  })
+
+  it('native 查詢失聯或 unknown 不誤判在途工作，明確終態才保留未知預留', async () => {
+    const { promise: waiting, resolve: release } = Promise.withResolvers<void>()
+    const { promise: called, resolve: started } = Promise.withResolvers<void>()
+    let disputeCalls = 0
+    aiRun = async (modelName, input) => {
+      if (gemmaPayload(modelName, input)?.section === 'disputes') {
+        disputeCalls++
+        started()
+        await waiting
+      }
+      return model(modelName, input)
+    }
+    auth.current = user('owner')
+    const created = await (await send('POST', '/api/issues/7/evidence-jobs', { consent: true })).json() as { job_id: string }
+    const running = runEvidenceWorkflow(env, created.job_id, testStep())
+    await called
+    const store = new EvidenceStore(local.asD1())
+    const before = await store.getJob(created.job_id, 'owner')
+    try {
+      const attempt = local.sqlite.prepare("SELECT state, estimate_micro_usd, actual_micro_usd FROM ct_ai_usage WHERE step_key = 'generate:disputes'").get() as { state: string; estimate_micro_usd: number; actual_micro_usd: number | null }
+      expect(attempt).toMatchObject({ state: 'started', actual_micro_usd: null })
+      for (const probe of ['get', 'status', 'unknown'] as const) {
+        workflowProbeFailure = probe === 'unknown' ? null : probe
+        instances.set(before!.executionId, probe === 'unknown' ? 'unknown' : 'running')
+        const observed = await send('GET', `/api/evidence-jobs/${created.job_id}`)
+        expect(observed.status).toBe(200)
+        expect(await observed.json()).toMatchObject({ status: 'generating', error_code: null, usage: before!.usage })
+        expect(await store.getJob(created.job_id, 'owner')).toMatchObject({
+          status: 'generating', errorCode: null, updatedAt: before!.updatedAt, usage: before!.usage,
+        })
+        expect(local.sqlite.prepare("SELECT state, estimate_micro_usd, actual_micro_usd FROM ct_ai_usage WHERE step_key = 'generate:disputes'").get()).toMatchObject(attempt)
+      }
+      workflowProbeFailure = null
+      instances.set(before!.executionId, 'terminated')
+      const response = await send('GET', `/api/evidence-jobs/${created.job_id}`)
+      expect(response.status).toBe(200)
+      expect(await response.json()).toMatchObject({
+        status: 'failed', error_code: 'provider_uncertain',
+        usage: { attempts: 5, actualMicroUsd: before!.usage.actualMicroUsd, reservedMicroUsd: attempt.estimate_micro_usd, uncertain: 1 },
+      })
+      expect(local.sqlite.prepare("SELECT state, actual_micro_usd FROM ct_ai_usage WHERE step_key = 'generate:disputes'").get()).toMatchObject({ state: 'unknown', actual_micro_usd: null })
+      expect(disputeCalls).toBe(1)
+      expect(recordedRequests).toHaveLength(4)
+      expect(workflowCreates).toBe(1)
+      expect(restarts).toBe(0)
+    } finally {
+      release()
+      await running
+    }
+    const after = await store.getJob(created.job_id, 'owner')
+    expect(after).toMatchObject({ status: 'failed', errorCode: 'provider_uncertain', usage: { attempts: 5, reservedMicroUsd: 0, uncertain: 0 } })
+    expect(after!.usage.actualMicroUsd).toBeGreaterThan(before!.usage.actualMicroUsd)
+    expect(await store.listArtifacts(before!.executionId, 'raw')).toHaveLength(4)
+    expect(disputeCalls).toBe(1)
+    expect(recordedRequests).toHaveLength(5)
+    expect(local.sqlite.prepare("SELECT COUNT(*) AS n FROM ct_ai_usage WHERE step_key = 'generate:positions'").get()).toMatchObject({ n: 0 })
+  })
+
 
   it('設定指紋改變後舊工作不混入新 prompt，未付費預留得釋放', async () => {
     auth.current = user('owner')
@@ -880,6 +1076,233 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     await interrupted
     expect((await store.getJob(created.job_id, 'owner'))?.status).toBe('ai_draft')
   })
+  it.each([
+    { label: '爭點完成診斷 step 逾時耗盡', stepName: 'finish-generation-disputes', fault: 'timeout' },
+    { label: '立場前查核 step 逾時耗盡', stepName: 'prepare-generation-positions', fault: 'timeout' },
+    { label: '爭點完成診斷儲存重試耗盡', stepName: 'finish-generation-disputes', fault: 'storage' },
+    { label: '爭點完成診斷收到無效儲存操作', stepName: 'finish-generation-disputes', fault: 'invalid_input' },
+  ] as const)('$label 時失敗，不啟動立場且保留已驗證工件與已結算費用', async ({ stepName, fault }) => {
+    let validated = false
+    let injections = 0
+    const originalSave = EvidenceStore.prototype.saveArtifact
+    const save = vi.spyOn(EvidenceStore.prototype, 'saveArtifact').mockImplementation(function (this: EvidenceStore, input) {
+      if (fault !== 'timeout' && input.kind === 'diagnostics') {
+        const event = object(input.payload)
+        if (event.stage === 'generation' && event.phase === 'finished' && object(event.outcome).section === 'disputes') {
+          injections++
+          throw new EvidenceStoreError(fault === 'storage' ? 'storage_error' : 'invalid_input')
+        }
+      }
+      return originalSave.call(this, input)
+    })
+    const failingStep = retryingStep(async (name, _attempt, callback) => {
+      if (name === stepName && fault === 'timeout') {
+        injections++
+        throw new Error('simulated_step_timeout')
+      }
+      const result = await callback()
+      if (name === 'validate-generation-disputes') validated = true
+      return result
+    })
+    try {
+      auth.current = user('owner')
+      const created = await (await send('POST', '/api/issues/7/evidence-jobs', { consent: true })).json() as { job_id: string }
+      expect(await runEvidenceWorkflow(env, created.job_id, failingStep.step)).toEqual({ status: 'failed' })
+      expect(validated).toBe(true)
+      expect(injections).toBe(fault === 'invalid_input' ? 1 : 4)
+      expect(failingStep.attempts.get(stepName)).toBe(fault === 'invalid_input' ? 1 : 4)
+      expect(failingStep.configs.get(stepName)).toMatchObject({ retries: { limit: 3, delay: '1 second', backoff: 'exponential' }, timeout: '30 seconds' })
+      for (const [name, config] of failingStep.configs) {
+        if (/^(extract|compare|generate)-/.test(name)) expect(config).toMatchObject({ retries: { limit: 0 }, timeout: '10 minutes' })
+      }
+      const attempts = local.sqlite.prepare('SELECT id, step_key, state, actual_micro_usd FROM ct_ai_usage ORDER BY step_key').all() as Array<{ id: string; step_key: string; state: string; actual_micro_usd: number | null }>
+      expect(attempts.map(item => item.step_key)).toEqual(['compare:0', 'extract:2', 'extract:4', 'generate:consensus', 'generate:disputes'])
+      for (const attempt of attempts) {
+        expect(attempt.state).toBe('settled')
+        expect(attempt.actual_micro_usd).not.toBeNull()
+      }
+      const actual = attempts.reduce((sum, item) => sum + item.actual_micro_usd!, 0)
+      const store = new EvidenceStore(local.asD1())
+      const job = await store.getJob(created.job_id, 'owner')
+      const raw = await store.listArtifacts(job!.executionId, 'raw')
+      const sections = (await store.listArtifacts(job!.executionId, 'generation')).filter(item => object(item.payload).stage === 'generation_section')
+      expect(raw).toHaveLength(5)
+      expect(new Set(sections.map(item => object(object(item.payload).result).section))).toEqual(new Set(['consensus', 'disputes']))
+      for (const section of sections) {
+        const payload = object(section.payload)
+        const name = String(object(payload.result).section)
+        const linkedRaw = raw.find(item => item.id === payload.raw_artifact_id)
+        expect(linkedRaw?.attemptId).toBe(attempts.find(item => item.step_key === `generate:${name}`)?.id)
+        expect(linkedRaw).toBeDefined()
+      }
+      const response = await send('GET', `/api/evidence-jobs/${created.job_id}`)
+      expect(response.status).toBe(200)
+      const body = object(await response.json())
+      expect(body).toMatchObject({
+        status: 'failed', error_code: 'internal_error',
+        usage: { attempts: 5, actualMicroUsd: actual, reservedMicroUsd: 0, uncertain: 0 },
+        generation_progress: { current_section: null, sections: { positions: { status: 'not_started' } } },
+      })
+      expect(body.data).toBeUndefined()
+      const summaries = object(body.provenance).artifacts as ArtifactSummary[]
+      for (const item of [...raw, ...sections]) expect(summaries.some(summary => summary.id === item.id)).toBe(true)
+      expect(await runEvidenceWorkflow(env, created.job_id, testStep())).toEqual({ status: 'failed' })
+      expect(recordedRequests).toHaveLength(5)
+    } finally {
+      save.mockRestore()
+    }
+  })
+
+  it.each([
+    { label: '寫入前的暫時儲存故障', lostAfterWrite: false },
+    { label: '診斷已寫入但回應遺失', lostAfterWrite: true },
+  ])('$label 可由銜接 step 重試恢復，不重付或重複完成事件', async ({ lostAfterWrite }) => {
+    const originalSave = EvidenceStore.prototype.saveArtifact
+    let injected = false
+    let targetSaveCalls = 0
+    const save = vi.spyOn(EvidenceStore.prototype, 'saveArtifact').mockImplementation(async function (this: EvidenceStore, input) {
+      if (input.kind === 'diagnostics') {
+        const event = object(input.payload)
+        if (event.stage === 'generation' && event.phase === 'finished' && object(event.outcome).section === 'disputes') {
+          targetSaveCalls++
+          if (!injected) {
+            injected = true
+            if (lostAfterWrite) await originalSave.call(this, input)
+            throw new Error('synthetic-private-detail')
+          }
+        }
+      }
+      return originalSave.call(this, input)
+    })
+    const workflow = retryingStep()
+    try {
+      auth.current = user('owner')
+      const created = await (await send('POST', '/api/issues/7/evidence-jobs', { consent: true })).json() as { job_id: string }
+      expect(await runEvidenceWorkflow(env, created.job_id, workflow.step)).toEqual({ status: 'ai_draft' })
+      expect(injected).toBe(true)
+      expect(targetSaveCalls).toBe(lostAfterWrite ? 1 : 2)
+      expect(workflow.attempts.get('finish-generation-disputes')).toBe(2)
+      const observedFailures = workflow.failures.get('finish-generation-disputes')
+      expect(observedFailures).toHaveLength(1)
+      const observedError = observedFailures![0]
+      expect(observedError).toBeInstanceOf(EvidenceStoreError)
+      expect(observedError).toMatchObject({ code: 'storage_error', message: 'storage_error' })
+      expect(object(observedError)).not.toHaveProperty('cause')
+      expect(String(observedError)).not.toContain('synthetic-private-detail')
+      expect(JSON.stringify(observedError)).not.toContain('synthetic-private-detail')
+      for (const name of ['load-generation-state', 'prepare-generation-disputes', 'finish-generation-disputes']) {
+        expect(workflow.configs.get(name)).toMatchObject({ retries: { limit: 3, delay: '1 second', backoff: 'exponential' }, timeout: '30 seconds' })
+      }
+      for (const [name, config] of workflow.configs) {
+        if (/^(extract|compare|generate)-/.test(name)) expect(config).toMatchObject({ retries: { limit: 0 }, timeout: '10 minutes' })
+      }
+      const store = new EvidenceStore(local.asD1())
+      const job = await store.getJob(created.job_id, 'owner')
+      const raw = await store.listArtifacts(job!.executionId, 'raw')
+      const sections = (await store.listArtifacts(job!.executionId, 'generation')).filter(item => object(item.payload).stage === 'generation_section')
+      const events = (await store.listArtifacts(job!.executionId, 'diagnostics')).map(item => object(item.payload))
+      expect(raw).toHaveLength(6)
+      expect(sections).toHaveLength(3)
+      for (const section of ['consensus', 'disputes', 'positions']) {
+        expect(events.filter(event => event.stage === 'generation' && event.phase === 'finished' && object(event.outcome).section === section)).toHaveLength(1)
+      }
+      const usage = local.sqlite.prepare('SELECT step_key, state, actual_micro_usd FROM ct_ai_usage ORDER BY step_key').all() as Array<{ step_key: string; state: string; actual_micro_usd: number | null }>
+      expect(usage).toHaveLength(6)
+      for (const attempt of usage) {
+        expect(attempt.state).toBe('settled')
+        expect(attempt.actual_micro_usd).not.toBeNull()
+      }
+      const actual = usage.reduce((sum, item) => sum + item.actual_micro_usd!, 0)
+      expect(await (await send('GET', `/api/evidence-jobs/${created.job_id}`)).json()).toMatchObject({
+        status: 'ai_draft', usage: { attempts: 6, actualMicroUsd: actual, reservedMicroUsd: 0, uncertain: 0 },
+      })
+      expect(await runEvidenceWorkflow(env, created.job_id, testStep())).toEqual({ status: 'ai_draft' })
+      expect(recordedRequests).toHaveLength(6)
+    } finally {
+      save.mockRestore()
+    }
+  })
+
+  it('爭點完成事件已保存但 finish checkpoint 遺失，重放不重付或重複事件', async () => {
+    const { promise: waiting, resolve: release } = Promise.withResolvers<void>()
+    const { promise: paused, resolve: reached } = Promise.withResolvers<void>()
+    const checkpoints = new Map<string, unknown>()
+    let finishRuns = 0
+    const replayableStep = {
+      async do(name: string, _config: unknown, callback: () => Promise<unknown>) {
+        if (checkpoints.has(name)) return checkpoints.get(name)
+        const result = await callback()
+        if (name === 'finish-generation-disputes' && ++finishRuns === 1) { reached(); await waiting }
+        checkpoints.set(name, result)
+        return result
+      },
+    } as unknown as WorkflowStep
+    auth.current = user('owner')
+    const created = await (await send('POST', '/api/issues/7/evidence-jobs', { consent: true })).json() as { job_id: string }
+    const interrupted = runEvidenceWorkflow(env, created.job_id, replayableStep)
+    await paused
+    try {
+      const store = new EvidenceStore(local.asD1())
+      const job = await store.getJob(created.job_id, 'owner')
+      const beforeRaw = await store.listArtifacts(job!.executionId, 'raw')
+      const beforeSections = (await store.listArtifacts(job!.executionId, 'generation')).filter(item => object(item.payload).stage === 'generation_section')
+      const beforeUsage = local.sqlite.prepare("SELECT id, step_key, state, actual_micro_usd FROM ct_ai_usage WHERE step_key IN ('generate:consensus', 'generate:disputes') ORDER BY step_key").all()
+      expect(beforeRaw).toHaveLength(5)
+      expect(beforeSections).toHaveLength(2)
+      expect(await (await send('GET', `/api/evidence-jobs/${created.job_id}`)).json()).toMatchObject({
+        status: 'generating', generation_progress: { sections: { consensus: { status: 'completed' }, disputes: { status: 'no_findings' } } },
+      })
+      expect(await runEvidenceWorkflow(env, created.job_id, replayableStep)).toEqual({ status: 'ai_draft' })
+      expect(finishRuns).toBe(2)
+      const afterRaw = await store.listArtifacts(job!.executionId, 'raw')
+      const afterSections = (await store.listArtifacts(job!.executionId, 'generation')).filter(item => object(item.payload).stage === 'generation_section')
+      expect(afterRaw).toHaveLength(6)
+      expect(afterRaw.slice(0, beforeRaw.length)).toEqual(beforeRaw)
+      expect(afterSections.slice(0, beforeSections.length)).toEqual(beforeSections)
+      expect(local.sqlite.prepare("SELECT id, step_key, state, actual_micro_usd FROM ct_ai_usage WHERE step_key IN ('generate:consensus', 'generate:disputes') ORDER BY step_key").all()).toEqual(beforeUsage)
+      const events = (await store.listArtifacts(job!.executionId, 'diagnostics')).map(item => object(item.payload))
+      for (const section of ['consensus', 'disputes']) {
+        expect(events.filter(event => event.stage === 'generation' && event.phase === 'finished' && object(event.outcome).section === section)).toHaveLength(1)
+      }
+      expect(recordedRequests).toHaveLength(6)
+      expect(await (await send('GET', `/api/evidence-jobs/${created.job_id}`)).json()).toMatchObject({ status: 'ai_draft', usage: { attempts: 6, uncertain: 0 } })
+    } finally {
+      release()
+      await interrupted
+    }
+  })
+
+  it.each(['withdrawn', 'erased', 'suspended'] as const)('爭點驗證後遇 %s 防線即停止，不重試或啟動後續分項', async disposition => {
+    const revokeAfterValidation = retryingStep(async (name, _attempt, callback) => {
+      const result = await callback()
+      if (name === 'validate-generation-disputes') {
+        if (disposition === 'withdrawn') source.sqlite.prepare('UPDATE ct_materials SET abuse_flagged = 3 WHERE id = 2').run()
+        else if (disposition === 'erased') await new EvidenceStore(local.asD1()).eraseSource({ namespace: SOURCE_NAMESPACE, kind: 'material', id: 2, reason: 'request' })
+        else env.DB_AUTH = { prepare() { return { bind() { return { async first() { return null } } } } } } as unknown as D1Database
+      }
+      return result
+    })
+    auth.current = user('owner')
+    const created = await (await send('POST', '/api/issues/7/evidence-jobs', { consent: true })).json() as { job_id: string }
+    expect(await runEvidenceWorkflow(env, created.job_id, revokeAfterValidation.step)).toEqual({ status: 'failed' })
+    expect(revokeAfterValidation.configs.get('finish-generation-disputes')).toMatchObject({ retries: { limit: 3 }, timeout: '30 seconds' })
+    expect(revokeAfterValidation.attempts.get('finish-generation-disputes')).toBe(1)
+    expect(revokeAfterValidation.attempts.has('prepare-generation-positions')).toBe(false)
+    const body = object(await (await send('GET', `/api/evidence-jobs/${created.job_id}`)).json())
+    const expectedStatus = disposition === 'suspended' ? 'failed' : disposition
+    expect(body).toMatchObject({ status: expectedStatus, usage: { attempts: 5, uncertain: 0 } })
+    if (disposition === 'suspended') expect(body).toMatchObject({ error_code: 'account_suspended' })
+    else for (const field of ['data', 'sources', 'evidence', 'generation_artifact', 'provenance', 'diagnostics']) expect(body).not.toHaveProperty(field)
+    expect(body).not.toHaveProperty('data')
+    expect(await runEvidenceWorkflow(env, created.job_id, testStep())).toEqual({ status: expectedStatus })
+    expect(local.sqlite.prepare("SELECT step_key, state FROM ct_ai_usage WHERE step_key LIKE 'generate:%' ORDER BY step_key").all()).toEqual([
+      { step_key: 'generate:consensus', state: 'settled' },
+      { step_key: 'generate:disputes', state: 'settled' },
+    ])
+    if (disposition === 'erased') expect(local.sqlite.prepare('SELECT COUNT(*) AS n FROM ct_ai_artifacts WHERE payload IS NOT NULL').get()).toMatchObject({ n: 0 })
+    expect(recordedRequests).toHaveLength(5)
+  })
+
 
   it('回應未保存的在途付費重放標不確定，絕不再次呼叫', async () => {
     let release!: () => void
@@ -1142,7 +1565,13 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     }
     auth.current = user('owner')
     const created = await (await send('POST', '/api/issues/7/evidence-jobs', { consent: true })).json() as { job_id: string }
-    expect(await runEvidenceWorkflow(env, created.job_id, testStep())).toEqual({ status: 'ai_draft' })
+    const workflow = retryingStep()
+    expect(await runEvidenceWorkflow(env, created.job_id, workflow.step)).toEqual({ status: 'ai_draft' })
+    expect(workflow.configs.get('complete-draft')).toMatchObject({ retries: { limit: 0 }, timeout: '10 minutes' })
+    expect(workflow.attempts.get('complete-draft')).toBe(1)
+    for (const name of ['plan-generation', 'validate-generation-disputes', 'assemble-generation']) {
+      expect(workflow.configs.get(name)).toMatchObject({ retries: { limit: 0 }, timeout: '30 seconds' })
+    }
     const store = new EvidenceStore(local.asD1())
     const job = await store.getJob(created.job_id, 'owner')
     const artifacts = await store.listArtifacts(job!.executionId, 'generation')

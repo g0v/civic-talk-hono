@@ -219,3 +219,16 @@
 - 回歸確認同一 data 不同分型得到不同 base hash，舊分類 patch 不能重用；即使重算 hash，未知類型、缺項、錯索引、額外引用與錯誤目標仍拒收。無共識概述缺值的補完請求不攜帶額外分類投影；人改格式不受影響。
 - 獨立程序以合成原生完成執行實際 builder／parser／assembler／補完規劃與補完解析，事實／挑戰兩型皆只改缺值 Overview、保留既有文字與引用，分類竄改 hash 拒收。保存快照 builder 仍保留 20 段證據與 81 筆比較；review.json hash 未變，零真實模型呼叫／DB 寫入。這不證明補完模型已正確理解分型，仍需人工驗收。
 - 完整型別檢查通過 157 files、53 test files／532 tests 全通過、build 成功，既有 client chunk 大於 500 kB 警告仍在。README／plan 同步補完規則與版本，未改舊結果、帳本或遠端資源；原提交保留，補充修正另以一筆 commit 記錄。
+
+## 2026-11-03：生成完成後的無界銜接與非模型短時限重試
+
+- 使用者回報輪詢長期停在 generating／disputes。只讀本機業務 D1 與原生 Workflow 狀態，確認共識兩項、爭點一項皆有驗證工件；爭點呼叫約 15.8 秒並以 stop 完成，22 筆模型嘗試均 settled，沒有在途或未知費用。native 最後事件是 validate-generation-disputes completed，但 generation.finished 未保存，引擎仍 running 且沒有 active timeout。這證明不是該次 Gemma 尚在生成；確切哪個 await 掛起仍無紀錄直接證明，不將推測當作 SDK／遠端故障定論。
+- 已觀察缺口是生成迴圈的 current／完成診斷在 step 外，不受既有 step 逾時保護。使用者選擇先修流程、不救跑原工作；已停止 5173，未重送 POST、重啟原任務或清除資料。只讀複核原工作仍保留 22 筆 settled 與兩個成功分項，未修改原帳本、工件或 review 檔。
+- 生成復原資料載入、生成前／後查核及完成診斷改由 load-generation-state、prepare-generation-*、finish-generation-* 受控；完成事件會核對既有相同 outcome，處理正常重放與寫入已成功但回應遺失。checkpoint 只回傳識別符、狀態、數量／費用，請求與內容仍留隔離 D1。補完的失敗事件讀取移入 plan-completion，該 step 僅額外回傳 targets pointers，不將補完 data 存進 checkpoint。
+- 依使用者後續裁示，控制政策為 bounded-generation-handoffs-v2：冪等銜接／清理每次 30 秒、最多三次重試，1 秒起指數退避；其餘非模型規劃／驗證／組裝每次 30 秒、零重試；四類模型呼叫仍為 10 分鐘、零重試。已知來源／帳號／配置等守門與 invalid_input 先回傳停止代碼，再由 step 外終止，避免 SDK 反覆執行確定性失敗；暫時錯誤只以 storage_error 交給 SDK，不帶原始訊息或 cause。
+- fail-workflow 也使用可重試的短時限控制，僅將 started 嘗試標為 unknown，已結算費用不退款或重付；若清理仍耗盡，拋 evidence_workflow_cleanup_failed，讓引擎進入可對帳終態。active GET 只對確認 complete／errored／terminated 收斂，不重啟或建立 instance；status RPC 失聯／unknown 不誤改 execution 或在途費用。三次重試指最多四次嘗試，並非新增四次模型呼叫；Workers／D1 操作也不保證全環境免費。
+- 實際策略與規模預估共用 workflowPolicy.ts 並納入 pipelineSettings 指紋，固定 step 預估 24、生成查核預估含重試為 45；模型 prompt／schema／補完版本與參數不變。以原工作保存設定比較確認新 config hash 不同、模型版本集合相同；舊在途工作不得跨新控制政策付費續跑。
+- 永久 SQLite／API 回歸涵蓋重試耗盡、暫時儲存錯誤後成功、寫入後回應遺失的去重、來源撤下／清除、停權、非法輸入不重試、清理失敗後 GET 收斂及觀察失聯不誤判；另驗證錯誤只曝光機器碼、無原始私人訊息或 cause。完整驗收為 158 files 型別檢查、53 test files／548 tests 通過、build 成功；既有 client chunk 大於 500 kB 警告保留。
+- 獨立 Miniflare／workerd 與真正本機 D1、原生 Workflow 執行八種隔離情境：正常完成、首次強制 timeout 後成功、四次 timeout 耗盡、清理耗盡、寫入後回應遺失、native checkpoint restart、實際 Hono GET 終態對帳，以及不使用 force timeout 的懸置 I/O。最後一項第一回 attempt 實際約 30.007 秒才 timeout，第二回成功；合成 provider 呼叫未增加、完成事件未重複，先前 raw 保留。native 事件確認三種 step 選項，非空實際 step outputs 不含內容／請求。
+- GET smoke 在工作前暖起真實 route，清理耗盡後觀察 native errored，HTTP 200 收斂 failed/provider_uncertain；startup 對帳次數未增加，沒有 restart/create 或新 provider 呼叫，所有工件 hash 與用量保留。來源、session provider 與 AI 都是合成 adapter，未建 auth schema，外部網路封鎖；強制 timeout 案例不是實際等待三十秒，與真正懸置 I/O 案例分開記錄，均不代表真實模型或 OAuth 品質驗收。
+- 暫存 harness 已移除，5173 維持停止，未 commit／push／部署或執行遠端寫入／migration。README 與 plan 同步短時限、非模型安全重試、觀察終態及不重送 POST 的操作限制；模型內容品質與新設定的真人實測仍待後續驗收。

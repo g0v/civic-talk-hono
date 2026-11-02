@@ -169,7 +169,7 @@ vp run dev
 
 ## #183 隔離本機證據實驗：真實議題驗收手冊
 
-**目前管線：** Clairic 逐素材抽取 → Clef 四分類比較 → Gemma 依序執行共識、爭點、立場地圖三項生成 → 必要時單輪「只補缺值」→ 驗證組裝。三項使用同一份完整已驗證證據及必要關係投影，不串接前項摘要；一般站與 BYO token 不變。Clairic 為 `claims-list-v3`，Clef 為 `symmetric-four-way-v2`；Gemma primary prompt／schema／input 為 `specialized-evidence-v5`／`specialized-cited-v3`／`section-values-v3`，補完為 `missing-fields-only-v2`／`cited-field-patches-v1`。使用者回報 v4 爭點與立場改善，但共識因引用宣告不符而失敗；本輪只調整共識的共同基礎分型與引用稽核提示，**v5 尚未新增真實付費呼叫或通過人工語義驗收**，舊工作與結果不會自動回填。下一次驗收前先重啟 opt-in 實驗 server，再依下列步驟建立新設定工作；不重用舊 JOB_ID 當作新版結果。
+**目前管線：** Clairic 逐素材抽取 → Clef 四分類比較 → Gemma 依序執行共識、爭點、立場地圖三項生成 → 必要時單輪「只補缺值」→ 驗證組裝。三項使用同一份完整已驗證證據及必要關係投影，不串接前項摘要；一般站與 BYO token 不變。Clairic 為 `claims-list-v3`，Clef 為 `symmetric-four-way-v2`；Gemma primary prompt／schema／input 為 `specialized-evidence-v5`／`specialized-cited-v3`／`section-values-v3`，補完為 `missing-fields-only-v2`／`cited-field-patches-v1`。工作流控制政策為 `bounded-generation-handoffs-v2`：非模型短時限與安全重試不改模型提示。使用者本輪實測共識／爭點已驗證，但完成事件銜接停滯；本次修正只以隔離合成 provider 驗收，未新增真實模型呼叫或語義品質成績。舊工作不會自動換版回填；下一次驗收先重啟 opt-in server，再建立新設定工作，不重用舊 JOB_ID 當作新版結果。
 
 
 本節是操作步驟，不代表未執行的 runtime／OAuth／模型／人工品質案例已通過。實驗 API 只會在明確 opt-in 的專用本機 remote-dev 入口註冊；`DB`、Workflow 與工件留在本機隔離目錄，`SOURCE_DB` 連遠端業務 D1、程式只用來源 SELECT，`DB_AUTH` 僅供 Better Auth 正常 OAuth／session 生命週期（此為唯一預期遠端 auth 寫入），`AI` 使用平台 Cloudflare Workers AI。遠端 D1 binding 並非資料庫唯讀 credential；不得對 `SOURCE_DB` 執行任何寫入或 migration，也不得對 `DB_AUTH` 建表、migration 或直接 SQL 寫入。
@@ -615,6 +615,24 @@ primary 非 null 的 Overview／Core_concern 仍須用句子物件陣列，例�
 
 Clef、三份 primary 與補完 prompt／schema、組裝政策、三語狀態文字及實際 builder 都納入設定指紋。在途舊設定工作遇設定變更會停止，不自動換版重打；已完成舊稿、未知費用與 tombstone 保留。各付費步驟獨立預留、結算與去重，補完嘗試鍵為 `complete:draft`，仍算同一個新工作日配額。新指紋不代表退款或品質改善；重新送出可能付費，仍須明確同意，不得清空狀態繞過額度。
 
+**生成階段銜接保護（`bounded-generation-handoffs-v2`）：** `load-generation-state`、各分項的 `prepare-generation-*`／`finish-generation-*` 與 `fail-workflow` 將工件復用、來源／帳號重新查核、完成診斷及失敗清理置於受控 step，不讓這些銜接 I/O 留在 step 外無界等待。三種策略如下：
+
+|step 類型|單次上限|失敗重試|
+|---|---|---|
+|模型呼叫：extract／compare／generate／complete-draft|10 分鐘|0 次|
+|已確認可冪等重放的銜接／清理|30 秒|最多 3 次|
+|其餘非模型規劃／驗證／組裝|30 秒|0 次|
+
+3 次重試代表首次加上三次，最多四次嘗試，使用 1 秒起的指數退避；每個銜接 step 最壞約兩分鐘加退避，不是整個工作的總時限。已知來源撤下、帳號停權、設定變更、非法儲存輸入等確定性守門失敗立即終止，不交給 SDK 重試。重試例外只傳固定機器碼，不將原始資料庫訊息寫進 native step 日誌。
+
+完成診斷可重放去重，包含寫入已成功但回應遺失的情況。checkpoint 僅存識別符、狀態、數量與估算費用，不保存原文、模型請求或生成內容；規模預估也計入可能重試的查核次數。模型提示、參數、付費 attempt key、單輪補完上限與來源 fence 不變。這些重試不重新付模型推論費，但 Workers／D1 操作不代表在所有環境都免費。
+
+銜接暫時故障先依上限重試；耗盡後是工作流失敗，不等同某個模型失敗，也不啟動後續模型。`fail-workflow` 亦受上述非模型銜接策略保護，只將尚未結算的 started attempt 標為 unknown，已結算費用與可用工件保留。若清理也重試耗盡，拋固定安全錯誤 `evidence_workflow_cleanup_failed` 讓原生引擎進入錯誤終態，避免吞掉例外後留下假完成。若輪詢迴圈先用完次數，可沿用同一 JOB_ID 繼續 GET，不要因此再次 POST。
+
+一般 GET 輪詢只觀察原生 instance，不重啟或建立工作；明確讀到 `complete`／`errored`／`terminated` 且業務狀態仍 active 時，才沿既有守門收斂為 failed／provider_uncertain。這個碼表示終態對帳無法完整確認執行，不代表已證實模型生成故障；unknown 費用仍不退款。`running`／`waiting`／`queued`、狀態查詢失聯或 `unknown` 都不能僅憑一次觀察就改寫 execution 或在途費用；冷啟復原仍沿用既有獨立規則。
+
+若長時間顯示 `generating section=disputes`，不能只據此推斷 Gemma 還在運算：原始回應與驗證可能已完成，卡的是完成事件銜接。先檢查已保存的 raw／分項狀態、attempt 結算及原生 step 紀錄，不要直接重送 POST。控制政策及實際 step 選項已納入設定指紋；改版後舊在途工作不會靜默接著用新設定付費執行，舊結果與帳本不清除。
+
 Gemma 輸入政策 `section-values-v3`：每個專項都收到全部已驗證證據的 `{id,material_id,quote}`，其中 quote 為完整擴展原文，不截斷、不重寫；原始 raw_quote 仍留在證據工件及 citation map，不重複送模型。共用關係只帶直接／反向的 `{evidence_ids,relation}` 與未完成的 `{evidence_ids,status}`；反向診斷不升格為正式判斷。只有共識收到候選 `{candidate_id,evidence_ids}`，只有爭點收到 `{evidence_ids}` 種子，立場不收共識候選或推導路徑。pair key、機率、題目版本、完整路徑及統計仍留在本機原始／比較工件與診斷，程式也仍用完整圖驗證；不是刪證據或放寬 48 KiB 守門。輸入更小不代表語義或引用品質已通過驗收。
 
 `Source.Title` 取自 `ct_materials.source_name`，缺值才用素材 ID；來源表沒有 material title 欄，不以原文預覽或 AI 衍生標題替代。`source_hash` 是固定順序 metadata+content JSON 的 UTF-8 SHA-256，`content_hash` 是原始 content UTF-8 bytes 的 SHA-256；原文不 trim、不正規化。空白正文不會被省略，會以 `422 empty_material` 拒絕。
@@ -888,9 +906,10 @@ rm -f "$COOKIE_JAR"
 | config 修正後 temporary-port entry smoke | 已執行；不是 OAuth／callback 驗證 | 為避免碰既有 5173 listener，直接 `CIVIC_AI_EXPERIMENT=1 vp dev --mode remote --port 5174`（無 prebuild）於 `http://localhost:5174` ready。匿名 status-only 結果：`GET /` 404、job GET／POST 與 maintenance POST 均 401；無 cookie、body discarded、沒有登入／來源操作／建 job／模型呼叫。此 port 與 `BETTER_AUTH_URL` 不同，不驗證 OAuth callback。自有 PID 84596 已停止。log／status／HTTP：`.wrangler/ai-experiment/verification/entry-load-5174.log`、`entry-load-5174-status.json`、`entry-load-5174-smoke.json` |
 | host 修正前的 IPv4 entry／官方 smoke 與 HEAD | 保留為舊配置的 no-login 證據，不代表 canonical origin | 本次環境整合檢查依 `lsof` 與 loopback 結果發現既有 `[::1]:5173` listener 與舊 IPv4 bind 的 origin mismatch；先前 remote Worker 綁 `127.0.0.1:5173` 並用 `curl --resolve` 強制 IPv4，root 404、匿名 job／maintenance 401，dotenv HEAD 路徑均 403。這些 forced-IPv4 smoke **不能證明**瀏覽器 canonical `localhost` 命中實驗 Worker，也不驗 OAuth callback。舊 log／status／HTTP：`.wrangler/ai-experiment/verification/experimental-dev.log`、`experimental-no-login-smoke.json`、`experimental-dev-head-final.log`、`experimental-dotenv-head-final.json`；沒有 response body 或登入 session |
 | `.dev.vars` 靜態路徑／權限檢查 | 只查 public ASSETS 路徑與檔名／mode；未讀內容 | `dist/civic_talk/wrangler.json` 的 `assets.directory` 解析為 `dist/client`；`dist/civic_talk/.dev.vars` 位於 ASSETS 之外，mode 644 且由 `.gitignore:2 dist` 忽略；`dist/client/.dev.vars` 不存在。這不證明 Worker bundle／deploy package 是否包含它；未刪除／改權限／部署 |
-| 真實 OAuth／Workers AI 呼叫與費用 | 舊版已有使用者回報；新版未重跑 | 使用者已回報舊版三素材工作產出 `ai_draft`；歷史失敗、usage 與修正見 `Insight.md`。新版三項生成尚未新增真實模型呼叫或費用，不把舊版證據當作新版驗收；完整 OAuth 案例仍須逐項確認 |
+| 真實 OAuth／Workers AI 呼叫與費用 | 使用者本輪已實測至共識／爭點完成；控制修正未重跑真實模型 | 使用者三素材工作已有兩段驗證工件，但銜接停滯，不能當作整輪完成。歷史失敗、usage 與修正見 `Insight.md`；本次控制流程只用合成 provider，不新增真實推論費，亦不冒充 OAuth 或語義驗收 |
 | 人工語義品質 | 舊版已發現問題；新版待驗收 | 使用者指出共識混入歧見、爭點遺漏及立場逐條枚舉。新版有離線校準工具，但尚無獨立真人 gold labels 或新版品質成績；不能將合成案例當作人工標準答案 |
 | 新版 SQLite／HTTP 管線 smoke | 已執行；合成 provider | 獨立 loopback 腳本執行實際 runner／SQLite：完整工作 `ai_draft`、單項中斷 `partial_draft`、生成途中清除 `erased` 均回 HTTP 200；三項依序呼叫、成功／partial 重入不新增付費嘗試、來源 fixture 未改。不是原生 Workflow 重啟或真實 provider／OAuth 驗收，臨時腳本已移除 |
+| 原生 Workerd／Workflow 銜接保護 | 八種隔離情境通過；合成 provider | 驗證正常完成、首次 timeout 後重試、四次耗盡、清理耗盡、寫入後回應遺失、native checkpoint restart、暖起的實際 Hono GET 終態對帳，以及真正懸置 I/O 約 30 秒後的 timeout／重試。工件、結算與完成事件去重保留，模型不重付；外部網路封鎖，沒有真實 AI／OAuth，臨時 harness 已移除 |
 
 人工驗收者須另填實際 source／model／prompt／schema／algorithm 版本、工作 ID、hash、來源覆蓋、逐句引用查核、漏失與反例、人工修正、usage／預留／結算及未知項目。沒有真實模型呼叫或真人標註時，對應欄位留作未知，不填預期值；不得把 HTTP 200、JSON parse、unit test、隔離測試 provider 或 fixture 寫成「真實議題人工驗收完成」。Privacy 已依新增揭露更新，`TERMS_VERSION` 未改；一般 BYO prompt 與 synthesis API 保留。
 

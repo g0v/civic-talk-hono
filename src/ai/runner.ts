@@ -6,9 +6,11 @@ import { assembleGeneratedDraft, buildCompletionRequest, buildGemmaRequest, fina
 import { checkInitiator, checkedSnapshot, SourceUnavailable } from './lifecycle'
 import { buildClairicRequest, buildClefBatches, modelUsageStatus, ModelContextLimitError, parseClairicResponse, parseClefResponse, type ClefBatch, type ModelRequest } from './models'
 import { actualCallCost, estimateCall, requestProvenance, type ModelSelector } from './pricing'
-import { EvidenceStore, type ErrorCode, type Snapshot } from './store'
+import { EvidenceStore, EvidenceStoreError, type ErrorCode, type Snapshot } from './store'
+import { WORKFLOW_CONTROL_POLICY } from './workflowPolicy'
 
-const NO_RETRIES = { retries: { limit: 0, delay: '1 second' as const }, timeout: '10 minutes' as const }
+const NO_RETRIES = WORKFLOW_CONTROL_POLICY.non_model_step
+const PAID_STEP_OPTIONS = WORKFLOW_CONTROL_POLICY.paid_step
 // Workflows paid 預設 10,000 subrequests / 10,000 steps；不修改帳戶或配置來繞過。
 const MAX_PROJECTED_SUBREQUESTS = 9000
 const MAX_WORKFLOW_STEPS = 1024
@@ -37,6 +39,13 @@ type SectionOutcome = {
   raw_artifact_id: string | null
   validation_code: string | null
 }
+type GenerationResumeState = {
+  available_sections: GenerationSection[]
+  estimated_micro_usd: number
+  sections: SectionOutcome[]
+  outcomes: SectionOutcome[]
+}
+type CompletionPlanRef = ArtifactRef & { targets: string[] }
 type SectionArtifact = { stage: 'generation_section'; raw_artifact_id: string; result: GeneratedSection }
 type CompletionPlanArtifact = { stage: 'completion_plan'; plan: DraftCompletionPlan }
 type CompletionArtifact = { stage: 'completion_result'; plan_artifact_id: string; raw_artifact_id: string | null; result: CompletedDraft }
@@ -51,6 +60,22 @@ type CompletionOutcome = {
 
 class PipelineStop extends Error {
   constructor(readonly code: ErrorCode) { super(code) }
+}
+
+/** 只包住不呼叫模型且可冪等重放的銜接；確定性守門回傳代碼，避免 SDK 重試。 */
+async function controlStep<T extends Rpc.Serializable<T>>(step: WorkflowStep, name: string, callback: () => Promise<T>): Promise<T> {
+  const result = await step.do(name, WORKFLOW_CONTROL_POLICY.handoff_step, async () => {
+    try {
+      return { status: 'ok' as const, value: await callback() }
+    } catch (error) {
+      if (error instanceof PipelineStop || error instanceof SourceUnavailable) return { status: 'stopped' as const, code: error.code }
+      if (error instanceof EvidenceStoreError && error.code === 'invalid_input') return { status: 'stopped' as const, code: 'internal_error' as const }
+      // 原生重試會記錄例外；只交固定代碼，不讓資料庫原始訊息進入 step 日誌。
+      throw new EvidenceStoreError('storage_error')
+    }
+  })
+  if (result.status === 'stopped') throw new PipelineStop(result.code)
+  return result.value
 }
 
 function active(status: string): status is ActiveStatus {
@@ -97,6 +122,19 @@ async function save(env: EvidenceBindings, snapshot: Snapshot, kind: 'extraction
   const result = await new EvidenceStore(env.DB).saveArtifact({ executionId: snapshot.executionId, kind, payload, generations: snapshot.generations })
   if (result.outcome !== 'saved') throw new PipelineStop('source_unavailable')
   return result.artifactId
+}
+
+// 結束事件可能已落盤但 native checkpoint 尚未提交；重放不得重複寫入。
+async function recordSectionOutcome(env: EvidenceBindings, snapshot: Snapshot, outcome: SectionOutcome): Promise<void> {
+  const events = await new EvidenceStore(env.DB).listArtifacts(snapshot.executionId, 'diagnostics')
+  const exists = events.some(item => {
+    const event = item.payload as { stage?: string; phase?: string; outcome?: SectionOutcome } | null
+    const previous = event?.outcome
+    return event?.stage === 'generation' && event.phase === 'finished' && previous?.section === outcome.section &&
+      previous.status === outcome.status && previous.reason === outcome.reason && previous.validation_code === outcome.validation_code &&
+      previous.artifact_id === outcome.artifact_id && previous.raw_artifact_id === outcome.raw_artifact_id
+  })
+  if (!exists) await save(env, snapshot, 'diagnostics', { stage: 'generation', phase: 'finished', outcome })
 }
 
 function providerErrorDiagnostic(error: unknown) {
@@ -209,9 +247,12 @@ export async function runEvidenceWorkflow(env: EvidenceBindings, jobId: string, 
     const materialIds = materials(initial).map(material => material.id)
     const sourceCount = initial.sources.length
     const extractionProjection = materialIds.length * (sourceCount + 8) + 220
-    if (extractionProjection > MAX_PROJECTED_SUBREQUESTS || materialIds.length + 16 > MAX_WORKFLOW_STEPS) {
-      const snapshot = await current(env, jobId)
-      await save(env, snapshot, 'diagnostics', { code: 'workflow_limit', projected_subrequests: extractionProjection, limit: MAX_PROJECTED_SUBREQUESTS })
+    if (extractionProjection > MAX_PROJECTED_SUBREQUESTS || materialIds.length + WORKFLOW_CONTROL_POLICY.fixed_step_upper_bound > MAX_WORKFLOW_STEPS) {
+      await step.do('reject-workflow-limit', NO_RETRIES, async () => {
+        const snapshot = await current(env, jobId)
+        await save(env, snapshot, 'diagnostics', { code: 'workflow_limit', projected_subrequests: extractionProjection, limit: MAX_PROJECTED_SUBREQUESTS })
+        return { status: 'failed' }
+      })
       throw new PipelineStop('workflow_limit')
     }
     await step.do('start', NO_RETRIES, async () => {
@@ -223,7 +264,7 @@ export async function runEvidenceWorkflow(env: EvidenceBindings, jobId: string, 
 
     const extractionResults: Array<{ materialId: number; result: PaidResult }> = []
     for (const materialId of materialIds) {
-      const result = await step.do(`extract-${materialId}`, NO_RETRIES, async () => paid(env, jobId, `extract:${materialId}`, snapshot => {
+      const result = await step.do(`extract-${materialId}`, PAID_STEP_OPTIONS, async () => paid(env, jobId, `extract:${materialId}`, snapshot => {
         const material = materials(snapshot).find(candidate => candidate.id === materialId)
         if (!material) throw new PipelineStop('source_unavailable')
         return buildClairicRequest(material.content)
@@ -277,9 +318,9 @@ export async function runEvidenceWorkflow(env: EvidenceBindings, jobId: string, 
       const snapshot = await current(env, jobId)
       try {
         const batches = buildClefBatches(extraction.evidence, createEvidencePairs(extraction.evidence))
-        const projection = extractionProjection + batches.length * (sourceCount + 8) + 12 * (sourceCount + 12) + 80
-        if (projection > MAX_PROJECTED_SUBREQUESTS || materialIds.length + batches.length + 16 > MAX_WORKFLOW_STEPS) {
-          await save(env, snapshot, 'diagnostics', { code: 'workflow_limit', projected_subrequests: projection, projected_steps: materialIds.length + batches.length + 16, limit: MAX_PROJECTED_SUBREQUESTS })
+        const projection = extractionProjection + batches.length * (sourceCount + 8) + WORKFLOW_CONTROL_POLICY.generation_guard_checks_upper_bound * (sourceCount + 12) + 80
+        if (projection > MAX_PROJECTED_SUBREQUESTS || materialIds.length + batches.length + WORKFLOW_CONTROL_POLICY.fixed_step_upper_bound > MAX_WORKFLOW_STEPS) {
+          await save(env, snapshot, 'diagnostics', { code: 'workflow_limit', projected_subrequests: projection, projected_steps: materialIds.length + batches.length + WORKFLOW_CONTROL_POLICY.fixed_step_upper_bound, limit: MAX_PROJECTED_SUBREQUESTS })
           await finishFailure(env, jobId, 'workflow_limit')
           return { status: 'failed', artifactId: null }
         }
@@ -295,7 +336,7 @@ export async function runEvidenceWorkflow(env: EvidenceBindings, jobId: string, 
     const plan = await artifact<ComparisonPlan>(env, job.executionId, planned.artifactId)
     const comparisonResults: PaidResult[] = []
     for (let index = 0; index < plan.batches.length; index++) {
-      const result = await step.do(`compare-${index}`, NO_RETRIES, async () => paid(env, jobId, `compare:${index}`, async snapshot => {
+      const result = await step.do(`compare-${index}`, PAID_STEP_OPTIONS, async () => paid(env, jobId, `compare:${index}`, async snapshot => {
         const saved = await artifact<ComparisonPlan>(env, snapshot.executionId, planned.artifactId!)
         if (!saved.batches[index]) throw new PipelineStop('internal_error')
         return saved.batches[index]
@@ -366,55 +407,63 @@ export async function runEvidenceWorkflow(env: EvidenceBindings, jobId: string, 
       return { status: 'ok', artifactId: await save(env, snapshot, 'generation', plan) }
     })
     if (!plannedGeneration.artifactId) throw new PipelineStop('internal_error')
-    const generationPlan = await artifact<GenerationPlan>(env, job.executionId, plannedGeneration.artifactId)
-    // checkpoint 遺失仍可重用已驗證的分項；付費去重另外由持久 attempt key 保護。
-    const savedSections = new Map<GenerationSection, { artifactId: string; payload: SectionArtifact }>()
-    for (const saved of await store.listArtifacts(job.executionId, 'generation')) {
-      const payload = saved.payload as Partial<SectionArtifact> | null
-      if (payload?.stage === 'generation_section' && payload.result && GENERATION_SECTIONS.includes(payload.result.section)) {
-        savedSections.set(payload.result.section, { artifactId: saved.id, payload: payload as SectionArtifact })
+    // 只將可重放的識別符與狀態交給 checkpoint，原文／模型請求仍留在隔離工件。
+    const resume = await controlStep(step, 'load-generation-state', async (): Promise<GenerationResumeState> => {
+      const snapshot = await current(env, jobId, true)
+      const plan = await artifact<GenerationPlan>(env, snapshot.executionId, plannedGeneration.artifactId!)
+      const sections = new Map<GenerationSection, SectionOutcome>()
+      for (const saved of await store.listArtifacts(snapshot.executionId, 'generation')) {
+        const payload = saved.payload as Partial<SectionArtifact> | null
+        if (payload?.stage === 'generation_section' && payload.result && GENERATION_SECTIONS.includes(payload.result.section)) {
+          sections.set(payload.result.section, {
+            section: payload.result.section, status: payload.result.data.items.length ? 'completed' : 'no_findings', reason: null,
+            artifact_id: saved.id, raw_artifact_id: payload.raw_artifact_id!, validation_code: null,
+          })
+        }
       }
-    }
-    const savedOutcomes = new Map<GenerationSection, SectionOutcome>()
-    for (const saved of await store.listArtifacts(job.executionId, 'diagnostics')) {
-      const payload = saved.payload as { stage?: string; phase?: string; outcome?: SectionOutcome } | null
-      if (payload?.stage === 'generation' && payload.phase === 'finished' && payload.outcome && GENERATION_SECTIONS.includes(payload.outcome.section)) {
-        savedOutcomes.set(payload.outcome.section, payload.outcome)
+      const outcomes = new Map<GenerationSection, SectionOutcome>()
+      for (const saved of await store.listArtifacts(snapshot.executionId, 'diagnostics')) {
+        const event = saved.payload as { stage?: string; phase?: string; outcome?: SectionOutcome } | null
+        if (event?.stage === 'generation' && event.phase === 'finished' && event.outcome && GENERATION_SECTIONS.includes(event.outcome.section)) outcomes.set(event.outcome.section, event.outcome)
       }
-    }
+      return {
+        available_sections: GENERATION_SECTIONS.filter(section => Boolean(plan.requests[section])),
+        estimated_micro_usd: plan.estimated_micro_usd, sections: [...sections.values()], outcomes: [...outcomes.values()],
+      }
+    })
+    const savedSections = new Map(resume.sections.map(outcome => [outcome.section, outcome]))
+    const savedOutcomes = new Map(resume.outcomes.map(outcome => [outcome.section, outcome]))
     const outcomes: SectionOutcome[] = []
     let budgetStopped = false
     for (const section of GENERATION_SECTIONS) {
-      const liveSnapshot = await current(env, jobId, true)
-      const saved = savedSections.get(section)
-      const previous = savedOutcomes.get(section)
-      if (saved) {
-        const restored: SectionOutcome = {
-          section, status: saved.payload.result.data.items.length ? 'completed' : 'no_findings', reason: null,
-          artifact_id: saved.artifactId, raw_artifact_id: saved.payload.raw_artifact_id, validation_code: null,
+      const restored = await controlStep(step, `prepare-generation-${section}`, async (): Promise<SectionOutcome | null> => {
+        const snapshot = await current(env, jobId, true)
+        const saved = savedSections.get(section)
+        if (saved) {
+          await recordSectionOutcome(env, snapshot, saved)
+          return saved
         }
-        if (previous?.artifact_id !== restored.artifact_id) {
-          await save(env, liveSnapshot, 'diagnostics', { stage: 'generation', phase: 'finished', outcome: restored })
-        }
+        return savedOutcomes.get(section) ?? null
+      })
+      if (restored) {
         outcomes.push(restored)
-        continue
-      }
-      if (previous) {
-        outcomes.push(previous)
-        if (previous.reason === 'budget_exhausted') budgetStopped = true
+        if (restored.reason === 'budget_exhausted') budgetStopped = true
         continue
       }
       let outcome: SectionOutcome = {
         section, status: 'not_started', reason: null, artifact_id: null, raw_artifact_id: null, validation_code: null,
       }
-      const request = generationPlan.requests[section]
+      const available = resume.available_sections.includes(section)
       if (budgetStopped) {
         outcome.reason = 'budget_exhausted'
-      } else if (!request) {
+      } else if (!available) {
         outcome.reason = 'workflow_limit'
       } else {
-        const generated = await step.do(`generate-${section}`, NO_RETRIES, async (): Promise<PaidResult> => {
+        const generated = await step.do(`generate-${section}`, PAID_STEP_OPTIONS, async (): Promise<PaidResult> => {
           const snapshot = await current(env, jobId, true)
+          const plan = await artifact<GenerationPlan>(env, snapshot.executionId, plannedGeneration.artifactId!)
+          const request = plan.requests[section]
+          if (!request) return { status: 'workflow_limit', artifactId: null }
           await save(env, snapshot, 'diagnostics', { stage: 'generation', phase: 'started', section })
           return paid(env, jobId, `generate:${section}`, () => request, request.input.max_tokens)
         })
@@ -442,36 +491,40 @@ export async function runEvidenceWorkflow(env: EvidenceBindings, jobId: string, 
           })
         }
       }
-      const snapshot = await current(env, jobId, true)
-      await save(env, snapshot, 'diagnostics', { stage: 'generation', phase: 'finished', outcome })
-      outcomes.push(outcome)
-    }
-    // 若失敗診斷已落盤但 checkpoint／狀態尚未提交，重放不得再次嘗試補完。
-    const completionEvents = await store.listArtifacts(job.executionId, 'diagnostics')
-    let previousCompletion: CompletionOutcome | undefined
-    for (const item of completionEvents) {
-      const event = item.payload as { stage?: string; phase?: string; outcome?: CompletionOutcome } | null
-      if (event?.stage === 'completion' && event.phase === 'finished') previousCompletion = event.outcome
-    }
-    if (previousCompletion?.status === 'failed') {
-      await finishFailure(env, jobId, previousCompletion.reason ?? 'invalid_generation')
-      return { status: 'failed' }
+      outcomes.push(await controlStep(step, `finish-generation-${section}`, async (): Promise<SectionOutcome> => {
+        const snapshot = await current(env, jobId, true)
+        await recordSectionOutcome(env, snapshot, outcome)
+        return outcome
+      }))
     }
 
-    const plannedCompletion = await step.do('plan-completion', NO_RETRIES, async (): Promise<ArtifactRef> => {
+    const plannedCompletion = await step.do('plan-completion', NO_RETRIES, async (): Promise<CompletionPlanRef> => {
       const snapshot = await current(env, jobId, true)
+      // 失敗結果可能已保存但 checkpoint 未提交；這項讀取也必須在受控步驟內。
+      let previousCompletion: CompletionOutcome | undefined
+      for (const saved of await store.listArtifacts(snapshot.executionId, 'diagnostics')) {
+        const event = saved.payload as { stage?: string; phase?: string; outcome?: CompletionOutcome } | null
+        if (event?.stage === 'completion' && event.phase === 'finished') previousCompletion = event.outcome
+      }
+      if (previousCompletion?.status === 'failed') {
+        await finishFailure(env, jobId, previousCompletion.reason ?? 'invalid_generation')
+        return { status: 'failed', artifactId: null, targets: [] }
+      }
       const sections: GeneratedSection[] = []
       for (const outcome of outcomes) {
         if (outcome.artifact_id) sections.push((await artifact<SectionArtifact>(env, snapshot.executionId, outcome.artifact_id)).result)
       }
       if (sections.length === 0) {
         await finishFailure(env, jobId, outcomes.find(item => item.status === 'failed')?.reason ?? outcomes.find(item => item.reason)?.reason ?? 'invalid_generation')
-        return { status: 'failed', artifactId: null }
+        return { status: 'failed', artifactId: null, targets: [] }
       }
       await save(env, snapshot, 'diagnostics', { stage: 'completion', phase: 'started' })
       const saved = (await store.listArtifacts(snapshot.executionId, 'generation'))
         .find(item => (item.payload as Partial<CompletionPlanArtifact> | null)?.stage === 'completion_plan')
-      if (saved) return { status: 'ok', artifactId: saved.id }
+      if (saved) {
+        const payload = saved.payload as CompletionPlanArtifact
+        return { status: 'ok', artifactId: saved.id, targets: payload.plan.targets.map(target => target.pointer) }
+      }
       let plan: DraftCompletionPlan
       try {
         const input = generationInput(snapshot)
@@ -486,18 +539,17 @@ export async function runEvidenceWorkflow(env: EvidenceBindings, jobId: string, 
         }
         await save(env, snapshot, 'diagnostics', { stage: 'completion', phase: 'finished', outcome })
         await finishFailure(env, jobId, outcome.reason!)
-        return { status: 'failed', artifactId: null }
+        return { status: 'failed', artifactId: null, targets: [] }
       }
       const artifactId = await save(env, snapshot, 'generation', { stage: 'completion_plan', plan } satisfies CompletionPlanArtifact)
-      return { status: 'ok', artifactId }
+      return { status: 'ok', artifactId, targets: plan.targets.map(target => target.pointer) }
     })
     if (plannedCompletion.status !== 'ok' || !plannedCompletion.artifactId) return { status: 'failed' }
     const completionPlanId = plannedCompletion.artifactId
-    const completionPlan = await artifact<CompletionPlanArtifact>(env, job.executionId, completionPlanId)
-    const targets = completionPlan.plan.targets.map(target => target.pointer)
+    const targets = plannedCompletion.targets
     let completionRawId: string | null = null
     if (targets.length) {
-      const completionPaid = await step.do('complete-draft', NO_RETRIES, async (): Promise<PaidResult | ArtifactRef> => {
+      const completionPaid = await step.do('complete-draft', PAID_STEP_OPTIONS, async (): Promise<PaidResult | ArtifactRef> => {
         const snapshot = await current(env, jobId, true)
         let result: PaidResult
         let validationCode: string | null = null
@@ -588,7 +640,7 @@ export async function runEvidenceWorkflow(env: EvidenceBindings, jobId: string, 
         verification: 'ai_unverified',
         diagnostics: {
           coverage: extraction.coverage, partial, comparisons: comparison.analysis,
-          generation: { sections: sectionDiagnostics, completion, status_overviews: plan.status_overviews, estimated_micro_usd: generationPlan.estimated_micro_usd },
+          generation: { sections: sectionDiagnostics, completion, status_overviews: plan.status_overviews, estimated_micro_usd: resume.estimated_micro_usd },
         },
         provenance: {
           input_manifest: snapshot.manifest,
@@ -609,10 +661,16 @@ export async function runEvidenceWorkflow(env: EvidenceBindings, jobId: string, 
   } catch (error) {
     const code: ErrorCode = error instanceof PipelineStop ? error.code : error instanceof SourceUnavailable ? error.code : 'internal_error'
     try {
-      const job = await store.getWorkflowJob(jobId)
-      if (job) await store.markAttemptsUnknown(job.executionId)
-      await finishFailure(env, jobId, code)
-    } catch { /* 不輸出例外或私人內容。 */ }
+      await controlStep(step, 'fail-workflow', async () => {
+        const job = await store.getWorkflowJob(jobId)
+        if (job) await store.markAttemptsUnknown(job.executionId)
+        await finishFailure(env, jobId, code)
+        return { status: 'failed' }
+      })
+    } catch {
+      // 清理也失敗時讓引擎進入終態，GET 可再對帳；不洩漏原始例外或私人內容。
+      throw new Error('evidence_workflow_cleanup_failed')
+    }
     return { status: 'failed' }
   }
 }

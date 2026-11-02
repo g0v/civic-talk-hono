@@ -5,6 +5,7 @@ import { sha256 } from './source'
 import type { MaterialPayload } from './store'
 import { buildClairicRequest, buildClefBatches, CLAIRIC_MAX_STATE_BYTES, CLEF_MAX_QUESTIONS, CLEF_MAX_REQUEST_BYTES, ModelContextLimitError, MODEL_SELECTORS, MODEL_VERSIONS, utf8Bytes, type ModelRequest } from './models'
 import { statusOverview } from './overviewStatus'
+import { WORKFLOW_CONTROL_POLICY } from './workflowPolicy'
 
 export type GenerationLanguage = 'zh-TW' | 'en' | 'ja'
 export const GENERATION_SECTIONS = ['consensus', 'disputes', 'positions'] as const
@@ -1056,6 +1057,7 @@ export async function pipelineSettings() {
     fixture_requests: { clairic, clef, gemma },
     generation_schemas: GEMMA_OUTPUT_SCHEMAS,
     completion: completionPolicy(),
+    workflow_control: WORKFLOW_CONTROL_POLICY,
   }
   const hashes = {
     clairic_prompt: await sha256(clairic.input.fields.claims.instructions),
