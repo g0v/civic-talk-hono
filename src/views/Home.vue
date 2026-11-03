@@ -41,6 +41,7 @@ const issueTosAgreed = ref(false)
 // Email 公開選項（#27）
 const issueShowEmail = ref(false)
 const toast = ref<{ show: (msg: string) => void } | null>(null)
+const homeTitle = ref<HTMLHeadingElement | null>(null)
 
 // 全站共用的登入狀態（與 AppHeader 共用同一次 /api/me）；SSR 期間永遠是 'loading'
 const { authState, session, ensureAuthSession } = useAuth()
@@ -154,6 +155,12 @@ function backToIssues(): void {
   window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
+function scrollToTop(): void {
+  homeTitle.value?.focus({ preventScroll: true })
+  // auto 沿用 CSS 的平滑捲動，並尊重 prefers-reduced-motion。
+  window.scrollTo({ top: 0, behavior: 'auto' })
+}
+
 async function loadIssues() {
   loading.value = true
   try {
@@ -261,7 +268,7 @@ async function copyRssUrl() {
 
 <template>
   <div>
-    <AppHeader current="home" show-new-issue @new-issue="showForm = true" />
+    <AppHeader current="home" />
 
     <div v-if="showWelcomePrompt" class="fixed inset-0 z-1000 flex items-center justify-center overflow-y-auto bg-black/55 p-4" @click.self="skipWelcomePrompt" @keydown.esc="skipWelcomePrompt">
       <section
@@ -339,17 +346,29 @@ async function copyRssUrl() {
     </div>
 
     <div class="vt-hero" v-if="!selectedIssue">
-      <div class="page-container relative sm:pr-40 lg:pr-56">
-        <HomeGrowthIllustration variant="garden" class="absolute right-0 bottom-0 hidden w-36 sm:block lg:w-48" />
+      <div class="page-container relative md:pr-40 lg:pr-56">
+        <HomeGrowthIllustration variant="garden" class="absolute right-0 bottom-0 hidden w-36 md:block lg:w-48" />
         <div class="hero-tag flex items-center gap-2">
           <HomeGrowthIllustration variant="seedling" class="h-6 w-8 shrink-0 sm:hidden" />
           <span>{{ t('site_tagline') }}</span>
         </div>
-        <h1 class="hero-title">{{ t('idx_page_title') }}</h1>
+        <div class="mb-3 flex items-center justify-between gap-3 sm:mb-0 sm:block">
+          <h1 ref="homeTitle" tabindex="-1" class="hero-title min-w-0 max-sm:mb-0">{{ t('idx_page_title') }}</h1>
+          <button
+            type="button"
+            class="btn btn-primary btn-sm min-h-11 shrink-0 whitespace-nowrap focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white sm:hidden"
+            @click="showForm = true"
+          >
+            {{ t('idx_new_issue_btn') }}
+          </button>
+        </div>
         <p class="hero-desc hidden sm:inline">{{ t('idx_page_subtitle') }}</p>
         <div class="hero-btns hidden sm:flex sm:flex-wrap sm:gap-2 p-2">
           <a href="/about" class="btn btn-outline-white">{{ t('nav_about') }}</a>
           <button type="button" class="btn btn-outline-white" @click="copyRssUrl">{{ t('rss_subscribe_btn') }}</button>
+          <button type="button" class="btn btn-primary whitespace-nowrap focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white" @click="showForm = true">
+            {{ t('idx_new_issue_btn') }}
+          </button>
         </div>
       </div>
     </div>
@@ -540,6 +559,18 @@ async function copyRssUrl() {
             </div>
             <div v-else>
               <IssueCard v-for="issue in filteredAndSortedIssues" :key="issue.id" :issue="issue" @select="showIssuePreview" />
+              <div class="flex justify-center">
+                <button
+                  type="button"
+                  class="btn btn-jade-green home-back-to-top min-h-11 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-vt-jade-green"
+                  @click="scrollToTop"
+                >
+                  {{ t('idx_back_to_top') }}
+                  <svg class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M12 19V5m-7 7 7-7 7 7" />
+                  </svg>
+                </button>
+              </div>
             </div>
           </div>
         </template>

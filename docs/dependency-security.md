@@ -65,3 +65,49 @@
 ### 驗證界線
 
 Zod 升級不會替 Better Auth 未限長的 `scopes` 加上長度限制，不能將 audit 歸零解讀為所有大型輸入資源耗盡風險皆消失。本次沒有做正式站 Google／GitHub OAuth、同 email account linking、已登入的投稿／投票／管理寫入或遠端 Service Binding 實測；未對 DB_AUTH 做 DDL、未套用遠端 migration、未部署。
+
+## 2026-11-04：Better Auth 安全升級
+
+安裝時回報的 **3 vulnerabilities（2 low、1 critical）** 都來自 Better Auth 相依樹。`npm audit` 的數字按受影響套件計算；主套件同時包含下列多份公告，不代表只有一個漏洞。
+
+| 公告 | 風險與本站使用情況 | 修補版本 |
+| --- | --- | --- |
+| [GHSA-965c-763c-88jm](https://github.com/advisories/GHSA-965c-763c-88jm) | Critical：OAuth state 可被當成 Magic Link token，造成帳號接管；本站只有 Google／GitHub 與 admin plugin，未啟用 Magic Link | Better Auth 1.7.7 |
+| [GHSA-44jh-23m7-hpcf](https://github.com/advisories/GHSA-44jh-23m7-hpcf) | Low：PostgreSQL 資料庫限流可被併發請求突破；本站使用 D1，未採用該 PostgreSQL 限流儲存組合 | Drizzle／主套件 1.7.7；Kysely adapter 1.7.0 |
+| [GHSA-r4xp-prcw-77qf](https://github.com/advisories/GHSA-r4xp-prcw-77qf) | High：OAuth Proxy 在特定共用金鑰與 cookie state 組合下可遭帳號接管；本站未啟用 OAuth Proxy | Better Auth 1.7.7 |
+| [GHSA-q84f-53jg-9ppm](https://github.com/advisories/GHSA-q84f-53jg-9ppm) | High：裝置授權缺少 client／scope 資訊，使用者可能批准攻擊者的登入；本站未啟用 device authorization | Better Auth 1.7.0-rc.3，正式版 1.7.0 |
+
+未滿足公告的利用條件不等於可以繼續保留已知漏洞版本。本次將 `better-auth` 最低版本提高至 `^1.7.15`，lockfile 的主套件、core、adapters 與 telemetry 一起更新至 **1.7.15**，對齊 `../vTaiwan-hono` 當時的 package.json 與 lockfile；不修改該 repo，也不使用 `audit fix --force`、新增 override 或停用安全檢查。其餘版本更新限於 Better Auth 的相依鏈，既有 Cloudflare 工具鏈修補維持不變。
+
+### 共用認證庫與登入相容性
+
+- 比較升級前後本站設定產生的 auth schema：四張表的欄位、型別與約束不變；新版僅在 user／session schema metadata 加上空的 indexes 陣列。沒有產生或套用 auth migration。
+- 新版在初始化時檢查資料庫 schema。初次升級驗證時，本機空 DB_AUTH 使 `/api/auth/get-session` 回報 `SCHEMA_MISMATCH`／500；後續依使用者要求，改為僅在本機 development server 不啟動 Auth（見下節），不是關閉 Better Auth 的 schema 檢查。實測登入仍須使用 `vp run dev:remote`，不得在本 repo 建立 auth schema。
+- 已先以 `wrangler whoami` 確認帳號，再唯讀查詢共用 `vtaiwan-auth.sqlite_master`；既有 user／session／account／verification、索引與改名 triggers 均存在，查詢回報 `rows_written: 0`。遠端綁定的匿名 `/api/auth/get-session` 實際回 200／null，沒有 schema mismatch。
+- 上游修補隔離不同用途的 verification identifier；發布時進行中的舊 OAuth 登入必須重新發起，不保留舊 state 的相容 shim。本站沒有 Magic Link／OAuth Proxy 流程需要遷移。
+
+### 授權與執行驗收
+
+- 依 lockfile 重產授權 TSV，合計 356 筆；移除不再依賴的 `@opentelemetry/semantic-conventions`，Apache-2.0 entries 由 30 降至 29。Better Auth 1.7.15 的 LICENSE.md 與舊版逐字一致。
+- `@better-auth/utils` 0.5.1 已附上游 LICENSE；移除舊 0.4.2 的建置 fallback 與對應過時測試。歷史補充條款、來源及 attribution 保留，不將舊例外延伸至其他套件。
+- npm 12.0.1 隔離冷安裝通過，lockfile bytes 未變；授權盤點檢查及 `npm audit` 通過，**0 vulnerabilities**。
+- 實際啟動 Worker，以遠端綁定驗證公開頁面／API、匿名 session、管理及四種投稿的 401、auth admin HTTP 路徑的 404、錯誤登入資料的 400、跨源簡單 POST 的 CSRF 403、RSS 與舊首頁 301。請求未帶 session、未發起有效 OAuth，不寫正式資料。
+- 真實 Chromium 檢查首頁的 Google／GitHub 登入面板：桌機 1440×1000、手機 390×844，淺色與深色均可讀、沒有水平擠版；另確認手機素材投稿登入牆。該次 console 未見 hydration mismatch 或 JavaScript error。
+
+- `vp check --no-fmt --no-lint` 通過；含本機停用 Auth 的完整測試 **46 檔／381 項**通過。`authIntegration.test.ts` 的 8 項真實記憶體 adapter 案例覆蓋 session／登出／竄改簽章、Google／GitHub 授權 URL、外部 callback 與缺少發起 cookie 的拒絕、server ban 權限、HTTP admin 封鎖，以及 remote／正式建置保留 Auth。測試在匯入 Better Auth 前還原非 test 環境，避免上游 test mode 預設略過 origin 檢查；不放寬安全斷言或修改 production 設定。
+
+本次不代表正式站已升級或已完成真人 Google／GitHub OAuth、同 email account linking、已登入投稿及管理寫入驗收；沒有 commit、push、deploy 或遠端資料庫寫入。
+
+### 同日調整：僅本機 development server 停用 Auth
+
+`src/auth/environment.ts` 以 Vite 的 `import.meta.env.DEV && import.meta.env.MODE === 'development'` 判斷本機停用模式。使用既有建置模式，不新增可在正式環境誤開的環境變數、query 或 request header 開關。正式建置即使指定 `--mode development`，`DEV` 仍為 false，不會停用 Auth。
+
+| 執行方式 | Auth 行為 |
+| --- | --- |
+| `vp run dev` | 不初始化 Better Auth，忽略既有登入 cookie；`GET /api/auth/get-session` 回 `200/null`、`GET /api/me` 回 401。其他 auth 操作回 503，auth admin HTTP 路徑仍回 404 |
+| `vp run dev:remote` | 正常啟用 Auth，沿用共用認證庫與原有守衛 |
+| 正式建置／正式站 | 正常啟用 Auth，不依賴本機停用邏輯 |
+
+停用 Auth **不是放寬授權**：`getAuthContext()` 明確回匿名，投稿、志願者 prompt、投票、事實查核及管理 API 仍回 401，不提供假的登入者、不允許匿名寫入。`localAuth.test.ts` 的 3 項回歸涵蓋匿名 session、阻止 OAuth／個人資料更新及上述守門；新增前 session／登入請求回 500，套用後通過。
+
+已實際啟動 `vp run dev` 驗證回應及 logs，未再出現 auth 初始化或缺表錯誤。真實 Chromium 在桌機 1440×1000 的首頁登入面板、手機 390×844 的素材登入牆均檢查淺／深色，沒有 auth 讀取失敗提示、JavaScript error 或 hydration mismatch。另實際啟動 `vp run dev:remote` 與 `vp preview --mode remote`（正式 bundle、遠端綁定），兩者的匿名 session 都回 `200/null`，錯誤格式的 social sign-in 回 Better Auth 的 400，而非本機停用的 503。遠端 `sqlite_master` 唯讀複查沒有新增資料表，回報 `rows_written: 0`。

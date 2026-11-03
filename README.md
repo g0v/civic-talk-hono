@@ -81,13 +81,13 @@ npm install
 vp run dev
 ```
 
-> 登入功能在 `vp run dev` 下**測不了**：Better Auth 的資料表在遠端的 `vtaiwan-auth`，本機模擬庫是空的。要實測登入請用 `vp run dev:remote`。
+> `vp run dev` **刻意停用 Auth**，不初始化本機空的認證庫：`GET /api/auth/get-session` 回 `200/null`、`GET /api/me` 回 `401`，既有 cookie 也視為匿名。登入、OAuth callback 與個人資料更新回 `503`；投稿、投票與管理等需登入操作仍回 `401`，不提供假的登入者或匿名寫入。要實測登入請用 `vp run dev:remote`；remote 開發與正式建置的 Auth 不受影響。本機停用只限 Vite 的 `DEV` 為 true 且 mode 為 `development`，不是可以在正式環境設定的停用開關。
 
 常用指令：
 
 | 指令                          | 說明                                                       |
 | ----------------------------- | ---------------------------------------------------------- |
-| `vp run dev`                  | 先完整 build（含 CSS 與 notices），再啟動本機 Worker + HMR |
+| `vp run dev`                  | 先完整 build，再啟動本機 Worker + HMR；Auth 停用、維持匿名 |
 | `vp run dev:remote`           | 先完整 build（含 notices），再連遠端 D1；實測登入用這個    |
 | `vp run css`                  | 由 `src/styles/app.css` 建置 `public/styles.css`           |
 | `vp run css:watch`            | 監看並自動重建 Tailwind CSS                                |
@@ -115,6 +115,10 @@ vp run dev
 議題輪播不再使用舊的 `5xl`／48px 外層留白限制；卡片內文靠左、不置中，另以 `--container-prose: 65ch`（`max-w-prose` 的行長）限制文字欄，避免寬螢幕單行過長。`sm` 起卡片左側內距採 `--spacing-vt-12`（48px），讓內文避開左箭頭；右側內距沿用卡片原設定。行長與左側內距調整從 `sm` 起生效，手機不變；輪播的 `100dvh` 高度、卡內長文捲動與 Markdown 複製行為不變。
 
 首頁點議題卡後的說明預覽（`?action=click_issue_card&issue=<id>`）由 `IssuePreviewCard.vue` 呈現，卡片填滿共用主容器，不再另限 `5xl`；說明文字靠左，`sm` 起以 `sm:max-w-prose` 沿用輪播的同一個 65ch 行寬上限，保留原有高度上限與捲動。手機沿用原有左右留白，「進入議題」導覽與瀏覽器歷史操作不變。
+
+首頁「新增議題」入口（#198）只在議題列表的 Hero 顯示，不放在共用 NavBar 或手機選單。小於 `sm`（640px）時，按鈕位於「選擇一個議題」右側；`sm` 起與「關於我們／訂閱 RSS」同列，維持民主紅底。Hero 花園插圖從 `md`（768px）起顯示，避免較窄的英／日文版把三個按鈕擠成兩列。按鈕展開既有的頁內建立區塊，未登入仍顯示登入入口；議題預覽不提供新增入口，須先返回列表，不另建彈窗或內容路由。
+
+首頁議題列表在最後一張議題卡下方沿用 16px 卡片間距，置中放置翠玉綠「返回頂部」按鈕，三語文字右側搭配向上箭頭。此按鈕專用底色以既有翠玉綠／黑色 token 混色加深，改善一般字級白字對比，hover 沿用較深底色，不改議題頁共用綠色按鈕。按鈕位於主內容中、與 footer 保持間隔，不採浮動定位或頁尾可見性判斷，也不額外縮窄頁尾；空清單、沒有搜尋結果與議題預覽均不顯示。按下後焦點回到 Hero 標題，沿用 CSS 平滑捲動並遵守 `prefers-reduced-motion`，不改寫 query 或 hash。
 
 暗黑模式的輪播左右箭頭使用白色，懸停時維持白色，停用時保留半透明；最後一張的「前往公民意見」箭頭也沿用此設定。淺色模式維持套件原有箭頭色彩。
 

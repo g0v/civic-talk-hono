@@ -14,6 +14,7 @@ import StatusBadge from '../components/StatusBadge.vue'
 import Toast from '../components/Toast.vue'
 import ViewerRoleSwitch from '../components/ViewerRoleSwitch.vue'
 import { provideI18n } from '../l10n'
+import { messages } from '../l10n/zh-TW'
 import AboutView from '../views/About.vue'
 import AdminView from '../views/Admin.vue'
 import ContributeView from '../views/Contribute.vue'
@@ -202,6 +203,22 @@ describe('home issue preview', () => {
     expect(html).toContain('議題說明')
     expect(html).toContain('進入議題')
     expect(html).not.toContain('id="home-issue-search"')
+    expect(html).not.toContain(messages.idx_new_issue_btn)
+    expect(html).not.toContain(messages.idx_back_to_top)
+  })
+
+  it('renders a named return-to-top action when the list contains issue cards', async () => {
+    const html = await render(HomeView, { initialIssues: [{ ...previewIssue, status: 'published' }] })
+    const labels = [...html.matchAll(/<button\b[^>]*>([\s\S]*?)<\/button>/g)].map(match => match[1]!.replace(/<[^>]*>/g, '').trim())
+    expect(labels).toContain(messages.idx_back_to_top)
+  })
+
+  it.each([
+    { name: 'empty list', initialIssues: [], initialSearchQuery: '' },
+    { name: 'no matching results', initialIssues: [{ ...previewIssue, status: 'published' }], initialSearchQuery: 'unmatched-search' },
+  ])('omits the return-to-top action for $name', async ({ initialIssues, initialSearchQuery }) => {
+    const html = await render(HomeView, { initialIssues, initialSearchQuery })
+    expect(html).not.toContain(messages.idx_back_to_top)
   })
 
   it('SSR initializes the home search and filters by tags without browser state', async () => {

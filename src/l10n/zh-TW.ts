@@ -91,6 +91,7 @@ export const messages = {
   issue_reopened: '已重開',
   issue_closure_participation_hint: '結案與重開只影響首頁分類，仍可投稿、討論、投票與匯出。',
   idx_new_issue_btn: '＋ 新增議題',
+  idx_back_to_top: '返回頂部',
   idx_page_title: '選擇一個議題',
   idx_page_subtitle: '用 AI 降低參與門檻，讓更多人真正了解議題全貌，而不只是選邊站。',
   idx_form_title: '建立新議題',

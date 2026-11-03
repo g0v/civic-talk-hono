@@ -89,11 +89,11 @@ Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑�
 
 **登入／權限的真實現況（#5 做到哪）：**
 
-- ✅ **Better Auth 骨架已可運作**：`/api/auth/get-session` 回 200、`/api/me` 未登入回 401、`/api/auth/admin/list-users` 回 404。
+- ✅ **Better Auth 骨架已可運作**：遠端 auth schema 存在時，`/api/auth/get-session` 回 200、`/api/me` 未登入回 401、`/api/auth/admin/list-users` 回 404。2026-11-04 升至 1.7.15 後已以遠端綁定的匿名請求確認；本機空庫限制見下項。
 - ✅ **管理端已是角色制**：`src/api/routes.ts` 的 `requireAdmin()` 讀 session 判 `isAdminRole()`，未登入 401、非管理員 403。**`ADMIN_PASSWORD`、`X-Admin-Token`、`checkAdmin()`、`POST /api/admin/login` 都已移除**（連同 `'admin'` 這個危險的 fallback）。
 - ✅ **`/admin` 是登入入口**：`src/views/Admin.vue` 依 `/api/me` 分成 `loading`／`anonymous`（Google／GitHub 登入鈕）／`forbidden`（登入了但沒權限）／`admin` 四態。SSR 一律只出 `loading` 骨架，所以不會有 hydration mismatch，也不需要為登入狀態關快取。
 - ✅ **`/profile` 提供登入者自助改名**：目前 UI 只送 `name` 到 Better Auth 的 `POST /api/auth/update-user`；含 `name` 的請求先做名稱正規化、同名確認與 30 天冷卻檢查，實際寫入由 Better Auth handler 執行，不以原始 SQL 更新 DB_AUTH。
-- ⚠️ **本機 `vp run dev` 測不了登入**：auth 表只存在遠端，本機模擬庫是空的，打登入端點會得到 `no such table: verification`。要實測登入必須 `vp run dev:remote`。
+- ⚠️ **本機 `vp run dev` 刻意停用 Auth**：auth 表只存在遠端，本機不初始化 Better Auth。`src/auth/environment.ts` 只在 Vite `DEV` 為 true 且 mode 為 `development` 時停用；session 查詢回 `200/null`、`/api/me` 回 401、登入／callback／個人資料更新回 503，受保護操作仍回 401，不提供假的登入者或匿名寫入。`vp run dev:remote` 與正式建置保留 Auth；不得在本 repo 建立 auth 表或關閉 schema 檢查。
 - ✅ **三個投稿入口都是登入牆（#9）**：`/contribute/:id` 的素材表單、`/` 的建立議題表單、`/issues/:id` 意見分頁的投稿框，都依 `useAuth()` 分成 `loading`／`anonymous`（`SignInButtons`）／`signed-in` 三態，SSR 一律只出 `loading` 骨架。
 - ✅ **全站標頭顯示登入狀態**：`AppHeader` 已登入時出「已登入：{name}」＋登出，未登入時出「登入」鈕（展開內嵌的 provider 面板，登入後導回當前頁）。`authState === 'loading'` 時什麼都不畫——伺服器端不猜登入狀態，所以不會 mismatch。
 
@@ -297,9 +297,9 @@ Better Auth 的端點位於 `/api/auth/*`（見「API 契約」），這段路�
 | vite-plus-core          | 0.2.4（`vite` 的 npm alias） | `devDependencies` + `overrides` |
 | Wrangler                | ^4.83                        | `devDependencies`               |
 | @cloudflare/vite-plugin | ^1.32                        | `devDependencies`               |
-| better-auth             | ^1.6.25                      | `dependencies`                  |
+| better-auth             | ^1.7.15                      | `dependencies`                  |
 
-> better-auth 的版本**刻意對齊 `../vTaiwan-hono/package.json`**——兩站共用同一顆 auth D1，版本落差可能導致 schema 或 session 格式不一致。要升級先確認兩邊一起升。
+> better-auth 的版本**刻意對齊 `../vTaiwan-hono/package.json`**——兩站共用同一顆 auth D1，版本落差可能導致 schema 或 session 格式不一致。2026-11-04 安全修補時，兩邊 lockfile 均為 1.7.15；後續升級仍須核對兩邊版本。修補與驗證界線見 [`docs/dependency-security.md`](./docs/dependency-security.md)。
 
 > **不要改用其他套件管理器**（pnpm／yarn／bun），也**不要**引入 LemmaScript／Dafny——本專案採用 Vite+（`vp`）但**不含** LemmaScript。
 
@@ -307,7 +307,7 @@ Better Auth 的端點位於 `/api/auth/*`（見「API 契約」），這段路�
 
 ```bash
 npm install                         # 安裝依賴（套件管理仍走 npm）
-vp run dev                          # 先完整 build（含 CSS／notices），再啟動 HMR；D1 本機模擬
+vp run dev                          # 先完整 build（含 CSS／notices），再啟動 HMR；D1 本機模擬、Auth 停用
 vp run dev:remote                   # 先完整 build（含 notices），再連遠端綁定；實測登入使用此模式
 vp run css:watch                    # 只監看 Tailwind CSS（dev 期間需另開終端機）
 vp run build                        # CSS + client bundle + server bundle

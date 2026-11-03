@@ -15,20 +15,14 @@ const { initViewerRole } = useViewerRole()
 const props = withDefaults(
   defineProps<{
     current?: 'home' | 'about' | 'admin' | 'issue' | 'contribute' | 'profile' | 'appeals' | 'other'
-    showNewIssue?: boolean
     backHref?: string
     backLabel?: string
     callbackUrl?: string
   }>(),
   {
     current: 'home',
-    showNewIssue: false,
   }
 )
-
-const emit = defineEmits<{
-  'new-issue': []
-}>()
 
 const { t, locale } = useI18n()
 const isJapanese = computed(() => locale.value === 'ja')
@@ -69,10 +63,6 @@ function closeMenu() {
 }
 function openFeedback() {
   showFeedback.value = true
-  closeMenu()
-}
-function handleNewIssue() {
-  emit('new-issue')
   closeMenu()
 }
 </script>
@@ -176,10 +166,6 @@ function handleNewIssue() {
             <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
           </svg>
         </button>
-        <button v-if="showNewIssue" type="button" class="btn btn-primary btn-sm" @click="emit('new-issue')">
-          {{ t('idx_new_issue_btn') }}
-        </button>
-
         <!--
           登入狀態：SSR 與 hydration 首幀（authState === 'loading'）什麼都不畫，
           伺服器端不猜登入狀態，所以不會有 mismatch。
@@ -357,9 +343,6 @@ function handleNewIssue() {
             <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
             <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
           </svg>
-        </button>
-        <button v-if="showNewIssue" type="button" class="btn btn-primary btn-sm" @click="handleNewIssue">
-          {{ t('idx_new_issue_btn') }}
         </button>
       </div>
 

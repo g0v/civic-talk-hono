@@ -1,4 +1,5 @@
 import { createAuth } from './createAuth'
+import { isLocalAuthDisabled } from './environment'
 import type { AuthBindings } from '../api/types'
 import { nameChangeCooldownRemainingDays } from '../lib/profile-name'
 
@@ -81,6 +82,8 @@ export async function hasDuplicateDisplayName(db: D1Database, userId: string, na
  * 不受「SSR 不得碰瀏覽器 API」限制——不變量 3 禁的是 localStorage／document／window。
  */
 export async function getAuthContext(env: AuthBindings, headers: Headers): Promise<AuthContext | null> {
+  // 本機空 auth 庫不初始化 Better Auth；忽略 cookie，所有需登入操作仍由守衛拒絕。
+  if (isLocalAuthDisabled()) return null
   const auth = createAuth(env)
   const session = await auth.api.getSession({ headers })
   if (!session) return null
@@ -112,8 +115,7 @@ export async function tryGetAuthContext(env: AuthBindings, headers: Headers): Pr
   try {
     return await getAuthContext(env, headers)
   } catch (error) {
-    // 本機 npm run dev 最常見的原因是 DB_AUTH 是空的本機模擬庫（auth 表只存在遠端）——
-    // 要實測登入請用 npm run dev:remote。
+    // 綁定或 schema 故障仍須記錄；本機 development 已在上方提前回匿名，不走此例外。
     console.error('Failed to resolve auth context:', error)
     return null
   }

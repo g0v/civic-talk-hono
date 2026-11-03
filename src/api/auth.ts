@@ -1,6 +1,7 @@
 import type { Context } from 'hono'
 import { createAuth } from '../auth/createAuth'
 import { getAuthContext, hasDuplicateDisplayName } from '../auth/authorization'
+import { isLocalAuthDisabled } from '../auth/environment'
 import { DISPLAY_NAME_MAX_LENGTH, DUPLICATE_DISPLAY_NAME_CODE, nameChangeCooldownExpiresAt, NAME_CHANGE_COOLDOWN_CODE, normalizeDisplayName } from '../lib/profile-name'
 import type { App, AppBindings } from './types'
 
@@ -99,6 +100,11 @@ export function registerAuthRoutes(app: App): void {
 
   // Better Auth 內建端點（登入、OAuth callback、登出、session）
   app.on(['GET', 'POST'], '/api/auth/*', async c => {
+    if (isLocalAuthDisabled()) {
+      c.header('Cache-Control', 'private, no-store')
+      if (c.req.method === 'GET' && c.req.path === '/api/auth/get-session') return c.json(null)
+      return c.json({ error: 'Authentication is disabled in local development; use vp run dev:remote to sign in' }, 503)
+    }
     if (new URL(c.req.url).pathname === '/api/auth/update-user' && c.req.method === 'POST') {
       const update = await enforceNameChangeCooldown(c)
       if (update instanceof Response) return update
