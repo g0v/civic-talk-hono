@@ -14,6 +14,7 @@ import StatusBadge from '../components/StatusBadge.vue'
 import Toast from '../components/Toast.vue'
 import ViewerRoleSwitch from '../components/ViewerRoleSwitch.vue'
 import { provideI18n } from '../l10n'
+import { messages } from '../l10n/zh-TW'
 import AboutView from '../views/About.vue'
 import AdminView from '../views/Admin.vue'
 import ContributeView from '../views/Contribute.vue'
@@ -202,6 +203,7 @@ describe('home issue preview', () => {
     expect(html).toContain('議題說明')
     expect(html).toContain('進入議題')
     expect(html).not.toContain('id="home-issue-search"')
+    expect(html).not.toContain(messages.idx_new_issue_btn)
   })
 
   it('SSR initializes the home search and filters by tags without browser state', async () => {
