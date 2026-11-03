@@ -135,29 +135,6 @@ describe('bundle 第三方授權聲明', () => {
     await expect(pluginHook(plugin, 'generateBundle').call(context as never, {} as never, bundle as never)).rejects.toThrow(/no-license-text@1\.0\.0[\s\S]*沒有可取得的 LICENSE/)
   })
 
-  it.each([
-    { version: '0.4.2', license: 'MIT', approved: true },
-    { version: '0.4.3', license: 'MIT', approved: false },
-    { version: '0.4.2', license: 'UNLICENSED', approved: false },
-  ])('法務補充只適用 utils 的核准版本及 MIT 聲明：$version / $license', async ({ version, license, approved }) => {
-    const root = makeRoot()
-    const packageRoot = writePackage(root, 'node_modules/@better-auth/utils', { name: '@better-auth/utils', version, license }, {})
-    const moduleId = join(packageRoot, 'index.js')
-    writeFileSync(moduleId, 'export const value = 1\n')
-    const plugin = bundleNotices({ target: 'worker', root })
-    const emitted: GeneratedAsset[] = []
-    const context = { emitFile: (asset: GeneratedAsset) => emitted.push(asset) }
-    const check = pluginHook(plugin, 'generateBundle').call(context as never, {} as never, { 'entry.js': { type: 'chunk', modules: { [moduleId]: {} } } } as never)
-    if (approved) {
-      await check
-      expect(emitted[0].source).toContain('非上游附帶 LICENSE')
-      expect(emitted[0].source).toContain('Permission is hereby granted')
-      expect(emitted[0].source).toContain('b20329a32d78f1f9bcc088bbd6f982b28c4192f1')
-    } else {
-      await expect(check).rejects.toThrow('沒有可取得的 LICENSE')
-      expect(emitted).toEqual([])
-    }
-  })
 })
 
 describe('依賴授權 TSV 產生器', () => {

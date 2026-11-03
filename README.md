@@ -80,13 +80,13 @@ npx wrangler d1 migrations apply vtaiwan-civic-talks --local
 vp run dev
 ```
 
-> 登入功能在 `vp run dev` 下**測不了**：Better Auth 的資料表在遠端的 `vtaiwan-auth`，本機模擬庫是空的。要實測登入請用 `vp run dev:remote`。
+> `vp run dev` **刻意停用 Auth**，不初始化本機空的認證庫：`GET /api/auth/get-session` 回 `200/null`、`GET /api/me` 回 `401`，既有 cookie 也視為匿名。登入、OAuth callback 與個人資料更新回 `503`；投稿、投票與管理等需登入操作仍回 `401`，不提供假的登入者或匿名寫入。要實測登入請用 `vp run dev:remote`；remote 開發與正式建置的 Auth 不受影響。本機停用只限 Vite 的 `DEV` 為 true 且 mode 為 `development`，不是可以在正式環境設定的停用開關。
 
 常用指令：
 
 | 指令                          | 說明                                                       |
 | ----------------------------- | ---------------------------------------------------------- |
-| `vp run dev`                  | 先完整 build（含 CSS 與 notices），再啟動本機 Worker + HMR |
+| `vp run dev`                  | 先完整 build，再啟動本機 Worker + HMR；Auth 停用、維持匿名 |
 | `vp run dev:remote`           | 先完整 build（含 notices），再連遠端 D1；實測登入用這個    |
 | `vp run css`                  | 由 `src/styles/app.css` 建置 `public/styles.css`           |
 | `vp run css:watch`            | 監看並自動重建 Tailwind CSS                                |

@@ -113,14 +113,6 @@ async function readPackageNotices(packageRoot, root) {
   const name = typeof packageJson.name === 'string' && packageJson.name ? packageJson.name : path.basename(packageRoot)
   const version = typeof packageJson.version === 'string' && packageJson.version ? packageJson.version : 'UNSPECIFIED'
   const files = await noticeFiles(packageRoot)
-  // 唯一經法務核准的補充：此版本公開聲明 MIT，卻未附 LICENSE 全文。
-  // 不以通用 SPDX fallback 放行未知套件或其他版本。
-  if (files.length === 0 && name === '@better-auth/utils' && version === '0.4.2' && packageJson.license === 'MIT') {
-    files.push({
-      absolute: path.join(projectRoot, 'scripts/third-party-licenses/better-auth-utils-0.4.2.txt'),
-      relative: '本站補充的標準 MIT 條款（非上游附帶 LICENSE）',
-    })
-  }
   if (files.length === 0) {
     throw new Error(
       `已打包套件 ${name}@${version}（${describePackageRoot(root, packageRoot)}）沒有可取得的 LICENSE、LICENCE、COPYING 或 NOTICE 全文；package.json license metadata 為「${metadataText(packageJson.license)}」。請補足該套件實際許可全文後再建置。`
@@ -177,7 +169,7 @@ async function bundledPackages(bundle, root) {
 function formatNotices(target, packages) {
   const sections = [
     `第三方套件授權聲明（${target} bundle）`,
-    '本文件依實際 bundle modules 產生。套件授權 metadata 與原始授權／NOTICE 來自已安裝套件；經法務核准的版本限定補充另行標明，不偽稱為上游原文。',
+    '本文件依實際 bundle modules 產生。套件授權 metadata 與原始 LICENSE／NOTICE 全文來自實際已安裝套件。',
   ]
 
   if (packages.length === 0) sections.push('本 bundle 未包含可辨識的 node_modules 套件。')

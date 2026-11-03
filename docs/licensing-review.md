@@ -67,13 +67,13 @@ Git history 另含 Cursor、Codex 與 Claude 的 co-author／session 標記；�
 
 ## npm 依賴
 
-[`licensing-dependencies.tsv`](./licensing-dependencies.tsv) 逐筆記錄 lockfile 的 **357** 個非 root entries（2026-10-25，Vite+ 1.4.0 遷移、Zod／Undici 安全修補與 Miniflare workerd 相容性修補後同步；workerd 的 scoped override 另加入 6 個 Apache-2.0 entries）：路徑、版本、license metadata、dev／devOptional／optional 標記及 resolved URL（lockfile 未提供時記為 `UNSPECIFIED`）。使用 `node scripts/licensing-dependencies.mjs` 重產，`node scripts/licensing-dependencies.mjs --check` 驗證；CI 執行一致性查核。這是 metadata 盤點，**不是逐一檢查完整著作權 notices 或所有發布產物的法律清單**，也不依 flags 就宣稱某個套件不會進入部署。
+[`licensing-dependencies.tsv`](./licensing-dependencies.tsv) 逐筆記錄 lockfile 的 **356** 個非 root entries（2026-11-04，Better Auth 1.7.15 及其相依升級後同步；移除 `@opentelemetry/semantic-conventions`，較前次少 1 個 Apache-2.0 entry；workerd 的 scoped override 所加入的 6 個 Apache-2.0 entries 維持不變）：路徑、版本、license metadata、dev／devOptional／optional 標記及 resolved URL（lockfile 未提供時記為 `UNSPECIFIED`）。使用 `node scripts/licensing-dependencies.mjs` 重產，`node scripts/licensing-dependencies.mjs --check` 驗證；CI 執行一致性查核。這是 metadata 盤點，**不是逐一檢查完整著作權 notices 或所有發布產物的法律清單**，也不依 flags 就宣稱某個套件不會進入部署。
 
 | License metadata（原樣保留）             | Entries |
 | ---------------------------------------- | ------: |
 | MIT                                      |     274 |
 | MIT OR Apache-2.0                        |       4 |
-| Apache-2.0                               |      30 |
+| Apache-2.0                               |      29 |
 | LGPL-3.0-or-later                        |      10 |
 | Apache-2.0 AND LGPL-3.0-or-later AND MIT |       1 |
 | Apache-2.0 AND LGPL-3.0-or-later         |       3 |
@@ -87,7 +87,7 @@ Git history 另含 Cursor、Codex 與 Claude 的 co-author／session 標記；�
 
 六個直接 runtime dependencies（`vue`／`@vue/server-renderer`／`hono`／`better-auth`／`markdown-it`／`vue3-carousel`）的 lockfile metadata 皆 MIT，已從安裝套件逐字保存其 license 全文至 `THIRD-PARTY-NOTICES.md`，並核對 installed version 與 lockfile。實際 client／Worker bundle 的轉依賴另外由建置流程產生 notices；lockfile 盤點不取代產物清單。
 
-實際建置發現 `@better-auth/utils@0.4.2` 的 npm 包及上游 `v0.4.2` tree 都沒有 LICENSE；[npm metadata](https://registry.npmjs.org/@better-auth/utils/0.4.2) 與 [固定 README](https://github.com/better-auth/utils/blob/b20329a32d78f1f9bcc088bbd6f982b28c4192f1/README.md) 明確聲明 MIT，author metadata 為 Bereket Engida。維護者兼法務已核准保留此限定版本，依公開聲明補充標準 MIT 許可／免責全文於 [`scripts/third-party-licenses/better-auth-utils-0.4.2.txt`](../scripts/third-party-licenses/better-auth-utils-0.4.2.txt)。產物明確標示為本站補充，不偽稱上游原文、不補造 copyright 年份；此例外不放行其他版本、不同授權或未知套件缺漏。
+歷史建置曾發現 `@better-auth/utils@0.4.2` 的 npm 包及上游 `v0.4.2` tree 都沒有 LICENSE；[npm metadata](https://registry.npmjs.org/@better-auth/utils/0.4.2) 與 [固定 README](https://github.com/better-auth/utils/blob/b20329a32d78f1f9bcc088bbd6f982b28c4192f1/README.md) 明確聲明 MIT，author metadata 為 Bereket Engida。維護者兼法務當時核准保留此限定版本，依公開聲明補充標準 MIT 許可／免責全文於 [`scripts/third-party-licenses/better-auth-utils-0.4.2.txt`](../scripts/third-party-licenses/better-auth-utils-0.4.2.txt)。當時產物明確標示為本站補充，不偽稱上游原文、不補造 copyright 年份；此歷史補充檔及 attribution 繼續保留。目前 `@better-auth/utils@0.5.1` 已隨套件附帶上游 `LICENSE`（MIT，Copyright (c) 2024 - present, Bereket Engida），建置直接收集該原文，不再使用舊版補充例外；所有已打包套件仍須提供實際許可全文，缺漏即中止建置。
 
 ## 原始碼入口與操作限制
 

@@ -52,9 +52,9 @@ SOFTWARE.
 - `public/vtaiwan-logo*.svg`、favicon 與 OG 品牌圖像的原始著作權與品牌使用規範仍待確認。這次授權切換不授予額外的商標使用權；保留商標權不等於已解決圖像著作權。
 - Google／GitHub 圖示、Google Fonts 與外部 Polis script 依各來源規範處理；本站軟體 grant 不宣稱涵蓋它們的品牌權利或替其重新授權。
 
-## 建置產物的限定版本補充
+## 建置產物的限定版本補充（歷史紀錄）
 
-`@better-auth/utils@0.4.2` 的 npm 包與上游 tag 未附 LICENSE 全文，但 [公開 npm metadata](https://registry.npmjs.org/@better-auth/utils/0.4.2) 與 [固定 README](https://github.com/better-auth/utils/blob/b20329a32d78f1f9bcc088bbd6f982b28c4192f1/README.md) 都聲明 MIT。維護者兼法務核准依此公開聲明保留該版本，本站補充標準 MIT 許可／免責條款於 [`scripts/third-party-licenses/better-auth-utils-0.4.2.txt`](./scripts/third-party-licenses/better-auth-utils-0.4.2.txt)，隨 Worker notices 提供。此補充保留作者 metadata 及固定來源、不補造 copyright notice，並明確標為非上游附帶 LICENSE。其他套件或版本缺少全文仍會中止 build。
+歷史版本 `@better-auth/utils@0.4.2` 的 npm 包與上游 tag 未附 LICENSE 全文，但 [公開 npm metadata](https://registry.npmjs.org/@better-auth/utils/0.4.2) 與 [固定 README](https://github.com/better-auth/utils/blob/b20329a32d78f1f9bcc088bbd6f982b28c4192f1/README.md) 都聲明 MIT。維護者兼法務當時核准依此公開聲明保留該版本，本站補充標準 MIT 許可／免責條款於 [`scripts/third-party-licenses/better-auth-utils-0.4.2.txt`](./scripts/third-party-licenses/better-auth-utils-0.4.2.txt)，供當時的 Worker notices 使用。此歷史補充保留作者 metadata 及固定來源、不補造 copyright notice，並明確標為非上游附帶 LICENSE。目前使用 `@better-auth/utils@0.5.1` 上游隨套件附帶的 `LICENSE`，已移除該建置例外；歷史補充檔仍保留，任何已打包套件缺少許可全文仍會中止 build。
 
 ## 直接 runtime dependencies
 
@@ -88,9 +88,9 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
-### better-auth 1.6.25
+### better-auth 1.7.15
 
-來源：安裝套件 `better-auth@1.6.25` 的 `LICENSE.md`；npm package [`better-auth`](https://www.npmjs.com/package/better-auth/v/1.6.25)。
+來源：安裝套件 `better-auth@1.7.15` 的 `LICENSE.md`；npm package [`better-auth`](https://www.npmjs.com/package/better-auth/v/1.7.15)。
 
 ```text
 The MIT License (MIT)
