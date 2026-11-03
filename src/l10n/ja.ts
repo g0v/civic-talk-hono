@@ -87,6 +87,7 @@ export const messages = {
   status_published: '解説ページを公開済み',
   status_published_short: '公開済み',
   idx_new_issue_btn: '＋ 議題を追加',
+  idx_back_to_top: 'ページ上部へ戻る',
   idx_page_title: '議題を選ぶ',
   idx_page_subtitle: 'AI で参加のハードルを下げ、単にどちらかの側につくのではなく、より多くの人が議題の全体像を本当に理解できるようにします。',
   idx_form_title: '新しい議題を作成',

@@ -41,6 +41,7 @@ const issueTosAgreed = ref(false)
 // Email 公開選項（#27）
 const issueShowEmail = ref(false)
 const toast = ref<{ show: (msg: string) => void } | null>(null)
+const homeTitle = ref<HTMLHeadingElement | null>(null)
 
 // 全站共用的登入狀態（與 AppHeader 共用同一次 /api/me）；SSR 期間永遠是 'loading'
 const { authState, session, ensureAuthSession } = useAuth()
@@ -152,6 +153,12 @@ function backToIssues(): void {
   selectedIssueId.value = null
   window.history.pushState({}, '', homeIssueListUrl(new URL(window.location.href)))
   window.scrollTo({ top: 0, behavior: 'smooth' })
+}
+
+function scrollToTop(): void {
+  homeTitle.value?.focus({ preventScroll: true })
+  // auto 沿用 CSS 的平滑捲動，並尊重 prefers-reduced-motion。
+  window.scrollTo({ top: 0, behavior: 'auto' })
 }
 
 async function loadIssues() {
@@ -346,7 +353,7 @@ async function copyRssUrl() {
           <span>{{ t('site_tagline') }}</span>
         </div>
         <div class="mb-3 flex items-center justify-between gap-3 sm:mb-0 sm:block">
-          <h1 class="hero-title min-w-0 max-sm:mb-0">{{ t('idx_page_title') }}</h1>
+          <h1 ref="homeTitle" tabindex="-1" class="hero-title min-w-0 max-sm:mb-0">{{ t('idx_page_title') }}</h1>
           <button
             type="button"
             class="btn btn-primary btn-sm min-h-11 shrink-0 whitespace-nowrap focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white sm:hidden"
@@ -552,6 +559,18 @@ async function copyRssUrl() {
             </div>
             <div v-else>
               <IssueCard v-for="issue in filteredAndSortedIssues" :key="issue.id" :issue="issue" @select="showIssuePreview" />
+              <div class="flex justify-center">
+                <button
+                  type="button"
+                  class="btn btn-jade-green min-h-11 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-vt-jade-green"
+                  @click="scrollToTop"
+                >
+                  {{ t('idx_back_to_top') }}
+                  <svg class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M12 19V5m-7 7 7-7 7 7" />
+                  </svg>
+                </button>
+              </div>
             </div>
           </div>
         </template>

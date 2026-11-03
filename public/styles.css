@@ -1452,6 +1452,9 @@
   .focus-visible\:outline-vt-democratic-red:focus-visible {
     outline-color: var(--color-vt-democratic-red);
   }
+  .focus-visible\:outline-vt-jade-green:focus-visible {
+    outline-color: var(--color-vt-jade-green);
+  }
   .focus-visible\:outline-white:focus-visible {
     outline-color: var(--color-white);
   }
