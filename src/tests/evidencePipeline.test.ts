@@ -69,6 +69,7 @@ let workflowProbeFailure: 'get' | 'status' | null
 let aiRun: (model: string, input: unknown) => Promise<unknown>
 
 const requestHeaders = { 'Content-Type': 'application/json', Origin: 'http://localhost' }
+const GENERATION_MODEL = '@cf/google/gemma-4-26b-a4b-it'
 function send(method: string, path: string, body?: unknown) {
   return app.request(`http://localhost${path}`, { method, headers: requestHeaders, ...(body === undefined ? {} : { body: JSON.stringify(body) }) }, env)
 }
@@ -114,6 +115,14 @@ function object(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>
 }
 
+function generationResponse(data: unknown) {
+  return {
+    object: 'chat.completion', model: 'gemma-4-26b-a4b-it',
+    choices: [{ index: 0, finish_reason: 'stop', message: { role: 'assistant', content: JSON.stringify(data), refusal: null } }],
+    usage: { prompt_tokens: 200, completion_tokens: 80 },
+  }
+}
+
 async function model(modelName: string, input: unknown): Promise<unknown> {
   recordedRequests.push(input)
   const request = object(input)
@@ -125,23 +134,32 @@ async function model(modelName: string, input: unknown): Promise<unknown> {
     const questions = object(request.questions)
     return { model: 'clef', answers: Object.fromEntries(Object.keys(questions).map(id => [id, { type: 'choice', choice: 'agree', probabilities: { agree: 0.91, disagree: 0.03, unrelated: 0.03, uncertain: 0.03 }, confidence: 0.91 }])), usage: { input_tokens: 120, output_tokens: 0 } }
   }
-  if (modelName === '@cf/openai/gpt-oss-120b') {
+  if (modelName === GENERATION_MODEL) {
     // 合成 provider 只接受本輪使用的原生結構化輸入，不模擬語義品質保證。
-    const allowed = ['messages', 'max_tokens', 'temperature', 'response_format']
-    if (Object.keys(request).some(key => !allowed.includes(key)) || !Number.isSafeInteger(request.max_tokens) || Number(request.max_tokens) <= 0 || object(request.response_format).type !== 'json_schema') {
+    const allowed = ['messages', 'max_completion_tokens', 'temperature', 'chat_template_kwargs', 'stream', 'response_format']
+    const messages = request.messages
+    const format = object(request.response_format)
+    const schema = object(format.json_schema)
+    if (Object.keys(request).some(key => !allowed.includes(key)) || !Array.isArray(messages) || messages.length !== 2 ||
+      object(messages[0]).role !== 'system' || typeof object(messages[0]).content !== 'string' ||
+      object(messages[1]).role !== 'user' || typeof object(messages[1]).content !== 'string' ||
+      !Number.isSafeInteger(request.max_completion_tokens) || Number(request.max_completion_tokens) <= 0 ||
+      object(request.chat_template_kwargs).enable_thinking !== false || request.stream !== false || format.type !== 'json_schema' ||
+      schema.strict !== true || typeof schema.name !== 'string' || object(schema.schema).type !== 'object') {
       throw new Error('unsupported native generation request')
     }
-    const messages = request.messages as Array<{ role: string; content: string }>
-    const generatedInput = JSON.parse(messages.find(message => message.role === 'user')!.content) as
+    const generatedInput = JSON.parse(String(object(messages[1]).content)) as
       | { operation: 'fill_missing_fields'; base_hash: string; targets: Array<{ pointer: string; evidence_ids: string[] }>; section?: never }
       | { section: 'consensus'; evidence: Array<{ id: string }>; comparison: { consensus_groups: Array<{ candidate_id: string; evidence_ids: string[] }> }; operation?: never }
       | { section: 'disputes' | 'positions'; evidence: Array<{ id: string }>; operation?: never }
+    const expectedName = generatedInput.operation === 'fill_missing_fields' ? 'evidence_completion' : `evidence_${generatedInput.section}`
+    if (schema.name !== expectedName) throw new Error('unsupported native generation schema')
     if (generatedInput.operation === 'fill_missing_fields') {
       const data = {
         base_hash: generatedInput.base_hash,
         fills: generatedInput.targets.map(target => ({ pointer: target.pointer, sentences: [{ text: '補完欄位。', evidence_ids: target.evidence_ids }] })),
       }
-      return { model: 'gpt-oss-120b', choices: [{ index: 0, finish_reason: 'stop', message: { role: 'assistant', content: JSON.stringify(data) } }], usage: { prompt_tokens: 200, completion_tokens: 80 } }
+      return generationResponse(data)
     }
     const cite = (text: string, ids: string[]) => [{ text, evidence_ids: ids }]
     const groups = generatedInput.section === 'consensus' ? generatedInput.comparison.consensus_groups : []
@@ -160,15 +178,14 @@ async function model(modelName: string, input: unknown): Promise<unknown> {
             items: [{ group_id: 'energy', name: cite('能源觀點。', ids), Core_concern: cite('素材中的能源關注。', ids), opinions: [{ Title: cite('能源轉型。', ids), description: cite('素材呈現能源主張。', ids) }] }],
             exclusions: [],
           }
-    return { model: 'gpt-oss-120b', choices: [{ index: 0, finish_reason: 'stop', message: { role: 'assistant', content: JSON.stringify(data) } }], usage: { prompt_tokens: 200, completion_tokens: 80 } }
+    return generationResponse(data)
   }
   throw new Error('unexpected model')
 }
 
 function generationPayload(modelName: string, input: unknown): Record<string, unknown> | null {
-  if (modelName !== '@cf/openai/gpt-oss-120b') return null
-  const messages = object(input).messages as Array<{ role: string; content: string }>
-  return object(JSON.parse(messages.find(message => message.role === 'user')!.content))
+  if (modelName !== GENERATION_MODEL) return null
+  return object(JSON.parse(String(object((object(input).messages as unknown[])[1]).content)))
 }
 
 function responseMessage(response: unknown): Record<string, unknown> {
@@ -615,7 +632,14 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     expect(local.sqlite.prepare('SELECT COUNT(*) AS n FROM ct_ai_executions').get()).toMatchObject({ n: 2 })
   })
 
-  it('工作擁有者及管理員取得正確工件雜湊與白名單 provenance，其他人不可讀取', async () => {
+  it('忽略原生推理並採用最終結構化結果；擁有者及管理員取得正確工件雜湊與白名單 provenance', async () => {
+    aiRun = async (modelName, input) => {
+      const response = await model(modelName, input)
+      if (generationPayload(modelName, input)?.section === 'consensus') {
+        responseMessage(response).reasoning = 'private-reasoning-not-final-json'
+      }
+      return response
+    }
     auth.current = user('owner')
     const created = await (await send('POST', '/api/issues/7/evidence-jobs', { consent: true })).json() as { job_id: string }
     expect(await runEvidenceWorkflow(env, created.job_id, testStep())).toEqual({ status: 'ai_draft' })
@@ -628,13 +652,18 @@ describe('evidence API 與實際 SQLite 工作流', () => {
       provenance: { artifacts: ArtifactSummary[] }
       diagnostics: { generation: { sections: { consensus: { details: { candidate_map: Array<{ candidate_id: string; canonical_id: string }>; adopted: Array<{ candidate_id: string }> } } } } }
     }
+    expect(audit).toMatchObject({
+      data: { consensus: { items: [{ Title: '相容主張。', description: '材料呈現的主張。' }] } },
+      diagnostics: { generation: { sections: { consensus: { status: 'completed' } } } },
+    })
+    expect(JSON.stringify(audit)).not.toContain('private-reasoning-not-final-json')
     expect(audit.input_key).toBe(await sha256(JSON.stringify(audit.input_manifest)))
     const generation = local.sqlite.prepare('SELECT payload_hash, payload FROM ct_ai_artifacts WHERE id = ? AND kind = ?').get(audit.generation_artifact.id, 'generation') as { payload_hash: string; payload: string }
     expect(audit.generation_artifact.sha256).toBe(generation.payload_hash)
     expect(audit.generation_artifact.sha256).toBe(await sha256(generation.payload))
     const raw = audit.provenance.artifacts.filter(item => item.kind === 'raw')
     expect(raw).toHaveLength(6)
-    expect(new Set(raw.map(item => item.model?.selector))).toEqual(new Set(['@cf/cloudflare/clairic', '@cf/cloudflare/clef', '@cf/openai/gpt-oss-120b']))
+    expect(new Set(raw.map(item => item.model?.selector))).toEqual(new Set(['@cf/cloudflare/clairic', '@cf/cloudflare/clef', GENERATION_MODEL]))
     for (const summary of raw) {
       expect(Object.keys(summary).sort()).toEqual(['attempt', 'created_at', 'id', 'kind', 'model', 'sha256'])
       expect(Object.keys(summary.model!).sort()).toEqual(['pricing_version', 'provider_model', 'provider_revision', 'request_id', 'request_sha256', 'selector', 'system_fingerprint', 'usage_status'])
@@ -656,6 +685,9 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     expect(consensusDetails.adopted[0].candidate_id).toBe(canonical)
     const consensusRaw = local.sqlite.prepare("SELECT a.payload FROM ct_ai_artifacts a JOIN ct_ai_usage u ON u.id = a.attempt_id WHERE a.kind = 'raw' AND u.step_key = 'generate:consensus'").get() as { payload: string }
     const native = object(JSON.parse(consensusRaw.payload))
+    expect(responseMessage(native.response).reasoning).toBe('private-reasoning-not-final-json')
+    expect(local.sqlite.prepare("SELECT state, actual_micro_usd FROM ct_ai_usage WHERE step_key = 'generate:consensus'").get())
+      .toMatchObject({ state: 'settled', actual_micro_usd: 44 })
     const adoptedRaw = object(JSON.parse(String(responseMessage(native.response).content)))
     expect(object((adoptedRaw.items as unknown[])[0]).candidate_id).toBe('C1')
     const summaryJson = JSON.stringify(audit.provenance.artifacts)
@@ -856,17 +888,21 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     expect(recordedRequests).toHaveLength(7)
   })
 
-  it('共識候選無效只拒收該段，其他有效分項仍可檢視且有固定驗證子碼', async () => {
+  it.each([
+    ['共識候選無效', 'invalid_candidate', 'generation_invalid_candidate'],
+    ['原生回應未完成', 'incomplete', 'generation_incomplete_completion'],
+  ] as const)('%s 時只拒收該段，保留其他有效分項及已回報費用', async (_label, failure, validationCode) => {
     aiRun = async (modelName, input) => {
       const response = await model(modelName, input)
-      if (modelName !== '@cf/openai/gpt-oss-120b') return response
-      const messages = object(input).messages as Array<{ role: string; content: string }>
-      const generationInput = JSON.parse(messages.find(item => item.role === 'user')!.content)
-      if (generationInput.section !== 'consensus') return response
-      const message = object(object((object(response).choices as unknown[])[0]).message)
-      const content = JSON.parse(String(message.content))
-      content.items[0].candidate_id = 'unknown-candidate'
-      message.content = JSON.stringify(content)
+      if (generationPayload(modelName, input)?.section !== 'consensus') return response
+      if (failure === 'incomplete') {
+        object((object(response).choices as unknown[])[0]).finish_reason = 'length'
+      } else {
+        const message = responseMessage(response)
+        const content = JSON.parse(String(message.content))
+        content.items[0].candidate_id = 'unknown-candidate'
+        message.content = JSON.stringify(content)
+      }
       return response
     }
     auth.current = user('owner')
@@ -877,17 +913,36 @@ describe('evidence API 與實際 SQLite 工作流', () => {
       status: 'partial_draft', error_code: null, usage: { attempts: 6, uncertain: 0, reservedMicroUsd: 0 },
       data: { consensus: { Overview: statusOverview('consensus', 'failed', 'zh-TW'), items: [] } },
       diagnostics: { generation: { sections: {
-        consensus: { status: 'failed', reason: 'invalid_generation', validation_code: 'generation_invalid_candidate' },
+        consensus: { status: 'failed', reason: 'invalid_generation', validation_code: validationCode },
         disputes: { status: 'no_findings' },
         positions: { status: 'completed' },
       } } },
     })
+    if (failure === 'incomplete') {
+      const saved = local.sqlite.prepare("SELECT a.payload FROM ct_ai_artifacts a JOIN ct_ai_usage u ON u.id = a.attempt_id WHERE a.kind = 'raw' AND u.step_key = 'generate:consensus'").get() as { payload: string }
+      const raw = object(object(JSON.parse(saved.payload)).response)
+      expect(raw).toMatchObject({ choices: [{ index: 0, finish_reason: 'length' }], usage: { prompt_tokens: 200, completion_tokens: 80 } })
+      expect(JSON.parse(String(responseMessage(raw).content))).toMatchObject({ items: [{ candidate_id: 'C1' }] })
+    }
+    const attempts = local.sqlite.prepare("SELECT step_key, state, actual_micro_usd FROM ct_ai_usage WHERE step_key LIKE 'generate:%' ORDER BY step_key").all()
+    expect(attempts).toEqual([
+      { step_key: 'generate:consensus', state: 'settled', actual_micro_usd: 44 },
+      { step_key: 'generate:disputes', state: 'settled', actual_micro_usd: 44 },
+      { step_key: 'generate:positions', state: 'settled', actual_micro_usd: 44 },
+    ])
+    const total = local.sqlite.prepare('SELECT SUM(actual_micro_usd) AS total FROM ct_ai_usage').get() as { total: number }
+    expect(object(body.usage).actualMicroUsd).toBe(total.total)
+    const citations = body.citation_map as Array<{ pointer: string }>
+    expect(citations.some(entry => entry.pointer.startsWith('/consensus/'))).toBe(false)
+    expect(await runEvidenceWorkflow(env, created.job_id, testStep())).toEqual({ status: 'partial_draft' })
+    expect(recordedRequests).toHaveLength(6)
+    expect(local.sqlite.prepare("SELECT step_key, state, actual_micro_usd FROM ct_ai_usage WHERE step_key LIKE 'generate:%' ORDER BY step_key").all()).toEqual(attempts)
   })
 
   it('生成費用預留包含原生請求宣告的最大輸出 token，不只計入輸入', async () => {
     const generationInputs: Record<string, unknown>[] = []
     aiRun = async (modelName, input) => {
-      if (modelName === '@cf/openai/gpt-oss-120b') generationInputs.push(object(input))
+      if (modelName === GENERATION_MODEL) generationInputs.push(object(input))
       return model(modelName, input)
     }
     auth.current = user('owner')
@@ -895,11 +950,11 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     expect(await runEvidenceWorkflow(env, created.job_id, testStep())).toEqual({ status: 'ai_draft' })
     expect(generationInputs).toHaveLength(3)
     for (const request of generationInputs) {
-      if (typeof request.max_tokens !== 'number') throw new Error('missing native output limit')
+      if (typeof request.max_completion_tokens !== 'number') throw new Error('missing native output limit')
+      expect(request.max_completion_tokens).toBe(8192)
       const inputBound = new TextEncoder().encode(JSON.stringify(request)).byteLength * 4 + 4096
-      const expectedMicroUsd = Math.ceil((inputBound * 35 + request.max_tokens * 75) / 100)
-      const messages = request.messages as Array<{ role: string; content: string }>
-      const { section } = JSON.parse(messages.find(item => item.role === 'user')!.content)
+      const expectedMicroUsd = Math.ceil((inputBound * 10 + request.max_completion_tokens * 30) / 100)
+      const { section } = generationPayload(GENERATION_MODEL, request)!
       const attempt = local.sqlite.prepare('SELECT estimate_micro_usd, state FROM ct_ai_usage WHERE step_key = ?').get(`generate:${section}`)
       expect(attempt).toMatchObject({ estimate_micro_usd: expectedMicroUsd, state: 'settled' })
     }
@@ -924,7 +979,7 @@ describe('evidence API 與實際 SQLite 工作流', () => {
   ])('$label 只留下安全診斷，不重試或釋放未知費用', async ({ error, expected }) => {
     let generationCalls = 0
     aiRun = async (modelName, input) => {
-      if (modelName !== '@cf/openai/gpt-oss-120b') return model(modelName, input)
+      if (modelName !== GENERATION_MODEL) return model(modelName, input)
       generationCalls++
       throw error
     }
@@ -937,7 +992,7 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     expect(body).toMatchObject({ status: 'failed', error_code: 'provider_error', usage: { attempts: 6, uncertain: 3 } })
     for (const section of ['consensus', 'disputes', 'positions']) {
       expect(body.diagnostics).toContainEqual({
-        stage: 'provider', code: 'provider_error', step_key: `generate:${section}`, model_selector: '@cf/openai/gpt-oss-120b', ...expected,
+        stage: 'provider', code: 'provider_error', step_key: `generate:${section}`, model_selector: GENERATION_MODEL, ...expected,
       })
     }
     expect(JSON.stringify(body)).not.toContain('private-provider-detail')
@@ -960,7 +1015,7 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     })
     const log = vi.spyOn(console, 'error').mockImplementation(() => {})
     aiRun = async (modelName, input) => {
-      if (modelName !== '@cf/openai/gpt-oss-120b') return model(modelName, input)
+      if (modelName !== GENERATION_MODEL) return model(modelName, input)
       throw new Error('private-provider-detail')
     }
     try {
@@ -1014,22 +1069,36 @@ describe('evidence API 與實際 SQLite 工作流', () => {
       executionId: job!.executionId, stepKey: 'generate:consensus', estimateMicroUsd: 1000, generations: snapshot!.generations,
     })
     if (attempt.outcome !== 'started') throw new Error('failed to seed interrupted attempt')
+    const oldRawPayload = {
+      selector: '@cf/openai/gpt-oss-120b',
+      request: {},
+      response: { usage: { input_tokens: 200, output_tokens: 80 } },
+      provenance: {},
+    }
     const saved = await store.saveArtifact({
       executionId: job!.executionId, attemptId: attempt.attemptId, kind: 'raw', generations: snapshot!.generations,
-      payload: { selector: '@cf/google/gemma-4-26b-a4b-it', request: {}, response: { usage: { prompt_tokens: 200, completion_tokens: 80 } }, provenance: {} },
+      payload: oldRawPayload,
     })
     expect(saved.outcome).toBe('saved')
+    if (saved.outcome !== 'saved') throw new Error('failed to seed historical raw')
+    const originalRaw = local.sqlite.prepare('SELECT payload FROM ct_ai_artifacts WHERE id = ?').get(saved.artifactId)
     const originalReservation = local.sqlite.prepare('SELECT estimate_micro_usd FROM ct_ai_usage WHERE id = ?').get(attempt.attemptId) as { estimate_micro_usd: number }
     expect(await runEvidenceWorkflow(env, created.job_id, testStep())).toEqual({ status: 'partial_draft' })
     expect(local.sqlite.prepare("SELECT state, actual_micro_usd, estimate_micro_usd FROM ct_ai_usage WHERE id = ?").get(attempt.attemptId))
       .toMatchObject({ state: 'unknown', actual_micro_usd: null, estimate_micro_usd: originalReservation.estimate_micro_usd })
     expect(recordedRequests.filter(request => object(request).messages !== undefined)
-      .map(request => object(JSON.parse(String((object(request).messages as Array<{ role: string; content: string }>).find(message => message.role === 'user')!.content))).section))
+      .map(request => generationPayload(GENERATION_MODEL, request)!.section))
       .toEqual(['disputes', 'positions'])
     const result = object(await (await send('GET', `/api/evidence-jobs/${created.job_id}`)).json())
     expect(object(result.usage)).toMatchObject({ uncertain: 1, reservedMicroUsd: originalReservation.estimate_micro_usd })
-    const old = await store.getArtifact(job!.executionId, saved.outcome === 'saved' ? saved.artifactId : '')
-    expect(object(old!.payload).selector).toBe('@cf/google/gemma-4-26b-a4b-it')
+    expect(recordedRequests).toHaveLength(5)
+    expect(await runEvidenceWorkflow(env, created.job_id, testStep())).toEqual({ status: 'partial_draft' })
+    expect(recordedRequests).toHaveLength(5)
+    expect(local.sqlite.prepare("SELECT state, actual_micro_usd, estimate_micro_usd FROM ct_ai_usage WHERE id = ?").get(attempt.attemptId))
+      .toMatchObject({ state: 'unknown', actual_micro_usd: null, estimate_micro_usd: originalReservation.estimate_micro_usd })
+    expect(local.sqlite.prepare('SELECT payload FROM ct_ai_artifacts WHERE id = ?').get(saved.artifactId)).toEqual(originalRaw)
+    const old = await store.getArtifact(job!.executionId, saved.artifactId)
+    expect(old!.payload).toEqual(oldRawPayload)
   })
 
 
@@ -1396,10 +1465,7 @@ describe('evidence API 與實際 SQLite 工作流', () => {
 
   it('爭點 provider 失敗保留其他兩段，失敗空段不冒充 no_findings', async () => {
     aiRun = async (modelName, input) => {
-      if (modelName === '@cf/openai/gpt-oss-120b') {
-        const messages = object(input).messages as Array<{ role: string; content: string }>
-        if (JSON.parse(messages.find(item => item.role === 'user')!.content).section === 'disputes') throw new Error('private-provider-failure')
-      }
+      if (generationPayload(modelName, input)?.section === 'disputes') throw new Error('private-provider-failure')
       return model(modelName, input)
     }
     auth.current = user('owner')
@@ -1456,15 +1522,14 @@ describe('evidence API 與實際 SQLite 工作流', () => {
   it.each(['zh-TW', 'en', 'ja'] as const)('三段皆無內容以 %s 狀態文字呈現，不呼叫補完或建立引用', async language => {
     aiRun = async (modelName, input) => {
       const response = await model(modelName, input)
-      if (modelName !== '@cf/openai/gpt-oss-120b') return response
-      const messages = object(input).messages as Array<{ role: string; content: string }>
-      const body = JSON.parse(messages.find(item => item.role === 'user')!.content)
+      const body = generationPayload(modelName, input)
+      if (!body) return response
       const data = body.section === 'consensus'
-        ? { Overview: null, items: [], rejected_candidates: body.comparison.consensus_groups.map((group: { candidate_id: string }) => ({ candidate_id: group.candidate_id, reason: 'no_shared_proposition' })) }
+        ? { Overview: null, items: [], rejected_candidates: (object(body.comparison).consensus_groups as Array<{ candidate_id: string }>).map(group => ({ candidate_id: group.candidate_id, reason: 'no_shared_proposition' })) }
         : body.section === 'positions'
-          ? { Overview: null, items: [], exclusions: body.evidence.map((item: { id: string }) => ({ evidence_id: item.id, reason: 'insufficient_attribution' })) }
+          ? { Overview: null, items: [], exclusions: (body.evidence as Array<{ id: string }>).map(item => ({ evidence_id: item.id, reason: 'insufficient_attribution' })) }
           : { Overview: null, items: [] }
-      object(object((object(response).choices as unknown[])[0]).message).content = JSON.stringify(data)
+      responseMessage(response).content = JSON.stringify(data)
       return response
     }
     auth.current = user('owner')
@@ -1520,10 +1585,7 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     const { promise: waiting, resolve: release } = Promise.withResolvers<void>()
     const { promise: called, resolve: started } = Promise.withResolvers<void>()
     aiRun = async (modelName, input) => {
-      if (modelName === '@cf/openai/gpt-oss-120b') {
-        const messages = object(input).messages as Array<{ role: string; content: string }>
-        if (JSON.parse(messages.find(item => item.role === 'user')!.content).section === 'disputes') { started(); await waiting }
-      }
+      if (generationPayload(modelName, input)?.section === 'disputes') { started(); await waiting }
       return model(modelName, input)
     }
     auth.current = user('owner')
@@ -1546,10 +1608,9 @@ describe('evidence API 與實際 SQLite 工作流', () => {
   it('已保存共識後來源清除，後段回應與成功分項均不可復活', async () => {
     let generationCalls = 0
     aiRun = async (modelName, input) => {
-      if (modelName === '@cf/openai/gpt-oss-120b') {
+      if (modelName === GENERATION_MODEL) {
         generationCalls++
-        const messages = object(input).messages as Array<{ role: string; content: string }>
-        if (JSON.parse(messages.find(item => item.role === 'user')!.content).section === 'disputes') {
+        if (generationPayload(modelName, input)?.section === 'disputes') {
           await new EvidenceStore(local.asD1()).eraseSource({ namespace: SOURCE_NAMESPACE, kind: 'material', id: 2, reason: 'request' })
         }
       }
@@ -1657,20 +1718,21 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     const rawPayload = object(raw!.payload)
     expect(rawPayload.response).toEqual(nativeResponse)
     const request = object(rawPayload.request)
-    const requestBody = generationPayload('@cf/openai/gpt-oss-120b', request)!
+    const requestBody = generationPayload(GENERATION_MODEL, request)!
     expect(requestBody).toMatchObject({ operation: 'fill_missing_fields', targets: plan.targets })
     expect(JSON.parse(String(responseMessage(rawPayload.response).content))).toMatchObject({ base_hash: requestBody.base_hash })
     expect(JSON.stringify(request)).not.toContain('private-author')
     expect(JSON.stringify(stepOutputs)).not.toContain('補完欄位。')
     expect(JSON.stringify(stepOutputs)).not.toContain('支持再生能源')
+    expect(request.max_completion_tokens).toBe(8192)
     const inputBound = new TextEncoder().encode(JSON.stringify(request)).byteLength * 4 + 4096
-    const estimate = Math.ceil((inputBound * 35 + Number(request.max_tokens) * 75) / 100)
+    const estimate = Math.ceil((inputBound * 10 + Number(request.max_completion_tokens) * 30) / 100)
     expect(local.sqlite.prepare("SELECT state, estimate_micro_usd, actual_micro_usd FROM ct_ai_usage WHERE step_key = 'complete:draft'").get())
-      .toMatchObject({ state: 'settled', estimate_micro_usd: estimate, actual_micro_usd: 130 })
+      .toMatchObject({ state: 'settled', estimate_micro_usd: estimate, actual_micro_usd: 44 })
     expect(detail.usage).toMatchObject({ attempts: 7, uncertain: 0 })
     expect(recordedRequests).toHaveLength(7)
     expect(local.sqlite.prepare('SELECT consent_version FROM ct_ai_jobs WHERE id = ?').get(created.job_id))
-      .toMatchObject({ consent_version: 'evidence-processing-2026-11-02-v3' })
+      .toMatchObject({ consent_version: 'evidence-processing-2026-11-04-v4' })
     expect(await (await send('POST', '/api/issues/7/evidence-jobs', { consent: true })).json()).toMatchObject({ job_id: created.job_id, cache: 'hit' })
     expect(local.sqlite.prepare('SELECT COUNT(*) AS n FROM ct_ai_executions').get()).toMatchObject({ n: 1 })
     expect(local.sqlite.prepare('SELECT COUNT(*) AS n FROM ct_ai_jobs').get()).toMatchObject({ n: 1 })
@@ -1895,6 +1957,9 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     const attempt = local.sqlite.prepare("SELECT state, estimate_micro_usd, actual_micro_usd FROM ct_ai_usage WHERE step_key = 'complete:draft'").get() as { state: string; estimate_micro_usd: number; actual_micro_usd: number | null }
     expect(attempt).toMatchObject({ state: 'unknown', actual_micro_usd: null })
     expect(object(detail.usage).reservedMicroUsd).toBe(attempt.estimate_micro_usd)
+    expect(await runEvidenceWorkflow(env, created.job_id, testStep())).toEqual({ status: 'ai_draft' })
+    expect(recordedRequests).toHaveLength(7)
+    expect(local.sqlite.prepare("SELECT state, estimate_micro_usd, actual_micro_usd FROM ct_ai_usage WHERE step_key = 'complete:draft'").all()).toEqual([attempt])
   })
 
   it.each(['plan-completion', 'complete-draft', 'validate-completion'])('%s 工件已存但 checkpoint 遺失時重放復用，不重付或重做驗證結果', async pausedStep => {

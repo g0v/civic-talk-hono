@@ -169,14 +169,14 @@ vp run dev
 
 ## #183 隔離本機證據實驗：真實議題驗收手冊
 
-**目前管線：** Clairic 逐素材抽取 → Clef 四分類比較 → GPT-OSS-120B 依序執行共識、爭點、立場地圖三項生成 → 必要時單輪「只補缺值」→ 驗證組裝。三項使用同一份完整已驗證證據及必要關係投影，不串接前項摘要；一般站與 BYO token 不變。Clairic 為 `claims-list-v3`，Clef 為 `symmetric-four-way-v2`；生成 primary prompt／schema／input 為 `specialized-evidence-v6`／`specialized-cited-v4`／`section-values-v4`，補完為 `missing-fields-only-v2`／`cited-field-patches-v1`。本輪依使用者裁示取代原 Gemma，加入共識短候選 ID／動態 enum 與爭點問題去重，不以 items 數量判定品質；控制政策仍為 `bounded-generation-handoffs-v2`。先前 GPT-OSS 凍結輸入實測與本次修正版的驗證分開記錄於 `Insight.md`，不將舊 probe 冒充新契約的語義驗收。舊工作不會自動換版回填；下一次驗收先重啟 opt-in server，再建立新設定工作，不重用舊 JOB_ID 當作新版結果。
+**目前管線：** Clairic 逐素材抽取 → Clef 四分類比較 → Gemma 4 26B A4B（`@cf/google/gemma-4-26b-a4b-it`）依序執行共識、爭點、立場地圖三項生成 → 必要時單輪「只補缺值」→ 驗證組裝。三項使用同一份完整已驗證證據及必要關係投影，不串接前項摘要；一般站與 BYO token 不變。Clairic 為 `claims-list-v3`，Clef 為 `symmetric-four-way-v2`；生成 primary prompt／schema／input 為 `specialized-evidence-v7`／`specialized-cited-v4`／`section-values-v6-gemma-chat`，補完為 `missing-fields-only-v3`／`cited-field-patches-v1`，回應政策為 `gemma-chat-stop-json-v3`。共識保留短候選 ID／動態 enum 與嚴格守門，爭點按有引用的問題整理及去重，不以 items 數量判定品質；控制政策仍為 `bounded-generation-handoffs-v2`。歷史 GPT-OSS Chat／Responses probe 與本次 Gemma 契約分開記錄於 `Insight.md`，不將舊 probe 冒充新版驗收。舊工作不會自動換版回填；下一次驗收須由使用者先重啟 opt-in server，再建立新設定工作並使用新的 JOB_ID，不重用舊 JOB_ID 當作新版結果。
 
 
 本節是操作步驟，不代表未執行的 runtime／OAuth／模型／人工品質案例已通過。實驗 API 只會在明確 opt-in 的專用本機 remote-dev 入口註冊；`DB`、Workflow 與工件留在本機隔離目錄，`SOURCE_DB` 連遠端業務 D1、程式只用來源 SELECT，`DB_AUTH` 僅供 Better Auth 正常 OAuth／session 生命週期（此為唯一預期遠端 auth 寫入），`AI` 使用平台 Cloudflare Workers AI。遠端 D1 binding 並非資料庫唯讀 credential；不得對 `SOURCE_DB` 執行任何寫入或 migration，也不得對 `DB_AUTH` 建表、migration 或直接 SQL 寫入。
 
-一般志願者內容生成維持 BYO AI token 與既有 synthesis prompt API；實驗不寫入既有 briefing、不改議題狀態、不自動發布。Workers AI 由平台帳號計費；三項後若必要欄位仍缺值，最多另付一次 GPT-OSS-120B 補完費，沒有缺值就不呼叫。[官方單價](https://developers.cloudflare.com/workers-ai/models/gpt-oss-120b/)為每百萬 input／output tokens US$0.35／0.75；實際 token 數可能因模型推理與輸出而增加，不能只用相同 token 的單價倍數估實際費用。補完也受同一工作／日額度、預留及未知費用政策約束，US$5／日不是 Cloudflare 帳單硬上限。處理告知版本為 `evidence-processing-2026-11-02-v3`，請先確認同意新版模型及條件式補完成本。
+一般志願者內容生成維持 BYO AI token 與既有 synthesis prompt API；實驗不寫入既有 briefing、不改議題狀態、不自動發布。Workers AI 由平台帳號計費；三項後若必要欄位仍缺值，最多另付一次 Gemma 補完費，沒有缺值就不呼叫。[Gemma 官方單價](https://developers.cloudflare.com/workers-ai/models/gemma-4-26b-a4b-it/)為每百萬 input／output tokens US$0.10／0.30；實際 token 數可能因輸出而增加，不能只用相同 token 的單價倍數估實際費用。補完也受同一工作／日額度、預留及未知費用政策約束，US$5／日不是 Cloudflare 帳單硬上限。因生成模型改變，處理告知版本更新為 `evidence-processing-2026-11-04-v4`；每個新工作仍須明確同意。
 
-**狀態：INITIAL DRAFT AWAITING REAL SMOKE/ACCEPTANCE；不可合併。** 真實 OAuth、付費三模型流程及獨立人工語義品質尚未驗收；自動測試與合成 smoke 不能替代它們。按下列編號手冊操作前，先由人工確認此分支、費用、來源與隱私風險；本草稿也尚未解決一般 migration 目錄的誤用風險。
+**狀態：INITIAL DRAFT AWAITING REAL SMOKE/ACCEPTANCE；不可合併。** 此次 Gemma 切換的離線檢查與合成 provider 的實際 runner／SQLite 六情境 smoke 已通過；尚無本次新契約的付費 probe 或完整真實 Gemma 實驗。先前兩次合成文字真實 Responses API probe 使用的是 GPT-OSS，只確認該模型的小型回應／schema enum 契約，不能證明 Gemma 行為，也不是三素材流程或人工語義品質驗收。完整真實流程／OAuth 與語義驗收仍待分別執行。按下列編號手冊操作前，先由人工確認此分支、費用、來源與隱私風險；本草稿也尚未解決一般 migration 目錄的誤用風險。
 
 執行本手冊需 `vp`、`curl`、`jq`，以及原生 Node.js `>=22.18`（建議 Node 24 LTS）：`scripts/evidence-maintenance.mjs` 直接匯入 `src/ai/store.ts` 並使用 `node:sqlite`，需要 Node 原生 TypeScript／SQLite 支援。此環境觀察到 `node --version` 為 `v26.13.0`、`vp --version` 為 `vp v1.4.0`、`jq --version` 輸出 `jaq 3.1.1`、`curl --version` 為 `8.7.1`；這是本機 CLI 版本紀錄，不代表曾以其他 Node 版本測試維護 CLI。
 
@@ -248,7 +248,7 @@ vp exec wrangler d1 execute SOURCE_DB --remote --config wrangler.ai-experiment.j
 
 先前兩素材唯讀檢查回報：議題 13 為 `published`、素材 25／26 屬於該議題且 `abuse_flagged = 0`，UTF-8 正文長度分別 339／449 bytes；查詢未讀取正文，Wrangler 回報 `rows_written: 0`、`changed_db: false`。這份歷史紀錄不包含素材 27，不能當成三素材的當前查核證據。每次實驗前仍須以上方查詢逐一核對 25／26／27；若議題或素材已變更／撤下，就記錄差異並停止，不修改正式來源、不悄悄替換素材。
 
-專用命令會先跑 production prebuild；本次已在來源凍結後成功執行，證據見第 8 節。若後續再改動任何 source／untracked 檔，重跑前仍須確認全部變更已凍結：
+專用命令會先跑 production prebuild；第 8 節記錄的是先前版本來源凍結後的建置，不代表此次 Gemma 切換已驗證。啟動前須確認全部 source／untracked 變更已凍結，並完成本版應有的建置檢查：
 
 啟動前先檢查 5173 的 IPv4／IPv6 loopback listener：
 
@@ -409,7 +409,7 @@ jq '{job_id, status, cache, input_coverage}' "$POST_JSON"
 
 `consent:true` 是每個工作的必要明確同意。新工作預期 `202`／`cache:"miss"`；同一進行中工作可能是 `202`／`cache:"joined"`；完成快取是 `200`／`cache:"hit"`。同設定的既有失敗工作則可能直接回 `200`／`cache:"joined"`／`status:"failed"`，這不是新一次執行，也沒有因此新增模型嘗試；不要繼續輪詢等它自行成功。先按第 7 節讀失敗原因，不刪快取、不改語言或清空隔離 DB 繞過去重。
 
-若已修正失敗原因並更新受版本管理的模型輸入／設定，待既有工作終止後重啟專用開發入口，確認載入新版，再原樣送出 POST；新設定會得到不同 input key，通過來源、冷卻、配額與預算檢查後才建立新工作。重啟本身不會清除失敗紀錄，也不會把相同設定變成新工作；新的完整管線仍可能付費，舊結果、已發生費用與 unknown 預留均保留。
+若已修正失敗原因並更新受版本管理的模型輸入／設定，待既有工作終止後，**由使用者**重啟自己啟動的 opt-in 專用開發入口，確認載入新版，再原樣送出 POST；新設定會得到不同 input key，通過來源、冷卻、配額與預算檢查後才建立新工作。驗收新版須確認回傳新的 JOB_ID，後續 GET／審閱使用該 ID，不能把舊 JOB_ID 的結果當成新版。重啟本身不會清除失敗紀錄，也不會把相同設定變成新工作；新的完整管線仍可能付費，舊工作／快取、已發生費用與 unknown 預留均保留，不因驗收刪除或增加模型重試。
 
 對實際 job ID 以兩秒間隔最多輪詢 30 次；GET 的進度以 JSON `status` 判斷，停止等待不會取消已送出的模型呼叫：
 
@@ -559,15 +559,17 @@ Clairic 抽取提示 `claims-list-v3` 改為「核心主張優先」：先讀全
 
 **一個核心主張不一定只需一段證據。** 1～3 是主張選取方向，不是 list 長度上下限；程式不截前三筆，必要條件、歸屬或例外可由多段原文支持。仍維持一素材一個 state、一次呼叫、單一原文 list，每筆為連續 exact span，按原文順序返回，再由程式擴展完整句子；不改寫、不摘要、不拼接不相鄰文字，沒有實質明示主張或必要例外就接受 null，不從沉默推論，也不預先指定應產生何種共識。
 
-本輪不改抽取策略、Clairic／Clef 呼叫數或全工作 64 段證據上限；生成依下列 GPT-OSS 契約執行。新版實際模型、請求、提示與 schema 納入設定指紋，不重用舊提示的執行快取、不自動重跑或覆寫舊結果；付費實驗仍須明確同意。
+本輪不改抽取策略、Clairic／Clef 呼叫數或全工作 64 段證據上限；生成依下列 Gemma 契約執行。新版實際模型、請求、提示與 schema 納入設定指紋，不重用舊提示的執行快取、不自動重跑或覆寫舊結果；付費實驗仍須明確同意。
 
-三項與單輪補完均使用固定 `@cf/openai/gpt-oss-120b`，原生參數為 `messages`、`max_tokens:8192`、`temperature:0.2`、`response_format:{type:"json_schema",json_schema:<schema物件>}`；不再送 Gemma 的 `chat_template_kwargs.enable_thinking:false`。每項提供適用的 schema，provider 不支援的 `uniqueItems` 不送出，但程式仍嚴格拒絕重複證據 ID。原生結構化輸出有助格式約束，不證明引用蘊含或整理品質；每項仍獨立預留完整 schema 請求及最大輸出成本、保存回應並驗證。截斷、拒答、工具呼叫、非法 JSON 或引用不符只拒收該項，不修補、不自動重試。用量採 provider 回報的原生 prompt／completion tokens，不另加 message 的重複 reasoning 字串；缺失或異常仍保留未知費用。原生完成可省略 refusal 或回傳 null，明示非 null 仍拒絕。
+三項與單輪補完均使用固定 `@cf/google/gemma-4-26b-a4b-it` 的原生 Chat Completions：`messages` 依序為 system prompt 與 `JSON.stringify` 的原有 user payload，另送 `max_completion_tokens:8192`、`temperature:0.2`、`chat_template_kwargs:{enable_thinking:false}`、`stream:false` 與 `response_format:{type:"json_schema",json_schema:{name,strict:true,schema}}`；schema 名稱分別為 `evidence_consensus`、`evidence_disputes`、`evidence_positions`、`evidence_completion`。共識 schema 內仍有本輪 C ID 動態 enum；不送 `uniqueItems`，程式仍嚴格拒絕重複證據 ID。每項獨立預留完整 schema 請求及最大輸出成本、保存原始回應並驗證。[官方 Gemma 模型頁](https://developers.cloudflare.com/workers-ai/models/gemma-4-26b-a4b-it/)列出 `response_format`；本機已安裝的 Cloudflare Workers AI 型別中 Gemma 繼承 `ChatCompletionsInput`，`ResponseFormatJSONSchema` 指定上述具名 wrapper。文件及型別不等於已實測 provider 保證遵循 schema，更不證明引用蘊含或整理品質。
 
-**完整單一外框例外（使用者已核准）：** 除原始 JSON 外，也接受整份回應恰好是單一三反引號 code fence，語言標記僅可省略或為小寫 `json`；開閉符各自獨立一行，可有外側空白與 CRLF。程式只拆外框，裡面仍須是完整合法 JSON 並通過原 schema／引用守門。前後說明、多個或未閉合外框、其他語言標記、JSON 尾逗號及相連多份 JSON 一律拒絕，不從混雜文字猜取片段。原始回應保持不變；解析政策 `plain-or-single-json-fence-v1` 納入設定與 context 指紋。
+解析只接受有字串 `model`、恰一個 `choices` 且其 `index:0`、`finish_reason:"stop"` 的 Chat completion；其 message 必須為 assistant 且 `content` 是字串。拒絕缺少完成狀態、截斷／其他完成原因、拒答、工具呼叫、非字串內容、非法 JSON 或引用不符；忽略 `reasoning`／`reasoning_content`，不拿思考文字當答案、不掃描或裁切、不修補、不退回 Responses 或其他模型，也不自動重試。用量以 `prompt_tokens`／`completion_tokens` 為主；若提供別名或 total，必須有效一致；推理 token 已含在 completion，不另重複計價，缺失或異常仍保留未知費用。
+
+**完整單一外框例外（使用者已核准）：** 除原始 JSON 外，也接受整份回應恰好是單一三反引號 code fence，語言標記僅可省略或為小寫 `json`；開閉符各自獨立一行，可有外側空白與 CRLF。程式只拆外框，裡面仍須是完整合法 JSON 並通過原 schema／引用守門。前後說明、多個或未閉合外框、其他語言標記、JSON 尾逗號及相連多份 JSON 一律拒絕，不從混雜文字猜取片段。原始回應保持不變；回應政策 `gemma-chat-stop-json-v3` 納入設定與 context 指紋，既有外框規則不變。
 
 三項的整理責任與診斷如下；它們不是把原本的大型請求重送三遍：
 
-共識與爭點先檢視所有獨立、有證據支持的命題／問題，不設約三項或其他筆數目標。相同問題的多筆統計、證據配對與條件相近的敘述，應合併逐側佐證，不拆成多項充數；真正不同的問題及必要條件仍保留。零項、一項或更多項都可合法，items 是共同命題／爭點，不是佐證筆數。共識每個子命題仍須由各參與來源實質支持，不能把風險與市場復甦、風險與技能建議直接並成共同立場；整體需求與特定族群的取代風險也可能並存，不自動視為矛盾。
+共識與爭點先檢視所有獨立、有證據支持的命題／問題，不設約三項或其他筆數目標。相同問題的多筆統計、證據配對與條件相近的敘述，應合併逐側佐證，不拆成多項充數；真正不同的問題及必要條件仍保留。零項、一項或更多項都可合法，items 是共同命題／爭點，不是佐證筆數。共識每個參與來源都須提供支持該項共同基礎的正面證據；風險與不相關的需求回升或技能建議不能直接並成共同立場。整體需求與特定族群的取代風險也可能並存，不自動視為矛盾。
 
 |專項|生成與驗證重點|本機審閱位置|
 |---|---|---|
@@ -577,15 +579,17 @@ Clairic 抽取提示 `claims-list-v3` 改為「核心主張優先」：先讀全
 
 共識模型輸入／輸出只用短 `candidate_id`，例如 `C1`～`C6`：程式依 canonical ID 排序後編號，以動態 schema enum 同時限制 adopted items 與 rejected_candidates，空候選時兩清單都必須為空。解析只接受本輪精確短 ID，不能輸出 evidence ID、canonical 長字串或自行改寫；不猜測還原、不修補。診斷 `candidate_map:[{candidate_id,canonical_id}]` 保留對照，adopted／rejected 的 candidate_id 仍記 canonical ID；每候選須採用或附理由拒絕，不可重複拒絕或同時採用與拒絕。同一候選可支持不同獨立命題，完全相同的項目仍拒收。爭點原生 item 新增有引用的 `question`，只保存在診斷，對外 data.items 仍是 Title／description；正規化空白與大小寫後的同問題拒收，不能靠改標題、分類或增刪佐證重複列出。這不是語義判官，換句話說的近似重複仍須人工檢查。立場沿用 `{group_id,name,Core_concern,opinions}`，程式從 opinions 引用推導成員、Sources 及覆蓋；引用越界、direct disagree 同群或漏納入／排除仍拒收。公開 data／citation pointers 不變，舊 raw 不轉換或覆寫，checkpoint 不帶正文。
 
+立場群名與 Core_concern 仍只能引用該群 opinions 的 Title／description 已引用成員；這次只切換模型與傳輸，未批准或實作放寬 context citation，也沒有新增共識來源支持矩陣。先前模型引用額外背景證據而不在 opinions 建立成員的問題因此仍可能重現；換模型不等於修好此守門衝突。
+
 **共識共同基礎分層：** 原生項目必填 `kind`，對外分類僅呈現在 `.diagnostics.generation.sections.consensus.details.adopted[]`，新輸出的 `classification_source` 由程式固定為 `generation_proposal`，不是新的 Clef 正式判斷；舊工件的歷史標記不回填。回應 `data.consensus.items` 維持 `{Title,description}`，人改 API 與 citation pointers 不變。
 
 |kind|人工審閱判準|
 |---|---|
 |`shared_fact`|各參與素材明示或報告同一事實命題，條件可對照；不表示平台已獨立查證事實為真。|
-|`shared_challenge`|各參與素材明示承認同一具體問題或限制；解法可不同，不冒充共同贊同某個方案。|
+|`shared_challenge`|各來源的正面相關證據即使措辭或觀點不同，也可有據綜整出較窄的同一具體挑戰或限制；不能從沉默推論，僅有共同話題不夠。風險與建議只有在建議確實回應同一挑戰時才能支持這種窄化的挑戰，不冒充共同贊同某個方案。|
 |`shared_position`|各參與素材支持同一判斷、立場或建議；一般相容、共同話題或互補解法不等於共同主張。|
 
-三型都仍受既有 Clef 候選及其有效子集限制。提示先逐來源找出可支持的交集，再寫單一共同點；不把問句當答案、轉述當作者認可，或把單一來源建議與另一來源風險併成共同立場。Overview 只概括採用項目的共同基礎及範圍，不將共享事實／挑戰升格成共同解法。
+三型都仍受既有跨素材直接 agree 的 Clef 候選及其有效子集限制，至少涵蓋兩份素材；保留各來源條件與轉述歸屬。`shared_fact`／`shared_position` 仍須逐來源支持明示的同一命題，只有 `shared_challenge` 可依正面相關引文綜整具體共同挑戰；不把問句當答案、轉述當作者認可，或把單一來源建議與另一來源風險併成共同立場。Overview 只概括採用項目的共同基礎及範圍，不將共享事實／挑戰升格成共同解法。
 
 **保留宣告、加強模型自檢，不改為程式修剪：** 項目 `evidence_ids` 必須等於 Title／description 實際引用的聯集，每個宣告來源也須出現在 description 引用；不能整組照抄候選成員後漏引，也不能靠裝飾性引文湊來源。漏引、未知／候選外引用或不足兩素材仍使該分項失敗，不自動刪 ID、改寫或再呼叫模型修復。分類不豁免既有守門，也不以不同分類重複列出同一命題湊數；格式／引用驗證不證明語義支持。
 
@@ -607,9 +611,9 @@ jq '
 
 primary 非 null 的 Overview／Core_concern 仍須用句子物件陣列，例如 `[{"text":"單句概述","evidence_ids":["既有證據ID"]}]`；單句也不能省略陣列。空 items 的 primary Overview 仍須 null，不允許模型為空清單編造概述；最終改由程式依 no_findings／failed／not_started 填入明確狀態文字，透過 `.diagnostics.generation.status_overviews` 的 `origin:"program"`／`kind:"status"` 標示，沒有虛假 citation，也不代表素材不存在相關觀點。
 
-有內容的 Overview 或 Core_concern 仍為 null 時，程式保存不可改的 base hash 與精確指標／證據白名單，最多增加一次 GPT-OSS-120B 補完。回應僅為 `{base_hash,fills:[{pointer,sentences:[{text,evidence_ids}]}]}`，不允許整份 data 重寫。未知／重複／缺漏指標、已有值覆寫、額外欄位、錯 base、空值或錯群／缺引用全部拒收；所有 patch 驗完才套用，既有文字、來源、順序與引用保持原樣，只為新值附加計算後的 citation ranges。
+有內容的 Overview 或 Core_concern 仍為 null 時，程式保存不可改的 base hash 與精確指標／證據白名單，最多增加一次 Gemma 補完。回應僅為 `{base_hash,fills:[{pointer,sentences:[{text,evidence_ids}]}]}`，不允許整份 data 重寫。未知／重複／缺漏指標、已有值覆寫、額外欄位、錯 base、空值或錯群／缺引用全部拒收；所有 patch 驗完才套用，既有文字、來源、順序與引用保持原樣，只為新值附加計算後的 citation ranges。
 
-補完 `/consensus/Overview` 時，另提供唯讀 `consensus_items:[{pointer,kind,evidence_ids}]`，分類取自已驗證分項的 adopted，與原項目索引／引用一致並納入計畫 base hash。提示要求保留各項類型、條件與來源範圍，不將共享事實／挑戰升格成共同解法、不新增共同立場；分類不寫入 data。只有共識概述是目標時才送這份投影，其他補完不額外傳入。補完提示為 `missing-fields-only-v2`，計畫政策為 `required-fields-exact-cited-patches-v2`；patch 回應 schema／最多單輪呼叫不變，引用驗證仍不等於程式能證明概述語義正確。
+補完 `/consensus/Overview` 時，另提供唯讀 `consensus_items:[{pointer,kind,evidence_ids}]`，分類取自已驗證分項的 adopted，與原項目索引／引用一致並納入計畫 base hash。提示要求保留各項類型、條件與來源範圍，區分逐來源明示支持的共享事實／立場與有據綜整的共同挑戰，不將共享事實／挑戰升格成共同解法、不新增共同立場；分類不寫入 data。只有共識概述是目標時才送這份投影，其他補完不額外傳入。補完提示為 `missing-fields-only-v3`，計畫政策為 `required-fields-exact-cited-patches-v2`；patch 回應 schema／最多單輪呼叫不變，引用驗證仍不等於程式能證明概述語義正確。
 
 沒有缺值時 `.diagnostics.generation.completion.status` 為 `not_needed`，不啟動補完模型。有缺值卻因 provider／schema／引用／context／預算失敗，工作會 failed、不交付仍缺必填的 data，但保留可用分項工件及費用；不再補第五次或重試。補完完成的 status 為 `completed`，診斷含 targets、原始與驗證工件 ID；機器進度另看 `.generation_progress.completion`，原 `.generation_progress.sections` 仍只有三個專項。
 
@@ -633,7 +637,7 @@ Clef、三份 primary 與補完 prompt／schema、組裝政策、三語狀態文
 
 若長時間顯示 `generating section=disputes`，不能只據此推斷生成模型還在運算：原始回應與驗證可能已完成，卡的是完成事件銜接。先檢查已保存的 raw／分項狀態、attempt 結算及原生 step 紀錄，不要直接重送 POST。控制政策及實際 step 選項已納入設定指紋；改版後舊在途工作不會靜默接著用新設定付費執行，舊結果與帳本不清除。
 
-生成輸入政策 `section-values-v4`：每個專項都收到全部已驗證證據的 `{id,material_id,quote}`，quote 為完整擴展原文，不截斷、不重寫；raw_quote 仍留在證據工件及 citation map，不重複送模型。共用關係只帶直接／反向的 `{evidence_ids,relation}` 與未完成的 `{evidence_ids,status}`；反向診斷不升格為正式判斷。只有共識收到短候選 `{candidate_id,evidence_ids}`，canonical 對照由程式保留，不把長 ID 送給模型抄寫；只有爭點收到 `{evidence_ids}` 種子，立場不收共識候選或推導路徑。pair key、機率、題目版本、完整路徑及統計仍留本機工件與診斷，程式仍用完整圖驗證，不放寬 48 KiB 守門。輸入精簡與 schema 約束不代表語義或引用品質已驗收。
+生成輸入政策 `section-values-v6-gemma-chat`：每個專項都收到全部已驗證證據的 `{id,material_id,quote}`，quote 為完整擴展原文，不截斷、不重寫；raw_quote 仍留在證據工件及 citation map，不重複送模型。共用關係只帶直接／反向的 `{evidence_ids,relation}` 與未完成的 `{evidence_ids,status}`；反向診斷不升格為正式判斷。只有共識收到短候選 `{candidate_id,evidence_ids}`，canonical 對照由程式保留，不把長 ID 送給模型抄寫；只有爭點收到 `{evidence_ids}` 種子，立場不收共識候選或推導路徑。pair key、機率、題目版本、完整路徑及統計仍留本機工件與診斷，程式仍用完整圖驗證，不放寬 48 KiB 守門。Chat user message 的 JSON 內容保持原有投影；輸入精簡與 schema 約束不代表語義或引用品質已驗收。
 
 `Source.Title` 取自 `ct_materials.source_name`，缺值才用素材 ID；來源表沒有 material title 欄，不以原文預覽或 AI 衍生標題替代。`source_hash` 是固定順序 metadata+content JSON 的 UTF-8 SHA-256，`content_hash` 是原始 content UTF-8 bytes 的 SHA-256；原文不 trim、不正規化。空白正文不會被省略，會以 `422 empty_material` 拒絕。
 
@@ -889,7 +893,7 @@ rm -f "$COOKIE_JAR"
 
 ### 8. 已觀察證據與未知真相
 
-以下是本次環境檢查的去識別紀錄，不是模型品質報告：
+以下保留先前環境與模型實驗的去識別紀錄，不是本次 Gemma 切換的驗證結果，也不是模型品質報告：
 
 | 項目 | 狀態 | 證據／限制 |
 |---|---|---|
@@ -906,10 +910,13 @@ rm -f "$COOKIE_JAR"
 | config 修正後 temporary-port entry smoke | 已執行；不是 OAuth／callback 驗證 | 為避免碰既有 5173 listener，直接 `CIVIC_AI_EXPERIMENT=1 vp dev --mode remote --port 5174`（無 prebuild）於 `http://localhost:5174` ready。匿名 status-only 結果：`GET /` 404、job GET／POST 與 maintenance POST 均 401；無 cookie、body discarded、沒有登入／來源操作／建 job／模型呼叫。此 port 與 `BETTER_AUTH_URL` 不同，不驗證 OAuth callback。自有 PID 84596 已停止。log／status／HTTP：`.wrangler/ai-experiment/verification/entry-load-5174.log`、`entry-load-5174-status.json`、`entry-load-5174-smoke.json` |
 | host 修正前的 IPv4 entry／官方 smoke 與 HEAD | 保留為舊配置的 no-login 證據，不代表 canonical origin | 本次環境整合檢查依 `lsof` 與 loopback 結果發現既有 `[::1]:5173` listener 與舊 IPv4 bind 的 origin mismatch；先前 remote Worker 綁 `127.0.0.1:5173` 並用 `curl --resolve` 強制 IPv4，root 404、匿名 job／maintenance 401，dotenv HEAD 路徑均 403。這些 forced-IPv4 smoke **不能證明**瀏覽器 canonical `localhost` 命中實驗 Worker，也不驗 OAuth callback。舊 log／status／HTTP：`.wrangler/ai-experiment/verification/experimental-dev.log`、`experimental-no-login-smoke.json`、`experimental-dev-head-final.log`、`experimental-dotenv-head-final.json`；沒有 response body 或登入 session |
 | `.dev.vars` 靜態路徑／權限檢查 | 只查 public ASSETS 路徑與檔名／mode；未讀內容 | `dist/civic_talk/wrangler.json` 的 `assets.directory` 解析為 `dist/client`；`dist/civic_talk/.dev.vars` 位於 ASSETS 之外，mode 644 且由 `.gitignore:2 dist` 忽略；`dist/client/.dev.vars` 不存在。這不證明 Worker bundle／deploy package 是否包含它；未刪除／改權限／部署 |
-| 真實 OAuth／Workers AI 呼叫與費用 | 使用者本輪已實測至共識／爭點完成；控制修正未重跑真實模型 | 使用者三素材工作已有兩段驗證工件，但銜接停滯，不能當作整輪完成。歷史失敗、usage 與修正見 `Insight.md`；本次控制流程只用合成 provider，不新增真實推論費，亦不冒充 OAuth 或語義驗收 |
-| 人工語義品質 | 舊版已發現問題；新版待驗收 | 使用者指出共識混入歧見、爭點遺漏及立場逐條枚舉。新版有離線校準工具，但尚無獨立真人 gold labels 或新版品質成績；不能將合成案例當作人工標準答案 |
-| 新版 SQLite／HTTP 管線 smoke | 已執行；合成 provider | 獨立 loopback 腳本執行實際 runner／SQLite：完整工作 `ai_draft`、單項中斷 `partial_draft`、生成途中清除 `erased` 均回 HTTP 200；三項依序呼叫、成功／partial 重入不新增付費嘗試、來源 fixture 未改。不是原生 Workflow 重啟或真實 provider／OAuth 驗收，臨時腳本已移除 |
-| 原生 Workerd／Workflow 銜接保護 | 八種隔離情境通過；合成 provider | 驗證正常完成、首次 timeout 後重試、四次耗盡、清理耗盡、寫入後回應遺失、native checkpoint restart、暖起的實際 Hono GET 終態對帳，以及真正懸置 I/O 約 30 秒後的 timeout／重試。工件、結算與完成事件去重保留，模型不重付；外部網路封鎖，沒有真實 AI／OAuth，臨時 harness 已移除 |
+| 真實三素材工作／Workers AI | 歷史紀錄；本版待驗收 | 使用者前次三素材工作已有共識／爭點驗證工件，但銜接停滯，不能當作整輪完成。後續 GPT-OSS 舊契約工作中，共識結構有效但所有候選遭泛化拒絕而 `no_findings`；立場達輸出上限並重複 analysis 文字，被當作不完整回應拒收。歷史結果與費用見 `Insight.md`，不代表新版品質通過 |
+| 歷史 GPT-OSS Responses API 輸入契約 probe | 已執行兩次有授權的真實付費呼叫；僅合成文字、非 Gemma | 隔離 AI-only probe 以合成文字、`max_output_tokens:512` 和 low reasoning 確認 GPT-OSS 原生 completed 最終輸出及 `text.format` JSON Schema enum；沒有重試。兩次分別回報 input／output 88／24 與 87／74 tokens，按當時價目精算共 US$0.00013475，依 runner 分項進位為 135 microUSD；均非帳單核對。這不是 Gemma probe 或完整三素材管線，也不保證新版語義品質 |
+| 歷史 GPT-OSS Responses 離線整合檢查 | 已通過；非本次 Gemma 驗證 | 當時 `vp check --no-fmt --no-lint` 通過 158 files、`vp test` 通過 53 test files／558 tests、`vp run build` 成功（仍有既有 client chunk >500 kB 警告）。當時實際 runner／repository／記憶體 SQLite 的四情境通過；provider 與帳號查詢為合成 adapter，未碰遠端 D1。摘要見 `.wrangler/ai-experiment/verification/responses-pipeline-smoke.json` |
+| 此次 Gemma 切換離線整合檢查 | 已通過；合成 provider，非真實模型品質驗收 | 型別檢查通過 158 files、完整測試通過 53 test files／558 tests、production build 成功（既有 client chunk >500 kB 警告仍在）。實際 runner／repository／記憶體 SQLite 六情境通過：正常完成、length 拒收、立場引用範圍守門不變、缺值只補一輪、未知費用、舊 GPT raw 不重算／重打。終態重放零額外呼叫、來源未變、checkpoint 不含正文；摘要為 `.wrangler/ai-experiment/verification/gemma-format-smoke.json`。不等於真實 provider、OAuth 或人工品質驗收 |
+| 人工語義品質 | 舊版已發現問題；本次 Gemma 契約待驗收 | 共識泛化拒絕、爭點遺漏或重複、立場生成未完成及群組 context citation 越界等均須查核。尚無本次 Gemma 契約的獨立真人 gold labels 或品質成績；不能將合成案例當作人工標準答案 |
+| 舊版 SQLite／HTTP 管線 smoke | 已執行；合成 provider，非本版 | 獨立 loopback 腳本執行當時 runner／SQLite：完整工作 `ai_draft`、單項中斷 `partial_draft`、生成途中清除 `erased` 均回 HTTP 200；三項依序呼叫、成功／partial 重入不新增付費嘗試、來源 fixture 未改。不是原生 Workflow 重啟或真實 provider／OAuth 驗收，臨時腳本已移除 |
+| 原生 Workerd／Workflow 銜接保護 | 先前版本八種隔離情境通過；合成 provider | 驗證正常完成、首次 timeout 後重試、四次耗盡、清理耗盡、寫入後回應遺失、native checkpoint restart、暖起的實際 Hono GET 終態對帳，以及真正懸置 I/O 約 30 秒後的 timeout／重試。工件、結算與完成事件去重保留，模型不重付；外部網路封鎖，沒有真實 AI／OAuth，臨時 harness 已移除 |
 
 人工驗收者須另填實際 source／model／prompt／schema／algorithm 版本、工作 ID、hash、來源覆蓋、逐句引用查核、漏失與反例、人工修正、usage／預留／結算及未知項目。沒有真實模型呼叫或真人標註時，對應欄位留作未知，不填預期值；不得把 HTTP 200、JSON parse、unit test、隔離測試 provider 或 fixture 寫成「真實議題人工驗收完成」。Privacy 已依新增揭露更新，`TERMS_VERSION` 未改；一般 BYO prompt 與 synthesis API 保留。
 

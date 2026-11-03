@@ -11,7 +11,7 @@ import { readMaterialStatuses, readSourceInput, sha256, SOURCE_NAMESPACE, Source
 import { EvidenceStore, type ExecutionStatus, type InputManifest } from './store'
 
 export type EvidenceApp = Hono<{ Bindings: EvidenceBindings }>
-const CONSENT_VERSION = 'evidence-processing-2026-11-02-v3'
+const CONSENT_VERSION = 'evidence-processing-2026-11-04-v4'
 const BODY_LIMIT = 256 * 1024
 
 class RequestProblem extends Error {

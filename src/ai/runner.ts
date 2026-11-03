@@ -392,7 +392,7 @@ export async function runEvidenceWorkflow(env: EvidenceBindings, jobId: string, 
         try {
           const request = buildGenerationRequest(section, input)
           plan.requests[section] = request
-          const estimate = estimateCall(request.selector as ModelSelector, request.input, request.input.max_tokens)
+          const estimate = estimateCall(request.selector as ModelSelector, request.input, request.input.max_completion_tokens)
           plan.estimates[section] = estimate
           plan.estimated_micro_usd += estimate
         } catch (error) {
@@ -469,7 +469,7 @@ export async function runEvidenceWorkflow(env: EvidenceBindings, jobId: string, 
           const request = plan.requests[section]
           if (!request) return { status: 'workflow_limit', artifactId: null }
           await save(env, snapshot, 'diagnostics', { stage: 'generation', phase: 'started', section })
-          return paid(env, jobId, `generate:${section}`, () => request, request.input.max_tokens)
+          return paid(env, jobId, `generate:${section}`, () => request, request.input.max_completion_tokens)
         })
         if (generated.status === 'source_unavailable') throw new PipelineStop('source_unavailable')
         if (generated.status === 'budget_exhausted' || generated.status === 'workflow_limit') {
@@ -561,7 +561,7 @@ export async function runEvidenceWorkflow(env: EvidenceBindings, jobId: string, 
           result = await paid(env, jobId, 'complete:draft', async live => {
             const saved = await artifact<CompletionPlanArtifact>(env, live.executionId, completionPlanId)
             return buildCompletionRequest(saved.plan, generationInput(live))
-          }, GENERATION_PARAMETERS.max_tokens)
+          }, GENERATION_PARAMETERS.max_completion_tokens)
         } catch (error) {
           if (error instanceof ModelContextLimitError) {
             await recordLimit(env, jobId, error)

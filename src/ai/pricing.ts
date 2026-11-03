@@ -1,11 +1,11 @@
 import { sha256 } from './source'
 
-/** 2026-11-02 Workers AI 公開價目；不是帳單硬上限。 */
-export const PRICING_VERSION = 'workers-ai-2026-11-02-gpt-oss-120b'
+/** 2026-11-04 Workers AI 公開價目；不是帳單硬上限。 */
+export const PRICING_VERSION = 'workers-ai-2026-11-04-gemma-4-26b-a4b-it'
 export const PRICES = {
   '@cf/cloudflare/clairic': { input: 10, output: 0 },
   '@cf/cloudflare/clef': { input: 24, output: 0 },
-  '@cf/openai/gpt-oss-120b': { input: 35, output: 75 },
+  '@cf/google/gemma-4-26b-a4b-it': { input: 10, output: 30 },
 } as const
 export type ModelSelector = keyof typeof PRICES
 
@@ -45,11 +45,11 @@ export function actualCallCost(selector: ModelSelector, response: unknown): numb
   if (!usage || typeof usage !== 'object') return null
   const u = usage as Record<string, unknown>
   if (['state_tokens', 'image_tokens', 'schema_tokens', 'passes'].some(key => u[key] !== undefined && count(u[key]) === null)) return null
-  const input = selector === '@cf/openai/gpt-oss-120b' ? tokenCount(u, 'prompt_tokens', 'input_tokens') : count(u.input_tokens)
-  const output = selector === '@cf/openai/gpt-oss-120b' ? tokenCount(u, 'completion_tokens', 'output_tokens') : count(u.output_tokens)
+  const input = selector === '@cf/google/gemma-4-26b-a4b-it' ? tokenCount(u, 'prompt_tokens', 'input_tokens') : count(u.input_tokens)
+  const output = selector === '@cf/google/gemma-4-26b-a4b-it' ? tokenCount(u, 'completion_tokens', 'output_tokens') : count(u.output_tokens)
   // 推理 token 已包含在 completion_tokens，不可再重複計費。
   if (input === null || output === null) return null
-  if (selector === '@cf/openai/gpt-oss-120b' && 'total_tokens' in u && count(u.total_tokens) !== input + output) return null
+  if (selector === '@cf/google/gemma-4-26b-a4b-it' && 'total_tokens' in u && count(u.total_tokens) !== input + output) return null
   const price = PRICES[selector]
   if (!Number.isSafeInteger(input * price.input + output * price.output)) return null
   return cost(selector, input, output)

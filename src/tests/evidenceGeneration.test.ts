@@ -9,7 +9,6 @@ import {
   CLEF_MAX_QUESTIONS,
   CLEF_MAX_REQUEST_BYTES,
   ModelContextLimitError,
-  MODEL_SELECTORS,
   modelUsageStatus,
   parseClairicResponse,
   parseClefResponse,
@@ -18,7 +17,6 @@ import {
   assembleGeneratedDraft,
   buildCompletionRequest,
   buildGenerationRequest,
-  GENERATION_COMPLETION_OUTPUT_SCHEMA,
   GENERATION_MAX_REQUEST_BYTES,
   GENERATION_OUTPUT_SCHEMAS,
   GENERATION_SYSTEM_PROMPTS,
@@ -117,12 +115,68 @@ function positionsOutput() {
   }
 }
 
+interface ChatFixture {
+  object: string
+  model: string
+  choices: Array<{ index: number; finish_reason: string; message: { role: string; content: string; refusal: null } }>
+  usage: { prompt_tokens: number; completion_tokens: number }
+}
+
 // 合成回應只檢查結構和邊界，不證明模型的語義品質。
-function completion(content: unknown) {
+function chatText(text: string): ChatFixture {
   return {
-    model: MODEL_SELECTORS.generation,
-    choices: [{ index: 0, finish_reason: 'stop', message: { role: 'assistant', content: JSON.stringify(content), refusal: null } }],
+    object: 'chat.completion',
+    model: 'provider-revision-1',
+    choices: [{ index: 0, finish_reason: 'stop', message: { role: 'assistant', content: text, refusal: null } }],
+    usage: { prompt_tokens: 200, completion_tokens: 80 },
   }
+}
+
+function completion(content: unknown) {
+  return chatText(JSON.stringify(content))
+}
+
+function invalidChatCompletions(native: ChatFixture) {
+  const choice = native.choices[0]
+  const message = choice.message
+  const withChoice = (patch: Record<string, unknown>) => ({ ...native, choices: [{ ...choice, ...patch }] })
+  const withMessage = (patch: Record<string, unknown>) => withChoice({ message: { ...message, ...patch } })
+  return [
+    ...[
+      null,
+      { ...native, model: undefined },
+      { ...native, model: null },
+      { ...native, choices: undefined },
+      { ...native, choices: null },
+      { ...native, choices: [] },
+      { ...native, choices: [choice, structuredClone(choice)] },
+      { ...native, choices: [null] },
+      withChoice({ index: 1 }),
+      withChoice({ index: undefined }),
+    ].map(value => ({ value, code: 'generation_invalid_completion' })),
+    ...[
+      ...[undefined, null, 'length', 'content_filter', 'tool_calls', 'unknown'].map(finish_reason => withChoice({ finish_reason })),
+      { ...native, error: { code: 'server_error' } },
+      { ...native, truncated: true },
+      withChoice({ truncated: true }),
+      withMessage({ truncated: true }),
+    ].map(value => ({ value, code: 'generation_incomplete_completion' })),
+    ...[
+      withChoice({ message: null }),
+      withMessage({ role: 'user' }),
+      withMessage({ content: undefined }),
+      withMessage({ content: null }),
+      withMessage({ content: 123 }),
+      withMessage({ content: { type: 'text', text: message.content } }),
+      withMessage({ content: [{ type: 'text', text: message.content }] }),
+      withMessage({ content: [message.content] }),
+      withMessage({ refusal: 'refused' }),
+      withMessage({ tool_calls: null }),
+      withMessage({ tool_calls: {} }),
+      withMessage({ tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'unexpected', arguments: '{}' } }] }),
+      withMessage({ function_call: { name: 'unexpected', arguments: '{}' } }),
+    ].map(value => ({ value, code: 'generation_refusal_or_invalid_message' })),
+  ]
 }
 
 function validClefAnswer(choice: 'agree' | 'disagree' | 'unrelated' | 'uncertain' = 'agree') {
@@ -250,10 +304,21 @@ describe('生成模型專項輸出與出處', () => {
       for (const secret of ['不能送出的其他原文', '其他秘密', 'https://example.org/a', '"raw_quote"', '"pair_key"', '"question_version"', '"probabilities"', '"provider_diagnostics"', '"candidate_paths"', '"diagnostics"', '"unclassified_evidence_ids"', '"pairs"']) {
         expect(serialized).not.toContain(secret)
       }
-      expect(request.selector).toBe(MODEL_SELECTORS.generation)
-      expect(request.input).toMatchObject({ max_tokens: 8192, temperature: 0.2, response_format: { type: 'json_schema' } })
-      expect(request.input).not.toHaveProperty('chat_template_kwargs')
-      if (section !== 'consensus') expect(request.input.response_format.json_schema).toEqual(GENERATION_OUTPUT_SCHEMAS[section])
+      expect(request.input.messages).toEqual([
+        { role: 'system', content: expect.any(String) },
+        { role: 'user', content: expect.any(String) },
+      ])
+      expect(request.input.messages[0].content.length).toBeGreaterThan(0)
+      expect(request.input).toMatchObject({
+        max_completion_tokens: 8192, temperature: 0.2, chat_template_kwargs: { enable_thinking: false }, stream: false,
+        response_format: {
+          type: 'json_schema',
+          json_schema: {
+            name: `evidence_${section}`, strict: true,
+            schema: { type: 'object', required: expect.arrayContaining(['Overview', 'items']), properties: { items: { type: 'array' } } },
+          },
+        },
+      })
       expect(request.request_bytes).toBeLessThanOrEqual(GENERATION_MAX_REQUEST_BYTES)
     }
     const output = positionsOutput()
@@ -318,7 +383,7 @@ describe('生成模型專項輸出與出處', () => {
     const request = buildGenerationRequest('consensus', multiInput)
     const payload = JSON.parse(request.input.messages[1].content)
     expect(payload.comparison.consensus_groups).toEqual(mapping.map(({ candidate_id, evidence_ids }) => ({ candidate_id, evidence_ids })))
-    const schema = request.input.response_format.json_schema as {
+    const schema = request.input.response_format.json_schema.schema as {
       properties: {
         items: { items: { properties: { candidate_id: { enum: string[] } } } }
         rejected_candidates: { items: { properties: { candidate_id: { enum: string[] } } } }
@@ -347,7 +412,7 @@ describe('生成模型專項輸出與出處', () => {
     }
     const permutedRequest = buildGenerationRequest('consensus', permuted)
     expect(JSON.parse(permutedRequest.input.messages[1].content).comparison.consensus_groups).toEqual(payload.comparison.consensus_groups)
-    expect(permutedRequest.input.response_format).toEqual(request.input.response_format)
+    expect(permutedRequest.input.response_format.json_schema.schema).toEqual(request.input.response_format.json_schema.schema)
     const permutedResult = await parseGenerationResponse('consensus', completion(output), permuted)
     expect(permutedResult.diagnostics).toMatchObject({ candidate_map: result.diagnostics.candidate_map, adopted: result.diagnostics.adopted, rejected_candidates: result.diagnostics.rejected_candidates })
 
@@ -375,7 +440,7 @@ describe('生成模型專項輸出與出處', () => {
   it('無候選時兩個陣列均受空集合限制，不能接受偽造短 ID', async () => {
     const emptyInput: GenerationInput = { ...input, comparison: analyzeComparisons(evidence, []) }
     const request = buildGenerationRequest('consensus', emptyInput)
-    const schema = request.input.response_format.json_schema as {
+    const schema = request.input.response_format.json_schema.schema as {
       properties: {
         items: { maxItems: number; items: { properties: { candidate_id: Record<string, unknown> } } }
         rejected_candidates: { maxItems: number; items: { properties: { candidate_id: Record<string, unknown> } } }
@@ -388,7 +453,7 @@ describe('生成模型專項輸出與出處', () => {
     const empty = { Overview: null, items: [], rejected_candidates: [] }
     const result = await parseGenerationResponse('consensus', completion(empty), emptyInput)
     expect(result.diagnostics).toMatchObject({ candidate_map: [], adopted: [], rejected_candidates: [] })
-    expect(request.input.response_format).not.toEqual(buildGenerationRequest('consensus', input).input.response_format)
+    expect(request.input.response_format.json_schema.schema).not.toEqual(buildGenerationRequest('consensus', input).input.response_format.json_schema.schema)
     const nonempty = await parseGenerationResponse('consensus', completion(consensusOutput()), input)
     expect(result.context_hash).not.toBe(nonempty.context_hash)
     await expect(parseGenerationResponse('consensus', completion({ ...empty, items: consensusOutput().items }), emptyInput)).rejects.toThrow('generation_invalid_candidate')
@@ -467,8 +532,8 @@ describe('生成模型專項輸出與出處', () => {
     await expect(parseGenerationResponse('consensus', completion(forged), input)).rejects.toThrow('generation_invalid_schema')
   })
 
-  it('共享事實與挑戰仍受跨素材候選限制，不能用分類繞過支持範圍', async () => {
-    for (const kind of ['shared_fact', 'shared_challenge']) {
+  it('共識三型仍受跨素材候選限制，不能用分類繞過支持範圍', async () => {
+    for (const kind of ['shared_fact', 'shared_challenge', 'shared_position']) {
       const outside = consensusOutput()
       outside.items[0].kind = kind
       outside.items[0].evidence_ids = ['e1', 'e3']
@@ -821,10 +886,8 @@ describe('生成模型專項輸出與出處', () => {
   it('完整單一 json 外框可解析，保留 CRLF、引用與字串內的反引號，不改寫原回應', async () => {
     const output = positionsOutput()
     output.items[0].opinions[0].description = [cited('文字可提及 ```json，不能因此截斷。', 'e1', 'e2')]
-    const response = completion(output)
-    delete (response.choices[0].message as Record<string, unknown>).refusal
     const wrapped = ` \r\n\`\`\`json\r\n${JSON.stringify(output)}\r\n\`\`\`\t\r\n`
-    response.choices[0].message.content = wrapped
+    const response = chatText(wrapped)
     const result = await parseGenerationResponse('positions', response, input)
     if (result.section !== 'positions') throw new Error('unexpected section')
     expect(result.data.items[0].opinions[0].description).toBe('文字可提及 ```json，不能因此截斷。')
@@ -834,8 +897,7 @@ describe('生成模型專項輸出與出處', () => {
   })
 
   it('無語言標記的完整單一外框可保留合法的空分區', async () => {
-    const response = completion({ Overview: null, items: [] })
-    response.choices[0].message.content = `\`\`\`\n${response.choices[0].message.content}\n\`\`\``
+    const response = chatText(`\`\`\`\n${JSON.stringify({ Overview: null, items: [] })}\n\`\`\``)
     const result = await parseGenerationResponse('disputes', response, input)
     expect(result.data).toEqual({ Overview: null, items: [] })
     expect(result.citation_map).toEqual([])
@@ -853,50 +915,69 @@ describe('生成模型專項輸出與出處', () => {
       `\`\`\`json\n${body}${body}\n\`\`\``,
       '```json\n{"Overview":null,"items":[],}\n```',
     ]) {
-      const response = completion(null)
-      response.choices[0].message.content = content
-      await expect(parseGenerationResponse('disputes', response, input)).rejects.toThrow('generation_invalid_json')
+      await expect(parseGenerationResponse('disputes', chatText(content), input)).rejects.toThrow('generation_invalid_json')
     }
   })
 
   it('完整外框內仍拒絕單句概述物件、空清單附概述及未知引用，不正規化欄位', async () => {
-    const objectOverview = completion({ ...consensusOutput(), Overview: cited('共同方向。', 'e1', 'e2') })
-    objectOverview.choices[0].message.content = `\`\`\`json\n${objectOverview.choices[0].message.content}\n\`\`\``
-    await expect(parseGenerationResponse('consensus', objectOverview, input)).rejects.toThrow('generation_invalid_schema')
-    const emptyWithOverview = completion({ Overview: [cited('沒有項目可供支持。', 'e1')], items: [] })
-    emptyWithOverview.choices[0].message.content = `\`\`\`json\n${emptyWithOverview.choices[0].message.content}\n\`\`\``
-    await expect(parseGenerationResponse('disputes', emptyWithOverview, input)).rejects.toThrow('generation_invalid_schema')
+    const objectOverview = { ...consensusOutput(), Overview: cited('共同方向。', 'e1', 'e2') }
+    await expect(parseGenerationResponse('consensus', chatText(`\`\`\`json\n${JSON.stringify(objectOverview)}\n\`\`\``), input)).rejects.toThrow('generation_invalid_schema')
+    const emptyWithOverview = { Overview: [cited('沒有項目可供支持。', 'e1')], items: [] }
+    await expect(parseGenerationResponse('disputes', chatText(`\`\`\`json\n${JSON.stringify(emptyWithOverview)}\n\`\`\``), input)).rejects.toThrow('generation_invalid_schema')
     const output = positionsOutput()
     output.items[0].opinions[0].description[0].evidence_ids = ['unknown']
-    const unknown = completion(output)
-    unknown.choices[0].message.content = `\`\`\`json\n${unknown.choices[0].message.content}\n\`\`\``
-    await expect(parseGenerationResponse('positions', unknown, input)).rejects.toThrow('generation_unknown_evidence')
+    await expect(parseGenerationResponse('positions', chatText(`\`\`\`json\n${JSON.stringify(output)}\n\`\`\``), input)).rejects.toThrow('generation_unknown_evidence')
   })
 
-  it('三段各自拒絕截斷、拒答與工具呼叫', async () => {
+  it('三段只採用 Chat 最終文字，即使思考欄位包含另一份有效 JSON 也不採用或回退', async () => {
     const fixtures: Record<GenerationSection, unknown> = { consensus: consensusOutput(), disputes: disputeOutput(), positions: positionsOutput() }
+    const fake: Record<GenerationSection, unknown> = {
+      consensus: { Overview: null, items: [], rejected_candidates: [{ candidate_id: candidateId, reason: '僅存在於推理中' }] },
+      disputes: { Overview: null, items: [] },
+      positions: { Overview: null, items: [], exclusions: evidence.map(item => ({ evidence_id: item.id, reason: '僅存在於推理中' })) },
+    }
     for (const section of ['consensus', 'disputes', 'positions'] as const) {
       const native = completion(fixtures[section])
-      const message: Record<string, unknown> = native.choices[0].message
-      delete message.refusal
-      const nativeResult = await parseGenerationResponse(section, native, input)
+      const choice = native.choices[0]
+      const expected = await parseGenerationResponse(section, native, input)
       const pointer = `/${section}/items/0/${section === 'positions' ? 'name' : 'Title'}`
-      expect(nativeResult.citation_map.find(entry => entry.pointer === pointer)?.sources.map(source => source.material_id)).toEqual(section === 'disputes' ? [25, 27] : [25])
-      for (const reason of ['length', 'content_filter', 'tool_calls', 'unknown', '']) {
-        const response = completion(fixtures[section])
-        response.choices[0].finish_reason = reason
-        await expect(parseGenerationResponse(section, response, input)).rejects.toThrow('generation_incomplete_completion')
+      expect(expected.data.items).toHaveLength(1)
+      expect(expected.citation_map.find(entry => entry.pointer === pointer)?.sources.map(source => source.material_id)).toEqual(section === 'disputes' ? [25, 27] : [25])
+      await expect(parseGenerationResponse(section, { model: native.model, choices: native.choices, usage: native.usage }, input)).resolves.toEqual(expected)
+      const { role, content } = choice.message
+      await expect(parseGenerationResponse(section, { ...native, choices: [{ ...choice, message: { role, content } }] }, input)).resolves.toEqual(expected)
+      const noTools = {
+        ...native, error: null, truncated: false,
+        choices: [{ ...choice, truncated: false, message: { ...choice.message, truncated: false, tool_calls: [], function_call: null } }],
       }
-      const refusal = completion(fixtures[section])
-      const refusalMessage: Record<string, unknown> = refusal.choices[0].message
-      refusalMessage.refusal = 'refused'
-      await expect(parseGenerationResponse(section, refusal, input)).rejects.toThrow('generation_refusal_or_invalid_message')
-      refusalMessage.refusal = null
-      refusalMessage.tool_calls = [{ id: 'unexpected' }]
-      await expect(parseGenerationResponse(section, refusal, input)).rejects.toThrow('generation_refusal_or_invalid_message')
-      await expect(parseGenerationResponse(section, { ...completion(fixtures[section]), truncated: true }, input)).rejects.toThrow('generation_invalid_completion')
-      await expect(parseGenerationResponse(section, { ...completion(fixtures[section]), model: null }, input)).rejects.toThrow('generation_invalid_completion')
+      await expect(parseGenerationResponse(section, noTools, input)).resolves.toEqual(expected)
+      for (const field of ['reasoning', 'reasoning_content'] as const) {
+        const message = { ...choice.message, [field]: JSON.stringify(fake[section]) }
+        const withReasoning = { ...native, choices: [{ ...choice, message }] }
+        await expect(parseGenerationResponse(section, withReasoning, input)).resolves.toEqual(expected)
+        const invalidFinal = { ...native, choices: [{ ...choice, message: { ...message, content: `說明\n${JSON.stringify(fixtures[section])}` } }] }
+        await expect(parseGenerationResponse(section, invalidFinal, input)).rejects.toThrow('generation_invalid_json')
+        const missingFinal = { ...native, choices: [{ ...choice, message: { ...message, content: null } }] }
+        await expect(parseGenerationResponse(section, missingFinal, input)).rejects.toThrow('generation_refusal_or_invalid_message')
+      }
     }
+  })
+
+  it('三段拒絕不完整、拒答、工具、非字串內容及無效或多個 choices', async () => {
+    const fixtures: Record<GenerationSection, unknown> = { consensus: consensusOutput(), disputes: disputeOutput(), positions: positionsOutput() }
+    for (const section of ['consensus', 'disputes', 'positions'] as const) {
+      for (const { value, code } of invalidChatCompletions(completion(fixtures[section]))) {
+        await expect(parseGenerationResponse(section, value, input)).rejects.toThrow(code)
+      }
+    }
+  })
+
+  it('拒絕舊 Responses 外層，即使內容是有效 JSON', async () => {
+    const legacy = {
+      object: 'response', model: 'provider-revision-1', status: 'completed',
+      output: [{ type: 'message', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: JSON.stringify(positionsOutput()) }] }],
+    }
+    await expect(parseGenerationResponse('positions', legacy, input)).rejects.toThrow('generation_invalid_completion')
   })
 
   it('送出及解析前核對來源、引文與 UTF-8／UTF-16 span 邊界', async () => {
@@ -983,9 +1064,19 @@ describe('必要欄位補完與不可變 primary 工件', () => {
       { pointer: '/positions/items/1/Core_concern', evidence_ids: ['e3'] },
     ])
     const request = buildCompletionRequest(plan, input)
-    expect(request.selector).toBe(MODEL_SELECTORS.generation)
-    expect(request.input.response_format).toEqual({ type: 'json_schema', json_schema: GENERATION_COMPLETION_OUTPUT_SCHEMA })
-    expect(request.input).not.toHaveProperty('chat_template_kwargs')
+    expect(request.input.messages).toEqual([
+      { role: 'system', content: expect.any(String) },
+      { role: 'user', content: expect.any(String) },
+    ])
+    expect(request.input.messages[0].content.length).toBeGreaterThan(0)
+    expect(request.input.response_format).toMatchObject({
+      type: 'json_schema',
+      json_schema: {
+        name: 'evidence_completion', strict: true,
+        schema: { type: 'object', required: expect.arrayContaining(['base_hash', 'fills']), properties: { fills: { type: 'array' } } },
+      },
+    })
+    expect(request.input).toMatchObject({ max_completion_tokens: 8192, temperature: 0.2, chat_template_kwargs: { enable_thinking: false }, stream: false })
     const payload = JSON.parse(request.input.messages[1].content)
     expect(payload).toMatchObject({ operation: 'fill_missing_fields', base_hash: plan.base_hash, language: 'zh-TW', targets: plan.targets })
     expect(payload.evidence.map((item: { id: string }) => item.id)).toEqual(['e1', 'e2', 'e3'])
@@ -1250,23 +1341,30 @@ describe('必要欄位補完與不可變 primary 工件', () => {
     expect(final.data.positions.items[0].Core_concern).toBe('關注方案一。')
   })
 
-  it('補完沿用 stop、拒答、工具呼叫及單一完整 JSON 外框規則', async () => {
+  it('補完只採用 Chat 最終文字，沿用完整外框及回應邊界規則', async () => {
     const { plan } = await missingFieldsFixture()
     const patch = completionPatch(plan)
-    const fenced = completion(patch)
-    fenced.choices[0].message.content = ` \r\n\`\`\`json\r\n${JSON.stringify(patch)}\r\n\`\`\`\r\n`
-    await expect(parseCompletionResponse(fenced, plan, input)).resolves.toMatchObject({ data: { disputes: { Overview: '😀補完0。另一句！' } } })
-    const invalidFence = completion(patch)
-    invalidFence.choices[0].message.content = `說明\n\`\`\`json\n${JSON.stringify(patch)}\n\`\`\``
+    const native = completion(patch)
+    const choice = native.choices[0]
+    const fake = structuredClone(patch)
+    fake.fills[0].sentences[0].text = '僅在 reasoning 中。'
+    const expected = await parseCompletionResponse(native, plan, input)
+    expect(expected.data.disputes.Overview).toBe('😀補完0。另一句！')
+    for (const field of ['reasoning', 'reasoning_content'] as const) {
+      const message = { ...choice.message, [field]: JSON.stringify(fake) }
+      const withReasoning = { ...native, choices: [{ ...choice, message }] }
+      await expect(parseCompletionResponse(withReasoning, plan, input)).resolves.toEqual(expected)
+      const invalidFinal = { ...native, choices: [{ ...choice, message: { ...message, content: '不是 JSON' } }] }
+      await expect(parseCompletionResponse(invalidFinal, plan, input)).rejects.toThrow('generation_invalid_json')
+      const missingFinal = { ...native, choices: [{ ...choice, message: { ...message, content: null } }] }
+      await expect(parseCompletionResponse(missingFinal, plan, input)).rejects.toThrow('generation_refusal_or_invalid_message')
+    }
+    const fenced = chatText(` \r\n\`\`\`json\r\n${JSON.stringify(patch)}\r\n\`\`\`\r\n`)
+    await expect(parseCompletionResponse(fenced, plan, input)).resolves.toEqual(expected)
+    const invalidFence = chatText(`說明\n\`\`\`json\n${JSON.stringify(patch)}\n\`\`\``)
     await expect(parseCompletionResponse(invalidFence, plan, input)).rejects.toThrow('generation_invalid_json')
-    const truncated = completion(patch)
-    truncated.choices[0].finish_reason = 'length'
-    await expect(parseCompletionResponse(truncated, plan, input)).rejects.toThrow('generation_incomplete_completion')
-    const refusal = completion(patch)
-    ;(refusal.choices[0].message as Record<string, unknown>).refusal = 'refused'
-    await expect(parseCompletionResponse(refusal, plan, input)).rejects.toThrow('generation_refusal_or_invalid_message')
-    const tools = completion(patch)
-    ;(tools.choices[0].message as Record<string, unknown>).tool_calls = [{ id: 'tool' }]
-    await expect(parseCompletionResponse(tools, plan, input)).rejects.toThrow('generation_refusal_or_invalid_message')
+    for (const { value, code } of invalidChatCompletions(native)) {
+      await expect(parseCompletionResponse(value, plan, input)).rejects.toThrow(code)
+    }
   })
 })

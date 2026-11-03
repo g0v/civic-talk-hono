@@ -1,6 +1,6 @@
 # #183 實作洞察與驗收紀錄
 
-更新日期：2026-10-29。此檔由環境／設定整合負責人維護；內容區分已觀察證據、設計決策與尚未驗證事項，不以計畫或測試替代真實模型／人工品質證據。
+更新日期：2026-11-04。此檔內容區分已觀察證據、設計決策與尚未驗證事項，不以計畫或測試替代真實模型／人工品質證據；依各節日期與模型／契約判讀，不將歷史結果套用到最新版本。
 
 ## 已核對的環境事實
 
@@ -38,6 +38,8 @@
 
 ## 真實執行紀錄與限制
 
+下表為 2026-10-29 環境整合階段的歷史快照；當時尚未執行真實模型或登入的敘述不覆蓋後續各節的實測紀錄，也不代表現行 Gemma Chat 契約已驗收。
+
 | 項目 | 狀態 | 證據／限制 |
 |---|---|---|
 | Wrangler account／scope | 已執行 | `vp exec wrangler whoami` 顯示登入與 Workers／D1／AI 權限；缺 `k2.read`、`k2.write`。未做資源寫入。 |
@@ -62,8 +64,8 @@
 
 ## Provider 能力與未驗證限制
 
-- Cloudflare 的 [JSON Mode 支援模型清單](https://developers.cloudflare.com/workers-ai/features/json-mode/)不包含 Gemma 4；[Gemma 4 模型參數頁](https://developers.cloudflare.com/workers-ai/models/gemma-4-26b-a4b-it/)雖列出 `response_format`，該參數本身不足以證明此模型保證 JSON Mode／schema 遵循。真實模型尚未呼叫，不能宣稱結構化輸出已由 provider 保證。
-- [Clef 文件](https://developers.cloudflare.com/workers-ai/models/clef/)說明超過 context 的 state 文字會被截斷；文件列出的回應沒有 provider 截斷旗標。客戶端可拒絕自身可判定的超限輸入，但不能據此聲稱能偵測／排除 provider 內部截斷。Clef 真實輸出、截斷行為及模型能力均未實測，需以人工和實際 provider 結果另行判定。
+- 2026-10-29 檢視時，Cloudflare 的 [JSON Mode 支援模型清單](https://developers.cloudflare.com/workers-ai/features/json-mode/)不包含 Gemma 4；[Gemma 4 模型參數頁](https://developers.cloudflare.com/workers-ai/models/gemma-4-26b-a4b-it/)列出 `response_format`，該參數本身不足以證明此模型保證 JSON Mode／schema 遵循。當時尚未呼叫真實模型；後來 Gemma 的歷史實驗另見後節，但本次具名 strict schema 契約仍未做付費 probe 或完整真實流程。
+- [Clef 文件](https://developers.cloudflare.com/workers-ai/models/clef/)說明超過 context 的 state 文字會被截斷；文件列出的回應沒有 provider 截斷旗標。客戶端可拒絕自身可判定的超限輸入，但不能據此聲稱能偵測／排除 provider 內部截斷。2026-10-29 尚無真實 Clef 呼叫；後續實測紀錄見各節，模型能力及截斷行為仍須另行以人工和實際 provider 結果判定。
 
 ## 核心 API 契約（程式碼閱讀；專用 Worker 僅完成 no-login HTTP smoke）
 
@@ -111,7 +113,7 @@
 - README 的來源預檢同步選取 25／26／27，保留先前 25／26 的歷史 metadata，並明確註記該舊查核不涵蓋 27。本輪未執行新的遠端預檢，不捏造素材 27 當前狀態；後續實驗須重新確認三筆來源。
 - 後續使用者於 2026-11-01 回報：本次三素材流程已成功產出 `ai_draft`，因此 v5 提示已有該次真實工作成功的使用者驗收證據。使用者尚未查核內容品質；此回報不等於概述、候選分類、引用語義或所有驗收案例皆已通過，也不解除 Draft PR 的人工品質與其他合併門檻。本次僅記錄回報，不重新呼叫模型。
 
-## 新版管線：Clef 判準與三項專項生成
+## 當時的新版管線：Clef 判準與三項專項生成（歷史階段）
 
 - 使用者先要求修訂並提交 `plan.md`，其後明確要求依新版改造；本輪不承接過往 commit／push 授權，不新增付費模型工作、不使用登入 Cookie，也不寫遠端 D1 或改 migration。
 - Clef prompt 改為 `symmetric-four-way-v2`，先辨識共同問題／比較維度、條件與歸屬，再選支持、對立、無關或資訊不足；一般支持不等於共同命題，不能由語氣悲觀／樂觀推斷互斥。不改寫 provider choice／機率，不設分類配額或未校準信心門檻；比較演算法版本為 `comparison-2`，移除單條立場候選枚舉。
@@ -233,7 +235,7 @@
 - GET smoke 在工作前暖起真實 route，清理耗盡後觀察 native errored，HTTP 200 收斂 failed/provider_uncertain；startup 對帳次數未增加，沒有 restart/create 或新 provider 呼叫，所有工件 hash 與用量保留。來源、session provider 與 AI 都是合成 adapter，未建 auth schema，外部網路封鎖；強制 timeout 案例不是實際等待三十秒，與真正懸置 I/O 案例分開記錄，均不代表真實模型或 OAuth 品質驗收。
 - 暫存 harness 已移除，5173 維持停止，未 commit／push／部署或執行遠端寫入／migration。README 與 plan 同步短時限、非模型安全重試、觀察終態及不重送 POST 的操作限制；模型內容品質與新設定的真人實測仍待後續驗收。
 
-## 2026-11-03：GPT-OSS-120B 實測與短候選／爭點組題契約
+## 2026-11-03：GPT-OSS-120B 實測與短候選／爭點組題契約（歷史 Chat 契約）
 
 - 使用者先核准只試 GPT-OSS-120B、不用 GLM，之後另同意補測共識／爭點。修改正式管線前，使用同一份已保存的議題 13／素材 25、26、27 證據與關係做私有 probe，未重跑 Clairic／Clef。原生 JSON Schema 初期有兩筆呼叫未取得用量，其中第二筆明確回報 `8007 / BadRequestError 400 / Unimplemented keys: ["uniqueItems"]`；第一筆未保留詳細錯誤，不能斷言同因，兩筆費用仍未知。
 - provider schema 只移除不支援的 uniqueItems、保留原程式重複 ID 與關係守門後，三份真實回應均為合法 JSON／stop。立場三群及爭點三項通過既有驗證，共識三項因六組 candidate_id 都被改寫為另一種括號／引號格式而拒收。依回報 token 與官方單價計算，三筆已知生成費用約 US$0.01487755，不含兩筆未知費用；不是 Cloudflare 帳單核對。原始資料及完整報告留在私有 `.wrangler/ai-experiment/gpt-oss-120b-ngljzop0/`，未修補／覆寫原回應，也未寫回原工作。
@@ -247,3 +249,28 @@
 - 對既有真實凍結輸入只跑新版 builder，20 段證據、81 組直接比較完整保留；共識六組短 ID／enum 相符。三項請求分別為 20,746／19,018／18,386 bytes，均低於既有 48 KiB 守門，未新增模型呼叫或 DB 寫入。新 config hash 與保存舊工作不同，原始工作、review 與費用帳本均不改。
 
 - `vp run build` 成功，client／Worker 與 notices／source manifests 均生成；版本為 `97bcdd3e771d874997a6dfbe45551e80ef616ec8 (dirty)`，有既有 client chunk 大於 500 kB 警告，未部署。README、plan 與 AGENTS 的實驗模型／契約已同步；本輪未修改 UI、一般登入或 BYO token 流程，未重啟或停止既有 5173、未新增付費模型請求、未改遠端 DB／migration，未 commit／push。新版模型內容與近似重複的語義品質，仍待使用者重啟 opt-in server 後另建工作驗收。
+
+## 2026-11-04：GPT-OSS Responses 契約探測與共同挑戰修訂（歷史階段）
+
+- 舊 Chat 契約的前次工作中，共識結構驗證通過但 items 為 0、所有候選遭泛化理由拒絕，故為 `no_findings`；立場以 `finish_reason:length` 耗盡 8,192 輸出 tokens，且重複 analysis 文字，被作為不完整回應拒收。兩者分別是內容品質與完成狀態問題；不能假設改 API 即可解決退化，也不以零項本身判定違規。
+- 經使用者明確授權，只執行 **兩次**隔離 AI-only 真實 Workers AI 呼叫：皆使用合成文字、`max_output_tokens:512`、`reasoning:{effort:"low"}`、`stream:false`，未重試。兩次回應均為 `object:"response"`、`status:"completed"`、`incomplete_details:null`，output 包含 reasoning 及一個 completed assistant message 的 `output_text`。第二次以 `text.format` 的 strict JSON Schema（名稱 `evidence_probe`，`answer` enum 為 `C1`／`C2`）得到 `C1`，確認這個小型 enum 的原生請求／回應契約；沒有驗證完整專項大 schema。
+- 普通 Responses probe 回報 input 88／output 24 tokens，合計 112；schema probe 回報 input 87／output 74，合計 161。按每百萬 input／output US$0.35／0.75 精算兩次合計 **US$0.00013475**；實際呼叫 `actualCallCost()` 的分項進位結果為 49＋86＝135 microUSD。兩種數字均依回報 usage 與價目計算，並非 Cloudflare 帳單核對或既有工作帳本；原始摘要保存在忽略的 `.wrangler/ai-experiment/verification/responses-probe-report.json`。
+- 當時 primary 與條件式單輪補完採 Responses `instructions`／JSON `input`、`max_output_tokens:8192`、low reasoning 和 `text.format` strict schema；prompt／schema／input 為 `specialized-evidence-v7`／`specialized-cited-v4`／`section-values-v5-responses`，補完 prompt 為 `missing-fields-only-v3`。只接受 completed response 與唯一 completed assistant message，忽略 reasoning items，將非空 content 陣列中所有 `output_text` 字串原樣依序串接後精確解析 JSON；沿用完整單一 fence 例外，不截取思考、不修補、不退回 Chat，拒絕缺狀態、不完整、refusal 或工具。C 短候選 enum 與本機重複、引用、關係及完整交代守門不放寬；reasoning tokens 包含於 output usage，不另計價，缺失或異常仍保留未知費用。此段描述當時的 GPT-OSS，不是現行 Gemma 請求。
+- 僅 `shared_challenge` 改為從每個參與來源的正面相關引文有據綜整具體、窄化的共同挑戰，即使措辭或觀點不同也可；不從沉默推論、不能只憑共同話題。風險與建議只有當建議真正回應同一挑戰時才可支持該挑戰，不代表共同贊同解法。`shared_fact`／`shared_position` 仍須逐來源明示同一命題，三型均限直接 agree 候選或有效子集、至少兩素材，保留條件、歸屬與逐來源引用；補完 Overview 也保留類型與來源範圍。
+- 當時的 GPT-OSS Responses 版本型別檢查通過 158 files、53 test files／558 tests 全通過，production build 成功（既有 client chunk >500 kB 警告仍在）；metadata 為 `e668fa2ea9c70fd3bdbcfd06ebb554b5e3a4747d (dirty)`，不是發布版本。回歸涵蓋三項與補完只採最終 output_text、reasoning 的偽 JSON 不得冒用、缺少最終訊息／完成狀態、工具／拒答／多 message 拒收，以及跨文字區塊精確串接及引用。移除只回顯人工提供「共同挑戰」文字的重複案例，不把它當模型語義測試；這不是本次 Gemma 切換的檢查結果。
+- 獨立 Node 執行實際 runner、repository、來源守門及記憶體 SQLite，四情境通過：完整最終輸出 `ai_draft`、不完整立場雖含合法 JSON 仍拒收為 `partial_draft` 且保留回報費用、缺值只補完一輪、缺用量仍保留未知預留。全部終態重放零額外呼叫、來源未變、checkpoint 不含正文；只有 AI 與帳號查詢為合成 adapter，沒有新增付費呼叫或遠端 D1 存取。舊有效立場輸出以合成 Responses envelope 離線重播後保留三項；修改前同一 envelope 被 `generation_invalid_completion` 拒收。安全摘要保存在 `.wrangler/ai-experiment/verification/responses-pipeline-smoke.json`，一次性 probe／smoke 執行器於驗證後移除。
+- 對當時舊真實凍結輸入只建 GPT-OSS Responses 請求，20 段證據與 81 組直接比較均保留；共識／爭點／立場請求為 21,395／19,061／18,430 bytes，皆低於 48 KiB，未增加模型呼叫。兩次真實 probe 僅驗小型契約，合成 smoke 也不是真實三素材的語義驗收，不能保證 API 切換解決退化。當時未停止或重啟使用者 server、刪除舊工作／快取、改舊工件或帳本；未 commit／push／部署或寫遠端業務 D1。當時同模型、預算及隱私範圍下告知版本為 `evidence-processing-2026-11-02-v3`；目前因模型改變的告知版本見下一節。
+
+## 2026-11-04：切換 Gemma 4 原生 Chat 契約
+
+- 使用者要求下次手動實驗僅切換生成模型／原生傳輸、計價、設定及同意版本，不授權付費 probe、重啟或停止既有 server、commit／push／部署或遠端寫入。固定 selector 為 `@cf/google/gemma-4-26b-a4b-it`，三項 primary 與必要時至多單輪補完沿用同一生成模型。
+- 請求 `messages` 含 system prompt 與 `JSON.stringify` 原有 payload 的 user message，搭配 `max_completion_tokens:8192`、`temperature:0.2`、`stream:false`、`chat_template_kwargs:{enable_thinking:false}`、`response_format:{type:"json_schema",json_schema:{name,strict:true,schema}}`。四個 name 為 `evidence_consensus`、`evidence_disputes`、`evidence_positions`、`evidence_completion`；共識仍使用動態短候選 enum，不送 `uniqueItems`，本機完整重複 ID、引用與關係守門不變。
+- [官方 Gemma 模型頁](https://developers.cloudflare.com/workers-ai/models/gemma-4-26b-a4b-it/)列出 `response_format`；本機安裝的 Cloudflare Workers AI 型別將 Gemma 輸入定義為繼承 `ChatCompletionsInput`，其 `ResponseFormatJSONSchema` 使用具名 `json_schema` wrapper。這是文件／型別契約，不是供應商在完整專項大 schema 的實際遵循率或語義品質證據。先前 pocket-polis 使用 `messages`、`max_tokens`、temperature 0.2、關閉 thinking 並讀取 choices；此次採模型頁非棄用的 `max_completion_tokens` 與上述 schema wrapper，不移植其寬鬆解析或 fallback。
+- 僅接受字串 `model`、恰一個 `index:0` 且 `finish_reason:"stop"` 的 choice，assistant message 的 content 必須為字串；頂層 object 不必提供。拒收缺少或非 stop 的完成原因、refusal、工具、非字串 content、非法 JSON 及原有 schema／候選／引用／關係／覆蓋失敗；忽略 `reasoning`／`reasoning_content`，不將思考當答案、不串接 content 陣列、不擷取片段或修復，無 Responses 或其他模型 fallback／自動付費重試。原始 JSON 或完整單一 plain／小寫 json fence 的既有規則不變。
+- primary prompt／schema 維持 `specialized-evidence-v7`／`specialized-cited-v4`，input 改為 `section-values-v6-gemma-chat`，completion 仍為 `missing-fields-only-v3`／`cited-field-patches-v1`，response policy 改為 `gemma-chat-stop-json-v3`。僅 `shared_challenge` 依既有 v7 可從各來源正面相關證據有據綜整具體窄化的共同挑戰；`shared_fact`／`shared_position` 與直接 agree 候選、逐來源引用等守門不變。
+- 立場仍只由 opinions 的 Title／description 引用聯集推導群組成員，群名／Core_concern 不可引用群外證據；沒有新增共識來源支持矩陣，也沒有實作尚未獲批准的 context citation 放寬。先前將背景 evidence 引到群名／Core_concern 而沒有放入該群 opinions 的問題仍可能重現；本次只比較模型，不能宣稱已修復。
+- 依 Gemma 官方價目，每百萬 input／output tokens US$0.10／0.30，pricing version 為 `workers-ai-2026-11-04-gemma-4-26b-a4b-it`。每次預留計入完整請求和最多 8,192 output tokens；usage 以 `prompt_tokens`／`completion_tokens` 為主，別名或 total 若回報須有效一致，reasoning 已包含於 completion，不加第二次。200／80 tokens 按此價目為 44 microUSD；無法確認的費用仍未知，既有 GPT raw 不按新價重算或重打。因模型改變，新工作告知版本為 `evidence-processing-2026-11-04-v4`，仍須每工作明確同意。
+- 離線只以舊真實凍結輸入建立請求，20 段證據及 81 組直接比較完整保留；Gemma 共識／爭點／立場請求為 21,479／19,145／18,514 bytes。另將舊有效 Chat 立場內容裝入合成 Gemma envelope 後離線解析，保留三項；修改前同一 envelope 被 `generation_invalid_completion` 拒收。這些都不是新真實 Gemma 結果，沒有付費呼叫。
+- 本版型別檢查通過 158 files、完整測試通過 53 test files／558 tests，production build 成功；既有 client chunk >500 kB 警告仍在，metadata 為 `e668fa2ea9c70fd3bdbcfd06ebb554b5e3a4747d (dirty)`，不是發布版本。Chat／補完回歸涵蓋最終 content 與思考分離、stop／截斷／拒答／工具／非字串內容、原生 schema／C ID 與既有範圍守門；計價驗證原生 token、衝突用量、完整請求預留及舊 GPT 工件保留，不以 allowlist 常數檢查代替重放行為證據。
+- 獨立 Node 執行實際 runner／repository／來源守門與記憶體 SQLite，六情境通過：正常 ai_draft、length 拒收後 partial、name／Core_concern 引用 opinions 範圍外的同素材上下文仍拒收、缺值只補一輪、缺用量保留未知、舊 GPT raw 不按新價結算或重打。全部終態重放零額外模型呼叫、來源未變、checkpoint 不含正文；只用合成 AI／帳號查詢 adapter，沒有付費呼叫或遠端 D1 存取。摘要保存在 `.wrangler/ai-experiment/verification/gemma-format-smoke.json`，一次性執行器於驗證後移除。
+- 尚無本次 Gemma 新契約的付費 probe、完整真實三素材工作或人工語義品質驗收；不能由 response_format 的文件／SDK 型別或合成測試推定 provider 已保證 schema，更不能據此宣稱幻覺較少。既有 GPT 工件、帳本、未知費用與 tombstone 未更動，未 commit／push／部署、未停止或重啟使用者 server。後續須由使用者自行重啟自己的 opt-in server、確認新設定並建立新 JOB_ID；不清除舊工作或快取，也不把舊 JOB_ID 當成本版結果。
