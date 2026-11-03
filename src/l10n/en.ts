@@ -86,6 +86,7 @@ export const messages = {
   status_published: 'Published',
   status_published_short: 'Published',
   idx_new_issue_btn: '+ New Issue',
+  idx_back_to_top: 'Back to top',
   idx_page_title: 'Choose an Issue',
   idx_page_subtitle: 'Using AI to lower barriers to participation — helping more people truly understand public issues, not just pick sides.',
   idx_form_title: 'Create New Issue',
