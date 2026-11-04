@@ -24,7 +24,7 @@
 
 1. **所有資料表一律 `ct_` 前綴。** 遠端 D1 `vtaiwan-civic-talks` 位於 vTaiwan 命名空間、可能與其他專案共用，未加前綴的 `issues`／`materials`／`briefings`／`opinions` 會撞名並造成不可逆的資料破壞。所有 DDL、SQL、型別一律只碰 `ct_*`；migration 套用後查 `sqlite_master` 確認只新增 `ct_` 開頭的業務表。
 2. **內容生成與投稿安全審查分開。** 素材彙整／說明頁等**內容生成**仍由志願者使用自己的 AI token 完成，平台只產出 prompt 並收回結果；伺服器端不得代為呼叫生成模型。**例外（issue #29，使用者明確授權）**：四個投稿入口可在 Worker 內呼叫 OpenRouter 的 `openai/gpt-oss-safeguard-20b` 做投稿安全審查。審查採 **fail-open**：OpenRouter 缺 key、逾時或 5xx 等基礎設施故障時記錄結構化錯誤並放行投稿，不把故障誤判成濫用，也不因外部服務故障擋住全站投稿。
-   - **例外（Issue #183，使用者明確授權）**：只有以 `CIVIC_AI_EXPERIMENT=1 vp run dev:remote` 明確 opt-in 的隔離本機實驗入口，才可為未停權且已登入使用者呼叫固定的 Clairic／Clef／Gemma 4 26B A4B（`@cf/google/gemma-4-26b-a4b-it`）三模型，產生私有證據草稿；每個新工作須明確同意。共識以短候選 ID 與動態 schema enum 約束，程式保留 canonical 對照及完整引用／關係驗證，不修補模型輸出放行。不得公開、投稿或發布，也不得寫入遠端業務 DB。一般志願者 BYO token／prompt API 不變；範圍依[核准計畫](./plan.md)與[實作洞察](./Insight.md)，不授權部署或其他伺服器端內容生成。
+   - **例外（Issue #183，使用者明確授權）**：固定 Clairic／Clef／Gemma 4 26B A4B 的證據管線為未停權登入者產生私有草稿，每個新工作須明確同意，只有 owner／管理員可讀；不得自動投稿、發布、修改 briefing 或議題狀態。正式 Worker 有 `EVIDENCE_API_ENABLED`，預設 `0`；僅明確 `1` 才開啟，缺必要 binding 要 fail closed。隔離實驗／審查兩種模式、費用及權限見[手冊](./docs/evidence-api-review.md)。本輪僅 API，UI、部署及正式啟用須另經授權；既有 BYO token／prompt 不變。
    - **素材事實查核不是內容生成。** `POST /api/fact-check` 經登入／停權守門後，以 `FACT_CHECK_CORE` Service Binding 串流轉送到沒有公開 route 的 `fact-check-core`。Service Binding 已是核心 Worker 的 capability；不要再加入前端 API key、HMAC token 或把 session cookie 轉送給核心。
 3. **SSR 路徑絕不碰瀏覽器 API。** 任何在 SSR 期間執行的程式碼（元件 `setup`、模組頂層、共用工廠）不得使用 `window`／`document`／`localStorage`／`navigator`——需要時用 `typeof window === 'undefined'` 守衛或放到 `onMounted`。每請求新建獨立的 app 實例，嚴禁跨請求共享可變狀態。
 4. **舊網址永不失效。** 下列舊路徑必須以 301／302 導向新的乾淨路由，且此對應表只能新增、不能刪除：
@@ -60,7 +60,7 @@
 
 Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑起來（尚未切到 `vue-router`）：
 
-- `src/index.ts` — SSR 路由 `/`、`/issues/:id`、`/issues/:id/source/:materialId`、`/issues/:id/comment/:opinionId`、`/contribute/:id`、`/about`、`/profile`、`/appeals`、`/privacy`、`/terms`、`/admin`，另有 `/rss.xml`；舊 `.html` 導向；掛上 `registerApiRoutes`；fallback `ASSETS`。
+- `src/index.ts` — SSR 路由、舊 `.html` 導向、既有 API 與 `ASSETS` fallback；證據 API 的旗標／binding 守門及子路由亦在此。`src/worker.ts` 為正式 Worker wrapper，匯出命名的 `EvidenceWorkflow`，避免讓 Node 匯入的 `src/index.ts` 直接依賴 `cloudflare:workers`。
 - `src/api/routes.ts` + `src/db/queries.ts` — 舊 Pages Functions API 的型別化移植，SQL 只碰 `ct_*`。
 - `migrations/0001_init.sql` — `ct_issues`／`ct_materials`／`ct_briefings`／`ct_opinions`（含 FK、索引、約束、示範資料）。
 - `migrations/0002_material_author.sql` — `ct_materials` 加上 `author_id`／`author_name`（#9 的投稿者記錄）。本機與遠端皆已套用；#27 起 name 公開、ID 仍只給管理端。
@@ -70,6 +70,7 @@ Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑�
 - `migrations/0006_submission_consent.sql` — 議題、素材與意見保存伺服器端確認的 `terms_version`／`terms_accepted_at`。本機與遠端皆已套用。
 - `migrations/0007_abuse_reports.sql`–`0013_query_indexes.sql` — 濫用／失效連結回報、AI 審查與申訴、投稿併發、議題活動時間、意見投票與查詢索引。**2026-09-24 使用者回報目前應已套用遠端 `0001`–`0013`；本次未查詢遠端**。部署前仍須以 remote pending 清單核對，不能只憑 repo 中的檔案或本紀錄推定遠端狀態。
 - `migrations/0016_issue_closure.sql` — #159 為 `ct_issues` 新增獨立的 `is_closed`、`closure_reason`、`closure_changed_at`，2026-10-21 僅套用本機，未套用遠端。結案／重開只影響首頁分類，不得拿來阻擋投稿、投票、匯出，或取代 `collecting`／`summarizing`／`published`。只有 admin／super-admin 能透過 `PATCH /api/issues/:id/closure` 操作，兩者都必須填理由；最近一次理由與日期公開顯示於議題頁（使用者裁示），不另建歷史紀錄。首頁預設進行中，已結案使用 `?tab=closed`，與搜尋、預覽及歷史雙向同步，沿用角色篩選／排序；一般編輯不得清掉結案資訊。
+- `migrations/0017_evidence_pipeline.sql` — #183 的八張正式 `ct_ai_*` 業務表；已套用隔離本機，必須保留 SQL byte-for-byte 與 ledger 對應。審查期間只對隔離本機套用；確認 PR 合併 `main` 後還須另獲授權才能對遠端業務庫執行，不得對認證庫建 DDL／migration。
 - `src/components/OpinionVote.vue` — 公民意見同意／不同意／略過控制；投票前隱藏分布，投票後或作者才顯示；匿名點擊保留意見內容並展開登入入口。
 - `src/ssr/render.ts` — SSR + 注入 `window.__PAGE__`／`__SSR_STATE__` + `/js/civic.js`（dev 走 `/src/client/civic-entry.ts`）。
 - `src/views/` — `Home`／`Issue`／`Contribute`／`About`／`Profile`／`Appeals`／`Privacy`／`Terms`／`Admin`／`MaterialDetail`／`OpinionDetail`／`NotFound`；`Issue` 無 `step` 時顯示 briefing 四張 carousel，volunteer hydration 後有第五張導航 slide，citizen 在最後一張可進 comments；`?step=comments|materials|volunteer` 可雙向同步且直接進入對應版面。#143 起桌機與手機的 carousel 主畫面均固定在 `100dvh` 內，以 flex 扣除標頭、議題資訊、tabs、分頁與精簡授權列的自然高度，長文只在卡內捲動；輪播不顯示上方狀態標籤，`AppFooter` 使用 `compact` 模式保留原始碼、授權及 client／Worker notices 入口，說明內文均為 16px。意見、素材與志願者工具仍自然捲動、保留完整 footer；carousel CSS 由 `src/styles/app.css` 納入。共用 `AppHeader`／`AppFooter`／`StatusBadge`／`IssueCard`／`IssuePreviewCard`／`Toast`。首頁點議題卡時以 `?action=click_issue_card&issue=<id>` 留在 `Home` 顯示單張預覽，按「進入」才切換到議題內容路由。
@@ -82,7 +83,7 @@ Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑�
   - Markdown 預覽先對字串套用與素材、意見、彙整／綜整送出流程相同的 `trim()`，再呼叫 `renderSafeMarkdown()`，避免首行四個空白在預覽中變成 code block、送出後卻成為段落。只正規化預覽，不改寫草稿或字數計數；內文縮排仍保留。純文字模式維持原字串，不套用 `trim()`。回歸需確認首行縮排的預覽與送出文字渲染一致，以及純文字的首尾空白與換行未被刪除。
 - `src/l10n/` — 自製 i18n composable（`zh-TW`／`en`／`ja` 三檔 key 與插值欄位同步）；桌機標頭與手機選單共用 `LanguageSwitcher.vue`，以原生 select 直接選擇語言。SSR 固定 `zh-TW`，`localStorage.civic_lang` 只在 hydration 後讀寫；保留舊版 `zh`，日語使用與 vTaiwan 主站相同的 `ja`。日期及 `OPINION.md` 跟隨介面語言，投稿內容不自動翻譯。
 - `src/styles/app.css` — Tailwind v4 `@theme static`（vTaiwan 色彩、字型、字級、間距、圓角、陰影與動效 token）；`vp run css` 產出 `public/styles.css`（**生成物，勿手改**）。
-- `wrangler.jsonc` — `ASSETS` + D1 `DB` → `vtaiwan-civic-talks` + D1 `DB_AUTH` → `vtaiwan-auth` + Service Binding `FACT_CHECK_CORE` → `fact-check-core`（這些 binding 的 `remote: true` 只影響本機開發模式）；`compatibility_flags: ["nodejs_compat"]`。**不寫 `account_id`**（與 `../vTaiwan-hono` 一致，由 wrangler 登入的帳號決定）——不要為了「比較保險」把它加回來。
+- `wrangler.jsonc` — `ASSETS`、業務 `DB`、認證 `DB_AUTH`、`FACT_CHECK_CORE`、Workers `AI` 與 `EVIDENCE_WORKFLOW`；`EVIDENCE_API_ENABLED` 預設 `0`。D1／service 的 `remote: true` 只影響本機開發連線；正式部署及遠端 migration 仍需各別授權。`compatibility_flags: ["nodejs_compat"]`；**不寫 `account_id`**，由 Wrangler 登入帳號決定。
 - `src/auth/` — `createAuth.ts`（Better Auth 實例：Google／GitHub provider、同 email accountLinking、啟用 admin plugin 供 server 端 moderation ban/unban，並以 `additionalFields` 唯讀取角色與停權欄位）與 `authorization.ts`（`AppRole`／`resolveRole`／`isAdminRole`／`getAuthContext`／`tryGetAuthContext`）。
 - `src/api/auth.ts` — `/api/auth/*` 轉交 `auth.handler()`、`/api/me` 回登入者；`/api/auth/admin/*` 一律 404。
 - `src/api/types.ts` — `AppBindings`／`App` 型別（原本在 `routes.ts`，抽出來避免 auth 與 routes 互相 import）。
@@ -326,14 +327,7 @@ vp run deploy                       # build + 產物／公開原始碼檢查 + w
 
 **測試**：`vp test` 跑 `src/tests/**/*.test.ts`，涵蓋 i18n、SSR、API 安全邊界、作者隱私、moderation、投稿併發、首頁排序與意見投票等。新測試放進 `src/tests/`，從 `vite-plus/test` import `describe`／`it`／`expect`；`.github/workflows/ci.yml` 會在 push 到 `main` 與 pull request 執行完整測試。
 
-D1 相關（導入後）：
-
-```bash
-npx wrangler d1 migrations apply vtaiwan-civic-talks --local    # 本機，預設做法
-npx wrangler d1 migrations apply vtaiwan-civic-talks --remote   # 🚫 需先取得使用者授權
-```
-
-> **本 repo 沒有、也不該有 auth 資料庫的 migration 指令**（見不變量 11）。`vtaiwan-auth` 的 schema 由 `../vTaiwan-hono` 維護；本機開發若需要真實 auth 表，使用 `vp run dev:remote` 連既有綁定，或請使用者提供明確的隔離環境方式，**不要**在本 repo 自建或套用 auth schema。
+D1 migration 一般目錄包含 `0017`，一般 `apply` 會選到它。審查僅使用[手冊](./docs/evidence-api-review.md)的專用隔離本機 setup；不要用一般 `--local` 覆蓋既有開發狀態，或在 PR 合併前對遠端執行。確認合併 `main` 後仍需明確授權與核對 pending 才可套用遠端。**本 repo 不對 `DB_AUTH` 建 DDL 或跑 migration**；真實登入使用既有遠端 Better Auth。
 
 ## 語言與溝通慣例
 
@@ -555,13 +549,13 @@ npx wrangler d1 migrations apply vtaiwan-civic-talks --remote   # 🚫 需先取
 
 > 後續可選：切換到 `vue-router` 全站 hydration、擴充真實瀏覽器 E2E 與部署後 smoke automation——動工前先與使用者確認。
 
-### 進行中：#183 隔離式證據整理實驗（`plan.md` 已由使用者核准）
+### 進行中：#183 證據管線 API（Draft PR #191）
 
-- 實驗入口只由 `CIVIC_AI_EXPERIMENT=1 vp run dev:remote` 選取 `wrangler.ai-experiment.jsonc`；一般 `dev`／`dev:remote`、build 與 deploy 行為不變，正式環境不提供實驗 API。
-- `DB` 必須是 `.wrangler/ai-experiment` 內的隔離本機 D1；`SOURCE_DB` 是遠端業務 D1、程式只用 SELECT，禁止對來源庫執行 migration 或寫入；`DB_AUTH` 僅沿用 Better Auth 正常授權生命週期，不得新增 auth schema/migration 或直接寫 auth 資料；`AI` 使用真實 Cloudflare Workers AI；`EVIDENCE_WORKFLOW` 為本機 Workflow。
-- 實驗 migration 僅可套用本機 `DB`，並確認新表皆為 `ct_` 前綴。`ct_materials` 沒有 title 欄位；來源標題用 `source_name` 或素材 ID，不得生成預覽文字。來源 hash 欄位順序、空內容拒絕及原始內容處理依 #183 核准計畫與實作契約，不得改寫來源資料。
-- 一般志願者內容生成仍由使用者自帶模型金鑰；既有 synthesis prompt API 保留。`Issues.md` 只記錄計畫 §11.1 的兩項未實作未來工作，不建立 GitHub issue。
-- 完成度須分別記錄本機 runtime、遠端唯讀來源查核、真實模型呼叫及人工語意／OAuth 驗收；不得把 fixture／單元測試當作真實模型或人工驗收。
+- API-only；正式 Worker 已接入但 `EVIDENCE_API_ENABLED=0` 預設關閉，六端點同源請求回 404；跨站簡單寫入由全域 CSRF 先回 403，均不觸及 Auth／DB／AI。設為 `1` 時必要 binding 不全回 503。正式 `SOURCE_DB` 省略時用 `DB`，不以 fake provider／auth fallback 替代。
+- 實驗 `CIVIC_AI_EXPERIMENT=1 vp run dev:remote` 保留原本 `.wrangler/ai-experiment`、本機工作庫及僅 SELECT 的遠端來源；review `CIVIC_AI_REVIEW=1 vp run dev:remote` 使用獨立 `.wrangler/evidence-review`、虛構的本機來源和本機工作庫。兩旗標不可同時使用；兩者皆用既有遠端 Better Auth 與真實 Workers AI。
+- `0017` 正式保留但 SQL 不變；審查時 migration 僅限本機，`DB_AUTH` 不做 DDL／migration 或直接 SQL 寫入。遠端 migration 須在 main merge 確認後另行授權。保留 quota、未知費用與 tombstone，不重建狀態繞過。
+- 原有 BYO token、synthesis prompt API、briefing 與 issue status 不變；`Issues.md` 只記錄兩項未實作未來工作。本次不授權 ready、merge 或部署。
+- 使用者已確認真實品質實驗成功，已核准公開的 [結果](./results/ai-experiment_result.json) 與 [費用](./results/ai-experiment_cost.json) 可直接審閱；非獨立 gold labels，也不是新執行的證據。完整六 API 操作、來源清除限制及程式閱讀地圖見[檢閱手冊](./docs/evidence-api-review.md)。
 - 管線依序執行固定 `@cf/google/gemma-4-26b-a4b-it` 的共識／爭點／立場地圖三個專項，使用同一份已驗證證據與必要比較資料，不串接摘要。primary／單輪補完使用原生 Chat Completions：`messages` 為 system prompt 與 JSON 字串 user payload、`max_completion_tokens:8192`、`temperature:0.2`、`chat_template_kwargs:{enable_thinking:false}`、`stream:false`、`response_format:{type:"json_schema",json_schema:{name,strict:true,schema}}`；不送 `uniqueItems`，程式仍拒絕重複 ID。prompt／schema／input 版本為 `specialized-evidence-v7`／`specialized-cited-v4`／`section-values-v6-gemma-chat`，補完為 `missing-fields-only-v3`／`cited-field-patches-v1`，回應政策為 `gemma-chat-stop-json-v3`。[Gemma 官方模型頁](https://developers.cloudflare.com/workers-ai/models/gemma-4-26b-a4b-it/)列出 `response_format`；本機 Cloudflare Workers AI 型別的 Gemma 輸入繼承 `ChatCompletionsInput`、`ResponseFormatJSONSchema` 使用具名 wrapper，但這不保證 runtime schema 或語義品質。
 - 僅接受 `model` 為字串、恰一個 `index:0`、`finish_reason:"stop"` 的 choice，message 須為 assistant 且 content 為字串，完整解析 JSON；既有完整單一 plain／json fence 例外不變。忽略 `reasoning`／`reasoning_content`，缺完成原因／不完整、refusal、工具及非字串內容均拒收；不得切取思考文字、修補、退回 Responses／其他模型或自動重試。Gemma 每百萬 input／output tokens US$0.10／0.30；以 `prompt_tokens`／`completion_tokens` 為主，別名與 total 若回報須有效一致，reasoning 已含 completion，缺失或異常保持未知，不退款未知預留。
 - 共識／爭點不設約三項或其他筆數目標。`shared_fact`／`shared_position` 仍須各參與來源明示支持同一事實命題／立場；僅 `shared_challenge` 可依各來源正面相關證據、跨措辭或觀點差異綜整較窄的具體共同挑戰，不從沉默推論，不以共同話題充數。風險與建議只有在後者確實回應同一挑戰時才可支持該挑戰，不能冒充共同贊同解法；條件與轉述歸屬不可丟失。不同共同命題可共用同一候選／證據，完全重複項目仍拒收。爭點先按問題合併多組佐證，原生 `question` 須有引用且只放診斷；空白／大小寫正規化後同問題拒收，不模糊刪除或自動合併，語義近似重複仍需人工驗收。
@@ -569,7 +563,7 @@ npx wrangler d1 migrations apply vtaiwan-civic-talks --remote   # 🚫 需先取
 - 各項獨立記帳、驗證與保存；`diagnostics.generation.sections` 區分 completed／no_findings／failed／not_started，進行中另看 `generation_progress`。partial 不代表失敗空段沒有爭點；來源 fence、停權、去重及禁止自動重試仍適用。
 - 最終三段 Overview 與每組 Core_concern 均須非空；Core_concern 可依明示主張有據綜整，不推測動機。三項後僅在有內容的必填仍為 null 時，最多一輪 Gemma 白名單補完，不能改已有值、來源、順序或舊引用。共識 Overview 補完仍須保留三型的差別、條件與來源範圍，不將共享挑戰或事實升格成共同解法。空／失敗／未啟動分區的 Overview 由程式以三語狀態文字明示，不偽造來源結論或 citation。
 - 補完獨立預留／結算且仍屬同一工作，進度可為 completion；無缺值不付費，必要補完失敗不交付缺值草稿。原始分項、舊結果、unknown 費用與 tombstone 不覆寫；不新增第五輪、自動重試或格式修復。因模型更換，告知版本改為 `evidence-processing-2026-11-04-v4`，每個新工作仍須明確同意。
-- Clef `symmetric-four-way-v2` 以共同問題／條件校準四分類，不追求特定分布；`scripts/evidence-clef-calibration.mjs` 只做已人工核可資料的離線對照，不呼叫模型，也不能證明人工核可／hash 的來源。兩次已授權真實 Responses probe 是 GPT-OSS 的歷史紀錄，非本次 Gemma 契約或三素材語義驗收；本次型別／測試／build 與實際 runner SQLite 合成 smoke 待主整合者驗證，也尚無本次 Gemma 契約的付費 probe 或完整真實實驗。再次驗收由使用者重啟自己的 opt-in server 並另建新 JOB_ID，不刪舊工作／快取或增加模型重試。
+- Clef `symmetric-four-way-v2` 以共同問題／條件校準四分類，不追求特定分布；`scripts/evidence-clef-calibration.mjs` 只對照已人工核可資料，不能證明 labels／hash 來源。歷史 GPT-OSS probes 與失敗案例保留於 `Insight.md`，不能取代使用者確認的成功紀錄；也不要另行付費重跑以確認已成功。
 
 
 ### 已完成：#25 素材與意見的獨立連結（專屬路由）

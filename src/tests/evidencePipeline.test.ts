@@ -5,7 +5,6 @@ import { Hono } from 'hono'
 import type { WorkflowStep } from 'cloudflare:workers'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import { apiCsrf } from '../api/csrf'
-import { registerApiRoutes } from '../api/routes'
 import type { EvidenceBindings } from '../ai/env'
 import { registerEvidenceRoutes } from '../ai/routes'
 import { runEvidenceWorkflow } from '../ai/runner'
@@ -272,22 +271,6 @@ beforeEach(() => {
 afterEach(() => { local.sqlite.close(); source.sqlite.close() })
 
 describe('evidence API 與實際 SQLite 工作流', () => {
-  it('一般入口不註冊實驗與維護端點', async () => {
-    const production = new Hono()
-    production.use('/api/*', apiCsrf)
-    registerApiRoutes(production as never)
-    for (const [method, path] of [
-      ['POST', '/api/issues/7/evidence-jobs'],
-      ['GET', '/api/evidence-jobs/00000000-0000-4000-8000-000000000000'],
-      ['GET', '/api/evidence-jobs/00000000-0000-4000-8000-000000000000/revisions'],
-      ['POST', '/api/evidence-jobs/00000000-0000-4000-8000-000000000000/revisions'],
-      ['POST', '/api/evidence-maintenance/reconcile'],
-      ['POST', '/api/evidence-maintenance/erase'],
-    ]) {
-      const response = await production.request(`http://localhost${path}`, { method, headers: requestHeaders }, env)
-      expect(response.status).toBe(404)
-    }
-  })
   it('來源查核失聯、隱藏及變更時不得交付任何舊快照', async () => {
     auth.current = user('owner')
     const created = await (await send('POST', '/api/issues/7/evidence-jobs', { consent: true })).json() as { job_id: string }
@@ -316,7 +299,12 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     expect(local.sqlite.prepare('SELECT COUNT(*) AS n FROM ct_ai_artifacts WHERE payload IS NOT NULL').get()).toMatchObject({ n: 0 })
   })
 
-  it.each(['erased', 'withdrawn'] as const)('最後一次快照讀取後觀察到 %s 時不交付舊正文', async disposition => {
+  it.each([
+    { disposition: 'erased', resource: 'job' },
+    { disposition: 'withdrawn', resource: 'job' },
+    { disposition: 'erased', resource: 'revisions' },
+    { disposition: 'withdrawn', resource: 'revisions' },
+  ] as const)('$resource 最後一次快照讀取後觀察到 $disposition 時不交付舊正文', async ({ disposition, resource }) => {
     auth.current = user('owner')
     const created = await (await send('POST', '/api/issues/7/evidence-jobs', { consent: true })).json() as { job_id: string }
     expect(await runEvidenceWorkflow(env, created.job_id, testStep())).toEqual({ status: 'ai_draft' })
@@ -325,6 +313,12 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     const original = await store.getSnapshot(job!.executionId)
     const material = original!.sources.find(item => item.kind === 'material')
     if (!material || material.kind !== 'material') throw new Error('missing material')
+    if (resource === 'revisions') {
+      const base = (await store.getArtifact(job!.executionId, job!.artifactId!))!.payload as CompletedDraft
+      const data = structuredClone(base.data)
+      data.consensus.Overview = '不可交付的人工修訂。'
+      expect((await send('POST', `/api/evidence-jobs/${created.job_id}/revisions`, { parent_revision_id: 'ai', data })).status).toBe(201)
+    }
 
     let release!: () => void
     let reached!: () => void
@@ -342,7 +336,8 @@ describe('evidence API 與實際 SQLite 工作流', () => {
       }
       return snapshot
     })
-    const pending = Promise.resolve(send('GET', `/api/evidence-jobs/${created.job_id}`))
+    const path = `/api/evidence-jobs/${created.job_id}${resource === 'revisions' ? '/revisions' : ''}`
+    const pending = Promise.resolve(send('GET', path))
     try {
       await paused
       expect(capturedSnapshot).toBe(true)
@@ -355,11 +350,15 @@ describe('evidence API 與實際 SQLite 工作流', () => {
       expect(latest?.status).toBe(disposition)
       release()
       const response = await pending
-      expect(response.status).toBe(200)
+      expect(response.status).toBe(resource === 'job' ? 200 : 422)
       const bodyText = await response.text()
       const body = JSON.parse(bodyText) as Record<string, unknown>
-      expect(body).toMatchObject({ status: disposition, error_code: latest!.errorCode, updated_at: latest!.updatedAt, usage: latest!.usage })
-      for (const field of ['data', 'sources', 'evidence', 'citation_map', 'provenance', 'generation_artifact', 'input_manifest', 'diagnostics']) expect(body).not.toHaveProperty(field)
+      if (resource === 'job') {
+        expect(body).toMatchObject({ status: disposition, error_code: latest!.errorCode, updated_at: latest!.updatedAt, usage: latest!.usage })
+      } else {
+        expect(body).toEqual({ error: 'draft_unavailable' })
+      }
+      for (const field of ['data', 'sources', 'evidence', 'citation_map', 'provenance', 'generation_artifact', 'input_manifest', 'diagnostics', 'ai_base', 'revisions']) expect(body).not.toHaveProperty(field)
       expect(bodyText).not.toContain(material.payload.content)
       if (disposition === 'erased') {
         expect(local.sqlite.prepare('SELECT COUNT(*) AS n FROM ct_ai_sources WHERE payload IS NOT NULL').get()).toMatchObject({ n: 0 })
@@ -409,16 +408,6 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     expect(await new EvidenceStore(local.asD1()).getJob(second.job_id, 'owner')).toMatchObject({ status: 'withdrawn' })
   })
 
-  it('冷啟只安全重放一次，後續一般輪詢不反覆重啟', async () => {
-    auth.current = user('owner')
-    const created = await (await send('POST', '/api/issues/7/evidence-jobs', { consent: true })).json() as { job_id: string }
-    app = new Hono<{ Bindings: EvidenceBindings }>()
-    app.use('/api/*', apiCsrf)
-    registerEvidenceRoutes(app)
-    expect((await send('GET', `/api/evidence-jobs/${created.job_id}`)).status).toBe(200)
-    expect((await send('GET', `/api/evidence-jobs/${created.job_id}`)).status).toBe(200)
-    expect(restarts).toBe(1)
-  })
   it('一般輪詢不重啟進行中工作，也不因 instance 暫時不存在而建立新工作', async () => {
     auth.current = user('owner')
     const created = await (await send('POST', '/api/issues/7/evidence-jobs', { consent: true })).json() as { job_id: string }
@@ -433,6 +422,77 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     expect(await (await send('GET', `/api/evidence-jobs/${created.job_id}`)).json()).toMatchObject({ status: 'queued' })
     expect(restarts).toBe(0)
     expect(workflowCreates).toBe(1)
+    expect(recordedRequests).toHaveLength(0)
+  })
+
+  it.each([
+    { observation: 'missing', retryOwner: 'owner' },
+    { observation: 'unknown', retryOwner: 'owner' },
+    { observation: 'missing', retryOwner: 'other' },
+  ] as const)('首次 Workflow create 失敗後，$retryOwner 重送 admission 可恢復 $observation instance 且不重複預留', async ({ observation, retryOwner }) => {
+    const originalCreate = env.EVIDENCE_WORKFLOW.create.bind(env.EVIDENCE_WORKFLOW)
+    let creates = 0
+    let scheduledJobId: string | undefined
+    env.EVIDENCE_WORKFLOW.create = (async options => {
+      if (++creates === 1) throw new Error('workflow_create_unavailable')
+      scheduledJobId = options?.params?.jobId
+      return originalCreate(options)
+    }) as typeof env.EVIDENCE_WORKFLOW.create
+    auth.current = user('owner')
+    const failed = await send('POST', '/api/issues/7/evidence-jobs', { consent: true })
+    expect(failed.status).toBe(503)
+    expect(await failed.json()).toEqual({ error: 'service_unavailable' })
+    const admitted = local.sqlite.prepare('SELECT id, execution_id FROM ct_ai_jobs').get() as { id: string; execution_id: string }
+    const store = new EvidenceStore(local.asD1())
+    const before = await store.getJob(admitted.id, 'owner')
+    expect(before).toMatchObject({ status: 'queued', usage: { attempts: 0, uncertain: 0 } })
+    if (observation === 'unknown') instances.set(admitted.execution_id, 'unknown')
+    auth.current = user(retryOwner)
+    const retried = await send('POST', '/api/issues/7/evidence-jobs', { consent: true })
+    expect(retried.status).toBe(202)
+    const result = await retried.json() as { job_id: string }
+    expect(result).toMatchObject({ status: 'queued', cache: 'joined' })
+    expect(result.job_id === admitted.id).toBe(retryOwner === 'owner')
+    expect((await store.getJob(result.job_id, retryOwner))!.executionId).toBe(admitted.execution_id)
+    expect(scheduledJobId).toBe(admitted.id)
+    expect(creates).toBe(2)
+    expect(instances.get(admitted.execution_id)).toBe('running')
+    expect((await store.getJob(admitted.id, 'owner'))!.usage).toEqual(before!.usage)
+    expect(local.sqlite.prepare('SELECT COUNT(*) AS n FROM ct_ai_jobs').get()).toMatchObject({ n: retryOwner === 'owner' ? 1 : 2 })
+    for (const table of ['ct_ai_executions', 'ct_ai_usage']) {
+      expect(local.sqlite.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get()).toMatchObject({ n: 1 })
+    }
+    expect(recordedRequests).toHaveLength(0)
+  })
+
+  it('Workflow create 失敗且查詢仍 unknown 時回 503，保留原 admission 待明確重送恢復', async () => {
+    const originalGet = env.EVIDENCE_WORKFLOW.get.bind(env.EVIDENCE_WORKFLOW)
+    const originalCreate = env.EVIDENCE_WORKFLOW.create.bind(env.EVIDENCE_WORKFLOW)
+    let creates = 0
+    env.EVIDENCE_WORKFLOW.get = (async () => ({ async status() { return { status: 'unknown' } } })) as unknown as typeof env.EVIDENCE_WORKFLOW.get
+    env.EVIDENCE_WORKFLOW.create = (async options => {
+      if (++creates < 3) throw new Error('workflow_create_unavailable')
+      return originalCreate(options)
+    }) as typeof env.EVIDENCE_WORKFLOW.create
+    auth.current = user('owner')
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const response = await send('POST', '/api/issues/7/evidence-jobs', { consent: true })
+      expect(response.status).toBe(503)
+      expect(await response.json()).toEqual({ error: 'service_unavailable' })
+    }
+    const admitted = local.sqlite.prepare('SELECT id FROM ct_ai_jobs').get() as { id: string }
+    const store = new EvidenceStore(local.asD1())
+    const before = await store.getJob(admitted.id, 'owner')
+    expect(before).toMatchObject({ status: 'queued', usage: { attempts: 0, uncertain: 0 } })
+    env.EVIDENCE_WORKFLOW.get = originalGet
+    const recovered = await send('POST', '/api/issues/7/evidence-jobs', { consent: true })
+    expect(recovered.status).toBe(202)
+    expect(await recovered.json()).toMatchObject({ job_id: admitted.id, status: 'queued', cache: 'joined' })
+    expect(creates).toBe(3)
+    expect((await store.getJob(admitted.id, 'owner'))!.usage).toEqual(before!.usage)
+    for (const table of ['ct_ai_jobs', 'ct_ai_executions', 'ct_ai_usage']) {
+      expect(local.sqlite.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get()).toMatchObject({ n: 1 })
+    }
     expect(recordedRequests).toHaveLength(0)
   })
 
@@ -515,7 +575,7 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     }
   })
 
-  it('native 查詢失聯或 unknown 不誤判在途工作，明確終態才保留未知預留', async () => {
+  it.each(['poll', 'startup', 'maintenance'] as const)('%s：native 查詢失聯或 unknown 不誤判在途工作，明確終態才保留未知預留', async scenario => {
     const { promise: waiting, resolve: release } = Promise.withResolvers<void>()
     const { promise: called, resolve: started } = Promise.withResolvers<void>()
     let disputeCalls = 0
@@ -536,9 +596,17 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     try {
       const attempt = local.sqlite.prepare("SELECT state, estimate_micro_usd, actual_micro_usd FROM ct_ai_usage WHERE step_key = 'generate:disputes'").get() as { state: string; estimate_micro_usd: number; actual_micro_usd: number | null }
       expect(attempt).toMatchObject({ state: 'started', actual_micro_usd: null })
-      for (const probe of ['get', 'status', 'unknown'] as const) {
-        workflowProbeFailure = probe === 'unknown' ? null : probe
-        instances.set(before!.executionId, probe === 'unknown' ? 'unknown' : 'running')
+      for (const probe of ['running', 'waiting', 'get', 'status', 'unknown'] as const) {
+        workflowProbeFailure = probe === 'get' || probe === 'status' ? probe : null
+        instances.set(before!.executionId, probe === 'unknown' ? 'unknown' : probe === 'waiting' ? 'waiting' : 'running')
+        if (scenario === 'startup') {
+          app = new Hono<{ Bindings: EvidenceBindings }>()
+          app.use('/api/*', apiCsrf)
+          registerEvidenceRoutes(app)
+        } else if (scenario === 'maintenance') {
+          auth.current = user('owner', 'admin')
+          expect((await send('POST', '/api/evidence-maintenance/reconcile', {})).status).toBe(200)
+        }
         const observed = await send('GET', `/api/evidence-jobs/${created.job_id}`)
         expect(observed.status).toBe(200)
         expect(await observed.json()).toMatchObject({ status: 'generating', error_code: null, usage: before!.usage })

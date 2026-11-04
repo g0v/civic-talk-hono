@@ -3,6 +3,10 @@ import { registerApiRoutes } from './api/routes'
 import { registerAuthRoutes } from './api/auth'
 import { apiCsrf } from './api/csrf'
 import type { AppBindings } from './api/types'
+import { hasEvidenceBindings, withEvidenceSource } from './ai/env'
+import type { EvidenceBindings } from './ai/env'
+import { evidenceEndpoints } from './ai/endpoints'
+import { registerEvidenceRoutes } from './ai/routes'
 import { listIssues, getIssue, getIssueDetail, getMaterialWithIssue, getOpinionWithIssue } from './db/queries'
 import { handleIssueRss, handleRss } from './rss'
 import { renderPage } from './ssr/render'
@@ -48,6 +52,33 @@ async function notFoundHtml(origin: string): Promise<string> {
 // ⚠️ 必須先於所有 /api 路由註冊。Hono 依註冊順序組 handler chain；若寫在後面，
 // 已註冊的路由回應後便不會進入這層，跨站寫入防護會靜默失效。
 app.use('/api/*', apiCsrf)
+
+// 通過全域 CSRF 後先檢查功能開關，關閉時不進入認證或資料庫。
+for (const [method, path] of evidenceEndpoints) {
+  app.on(method, path, async (c, next) => {
+    c.header('Cache-Control', 'private, no-store')
+    c.header('X-Content-Type-Options', 'nosniff')
+    c.header('Vary', 'Cookie', { append: true })
+    // 僅審閱設定會提供此可信的 Worker 變數，供 CLI 確認未對錯誤環境送出操作。
+    if (c.env.CIVIC_AI_REVIEW === '1') c.header('X-Civic-Evidence-Review', '1')
+    if (c.env.EVIDENCE_API_ENABLED !== '1') return c.json({ error: 'Not found' }, 404)
+    await next()
+  })
+}
+
+for (const [method, path] of evidenceEndpoints) {
+  app.on(method, path, async (c, next) => {
+    const env = c.env
+    if (!hasEvidenceBindings(env)) return c.json({ error: 'service_unavailable' }, 503)
+    c.env = withEvidenceSource(env)
+    await next()
+  })
+}
+
+// 子路由保留自己的錯誤處理，不覆蓋正式站其他 API 的錯誤或中介層。
+const evidenceApp = new Hono<{ Bindings: EvidenceBindings }>()
+registerEvidenceRoutes(evidenceApp)
+app.route('/', evidenceApp)
 
 // 先掛 auth：/api/auth/* 與 /api/me 要在 registerApiRoutes 的 /api/* 泛用處理之前命中。
 registerAuthRoutes(app)

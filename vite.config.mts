@@ -5,13 +5,18 @@ import * as vueCompiler from '@vue/compiler-sfc'
 import { sourceDefines, projectRoot } from './scripts/source-metadata.mjs'
 import { bundleNotices } from './scripts/bundle-notices.mjs'
 
+const experiment = process.env['CIVIC_AI_EXPERIMENT'] === '1'
+const review = process.env['CIVIC_AI_REVIEW'] === '1'
+if (experiment && review) throw new Error('CIVIC_AI_EXPERIMENT 與 CIVIC_AI_REVIEW 不可同時啟用')
+const profile = review ? 'review' : experiment ? 'experiment' : null
+
 export default defineConfig(({ mode }) => ({
   define: sourceDefines(),
   server: {
     // 不讓 dev server 代替 Worker 回 CORS，確保本機與正式路由行為一致。
     cors: false,
-    // 實驗入口綁定 canonical localhost:5173（不暴露 LAN）；占用時直接失敗，避免 OAuth callback 漂移。
-    ...(mode === 'remote' && process.env['CIVIC_AI_EXPERIMENT'] === '1' ? { host: 'localhost', port: 5173, strictPort: true } : {}),
+    // 實驗／審閱入口固定 canonical localhost:5173；占用時失敗，避免 OAuth callback 漂移。
+    ...(mode === 'remote' && profile ? { host: 'localhost', port: 5173, strictPort: true } : {}),
   },
   optimizeDeps: {
     // 一起預載 Vue 與輪播，避免首次發現輪播時重建依賴，短暫混用不同 Vue runtime。
@@ -46,18 +51,23 @@ export default defineConfig(({ mode }) => ({
   publicDir: 'public',
   plugins: lazyPlugins(() => [
     // Cloudflare plugin 與 Vitest 不相容；測試時略過，由 vue plugin 單獨處理 .vue
-    // 一般遠端開發仍用既有設定；只有明確 opt-in 的 remote mode 才載入實驗 Worker 與隔離 persist。
+    // 一般遠端開發仍用既有設定；明確 opt-in 時才選取各自隔離的 Worker 與 persist。
     ...(process.env['VITEST']
       ? []
       : [
           cloudflare({
             remoteBindings: mode === 'remote',
-            ...(mode === 'remote' && process.env['CIVIC_AI_EXPERIMENT'] === '1'
+            ...(mode === 'remote' && profile === 'review'
               ? {
-                  configPath: 'wrangler.ai-experiment.jsonc',
-                  persistState: { path: '.wrangler/ai-experiment' },
+                  configPath: 'wrangler.evidence-review.jsonc',
+                  persistState: { path: '.wrangler/evidence-review' },
                 }
-              : {}),
+              : mode === 'remote' && profile === 'experiment'
+                ? {
+                    configPath: 'wrangler.ai-experiment.jsonc',
+                    persistState: { path: '.wrangler/ai-experiment' },
+                  }
+                : {}),
           }),
         ]),
     vue({

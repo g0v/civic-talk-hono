@@ -69,56 +69,32 @@ async function failStoppedWorkflow(env: EvidenceBindings, job: { executionId: st
   }
 }
 
-/** 同一 execution 使用固定 Workflow ID；冷啟安全重放只會重用已記錄的 paid attempt。 */
-async function ensureWorkflow(env: EvidenceBindings, job: { id: string; executionId: string; status: ExecutionStatus }, options: { coldStart?: boolean; observeOnly?: boolean } = {}): Promise<void> {
-  if (options.observeOnly) {
-    let status: string
-    try {
-      const instance = await env.EVIDENCE_WORKFLOW.get(job.executionId)
-      status = (await instance.status()).status
-    } catch {
-      // 查詢失聯不是終態，不可因此標記未知費用或失敗。
-      return
-    }
-    if (status === 'errored' || status === 'terminated' || status === 'complete') await failStoppedWorkflow(env, job)
-    return
-  }
-  let instance: WorkflowInstance | null = null
+/** 只恢復從未啟動的固定 ID；控制面失聯與 Worker 冷啟都不是重啟在途推論的證據。 */
+async function ensureWorkflow(env: EvidenceBindings, job: { id: string; executionId: string; status: ExecutionStatus }, options: { observeOnly?: boolean } = {}): Promise<void> {
+  let status: string | undefined
   try {
-    instance = await env.EVIDENCE_WORKFLOW.get(job.executionId)
-    const state = await instance.status()
-    if (state.status === 'errored' || state.status === 'terminated' || state.status === 'complete' || state.status === 'unknown') {
-      await failStoppedWorkflow(env, job)
-    }
-    else if (options.coldStart && (state.status === 'running' || state.status === 'waiting')) {
-      // 本機 runtime 重啟後可能仍顯示 running；D1 attempt fence 禁止重打已送出的推論。
-      await instance.restart()
-    }
-    return
+    const instance = await env.EVIDENCE_WORKFLOW.get(job.executionId)
+    status = (await instance.status()).status
   } catch {
-    // get/status 不存在或失聯：只有從未開始的 queued 可嘗試固定 ID create。
+    // 查詢失聯不是終態；只有尚未開始的 queued 可嘗試固定 ID create。
   }
-  if (job.status !== 'queued') {
-    const store = new EvidenceStore(env.DB)
-    const snapshot = await store.getSnapshot(job.executionId)
-    if (snapshot && ['extracting', 'comparing', 'generating'].includes(job.status)) {
-      await store.markAttemptsUnknown(job.executionId)
-      await store.setStatus({ executionId: job.executionId, expected: job.status as 'extracting' | 'comparing' | 'generating', next: 'failed', errorCode: 'provider_uncertain', generations: snapshot.generations })
-    }
+  if (status === 'errored' || status === 'terminated' || status === 'complete') {
+    await failStoppedWorkflow(env, job)
     return
   }
+  if (options.observeOnly || job.status !== 'queued' || (status !== undefined && status !== 'unknown')) return
   try {
     await env.EVIDENCE_WORKFLOW.create({ id: job.executionId, params: { jobId: job.id } })
   } catch {
-    // 同時請求可能已用相同 ID 建立；必須確認 instance 確實存在。
-    const existing = instance ?? await env.EVIDENCE_WORKFLOW.get(job.executionId)
-    await existing.status()
+    // 同時請求可能已用相同 ID 建立；必須確認 instance 確實存在，不重打模型。
+    const existing = await env.EVIDENCE_WORKFLOW.get(job.executionId)
+    if ((await existing.status()).status === 'unknown') throw new Error('workflow_create_unconfirmed')
   }
 }
 
-export async function recoverActiveWorkflows(env: EvidenceBindings, coldStart = false): Promise<void> {
+export async function recoverActiveWorkflows(env: EvidenceBindings): Promise<void> {
   const store = new EvidenceStore(env.DB)
-  for (const job of await store.listActiveWorkflowJobs()) await ensureWorkflow(env, job, { coldStart })
+  for (const job of await store.listActiveWorkflowJobs()) await ensureWorkflow(env, job)
 }
 
 function sourceMetadata(): { commit: string | null; dirty: boolean } {
@@ -201,7 +177,7 @@ export function registerEvidenceRoutes(app: EvidenceApp): void {
     if (!startup) {
       startup = (async () => {
         await reconcileSources(env)
-        await recoverActiveWorkflows(env, true)
+        await recoverActiveWorkflows(env)
       })()
       startups.set(env.DB, startup)
     }
@@ -292,7 +268,11 @@ export function registerEvidenceRoutes(app: EvidenceApp): void {
         generations: snapshot.generations,
       })
       if (saved.outcome !== 'saved') return c.json({ error: 'source_unavailable' }, 503)
-      await ensureWorkflow(c.env, { id: claim.jobId, executionId: claim.executionId, status: claim.status })
+    }
+    if (claim.status === 'queued') {
+      // joined 也能恢復初次 create 失敗；跨帳號共用 execution 時仍由原啟動者的 job 執行。
+      const [workflowJob] = await store.listActiveWorkflowJobs(claim.executionId)
+      if (workflowJob?.status === 'queued') await ensureWorkflow(c.env, workflowJob)
     }
     const cache = claim.outcome === 'created' ? 'miss' : claim.outcome === 'cached' ? 'hit' : 'joined'
     const result = {
@@ -378,6 +358,8 @@ export function registerEvidenceRoutes(app: EvidenceApp): void {
     const artifact = await store.getArtifact(job.executionId, job.artifactId)
     const revisions = await store.listRevisions(jobId, auth.context.user.id, admin)
     if (!artifact || !object(artifact.payload) || !revisions || !await store.getSnapshot(job.executionId)) return c.json({ error: 'draft_unavailable' }, 422)
+    const updated = await store.getJob(jobId, auth.context.user.id, admin)
+    if (!updated || !['ai_draft', 'partial_draft'].includes(updated.status) || updated.artifactId !== artifact.id) return c.json({ error: 'draft_unavailable' }, 422)
     return c.json({ job_id: jobId, ai_base: { id: 'ai', verification: 'ai_unverified', data: artifact.payload.data, citation_map: artifact.payload.citation_map }, revisions })
   })
 

@@ -4,6 +4,8 @@ civic-talk-hono 的部署與環境設定參考。日常開發看 [`README.md`](.
 
 > 狀態：**已部署**於 <https://civic.vtaiwan.tw>（Worker 名稱 `civic-talk`，首次部署 2026-08-05）。第 1 節現在是**環境設定的參考**（換環境、換金鑰、新維護者接手時要看），不再是首次部署的待辦清單。
 
+> **#183 rollout：** 本次僅更新 Draft PR，不授權 merge、deploy、正式啟用或遠端 migration。`0017_evidence_pipeline.sql` 是正式保留的八張 `ct_ai_*` 表 migration，既有 SQL 不改。審查期間只使用[隔離本機手冊](./docs/evidence-api-review.md)，不可套遠端，亦不可對共用 `DB_AUTH` 執行 DDL／migration。正式新 API 預設關閉。
+
 ---
 
 ## 原始碼與授權 notices 的提供
@@ -41,18 +43,17 @@ footer 提供該次建置固定 Git commit 的 source archive 與 LICENSE；沒�
 
 ### 1.2 OAuth 應用程式的 callback 網址
 
-Google 與 GitHub 的 OAuth 應用程式**與 vTaiwan-hono 共用同一組**。允許清單裡必須同時有本機與正式站：
+Google 與 GitHub 的 OAuth 應用程式與 vTaiwan-hono 共用。正式站 callback 為：
 
 ```
-http://localhost:5173/api/auth/callback/google
-http://localhost:5173/api/auth/callback/github
 https://civic.vtaiwan.tw/api/auth/callback/google
 https://civic.vtaiwan.tw/api/auth/callback/github
 ```
 
-- 這是**只能在 Google Cloud Console 與 GitHub Developer settings 手動做**的動作。
-- 沒加就是登不進去（OAuth 會回 `redirect_uri_mismatch`），程式碼端無解。
-- 因為是共用的應用程式，**新增網址時不要動到 vTaiwan 既有的那幾筆**。
+本機 #183 審查只使用 Google 的 `http://localhost:5173/api/auth/callback/google`，須由維護者確認 Google app 已允許；GitHub 目前只允許 `vtaiwan.tw` 子網域，不能用 localhost GitHub 登入。一般 `vp run dev` 刻意停用 Auth，審查使用專用 remote-dev profile。
+
+- callback 清單只能在 Google Cloud Console／GitHub Developer settings 手動設定；缺少時會回 `redirect_uri_mismatch`。
+- 共用應用程式的 vTaiwan 既有 callback 不得移除；更換正式網域時應同步核對。
 - 換正式網域時記得同步這裡，否則新網域一樣登不進去。
 
 ### 1.3 正式環境的機密
@@ -84,7 +85,7 @@ npx wrangler secret put OPEN_ROUTER_API_KEY
 "vars": { "BETTER_AUTH_URL": "https://civic.vtaiwan.tw" }
 ```
 
-目前設定檔**沒有** `vars` 這一段，所以正式站的 `BETTER_AUTH_URL` 只能是設在 Worker 上（儀表板或 `wrangler secret put`）——`src/auth/createAuth.ts` 直接把它當 `baseURL`，值不對（例如還留著 localhost）就會在登入時導到錯的網域。要改成寫進設定檔前先讀下面那條 `keep_vars` 警告。本機開發時 `.dev.vars` 的值仍會覆蓋它，所以不影響 `vp run dev`。
+正式站的 `BETTER_AUTH_URL` 必須是本站 origin；`src/auth/createAuth.ts` 直接把它當 `baseURL`，值不對會在登入時導到錯的網域。設定位置與下列 `keep_vars` 規則須一併核對；本機 `.dev.vars` 仍可能覆蓋設定。
 
 ⚠️ **若你打算在 Cloudflare 儀表板上手動設定 vars**：wrangler 預設把設定檔當成唯一真相，**deploy 會覆蓋或刪除儀表板上的 vars**。要保留儀表板設定得在 `wrangler.jsonc` 加 `"keep_vars": true`（vTaiwan-hono 就有這一行，本專案沒有）。用 `wrangler secret put` 設的機密不寫在設定檔裡，不受這條規則影響——這也是建議走 secret 的原因之一。
 
@@ -158,6 +159,14 @@ vp run deploy    # = build + 建置產物／公開原始碼檢查 + wrangler dep
 - #148 的 `0014_user_feedback.sql` 新增 `ct_feedback`，匿名回報寫入及管理端回報列表皆依賴此表。本機與遠端皆已套用：2026-10-16 經使用者授權、確認 vTaiwan.tw 帳號後，遠端 pending 僅 0014，套用後清單為空，`sqlite_master`／欄位／分類約束與排序索引查核符合 migration；只新增 `ct_feedback` 業務表，未操作 `vtaiwan-auth`。部署 Worker已，正式站功能已上線。
 - #95 的 `0015_issue_tags.sql` 為 `ct_issues` 新增 `tags TEXT NOT NULL DEFAULT '[]'`。2026-10-20 經使用者授權，確認 Cloudflare 帳號為 vTaiwan.tw，且檔案與已合併的 `main` 一致後，執行 `npx wrangler d1 migrations apply vtaiwan-civic-talks --remote --config wrangler.jsonc`；套用前 pending 僅 0015，套用後清單為空。已核對 `sqlite_master` 資料表清單未變、欄位型別／NOT NULL／預設值正確，既有議題仍為 16 筆，tags 全為 `[]` 且無 NULL／無效 JSON；未操作 `vtaiwan-auth`，未部署 Worker。
 - #159 的 `0016_issue_closure.sql` 為 `ct_issues` 新增 `is_closed`、`closure_reason`、`closure_changed_at`，不新增資料表，也不操作認證庫。**2026-10-21 僅套用本機；尚未套用遠端、尚未部署**。公開議題查詢也依賴這些欄位，因此須先取得使用者授權、核對 pending 清單並套用 migration，再部署 Worker。
+- **#183 / `0017_evidence_pipeline.sql`：** SQL 已在隔離本機套用，決定作正式業務 migration，八張表皆為 `ct_ai_*`。不要改寫已套用 SQL 或刪除本機 ledger；目前這個 draft 的工作沒有對遠端執行 0017。一般 migration apply 會選到它，`remote:false` 不是 CLI `--remote` 的安全鎖。
+
+  **未來 rollout 順序，非本次操作授權：**
+  1. 先完成人工檢閱，使用者明確同意後合併，**確認實際已進 `main`**；Draft 更新不等於合併。
+  2. 另取得該次遠端業務 migration 授權，核對帳號、目標 `DB`、main 上原始 0017、遠端 pending 與前序 migration，依序執行並檢查 ledger／八張表／索引。不得套到 `DB_AUTH`、以 DROP 或改 ledger 代替修復。
+  3. 另取得部署授權，按本文件完成建置與來源查核後部署；旗標維持 `EVIDENCE_API_ENABLED=0`，驗證六端點均 404 與既有 API 不受影響。部署不自動執行 D1 migration。
+  4. 另決定是否啟用與取得授權，先核對 Workers AI、Workflow、業務 DB、認證及費用／留存政策，才明確設 `EVIDENCE_API_ENABLED=1` 並按授權驗證。必要綁定缺失須 503，不提供假 fallback。新 UI 不屬本次交付。
+
 
 ---
 
@@ -252,7 +261,7 @@ cp wrangler.jsonc wrangler.personal.jsonc
 
 > ⚠️ `wrangler d1 create` 完成後會問 **“Would you like Wrangler to add it on your behalf?”**。一律回答 **no**——回答 yes 會把綁定寫進 tracked 的 `wrangler.jsonc`，正是本節要避免的事。請自行把 `database_id` 填進 `wrangler.personal.jsonc`。
 
-編輯 `wrangler.personal.jsonc`，**四處都要改**：
+編輯 `wrangler.personal.jsonc`，**五處都要改**：
 
 | 欄位                    | 改成什麼                                                                |
 | ----------------------- | ----------------------------------------------------------------------- |
@@ -260,6 +269,7 @@ cp wrangler.jsonc wrangler.personal.jsonc
 | `d1_databases[DB]`      | 步驟 1 建立的業務庫名稱與 `database_id`                                 |
 | `d1_databases[DB_AUTH]` | 步驟 1 建立的認證庫名稱與 `database_id`                                 |
 | `services`              | **整段刪除**——`fact-check-core` 只存在於 vTaiwan 帳號，帶著它會部署失敗 |
+| `workflows[].name`       | 改為自己專用的 Workflow 名稱；不得沿用 `civic-talk-evidence`，避免與同帳號的其他 Worker 共用資源名稱。保留 `EVIDENCE_API_ENABLED=0`，正式開放前另外確認 migration、認證及費用／留存設定。 |
 
 ### 6.3 套用 migration
 

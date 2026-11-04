@@ -1,12 +1,28 @@
 # #183 實作洞察與驗收紀錄
 
-更新日期：2026-11-04。此檔內容區分已觀察證據、設計決策與尚未驗證事項，不以計畫或測試替代真實模型／人工品質證據；依各節日期與模型／契約判讀，不將歷史結果套用到最新版本。
+更新日期：2026-11-05。此檔保留各時期的正反紀錄；下方現況優先，歷史章節依當時日期與模型／契約判讀，不把舊「尚未實測」當成現狀。
+
+## 現況與使用者確認
+
+- 使用者已確認真實三模型品質實驗成功，並同意公開 [結果](./results/ai-experiment_result.json) 與 [費用報告](./results/ai-experiment_cost.json)。報告為 `ai_draft`，共識 2、爭點 1、立場 3，三項 completed、補完 not_needed；該工作 ledger 記錄 23 attempts、13,362 microUSD、unknown／reserved 為零。這不是 Cloudflare 帳單核對，也不是獨立人工 gold labels。報告 source metadata `e668fa2ea9c70fd3bdbcfd06ebb554b5e3a4747d` 為 dirty，不能聲稱與目前 HEAD 相同或重跑逐字相同。不要另付費重跑以確認使用者的成功回報。
+- 正式 Worker 已接上證據 API，`EVIDENCE_API_ENABLED` 預設 `0`；缺失必要綁定時開啟亦 fail closed。`CIVIC_AI_REVIEW=1` 為獨立本機工作／合成來源、遠端既有認證與真實 AI；原 `CIVIC_AI_EXPERIMENT=1` 遠端唯讀來源實驗及其資料與 ledger 保留。手冊、六 API 及閱讀地圖見 [`docs/evidence-api-review.md`](./docs/evidence-api-review.md)。
+- 已決定原樣保留 `0017_evidence_pipeline.sql` 為八張正式 `ct_ai_*` 表的 migration，SQL 與已套用的本機 ledger 相符。審查僅使用本機 migration；遠端要先確認已 merge `main` 並另獲授權，不對 `DB_AUTH` 建 DDL／跑 migration。維持 Draft PR #191：本次授權 commit／push／更新 draft，不授權 ready、merge 或 deploy。
+
+## 本次 API 完整化驗收（2026-11-05）
+
+- `vp check --no-fmt --no-lint`：170 files、零型別錯誤；`vp test`：57 files／599 tests 全部通過。`vp run build` 與 `node scripts/licensing-dependencies.mjs --check` 通過；正式 binding 型別由 Wrangler 重新產生，未手改生成物。
+- 回歸先重現並修正：revision 最後快照讀取後的 erase／withdrawn 洩漏、startup／maintenance 將失聯或 unknown 誤判終態、初次 Workflow create 失敗後無法恢復，以及未確認 create 成功卻回 202。取消以 Worker 冷啟為由 restart 活動 Workflow；跨帳號 joined admission 仍使用原付費啟動者的 job ID。
+- 實際 Workerd HTTP＋原生 Workflow＋本機 D1 smoke 通過 **36 個 HTTP 檢查**。未套 0017 時，關閉的六 API 同源 404、跨站簡單寫入 403、既有 API 200；手動啟動的 OFF Workflow 回傳 `disabled`、native `complete`，不建立 AI schema，也不代表產出草稿。錯誤地在本機 migration 前啟用則安全 503，不改變既有 API。
+- 套用 canonical 0017 後，以正式 `SOURCE_DB ?? DB` 路徑完成 `ai_draft`；驗證 owner／admin／non-owner、快取不新增嘗試、人工 201／過時 parent 409、AI 基底不變與 diff、reconcile 隱藏後不交付正文、erase 清除快照／工件／人改 payload、保留來源資料且永久拒絕再入。此 smoke 使用一次性合成身份與既有合成 provider fixture：6 個 synthetic attempts，不是真實模型品質或帳單；outbound fetch、真實模型呼叫、遠端業務／認證寫入均為 0。
+- `node scripts/evidence-review-setup.mjs` 已實跑：兩個不同虛構 ID 的本機 DB 皆套用 0001–0017 並建立合成來源；第二次執行無 pending migration，不重設狀態。`sqlite_master` 只有 `ct_*` 業務表與 Cloudflare／D1／SQLite 內部表，沒有 auth schema。另在隔離 smoke 逐 byte 比對 0017 與既有 Git 版本相同，新增表恰為八張 `ct_ai_*`。
+- README／檢閱手冊的 21 個 shell block 通過 `bash -n`、23 個本機檔案連結存在；只檢查語法與引用，未執行文件中的遠端命令。完整六 API 命令及 fixture／不可逆處置說明另經獨立核對。
+- 本批沒有修改 UI、模型或提示詞，未新增真人 OAuth、付費模型、遠端 schema 或正式部署驗證。已成功的真實品質實驗沿用上方使用者確認與兩份歷史報告；本次自動化證據不取代它。
 
 ## 已核對的環境事實
 
 - 已依使用者明確核准開始實作；`plan.md` 保留核准的實質計畫，`plan_review.md` 與設計圖未改。原先沒有 commit／push／PR 授權；使用者其後另授權 commit、push、更新既有 draft PR #191，不授權 merge、deploy、遠端 migration 或遠端業務資料寫入。
 - 一開始所在分支為 `feat/issue-183-evidence-pipeline`，初始工作目錄乾淨。舊的 `clairic_test_result/` 目前是空目錄；本紀錄不把它當作可用 fixture，也不以 fixture 宣稱真實模型能力。
-- 既有 `vp run dev:remote` 是 `vp run build && vp dev --mode remote`。建置腳本在 production build mode 執行；Vite `mode` 可區分一般 build 與 `remote` serve。已知 Cloudflare Vite plugin API（本機安裝版本 1.63.1）支援 `configPath` 與 `persistState`，官方 API 文件亦明列兩者。因此專用配置只在 `mode === 'remote'` 且 `CIVIC_AI_EXPERIMENT=1` 時選擇；前置 build、一般 `dev`／`dev:remote`、一般 build／deploy 仍使用原 `wrangler.jsonc` 與 `src/index.ts`。
+- 歷史環境整合時，`vp run dev:remote` 是 `vp run build && vp dev --mode remote`；當時只有 `CIVIC_AI_EXPERIMENT=1` 選取專用設定。現在另有 reviewer profile 與正式入口，詳見上方現況，不能把當時入口限制視為目前架構。
 - `wrangler.ai-experiment.jsonc` 使用 `src/ai/entry.ts`、本機 `DB`（明列 `remote:false`）、遠端來源 `SOURCE_DB`、只供 Better Auth 正常生命週期使用的遠端 `DB_AUTH`、遠端 Workers AI `AI` 與本機 `EVIDENCE_WORKFLOW`。Vite 與 migration 共用忽略目錄 `.wrangler/ai-experiment`；專用 remote dev 僅綁 canonical hostname `localhost:5173`（loopback，不暴露 LAN）並設 `strictPort:true`，origin 與現有 `BETTER_AUTH_URL`／README 一致。本次環境整合檢查觀察到原 `127.0.0.1:5173` 設定與 canonical origin 不一致：`lsof` 實際看到既有 Node PID 55197 綁 `[::1]:5173`，而早先 smoke 用 `curl --resolve` 強制打 IPv4，可能令瀏覽器 `localhost` 命中另一服務，不能當 OAuth callback 證據。修正後在舊 listener 仍存在時，直接 `CIVIC_AI_EXPERIMENT=1 vp dev --mode remote` 以 exit 1／`Port 5173 is already in use` 安全拒絕；沒有停止未知 PID。人工 OAuth 前須由使用者停止其擁有的 5173 服務。臨時 `--port 5174` 僅供 no-login smoke，`BETTER_AUTH_URL` 仍是 5173，不能驗 callback。
 - Cloudflare 文件區分 Worker 執行位置與資源 binding：Vite／Wrangler local development 的程式碼在本機執行，單一 binding 可遠端連線；Workflows 本身須用本機模擬而非 remote Workflow binding。見 [Cloudflare local development](https://developers.cloudflare.com/workers/local-development/) 與 [Workflows local development](https://developers.cloudflare.com/workflows/build/local-development/)。此設計不等於 `SOURCE_DB` 有唯讀資料庫權限：遠端 binding 仍有寫入能力，唯讀邊界必須由來源 repository 的固定參數化 SELECT、呼叫點隔離與行為測試保證。
 - `ct_materials` schema 沒有 material `title` 欄；`Source.Title` 映射 `source_name`，缺值用素材 ID，不生成或預覽正文。核心完成的來源程式只讀 `ct_issues` 的 id/title/description/status flags，`ct_materials` 的 id/issue_id/source_name/source_url/raw content/status flags，排除作者快照欄。`source_hash` 是固定順序 metadata+content JSON 的 UTF-8 SHA-256；`content_hash` 只雜湊未 trim／未正規化的原始 content UTF-8 bytes；空正文回 422。這些來源/hash 規則由程式碼與單元測試確認；本次 live source 預檢只取 ID／狀態／長度，未讀正文或重算 remote hash。
@@ -14,31 +30,31 @@
 
 ## 安全與留存決策
 
-- 實驗入口只公開證據實驗 API 與必要的 Better Auth 登入／session lifecycle，不掛一般業務 API。`DB_AUTH` 的正常 OAuth／session 寫入是計畫明列的唯一遠端 auth 寫入例外；不建立 auth schema、不對其執行 migration，不以原始 SQL 寫入 auth DB，也不新增改 profile／ban／管理端點。
-- `SOURCE_DB` 只作遠端來源查詢，不交給通用寫入 repository；實驗工作與新增 `ct_*` 業務表都只落在隔離本機 `DB`。任何清除／對帳只清本機實驗快照；遠端來源仍唯讀。
-- `0017_evidence_pipeline.sql` 建立八個 `ct_ai_*` 表與索引，外鍵只互相指向 `ct_ai_*`，沒有指向業務來源或認證表；`0001`–`0016` 未改。一般 `wrangler.jsonc` 與專用設定的 `DB.migrations_dir` 均為 `./migrations`，故任何一般業務庫 migration apply 都會選入 `0017`：一般 `--local` 會影響預設開發庫，`--remote` 可能影響遠端業務庫。這是未由設定強制隔離的風險，不能因入口隔離而宣稱安全；`wrangler deploy` 本身不會自動 apply migration。本次只在專用 persist 的本機 DB 套用；不對 `SOURCE_DB`、`DB_AUTH` 或一般業務庫套用 `0017`。
+- 原實驗入口只公開證據 API 與必要 Better Auth 登入／session lifecycle，不掛一般業務 API；正式入口另沿用既有業務路由。`DB_AUTH` 正常 OAuth／session 寫入是允許的認證例外；本次不建立 auth schema、不跑 migration、不以 SQL 寫入 auth DB。
+- 原實驗 `SOURCE_DB` 只作遠端來源 SELECT，實驗工件與清除均在隔離本機 `DB`；reviewer profile 的 `SOURCE_DB` 則是獨立的本機合成資料庫。正式啟用時來源預設為 `DB`；詳見手冊的各模式表。
+- `0017_evidence_pipeline.sql` 建立八個 `ct_ai_*` 表與索引，外鍵只互相指向 `ct_ai_*`，沒有指向業務來源或認證表；`0001`–`0016` 未改。一般業務庫 migration apply 仍會選入 `0017`，遠端只能在確認 main merge 後另獲授權才執行；`wrangler deploy` 本身不會自動 apply migration。
 - `DB.remote:false` 僅限制開發時 binding，不能阻止 CLI 明寫 `--remote` 並命中設定中相同的正式 `database_id`；本輪沒有查詢遠端 schema 或 migration ledger，因此遠端是否已有 `0017` 未知。若懷疑誤套，停止後保全紀錄、聯繫維護者並待明確核准修復；不自行 DROP、改寫 `d1_migrations` 或重試。
-- **Draft 合併前門檻：** 維持 draft 時保留 `0017` 與隔離本機 ledger 供重現，不刪 tombstone／未知費用；若放棄則關閉 PR、不讓 `0017` 進 main，後續分支移除 active migration 須連同依賴程式／測試／設定一起處理。保留的 DB／ledger 應能對回相符的不可變原 SQL（固定 Git commit 或可取得的封存副本）；不必先刪除封存 DB，也不必永遠在一般 `migrations` 目錄保留檔案。不得覆寫或重用同一 migration 歷史中已套用的版本；刪檔不會回滾 schema，未來 `main`／catalog 編號由維護者依實際歷史另行核准。若將來保留／合併，先決定並實作可重現的獨立 migration catalog，或明確核准並審查 production 需求與永久 migration 編排，完成檢查後才能合併；此 draft 沒有搬 migration 或修改 config／schema。隔離資料清除、完整 sandbox 處置與權利請求依 [`README` 第 7.1 節](./README.md#71-實驗後-migration-與私有狀態處置)及核准計畫，由使用者先決定私有資料、tombstone 與費用留存；不得為重跑或繞配額重建狀態。
+- **後續 migration 決策取代舊的刪除／獨立 catalog 前置提案：** `0017` 保留作正式 migration，已套用的 SQL 必須 byte-for-byte 不變；合併與遠端執行是分開關卡。隔離資料保留需求、tombstone 與未知費用不得為重跑或繞配額刪除；不因保留 migration 宣稱已獲遠端執行或部署授權。處置與 rollout 見[手冊](./docs/evidence-api-review.md)。
 - 遠端來源沒有刪除通知。startup reconcile 及每個 job 的來源查核會在隱藏／變更／刪除後 fail closed；發現延遲取決於下次啟動全量 reconcile 或 job poll，跨庫清除不是即時或原子同步，已送出的推論不能保證撤回。僅隱藏／變更會令舊工作 `withdrawn` 並停止提供舊快照；遠端 delete 或 admin/local erase 才執行本機 hard erase。
 - `ct_ai_sources` 以 generation fence 記錄快照來源。paid-attempt 預留、artifact／狀態／完成寫入，以及 snapshot／artifact／revision 讀寫，均比對該工作完整來源集合與已捕捉 generation；一旦來源 erase 增加永久 tombstone generation、將 source／artifact／revision payload 清空，晚到的 provider response 不能重新保存或回傳舊內容。隱藏／改動是 withdrawn fence/status，不宣稱已物理抹除同等資料。
 - GET job 在載入 snapshot／artifact 後再做最後一次狀態查核：若最新狀態已是 erased／withdrawn，只回最新 status／時間／usage metadata，不回先前讀取的 data／引文／正文；正常回應使用最新狀態，artifact ID 改變則 fail closed。核心用真正 SQLite barrier 測試 erase 與 withdrawn 各一例，確保 snapshot 已讀取後才提交處置時 HTTP response 無正文／引文／`data`；僅為本機 race regression evidence，非 OAuth／live model evidence。
 - Cache identity 只含議題與實際選取素材的 hash、language、pipeline/settings 與 source metadata；未選取素材的隱藏清單不造成明確 `material_ids` selection 的 paid cache miss。POST `input_coverage` 回報本次 selected/all-eligible IDs 與適用的初始排除；可讀 job GET 另外有 `initial_input_diagnostics`（建立時）及 `current_issue_exclusions`（當下 live query）。省略 `material_ids` 時 selection 是所有可用素材，選取集合變更仍會改變 key。
-- 每個 D1 binding isolate 的首個通過使用者認證之 evidence API request 會先啟動一次全量 source reconciliation 及 active Workflow recovery；成功後此 bootstrap 不會每次 poll 重複，若失敗則清除快取讓後續 request 重試。一般 job GET／revision／每個 paid stage 仍查該工作來源。Admin reconcile endpoint 每次明確全量查核並另要求 recovery。本次專用 Worker no-login smoke 僅確認 GET job、POST job 與 admin reconcile 在無 session 時均回 401；未送 authenticated request，因此尚未在此 Worker runtime 觸發或驗證 bootstrap／recovery。
+- 首個通過認證的 evidence request 會做來源對帳及 active Workflow 狀態觀察，同 isolate 成功後不重複 bootstrap，失敗則後續 request 可重試。admin reconcile 也觀察明確終態；RPC 失聯或 unknown 不表示終止。正式 Worker 可能有多個 isolate，不能以冷啟為由 restart 仍在執行的 instance；早期本機 cold-start restart 的舊實驗紀錄不適合作為現行行為。
 - Admission quota 為每帳號每日 20 個名額，同議題 5 分鐘 cooldown；active 工作先占名額，已開始／unknown／settled paid attempts 的終止工作仍計數。完全未開始 paid attempt 的失敗／撤下／erase 會釋放名額與 cooldown。unknown cost reservation 保留，不當成零費用退回。
 - `budgetSql` 使 `reserved`／`started`／`unknown` reservations 跨 UTC day 持續計入總預算；只有 `settled` 金額按 `started_day` 歸日。unknown fee 不會隨日界自動退款，可能讓多個中斷中的未知呼叫持續占用後續日預算；目前沒有 manual bill-adjust／settlement API，也沒有真實帳單或付費額度證據。這是 plan §8 的保守估算決策；是否加入有審計的人工 settlement 流程留待使用者未來決定，不在本次改 ledger 或增加 billing UI。
-- 六條 #183 業務／maintenance API（建立 job、GET job、GET revisions、POST revision、admin POST reconcile、admin POST erase）都經 Better Auth user session；兩個 maintenance POST 另要求 admin/super-admin role 與 CSRF body/origin 防護。reconcile body 精確 `{}`，回 `checked`／`withdrawn`／`erased` counts 並呼叫 recovery；erase body 僅接受 `{kind:"issue"|"material", id: positive safe integer}`，只清本機 D1 並立 tombstone。Maintenance CLI `list` 只列本機 source ID/hash/checked time；`reconcile --base ... --cookie-jar ...` 呼叫 loopback API；CLI `erase` 只寫 `.wrangler/ai-experiment` 中唯一匹配的隔離 sqlite DB。
+- 六條 API 均要求 Better Auth session；maintenance POST 另要求 admin／super-admin 與 CSRF。reconcile body 精確 `{}`，回 `checked`／`withdrawn`／`erased`；erase body 僅接受 `{kind:"issue"|"material", id:正整數}`，清除的是**當前綁定的工作 DB**並立 tombstone，不寫來源 DB。舊 maintenance CLI 固定操作 `.wrangler/ai-experiment`，reviewer 操作請用[手冊](./docs/evidence-api-review.md)的專用 API 範例。
 - `eraseSource` 會為 namespace/source ID 建立永久 tombstone：同一隔離 DB 之後任何包含該來源的工作都被拒絕，即使 prompt/settings 改版；這是跨工作保護，不只是舊工作 race fence。issue/material erase 是不可逆的資料清除，不是正常測試 reset；只應在相關人工測試完成後執行。不得刪 tombstone／改 generation 或重建 user state 以強迫重跑。未來是否存在明確 new-generation／new-consent re-import 流程留給人工決策；目前保留保守永久 opt-out。
 - `ct_materials` 正文可能含個資。送入 Workers AI 前排除來源欄位中的作者快照 ID／姓名／email，不代表會從素材原文中刪除這些資訊或完成匿名化；素材原文未脫敏，使用者明確同意才可啟動實驗工作。Cloudflare Workers AI 使用平台帳號，計畫中的每日 US$5 是估算額度控制而非帳單硬上限。
 - AI 原稿與人改版分開保留；人改文字標為 `human_unverified`。只有逐句回查來源與人工判斷，才能對語義正確性作出品質結論。JSON parse、citation schema 或 HTTP 200 不是語義品質證明。
 - provider usage 缺失或 malformed 會標記未知，`actualCallCost` 不推算成零，reserved estimate 不釋放；只要 answer 其餘符合解析／來源／schema 驗證，單獨 usage metadata 錯誤不抹除答案。provider 回傳 `model` 欄位是任意字串 metadata，不能當作不可變權重 revision；Clef 沒回 `truncated` 時保持 unknown。
-- OAuth Cookie 匯入不可用 `curl --config -` 的 `cookie = "..."` 取代 Cookie jar：`CURLOPT_COOKIE` 只設定單次請求的 Cookie header，不會填入 curl cookie engine；response 沒有 `Set-Cookie` 時，後續 jar-only request 就沒有登入 cookie。見 curl 官方 [`CURLOPT_COOKIE`](https://curl.se/libcurl/c/CURLOPT_COOKIE.html) 與 [HTTP cookies](https://curl.se/docs/http-cookies.html) 說明。README 現改由隱藏 stdin 呼叫 `scripts/session-cookie-jar.mjs` 產生 Netscape jar。Request `Cookie` header 不含原始 `Domain`／`Path`／`Secure`／`HttpOnly` 屬性，因此 helper 不宣稱保留原屬性；只建立 `localhost` host-only、`/`、expiry `0` 的 session cookie，HTTPS origin 或 `__Secure-`／`__Host-` 前綴會設定 Secure。Netscape jar 沒有 port scope，故只能用於完全相同 canonical `http://localhost:5173`，不可向其他 localhost service/port 傳送，也不可匯入正式站 Cookie；curl 對 localhost 的 Secure-context 例外可供上述前綴使用。README 所有 jar-auth curl 及 maintenance reconcile CLI 均以 `--disable` 為第一參數、`--noproxy '*'` 忽略個人 `.curlrc` trace/proxy；README jar path 從 repo root 使用相對路徑，避免 `--cookie` 將含 `=` 的路徑誤判為 inline Cookie。實際 OAuth／Better Auth session 尚未驗證。
-- README §3 的 `EXIT` trap 以零參數呼叫 `cleanup_on_exit`，因此函式中的 `$3` 是空字串，原清理目標會變成 `/session-check.json` 而非隔離 state dir。窄幅修正是在內層 Bash 一開始捕捉 `state_dir=$3`，並讓 cleanup、舊回應預清理及 `mktemp` 都使用該穩定變數；canonical origin、隱藏 stdin、helper、curl flags、相對 jar path 與失敗 guards 均未改。
+- 歷史 Cookie jar 調查：`curl --config -` 的 inline `cookie = ...` 不能取代 curl cookie engine。`scripts/session-cookie-jar.mjs` 從隱藏 stdin 建立 `localhost` host-only session jar；原始 header 不含 Domain／Path／Secure／HttpOnly 屬性，無法聲稱保留，且 jar 沒有 port scope，只可用於已核對的 canonical origin。安全登入與現行命令見[手冊](./docs/evidence-api-review.md)。
+- 舊版 README 的 `EXIT` trap 曾誤用位置參數造成錯誤清理目標；當時修正與 401／EOF 測試僅是歷史記錄，現行手冊不依賴該段舊程式。
   舊版真實 401 failure-branch smoke：exit 1／一個合成 loopback GET 401；`rm` scope guard 記錄 basename `session-check.json` 為 state 外目標並拒絕執行，jar 與暫存 response 仍清除，sandbox sentinel 存活。修正版 `bash -n` exit 0；401 分支 exit 1／一個 GET 401，jar、暫存 response、舊 response fixture 均清除；stdin EOF 分支 exit 1／零 request，jar 與舊 response fixture 清除。兩條修正版分支所有 `rm` target 經 `path.resolve` 均在 `.wrangler/ai-experiment`，無 state 外嘗試，sentinel 均存活；使用合成 Cookie、ephemeral `127.0.0.1` listener、沒有 `Set-Cookie`，stdout／stderr 未含合成 Cookie，未碰 canonical 5173、`.dev.vars`、遠端 DB、模型或 OAuth。狀態與 stdout／stderr：`.wrangler/ai-experiment/verification/cleanup-scope-before-401.*`、`cleanup-scope-fixed-bash-n.status.json`、`cleanup-scope-fixed-401.*`、`cleanup-scope-fixed-input-eof.*`。本次僅做 README shell smoke，未重跑完整套件；此前記錄的全套結果為 436 tests。
 - Privacy Policy／志願者工具說明已在 zh-TW／en／ja 加入 #183 明確同意、Workers AI、作者快照欄位排除但原文不脫敏、本機快照留存及來源刪除延遲說明；`TERMS_VERSION` 未變更，因只新增 privacy disclosure／每工作獨立 consent，未改既有 Terms 條文或投稿同意契約。一般本機 `/privacy` 以 Chromium 檢查 1440×1000／390×844 桌機／手機、light/dark、zh-TW/en/ja 共 12 組 DOM/computed text/theme／無水平溢出，並實際保存 12 張瀏覽器頁面 PNG 至 `.wrangler/ai-experiment/verification/privacy-*`，摘要為 `privacy-captures.json`。第一次截圖嘗試 timeout；替代 `DOMContentLoaded` 後呼叫 `page.screenshot({waitForFonts:false})` 成功，沒有使用假圖或整個 OS desktop capture。已目視檢閱代表圖 zh-TW desktop light、zh-TW mobile dark、en mobile light、ja desktop dark；另用原圖 `sips` 裁出可讀披露段落 `.wrangler/ai-experiment/verification/privacy-zh-TW-mobile-dark-disclosure.png` 與 `.wrangler/ai-experiment/verification/privacy-en-mobile-light-disclosure.png`，檢視作者快照排除／原文不脫敏文字在深色／淺色手機畫面的可讀性。其餘 8 張有 PNG 與 DOM/computed 記錄但未逐張人工目視。瀏覽器 allowlist 阻擋外部 Google Fonts，畫面使用本機 fallback 字型，不能據此宣稱外部字型已驗。直接啟動一般 `vp dev` 因既有 5173 listener 退出且未停止未知 owner；截圖連到既有的一般本機 `/privacy`，不是專用實驗 Worker。
 
 ## 真實執行紀錄與限制
 
-下表為 2026-10-29 環境整合階段的歷史快照；當時尚未執行真實模型或登入的敘述不覆蓋後續各節的實測紀錄，也不代表現行 Gemma Chat 契約已驗收。
+下表為 2026-10-29 環境整合階段的歷史快照；當時尚未執行真實模型或登入的敘述不覆蓋本文現況。當時本機 smoke 使用 cold-start `restart()` 是歷史做法，正式多 isolate 環境不能以 isolate 冷啟證明 Workflow 已停止，因此已取消該重啟假設。
 
 | 項目 | 狀態 | 證據／限制 |
 |---|---|---|
@@ -64,7 +80,7 @@
 
 ## Provider 能力與未驗證限制
 
-- 2026-10-29 檢視時，Cloudflare 的 [JSON Mode 支援模型清單](https://developers.cloudflare.com/workers-ai/features/json-mode/)不包含 Gemma 4；[Gemma 4 模型參數頁](https://developers.cloudflare.com/workers-ai/models/gemma-4-26b-a4b-it/)列出 `response_format`，該參數本身不足以證明此模型保證 JSON Mode／schema 遵循。當時尚未呼叫真實模型；後來 Gemma 的歷史實驗另見後節，但本次具名 strict schema 契約仍未做付費 probe 或完整真實流程。
+- 2026-10-29 檢視時，Cloudflare 的 [JSON Mode 支援模型清單](https://developers.cloudflare.com/workers-ai/features/json-mode/)不包含 Gemma 4；[Gemma 4 模型參數頁](https://developers.cloudflare.com/workers-ai/models/gemma-4-26b-a4b-it/)列出 `response_format`，該參數本身不足以證明供應商保證每次都遵循 schema。此後已有使用者確認成功的真實流程，見本文開頭的公開報告；當時的未驗證狀態不代表現在仍無結果。
 - [Clef 文件](https://developers.cloudflare.com/workers-ai/models/clef/)說明超過 context 的 state 文字會被截斷；文件列出的回應沒有 provider 截斷旗標。客戶端可拒絕自身可判定的超限輸入，但不能據此聲稱能偵測／排除 provider 內部截斷。2026-10-29 尚無真實 Clef 呼叫；後續實測紀錄見各節，模型能力及截斷行為仍須另行以人工和實際 provider 結果判定。
 
 ## 核心 API 契約（程式碼閱讀；專用 Worker 僅完成 no-login HTTP smoke）
@@ -273,4 +289,4 @@
 - 離線只以舊真實凍結輸入建立請求，20 段證據及 81 組直接比較完整保留；Gemma 共識／爭點／立場請求為 21,479／19,145／18,514 bytes。另將舊有效 Chat 立場內容裝入合成 Gemma envelope 後離線解析，保留三項；修改前同一 envelope 被 `generation_invalid_completion` 拒收。這些都不是新真實 Gemma 結果，沒有付費呼叫。
 - 本版型別檢查通過 158 files、完整測試通過 53 test files／558 tests，production build 成功；既有 client chunk >500 kB 警告仍在，metadata 為 `e668fa2ea9c70fd3bdbcfd06ebb554b5e3a4747d (dirty)`，不是發布版本。Chat／補完回歸涵蓋最終 content 與思考分離、stop／截斷／拒答／工具／非字串內容、原生 schema／C ID 與既有範圍守門；計價驗證原生 token、衝突用量、完整請求預留及舊 GPT 工件保留，不以 allowlist 常數檢查代替重放行為證據。
 - 獨立 Node 執行實際 runner／repository／來源守門與記憶體 SQLite，六情境通過：正常 ai_draft、length 拒收後 partial、name／Core_concern 引用 opinions 範圍外的同素材上下文仍拒收、缺值只補一輪、缺用量保留未知、舊 GPT raw 不按新價結算或重打。全部終態重放零額外模型呼叫、來源未變、checkpoint 不含正文；只用合成 AI／帳號查詢 adapter，沒有付費呼叫或遠端 D1 存取。摘要保存在 `.wrangler/ai-experiment/verification/gemma-format-smoke.json`，一次性執行器於驗證後移除。
-- 尚無本次 Gemma 新契約的付費 probe、完整真實三素材工作或人工語義品質驗收；不能由 response_format 的文件／SDK 型別或合成測試推定 provider 已保證 schema，更不能據此宣稱幻覺較少。既有 GPT 工件、帳本、未知費用與 tombstone 未更動，未 commit／push／部署、未停止或重啟使用者 server。後續須由使用者自行重啟自己的 opt-in server、確認新設定並建立新 JOB_ID；不清除舊工作或快取，也不把舊 JOB_ID 當成本版結果。
+- **當時**尚無該新契約的真實三素材工作；之後使用者已確認成功，現況與獲授權公開的兩份報告見本文開頭。此前的 GPT 工件、帳本、未知費用及 tombstone 未因此覆寫；不能把文件／SDK 或合成測試當作語義品質證明。

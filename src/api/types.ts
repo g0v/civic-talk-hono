@@ -23,6 +23,13 @@ export type AppBindings = {
   OPEN_ROUTER_API_KEY?: string
   /** 私有事實查核核心；只透過 Cloudflare Service Binding 呼叫，不經公開網址。 */
   FACT_CHECK_CORE: Fetcher
+  /** 證據 API 預設關閉；只有明確設為 "1" 才可使用。 */
+  EVIDENCE_API_ENABLED?: string
+  /** 審閱模式使用獨立的本機來源；未指定時讀取 DB。 */
+  SOURCE_DB?: D1Database
+  AI?: Ai
+  EVIDENCE_WORKFLOW?: Workflow<{ jobId: string }>
+  CIVIC_AI_REVIEW?: string
   /** 用於執行時讀取 public/rules/community-guidelines.md */
   ASSETS?: {
     fetch: (request: RequestInfo | URL, init?: RequestInit) => Promise<Response>

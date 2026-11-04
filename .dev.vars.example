@@ -23,3 +23,8 @@ OPEN_ROUTER_API_KEY=
 # 未設定時由 Git origin 決定。若需覆蓋，請在 shell 或 CI build 環境設定：
 # CIVIC_SOURCE_REPOSITORY=https://github.com/example/civic-talk-fork
 # 寫成 .dev.vars 的值不會設定這個 build 變數。
+
+# #183 證據 API 開關放在各 Wrangler config：正式 EVIDENCE_API_ENABLED=0，
+# reviewer／experiment 明確為 1；不要在 .dev.vars 定義同名值覆蓋 profile。
+# CIVIC_AI_REVIEW=1／CIVIC_AI_EXPERIMENT=1 是啟動 Vite 時擇一設定的 shell 變數，
+# 不是 secret；詳見 docs/evidence-api-review.md，不要在本檔同時啟用。

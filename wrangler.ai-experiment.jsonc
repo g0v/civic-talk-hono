@@ -8,7 +8,8 @@
   // 不設公開 route 或 workers.dev 入口；一般建置／部署不會選取本設定。
   "workers_dev": false,
   "vars": {
-    "CIVIC_AI_EXPERIMENT": "1"
+    "CIVIC_AI_EXPERIMENT": "1",
+    "EVIDENCE_API_ENABLED": "1"
   },
   "secrets": {
     // 此清單也限制從 .dev.vars 載入的鍵；URL 非機密但必須設定正確的本機 OAuth origin。

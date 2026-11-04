@@ -1,8 +1,8 @@
 # Issue #183：證據抽取、跨素材判斷與結構化彙整實驗計畫
 
-> **狀態：依使用者後續裁示，下一次生成實驗改用 Gemma 4 26B A4B 原生 Chat Completions 執行三個專項與最多單輪「只補缺值」；共識保留短候選 ID／動態 enum 與引用守門，僅共同挑戰可依各來源正面證據有據綜整。三段最終 Overview 與每組 Core_concern 仍須非空，清單筆數不是品質目標。先前兩次合成文字真實 GPT-OSS Responses probe 不代表新 Gemma 契約；本版本機整合檢查、真實新契約與語義驗收均分開記錄，本 draft 暫不合併。**
+> **現況：** 使用者已確認真實品質實驗成功，核准公開的 [結果](./results/ai-experiment_result.json) 與 [費用報告](./results/ai-experiment_cost.json) 保留該次證據；它們不是獨立人工 gold labels，也不代表每次新推論必然相同。本次交付 API-only，UI 另案。正式 Worker 已接上六條 API，但預設關閉；只以明確 `EVIDENCE_API_ENABLED=1` 啟用。
 >
-> 本文件依修改後的 [#183](https://github.com/g0v/civic-talk-hono/issues/183)、[工程師人工檢閱](./plan_review.md) 與後續使用者裁示修訂，取代原本的 #107 計畫。檢閱要求與後續裁示有差異時，以使用者裁示為準；本次新增決策詳見第 5.2、5.3、9、10 節。**使用者已於計畫修訂後明確要求依新版實作；程式與離線驗證不表示已完成新一輪付費或人工品質驗收。** 既有實驗／安全範圍不變，每次新付費工作仍須明確同意。過往 commit／push／更新 draft PR #191 的個別授權不視為本次自動授權，不授權合併、部署、遠端 migration 或遠端業務資料庫寫入。
+> 保留 [Draft PR #191](https://github.com/g0v/civic-talk-hono/pull/191) 供人工檢閱，使用者已授權本次 commit、push 與更新 draft，未授權 ready、merge、deploy 或遠端 migration。完整檢閱、真實實驗重現及本機六 API 操作見[檢閱手冊](./docs/evidence-api-review.md)；歷史負面結果與當時限制見 [`Insight.md`](./Insight.md)。
 
 ## 1. 已確認的範圍與決策
 
@@ -14,7 +14,7 @@
 |使用者|任何未停權的登入者；不要求 admin 或帳號層級的 volunteer 角色|
 |草稿權限|申請者與 admin／super-admin；不是公開草稿庫|
 |真實資料|可唯讀讀取遠端業務 D1，以真實議題與素材實驗品質|
-|寫入位置|輸入快照、AI 工件、工作狀態、配額、預算、人改版本皆只寫隔離本機業務庫|
+|寫入位置|審查／實驗分別寫入各自隔離本機 `DB`；正式啟用時工件寫入正式 `DB`，部署／啟用及遠端 migration 需事後各別授權|
 |認證例外|DB_AUTH 允許既有 Better Auth 正常登入與 session 生命週期；不新增角色、人工停權／解停權操作或 auth schema|
 |來源留存|保存完整私有輸入快照；來源隱藏時停用結果，刪除時清除相關原文／引文 payload，保留雜湊與處置紀錄|
 |判斷類別|agree／disagree／unrelated／uncertain；先對照共同問題、條件與歸屬，校準被誤判為 unrelated 的支持或對立；一般支持／相容不等於共同命題，不以類別配額硬湊判斷|
@@ -26,17 +26,17 @@
 |遞移使用範圍|只產生待驗證候選群；A 同意 B、B 同意 C 不能直接成為 A 同意 C 的確認結果，不省略共識成立所需的直接配對驗證|
 |全站額度|本實驗環境每日 US$5 的費用估算預留額度；超額停止新增付費工作，不視為 Cloudflare 帳單硬上限|
 |快取|相同輸入與有效設定直接重用工件；命中或加入同一進行中工作不扣新任務配額|
-|合併後待辦|實作交付時新增 `Issues.md`，列出素材投稿上限與再彙整 UI 移除／未來意見綜整；本次僅修訂計畫，不提前建立 GitHub issues|
+|合併後待辦|`Issues.md` 列出素材投稿上限與再彙整 UI 移除／未來意見綜整；本輪不實作、不提前建立 GitHub issues|
 
 舊 [PR #187](https://github.com/g0v/civic-talk-hono/pull/187)、[PR #188](https://github.com/g0v/civic-talk-hono/pull/188) 保留實驗紀錄；只選擇性重用逐份抽取與來源錨定概念，不整批 merge／cherry-pick，也不帶回 `scope: "issue"` 的 Clairic 全素材抽取模式。
 
 ## 2. main 現況與不得破壞的契約
 
-- `src/api/routes.ts` 的 `requireUser()` 已處理未登入 401、停權 403；所有登入者可以使用志願者工具。`useViewerRole` 是介面偏好，不是認證角色。
+- 共用 `src/api/requireUser.ts` 處理未登入 401、停權 403，既有路由與證據 API 均沿用；所有登入者可以使用志願者工具。`useViewerRole` 是介面偏好，不是認證角色。
 - 既有 `POST /api/issues/:id/briefing` 透過 `createBriefing()` 建立版本並把正常議題推進 `published`。**新 AI 草稿不能借用此路徑儲存。** 管理端 PUT 會覆寫現有 briefing，也不能拿來充當不可變 AI 原稿。
 - 現有素材沒有版本歷史；管理端刪除素材／議題會實體刪除。只存 ID、hash、offset 不足以在刪除後重建原文。
-- `wrangler.jsonc` 現有 `DB`、`DB_AUTH` 與 `FACT_CHECK_CORE`，沒有 AI binding、持久任務或本功能的資料表。`vp run dev:remote` 目前會使用遠端綁定，**不能直接沿用其業務庫寫入設定做本實驗。**
-- 現有 migration 最新為 `0016_issue_closure.sql`。所有新 SQL 業務表使用 `ct_` 前綴，只對本機 `DB` 套用 migration；不對 `DB_AUTH` 建表或套 migration。
+- 開工前 `wrangler.jsonc` 有 `DB`、`DB_AUTH` 與 `FACT_CHECK_CORE`；現已接上 AI 與 Workflow，但正式新 API 預設關閉。一般 `vp run dev:remote` 連遠端綁定，不能直接作本地隔離審查。
+- `0017_evidence_pipeline.sql` 是正式保留的八張 `ct_ai_*` 表與索引；已套用隔離本機，SQL 不得改寫或重用。審查期間 migration 只跑隔離本機；確認合併 `main` 後遠端仍須另外授權，不對 `DB_AUTH` 建表或套 migration。
 - 本輪保留既有 API、`.html` 導向、SSR／hydration、投票、結案與自帶 token 的 prompt 流程。結案不是禁止本實驗的條件。合併後另案移除「再彙整」UI，但保留 `GET /api/issues/:id/prompt?type=synthesis` 的登入守門、語意與成功回應；不以 UI 移除為由刪除既有 API。
 - 投稿安全審查的 OpenRouter fail-open 規則不變。**生成實驗失敗不能套用 fail-open 來偽造成功草稿。**
 
@@ -44,14 +44,17 @@
 
 ### 3.1 專用實驗入口與配置
 
-以下為本計畫提出的工程設計，隨本文件一併供人工核准：
+目前入口與審查環境：
 
-- 增加專用實驗 Worker 入口及 Wrangler 配置，使用既有 Vite+／Wrangler，不增加套件管理器或另一套 Web 框架。
-- 保留一般 `vp run dev`、`vp run dev:remote`、production build／deploy 的既有行為；一般模式與正式站的新實驗端點一律 404。
-- 預定以 `CIVIC_AI_EXPERIMENT=1 vp run dev:remote` 明確選擇專用配置。該配置使用獨立的 `.wrangler/` persist 目錄；不能與一般本機庫混用。
-- 實驗入口僅註冊本功能 API 與必要認證端點，重用原 Better Auth handler、角色與停權守門。不得順帶開放會修改遠端 auth 個人資料、處理停權或其他管理操作的業務端點。
+- 正式 Worker 已接入一般應用，`EVIDENCE_API_ENABLED` 預設 `0`；只設為 `1` 才啟用新 API，必要綁定缺失時 fail closed 503。未提供 `SOURCE_DB` 時正式來源預設 `DB`；可選的獨立來源綁定供隔離環境使用。
+- `CIVIC_AI_EXPERIMENT=1 vp run dev:remote` 保留原隔離實驗入口、`.wrangler/ai-experiment` 及唯讀遠端來源；只掛證據與必要 OAuth/session API。
+- `CIVIC_AI_REVIEW=1 vp run dev:remote` 選擇獨立 `.wrangler/evidence-review`、本機工作及合成來源庫、既有遠端 `DB_AUTH` 與真實 Workers AI；兩個 opt-in 不可同時設定。
+- 一般 `vp run dev` 刻意停用 Auth；預設 `vp run dev:remote` 使用既有遠端 Auth，兩者的新 API 默認 404。完整命令及安全邊界見[檢閱手冊](./docs/evidence-api-review.md)。
 - OAuth／session 的正常維護寫入是唯一認證例外；不轉存 cookie、secret、OAuth token 到工作流或 AI 紀錄。
 - 需要抽出共用登入守門或縮窄 auth helper 的 binding 型別時，先查 LSP references，再遷移所有呼叫端；不建立平行的認證規則。
+
+下表是原真實來源實驗 profile；其他 profile 的 binding 位置見[檢閱手冊](./docs/evidence-api-review.md#3-模式前置與保護範圍)。
+
 
 |Binding|連線與用途|允許操作|
 |---|---|---|
@@ -65,10 +68,10 @@
 
 ### 3.2 持久任務與付費呼叫
 
-使用本機 Cloudflare Workflows 承接非同步工作，不用 `waitUntil()`、單次長 HTTP 連線或模組記憶體假裝耐久佇列。官方文件支持本機 Workflows 存取遠端 bindings；**實際重啟恢復能力仍須先 smoke 驗證**。
+使用 Cloudflare Workflows 承接非同步工作，不用 `waitUntil()`、單次長 HTTP 連線或模組記憶體假裝耐久佇列。正式 Worker 可有多個 isolate，啟動或對帳時只觀察既有 instance 的明確終態，不因 isolate 冷啟重啟可能仍在執行的工作；RPC 失聯或 unknown 不視為終止。
 
 - Workflow 參數只有工作 ID；step 回傳工件 ID／狀態，不包含全文、引文或原始模型輸出，避免 checkpoint 留下另一份無法清除的內容。
-- 內容只放本機 D1；日誌、step 名稱及錯誤訊息不放原文、prompt、cookie、姓名／email 快照。
+- 審查時內容只放隔離本機 D1；正式啟用後放業務 `DB`。日誌、step 名稱及錯誤訊息不放原文、prompt、cookie、姓名／email 快照。
 - 模型呼叫明確停用自動重試。每次呼叫先記錄付費嘗試與預留額度，再呼叫 provider，最後保存結果／用量。
 - 若程序在 provider 可能已接受請求後中斷，記錄為結果／費用不確定，不在恢復時偷偷重打；保留保守預算扣帳與診斷。
 - 不提供任意 force-refresh、任意模型 ID 或任意 prompt 來繞過去重。相同失敗工作也不因重按而自動新增付費嘗試；實驗調整輸入或受版本管理的設定後才產生新工作。
@@ -239,9 +242,9 @@ AI 原稿為不可覆寫工件。申請者可另存人改版本，保存 parent�
 
 ## 7. API、狀態與資料表
 
-### 7.1 新 API 提案
+### 7.1 API 契約
 
-所有端點只在明確啟用的實驗入口存在；沿用 `/api/*` 全域 `apiCsrf`，不逐端點重造 Origin 檢查、不提供管理／寫入 CORS 放行。敏感回應為 private／no-store。
+正式應用以 `EVIDENCE_API_ENABLED=1` 明確啟用時及隔離實驗／審查設定中提供；預設關閉時同源請求回 404，跨站簡單寫入由全域 CSRF 先回 403，均不觸及認證／DB／AI。啟用但缺必要綁定 fail closed 503。沿用 `/api/*` 全域 `apiCsrf` 與既有 CORS 規則，不逐端點重造 Origin 檢查；敏感回應為 private／no-store。
 
 |方法／路徑|用途|
 |---|---|
@@ -249,8 +252,10 @@ AI 原稿為不可覆寫工件。申請者可另存人改版本，保存 parent�
 |`GET /api/evidence-jobs/:jobId`|申請者／管理員取得進度、來源覆蓋、費用狀態、驗證後的草稿或失敗診斷；取得 payload 前重驗來源|
 |`GET /api/evidence-jobs/:jobId/revisions`|取得該申請者工作下的 AI 基底與人改歷史／差異，不帶出其他申請者的私人修訂|
 |`POST /api/evidence-jobs/:jobId/revisions`|申請者以 parent revision 另存人改版本；不能覆寫 AI 原稿或竄改 provenance|
+|`POST /api/evidence-maintenance/reconcile`|admin／super-admin，以 `{}` 對帳來源並觀察 active Workflow 的明確終態|
+|`POST /api/evidence-maintenance/erase`|admin／super-admin，以 `{kind:"issue" 或 "material",id}` 清除相關 payload 並持久化 tombstone|
 
-未登入 401、停權 403；非申請者且非管理員以 404 避免枚舉。輸入錯誤 400，沒有可用來源／內容或證據規模不合限制 422，請求本身過大 413，版本衝突 409，帳號限額／議題冷卻 429，全站預算停止新工作 503，回應維持 `{ error: string }`，可擴充機器代碼與 reset／retry 時間。非同步階段失敗以工作狀態與原因呈現，不回假的完整草稿。
+未登入 401、停權／maintenance 無管理權限 403；非申請者且非管理員讀取以 404 避免枚舉，寫 revision 僅 owner，其他人含管理員皆為 404。輸入錯誤 400、無可用來源／草稿 422、請求過大 413、版本或輸入衝突 409、帳號限額／議題冷卻 429、預算或必要資源不可用 503；抽取後證據超限以非同步工作失敗呈現。完整錯誤與 CSRF 規則見[手冊](./docs/evidence-api-review.md#api-與權限矩陣)。
 
 ```mermaid
 stateDiagram-v2
@@ -273,18 +278,20 @@ stateDiagram-v2
 
 任何階段都可能因來源失效、帳號停權或預算不足終止；不能把失敗狀態強轉成完成。人改版本另存，不改動這條 AI 原稿狀態歷史。
 
-### 7.2 本機資料設計
+### 7.2 資料設計
 
-沿用已存在的 `migrations/0017_evidence_pipeline.sql` 與隔離本機庫。三項狀態與工件優先使用現有資料責任；只有實際 schema 需求才新增順序 migration，不為拆呼叫重建資料庫、清空帳本或重設來源 tombstone。migration 只套用專用本機 persist 目錄，不執行任何遠端 migration。
+保留 `migrations/0017_evidence_pipeline.sql` 原始 SQL 作為正式業務 migration，對齊既有隔離本機 ledger；不清空帳本或重設來源 tombstone。審查時僅套本機，確認合併到 `main` 後需另取得授權才能考慮遠端套用，且不操作認證庫。
 
-最小資料責任分離：
+資料責任分離（與原始 0017 SQL 對齊）：
 
-- `ct_ai_jobs`：申請者、輸入 key、執行工件、狀態、來源查核時間、處理告知版本／同意時間與錯誤碼。
-- `ct_ai_sources`：不可變輸入快照與 manifest；遠端 ID 只是來源識別，不跨資料庫宣告外鍵，也不 FK 到本機示範議題。
-- `ct_ai_artifacts`：抽取、判斷、生成各階段工件與驗證／用量；原稿、失敗及原始回應不得以成功輸出覆寫。
-- `ct_ai_revisions`：申請者的人改版本、parent、diff 與編輯者。
-- `ct_ai_usage`：付費嘗試、帳號日計數、環境日預算的預留／結算依據；使用整數微美元，不用浮點金額。
-- `ct_ai_issue_cooldowns`：議題的新付費任務冷卻與原子 claim。
+- `ct_ai_executions`：唯一 input key、議題／語言、原啟動者、manifest、狀態、錯誤碼與最終工件；多個申請者可共用同一推論。
+- `ct_ai_jobs`：申請者與 execution 的關聯、處理告知版本／同意時間；每位申請者保有自己的 revision 歷史。
+- `ct_ai_source_fences`：namespace／來源種類／ID 的 generation、永久 erase tombstone 與處置原因，供所有相依工作共同核對。
+- `ct_ai_sources`：每個 execution 的來源 hash、捕捉的 generation、私有 payload 與查核時間；不 FK 到業務來源或認證表。
+- `ct_ai_artifacts`：raw／抽取／判斷／生成／診斷工件，關聯 paid attempt 並保存 payload hash；不以成功輸出覆寫原稿或失敗回應。
+- `ct_ai_revisions`：個別 job 的 parent、editor、人工 payload／hash 與程式計算的 diff；同一 parent 只能新增一個後繼版本。
+- `ct_ai_usage`：每個 execution／step 的預留、started／unknown／settled、估算／實際整數微美元與歸屬日期；配合 executions 計算帳號日限與環境預算。
+- `ct_ai_issue_cooldowns`：namespace／議題的原子 admission 冷卻時間。
 
 執行 cache key 用唯一約束控制同輸入的完成工件／進行中執行；每個申請者使用自己的工作關聯，不因快取命中洩露首位申請者、帳號額度或其人改版本。交易／原子條件寫入避免並發雙跑、雙扣額度與預算穿透。
 
@@ -301,7 +308,9 @@ stateDiagram-v2
 - US$5 只涵蓋本功能的模型費用估算控制，不涵蓋帳號其他 Worker、D1、認證與其他費用，也不是 provider 保證的硬支出上限。
 - 不新增自動修 JSON、多次抽樣、改用其他模型或模型呼叫重試等隱藏成本。
 
-## 9. 開工後順序與停止條件
+## 9. 原實驗的工程順序與停止條件（歷史計畫）
+
+以下保留原先的工作順序與安全目的；其中額外的人工 gold-label 研究尚未進行，但不是否定使用者已確認的成功，也不是要求重跑付費實驗的條件。正式多 isolate 環境不因冷啟而 restart 可能仍在執行的 Workflow。
 
 1. **凍結基準與人工答案。** 沿用現有隔離環境及安全守門，保存本次三素材品質失敗案例的私有快照／hash 與基準工件；人工標註關係及預期整理重點，將提示校準樣本與保留驗收樣本分開。不以重新建立環境或再次成功 HTTP 回應取代語義檢查。
 2. **校準 Clef。** 先核對組題、criteria、原文上下文、對稱關係與解析；依第 5.2.1 節以固定樣本比較新版，保留無向去重、非遞移支持與直接反例。真正付費對照仍須明確同意與既有預算記帳。
@@ -327,7 +336,7 @@ stateDiagram-v2
 - 分項完成、no_findings、失敗與未啟動可區分；一項失敗不丟棄其他有效工件，全失敗不交付草稿，覆蓋缺漏只交付 partial。三項同輸入版本、獨立預留／結算、重啟不重打、預算不足不啟動下一項，及來源清除後分項與合併均不得重新落下正文。
 - 驗證後的銜接 step 逾時／儲存失敗不得永遠 generating 或啟動後續模型；成功分項與結算保留。finish checkpoint gap 重放不重付或重複完成事件；銜接前來源撤下／清除仍阻擋舊正文。清理失敗須以安全錯誤結束引擎，GET 只對確認終態收斂；查詢失聯／unknown 不得誤判在途工作或改寫費用。
 - 必填缺值只觸發一個額外嘗試；已有值、來源、順序與舊引用不變；白名單外／重複／缺漏 patch、錯 base、錯群及無引用拒收。無缺值與三語空分區不付補完費，程式狀態沒有虛假引用；必要補完失敗／額度不足不交付缺值草稿，checkpoint gap 重用 raw／驗證工件，未知費用與清除 fence 不被繞過。
-- 401／403、跨申請者 404、管理員稽核、CSRF、正式模式 404、來源作者快照不進模型／輸出。
+- 401／403、跨申請者 404、管理員稽核、CSRF、預設關閉時六條 API 404、來源作者快照不進模型／輸出。
 - 並發相同輸入只啟動一個付費執行、快取不雙扣、20 次邊界、5 分鐘冷卻、UTC 日界線與在途預留、日預算並發、未知費用不退款。
 - 人改不覆蓋 AI 原稿、過時 parent 409、變更文字不沿用「已驗證」標籤、其他申請者無法取得私人修訂。
 - 來源隱藏／刪除／hash 改變、查核失敗不洩露快照、清除涵蓋原始模型 payload 與 diff、重啟不從 checkpoint 復活正文。
@@ -336,13 +345,13 @@ stateDiagram-v2
 
 ### 10.2 必做實際執行
 
-開工後依序跑 `vp check --no-fmt --no-lint`、`vp test`、`vp run build`，再啟動專用實驗模式，以真實模型及遠端唯讀來源做 smoke；單元測試與假的 provider 回應不能當成真實模型能力證明。
+整合者執行 `vp check --no-fmt --no-lint`、`vp test`、`vp run build` 及隔離 runtime smoke；合成 provider 不能當真實模型能力證據。使用者已確認真實品質實驗成功，見兩份已授權公開報告；不為重確認成功而要求新付費呼叫。
 
-實測步驟、指令與人工判讀須按第 10.3 節寫入 README；開發者自己的成功回應或零散 curl 紀錄，不能代替另一位檢閱者可重做的驗收流程。
+可重現的指令與人工判讀集中於[檢閱手冊](./docs/evidence-api-review.md)，既有結果與新執行須分開記錄。
 
 驗收檢核分三類，保留實際案例、輸入／工件 hash、用量與失敗原因：
 
-1. **人工標註小樣本：** 四種關係各至少三個明確中文例子，另涵蓋相容但無共同命題、同題不同維度、策略／價值張力、少數反對、條件式支持、文內轉述他人、prompt injection 及中英日／emoji 定位。包含 A／B 對調與 A-B／B-C 支持但 A-C 衝突或不確定的支持鏈。對固定輸入比較舊／新 Clef 的混淆矩陣、逐類 precision／recall、模糊配對及人工保留樣本；先有人標準答案，不讓模型評自己，也不以關係分布符合期望取代正確性。
+1. **可選的獨立人工標註小樣本：** 若將來要比較四分類 precision／recall，應先由真人標註各至少三個中文例子，涵蓋條件支持、反例、轉述、prompt injection、A／B 對調及非遞移支持鏈，並分開校準與保留樣本。目前不捏造 gold labels，也不把此額外研究當作否定使用者已確認的成功實驗。
 2. **真實議題與三項生成：** 優先使用議題 13、素材 25／26／27，先確認仍可讀且與基準 hash 一致；來源變更時記錄差異，不假稱同樣本對照。人工分別檢查共同命題及條件、明確對立／可並存張力與兩側證據、立場分群／群內綜整、少數觀點及遺漏。沿用本次已發現的三類品質失敗作回歸案例，不把它們變成強迫非空輸出的模板。
 3. **成本與失敗對照：** 記錄相同證據／語言下的 token、預留／實際／未知費用、時間與結果，抽取／比較與生成費用分開。新 Gemma 與前次 GPT-OSS Responses 比較時須揭露模型與原生傳輸不同；更早的 Gemma／GPT-OSS Chat 歷史基準還有 schema、短 ID／enum、question 去重與提示差異，不把全部改善歸因於模型。推理與輸出量可能增加，不以單價倍數冒充實際費用；優先用保存基準，不為補表自動重跑付費模型。
 
@@ -350,30 +359,18 @@ stateDiagram-v2
 
 本輪不新增一鍵 UI；若為隱私告知而修改既有介面文字，仍須 zh-TW／en／ja 同步，並以真實瀏覽器檢查桌機／手機、淺色／深色與 hydration。未實測的登入、語言或正式站行為不得在報告勾成通過。
 
-### 10.3 README 必交付：真實議題人工驗收手冊
+### 10.3 檢閱與重現手冊
 
-README 必須有獨立的 #183 實驗驗收章節，讓未參與開發的檢閱者能依序操作；以下是實作交付時的文件要求，不表示這些實驗命令／端點目前已可使用。
-
-1. **前置與隔離確認：** 列出工具／登入／Workers AI 付費權限與設定前提，先執行 `npx wrangler whoami` 核對帳號。提供實際專用配置、本機 persist 路徑、僅對隔離本機 `DB` 套 migration 的完整指令及唯讀來源檢查方式；明確禁止對 `SOURCE_DB` 或 `DB_AUTH` 套 migration，也不能直接用一般 `vp run dev:remote` 取代實驗模式。
-2. **啟動與登入：** 寫出經實測的專用啟動命令 `CIVIC_AI_EXPERIMENT=1 vp run dev:remote`、實際 origin／port、停止與重啟方式。本機 `http://localhost:5173` 使用 Google 登入；依使用者確認，GitHub OAuth callback 僅開放 vtaiwan.tw 子域，不能將 GitHub 列為 localhost 可用 provider。示範使用權限受限且不進 git 的 cookie jar；不得將 cookie、OAuth token 或 secret 印入終端、報告或範例。
-3. **參數與請求準備：** 先設定並驗證包含 scheme／host 的 `BASE_URL`，再設定議題 ID、選填素材 ID 與語言；不使用空 host、未替換 ID 或假的 cookie 假裝可直接執行。curl 範例明列 cookie jar、JSON Content-Type、同源 Origin 及處理告知同意的實際欄位；不得只寫「帶上登入資訊」。
-4. **真實來源查核：** 優先以議題 13、素材 25／26／27 操作，但先驗證是否仍存在、可讀且符合輸入條件；不符合時記錄來源變更並明列替代樣本。展示本次素材集合、輸入 hash／快照與排除原因；只讀遠端，不為了測試而新增、隱藏、修改或刪除正式素材。
-5. **新建與輪詢：** 給出完整 POST 與回應解析指令，取得實際 job ID 後輪詢 GET，區分 202 排隊、200 快取命中、進行中、AI 草稿、partial 與失敗。輪詢須有合理間隔與停止條件，不以無限快速重送 POST 等待結果；停止等待不代表已取消在途模型呼叫。
-6. **目視 JSON 與出處：** 給出可直接執行的 `jq` 與安全存檔指令，分別查看三項 data、分項狀態、citation map、證據、分群／爭點提案、比較診斷與費用；結果過長時保存本機權限受限且不進 git 的 JSON，不貼上私人全文。逐句核對原文、條件、轉述歸屬與少數反例；區分 no_findings、失敗與未啟動，依第 10.2 節檢核共同命題、爭點兩側及立場綜整，不能只檢查 JSON 可 parse。
-7. **快取與人改：** 原樣再送一次，核對重用工件且沒有新增付費嘗試／配額扣帳；另示範修改文字後以正確 parent 保存修訂、查歷史與 diff，確認 AI 原稿不變、新文字為 `human_unverified`，且既有 briefing／議題狀態不變。提供過時 parent 回 409 的重做步驟。
-8. **失敗、留存與恢復：** 列出無登入、權限不足、來源不合格、輸入／證據超限、額度不足的預期狀態及診斷查法。提供本機對帳／清除與 Workflow 重啟恢復的實際命令和觀察點。需要來源撤下／變更／刪除或競態才能驗證的案例，若無安全可控的來源，就明列自動化隔離測試證據與未完成的人工實測，不用遠端寫入製造案例；不為了演示配額耗盡而刻意燒滿付費額度。
-9. **驗收紀錄：** 附一份已實填的去識別紀錄，包含實測時間、程式／模型／prompt／schema／演算法版本、來源與工件 hash、job ID、抽取／比較／引用品質、排除及人工修正、用量／預留與結算、結果與未驗證項目。私有原文、引文 payload、cookie jar 及人改內容只留本機；README／PR 不貼真實個資或憑證。
-
-交付門檻：另一位人工檢閱者能依手冊重做「真實議題 → 三模型 → JSON 與引文核對 → 快取 → 人改 diff」；重做會產生新的費用時須明示，仍受配額、預算與實測授權限制。此流程未走完，不勾選「真實議題人工驗收完成」，也不把尚未開發的命令寫成已實測成功。
+[`docs/evidence-api-review.md`](./docs/evidence-api-review.md) 是唯一完整操作手冊：連結兩份已授權的歷史真實結果與成本、列出程式閱讀地圖，並提供不需遠端 migration 的六 API 操作、私有登入及不可逆來源處置說明。原本以真實遠端來源唯讀的實驗入口與本機資料仍保留；每次新增模型工作都需另行確認平台費用與素材處理同意。
 
 ## 11. 預計影響檔案與文件
 
-既有入口、隔離配置、`src/ai/`、migration 與驗收文件已在本分支。下一輪沿用現有責任分工，以下為實作目標，不表示本次已修改這些檔案：
+主要責任如下；本次接上預設關閉的正式入口與獨立 reviewer profile，不改模型／prompt 或舊工件。
 
 - 重點修改 `src/ai/models.ts`、`comparison.ts`、`generation.ts`、`runner.ts` 及必要的 `store.ts`／`routes.ts`／`pricing.ts`，完成 Clef 題目校準、可追溯分群、三項生成與分項診斷；沿用既有來源／生命週期邊界，不引入通用 AI agent 框架。
-- 沿用 `migrations/0017_evidence_pipeline.sql`；僅在實際 schema 需要時新增後續本機 migration，SQL 留在 DB／repository 層，不散落在 handler。補充相應行為測試，不用測試檔案文字或 mocked 摘要替代語義驗收。
-- 不因拆分生成而修改一般模式的 Vite／Wrangler／認證設定；若實作確有必要，須維持既有隔離與型別生成機制，不能接上遠端業務寫入、新 auth schema 或一般伺服器任意生成。
-- 更新 `README.md`：實驗啟用、來源只讀、認證寫入例外、本機留存與刪除限制、平台付費與限額，以及第 10.3 節完整人工驗收手冊、實際指令／預期結果／品質紀錄及 BYO 流程保留。
+- `migrations/0017_evidence_pipeline.sql` 的既有 SQL 不變，作為正式業務 migration；保持所有表 `ct_` 前綴與隔離本機 ledger。遠端 rollout 僅在合併 main 且另獲授權後進行。
+- 一般 Worker 以明確旗標啟用；review profile 使用本機合成來源與工作 DB，既有實驗 profile 保持遠端唯讀來源。兩者不建立 auth schema。
+- `README.md` 為入口，`docs/evidence-api-review.md` 集中完整手冊；保留隔離、認證例外、本機留存、費用與 BYO 流程說明。
 - 保留現有 `Issues.md`：依第 11.1 節保存兩項合併後待辦，不擴充其範圍，不把清單當作已建立 GitHub issue 或已完成開發。
 - 更新 `AGENTS.md` 的 #183 專屬授權／狀態敘述，不把舊 admin-only 抽取實驗當作新版規格，不放寬成一般伺服器任意生成。
 - 更新既有隱私／條款必要敘述與三語 key：素材會由平台送交 Cloudflare Workers AI，可能含個資；說明私有快照、清除時機與原稿／人改區別。若法律條款實質改版，同步 `TERMS_VERSION`，但不順手改寫所有舊投稿 API 的同意契約。
@@ -401,22 +398,9 @@ README 必須有獨立的 #183 實驗驗收章節，讓未參與開發的檢閱�
 
 ## 12. 交付與人工關卡
 
-既有實作與驗收文件保留，使用者已要求本次將生成切換至 Gemma。**本次 Gemma 切換的型別檢查、53 test files／558 tests、production build 及合成 provider 的實際 runner／SQLite 六情境 smoke 已通過。** smoke 涵蓋正常完成、截斷拒收、既有立場引用範圍、單輪補完、未知費用及舊 GPT raw 保留；終態重放零額外呼叫，來源未變，沒有真實 AI 或遠端 D1 存取。先前 GPT-OSS 的檢查與兩次真實合成文字 Responses probe 仍屬歷史結果，不代表 Gemma 新契約或完整三素材品質。本次未放寬立場 context citation，不能保證換模型解決引用越界或語義問題。Gemma 頁面／SDK 列出原生 response_format，但本次尚未新增付費 probe、完整真實 Gemma 實驗或人工品質驗收；未 commit、push、部署或寫遠端業務 D1。
-
-- [x] 閱讀修改後 #183、#181 與舊實驗紀錄，核對 main。
-- [x] 建立乾淨新分支。
-- [x] 確認本輪 API 範圍、資料與認證例外、草稿權限、留存、四分類及工作坊限額。
-- [x] 建立計畫並依人工檢閱修訂，確認一般支持判斷只做候選遞移，以及再彙整僅移除 UI、保留 API；使用者已明確核准實作。
-- [x] 使用者已檢核並明確核准修訂版計畫，包含實驗入口／本機 Workflow、額外輸入資源界線、nullable 輸出、UTC 日界線及跨庫刪除時機。
-- [x] 原實作曾獲核准；真實模型呼叫須先具備費用與授權守門，後續由使用者回報產出 AI 草稿。
-- [x] 已交付 README 人工驗收手冊、`Issues.md` 與 `Insight.md`；本次使用者人工檢閱已指出語義品質失敗，未提前實作合併後功能。
-- [x] 依使用者要求修訂下一步計畫：Clef 判斷校準及 Gemma 共識／爭點／立場地圖三項生成，不以類別比例或非空清單當品質目標。
-- [x] 完成 Clef 新判準與純離線校準工具，不改寫 provider choice／機率或硬湊類別分布。
-- [ ] 完成第 5.2.1 節真人標註、校準與保留樣本的真實模型對照，尚無人工 gold labels，不填虛構成績。
-- [x] 接上第 5.3 節三項生成、引用／分群契約、分項狀態、預算與去重／清除邊界；合成 provider 的獨立 SQLite／HTTP smoke 已執行。
-- [x] 依後續裁示實作必填 Overview／Core_concern、條件式單輪缺值補完及三語空／失敗狀態說明；合成 provider 的獨立 SQLite 工作流 smoke 通過，不代表新增真實模型或人工語義驗收。
-- [ ] 完成新版真實模型 smoke、原生 Workflow 重啟與人工語義品質驗收，再另行取得 commit／push／更新 PR 的授權；保留舊版與負面實驗紀錄。
-- [ ] 正式站啟用、部署或任何遠端業務 D1 寫入：另案明確授權，本計畫不包含。
+- 使用者已確認真實三模型品質實驗成功；[結果](./results/ai-experiment_result.json) 與 [費用報告](./results/ai-experiment_cost.json) 是已授權公開的歷史紀錄。結果為 `ai_draft`，三項 completed，ledger 記錄 23 attempts、13,362 microUSD；這不是 Cloudflare 帳單核對或獨立 gold-label 成績。過往失敗與當時的測試見 `Insight.md`，不抹除也不再冒充現況。
+- 本次為 API-only，預設關閉；完整操作、六個端點與對帳／清除風險見[檢閱手冊](./docs/evidence-api-review.md)。不要重複付費推論只為證明既有成功。
+- Draft PR #191 留待使用者與社群檢閱；本次授權 commit、push、更新 draft，未授權標記 ready、合併、部署或遠端 migration。遠端操作須在確認 main merge 後另獲授權；`DB_AUTH` 不做 DDL／migration。
 
 ## 參考
 
@@ -424,7 +408,7 @@ README 必須有獨立的 #183 實驗驗收章節，讓未參與開發的檢閱�
 - [工程師人工檢閱與決策](./plan_review.md)；交換律／遞移範圍及再彙整 API 的取捨，以本文件第 1、5.2、11.1 節記錄的本次使用者裁示為準。
 - [PR #187](https://github.com/g0v/civic-talk-hono/pull/187)、[PR #188](https://github.com/g0v/civic-talk-hono/pull/188)
 - [Jigsaw #124：span 抽取](https://github.com/Jigsaw-Code/sensemaking-tools/pull/124)、[#125：摘錄與判斷的品質限制](https://github.com/Jigsaw-Code/sensemaking-tools/pull/125)
-- [Clairic](https://developers.cloudflare.com/workers-ai/models/clairic/)、[Clef](https://developers.cloudflare.com/workers-ai/models/clef/)、[Gemma 4 26B A4B](https://developers.cloudflare.com/workers-ai/models/gemma-4-26b-a4b-it/)、[JSON Mode 限制](https://developers.cloudflare.com/workers-ai/features/json-mode/)；模型頁列出 `response_format`，本機安裝的 Cloudflare Workers AI 型別以 `ChatCompletionsInput` 與 `ResponseFormatJSONSchema` 定義具名 schema wrapper，仍須以後續真實實驗驗證 runtime 行為。
-- [GPT-OSS-120B](https://developers.cloudflare.com/workers-ai/models/gpt-oss-120b/)、[Cloudflare GPT-OSS Responses 原生契約](https://developers.cloudflare.com/changelog/post/2025-08-05-openai-open-models/)與 [OpenAI Responses 結構化輸出格式](https://developers.openai.com/api/docs/guides/structured-outputs)僅供歷史 GPT-OSS probe 參考，不代表本次 Gemma schema 已獲真實驗證。
+- [Clairic](https://developers.cloudflare.com/workers-ai/models/clairic/)、[Clef](https://developers.cloudflare.com/workers-ai/models/clef/)、[Gemma 4 26B A4B](https://developers.cloudflare.com/workers-ai/models/gemma-4-26b-a4b-it/)、[JSON Mode 限制](https://developers.cloudflare.com/workers-ai/features/json-mode/)；模型頁與 SDK 所列具名 schema 是請求契約，不保證未來每次 provider 行為或語義品質；本次成功工作見第 12 節公開報告。
+- [GPT-OSS-120B](https://developers.cloudflare.com/workers-ai/models/gpt-oss-120b/)、[Cloudflare GPT-OSS Responses 原生契約](https://developers.cloudflare.com/changelog/post/2025-08-05-openai-open-models/)與 [OpenAI Responses 結構化輸出格式](https://developers.openai.com/api/docs/guides/structured-outputs)僅供歷史 GPT-OSS probe 參考，不能用來代表後續 Gemma 實驗結果。
 - [本機／遠端 binding 支援表](https://developers.cloudflare.com/workers/local-development/bindings-per-env/)、[本機 Workflows 存取遠端資源](https://developers.cloudflare.com/workers/local-development/#using-remote-resources-with-durable-objects-and-workflows)、[Workflows 冪等與持久化規則](https://developers.cloudflare.com/workflows/build/rules-of-workflows/)
 - [Workflows step、subrequest 與 checkpoint 限額](https://developers.cloudflare.com/workflows/reference/limits/)

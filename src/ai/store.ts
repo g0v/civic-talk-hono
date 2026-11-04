@@ -366,11 +366,13 @@ export class EvidenceStore {
   }) }
 
   /** 修復本機 workflow 時只列啟動者的有效進行中工作，不輸出內容。 */
-  async listActiveWorkflowJobs(): Promise<Array<{ id: string; executionId: string; status: 'queued' | 'extracting' | 'comparing' | 'generating' }>> { return safe(async () => {
-    const rows = await this.db.prepare(`SELECT j.id, e.id AS execution_id, e.status
+  async listActiveWorkflowJobs(executionId?: string): Promise<Array<{ id: string; executionId: string; status: 'queued' | 'extracting' | 'comparing' | 'generating' }>> { return safe(async () => {
+    const statement = this.db.prepare(`SELECT j.id, e.id AS execution_id, e.status
       FROM ct_ai_jobs j JOIN ct_ai_executions e ON e.id = j.execution_id
       WHERE j.owner_id = e.charged_owner_id AND e.status IN (${ACTIVE}) AND ${fence('e')}
-      ORDER BY e.created_at, e.id`).all<{ id: string; execution_id: string; status: 'queued' | 'extracting' | 'comparing' | 'generating' }>()
+      ${executionId === undefined ? '' : 'AND e.id = ?'}
+      ORDER BY e.created_at, e.id`)
+    const rows = await (executionId === undefined ? statement : statement.bind(executionId)).all<{ id: string; execution_id: string; status: 'queued' | 'extracting' | 'comparing' | 'generating' }>()
     return (rows.results ?? []).map(row => ({ id: row.id, executionId: row.execution_id, status: row.status }))
   }) }
 
