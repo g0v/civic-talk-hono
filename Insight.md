@@ -6,7 +6,7 @@
 
 - 使用者已確認真實三模型品質實驗成功，並同意公開 [結果](./results/ai-experiment_result.json) 與 [費用報告](./results/ai-experiment_cost.json)。報告為 `ai_draft`，共識 2、爭點 1、立場 3，三項 completed、補完 not_needed；該工作 ledger 記錄 23 attempts、13,362 microUSD、unknown／reserved 為零。這不是 Cloudflare 帳單核對，也不是獨立人工 gold labels。報告 source metadata `e668fa2ea9c70fd3bdbcfd06ebb554b5e3a4747d` 為 dirty，不能聲稱與目前 HEAD 相同或重跑逐字相同。不要另付費重跑以確認使用者的成功回報。
 - 正式 Worker 已接上證據 API，`EVIDENCE_API_ENABLED` 預設 `0`；缺失必要綁定時開啟亦 fail closed。`CIVIC_AI_REVIEW=1` 為獨立本機工作／合成來源、遠端既有認證與真實 AI；原 `CIVIC_AI_EXPERIMENT=1` 遠端唯讀來源實驗及其資料與 ledger 保留。手冊、六 API 及閱讀地圖見 [`docs/evidence-api-review.md`](./docs/evidence-api-review.md)。
-- 已決定原樣保留 `0017_evidence_pipeline.sql` 為八張正式 `ct_ai_*` 表的 migration，SQL 與已套用的本機 ledger 相符。審查僅使用本機 migration；遠端要先確認已 merge `main` 並另獲授權，不對 `DB_AUTH` 建 DDL／跑 migration。維持 Draft PR #191：本次授權 commit／push／更新 draft，不授權 ready、merge 或 deploy。
+- 已決定原樣保留 `0017_evidence_pipeline.sql` 為八張正式 `ct_ai_*` 表的 migration，SQL 與已套用的本機 ledger 相符。審查僅使用本機 migration；遠端要先確認已 merge `main` 並另獲授權，不對 `DB_AUTH` 建 DDL／跑 migration。PR #191 送交檢閱：使用者已授權本次文件修訂 commit／push 與 ready for review，未授權 merge 或 deploy。合併後清理順序見 [`TODO_AFTER_MERGE.md`](./TODO_AFTER_MERGE.md)，不提前移除實驗設定或狀態。
 
 ## 本次 API 完整化驗收（2026-11-05）
 
@@ -20,7 +20,7 @@
 
 ## 已核對的環境事實
 
-- 已依使用者明確核准開始實作；`plan.md` 保留核准的實質計畫，`plan_review.md` 與設計圖未改。原先沒有 commit／push／PR 授權；使用者其後另授權 commit、push、更新既有 draft PR #191，不授權 merge、deploy、遠端 migration 或遠端業務資料寫入。
+- 已依使用者明確核准開始實作；`plan.md` 保留核准的實質計畫，`plan_review.md` 與設計圖未改。原先沒有 commit／push／PR 授權；使用者其後授權 commit、push、更新既有 PR #191，再授權文件修訂與 ready for review；未授權 merge、deploy、遠端 migration 或遠端業務資料寫入。
 - 一開始所在分支為 `feat/issue-183-evidence-pipeline`，初始工作目錄乾淨。舊的 `clairic_test_result/` 目前是空目錄；本紀錄不把它當作可用 fixture，也不以 fixture 宣稱真實模型能力。
 - 歷史環境整合時，`vp run dev:remote` 是 `vp run build && vp dev --mode remote`；當時只有 `CIVIC_AI_EXPERIMENT=1` 選取專用設定。現在另有 reviewer profile 與正式入口，詳見上方現況，不能把當時入口限制視為目前架構。
 - `wrangler.ai-experiment.jsonc` 使用 `src/ai/entry.ts`、本機 `DB`（明列 `remote:false`）、遠端來源 `SOURCE_DB`、只供 Better Auth 正常生命週期使用的遠端 `DB_AUTH`、遠端 Workers AI `AI` 與本機 `EVIDENCE_WORKFLOW`。Vite 與 migration 共用忽略目錄 `.wrangler/ai-experiment`；專用 remote dev 僅綁 canonical hostname `localhost:5173`（loopback，不暴露 LAN）並設 `strictPort:true`，origin 與現有 `BETTER_AUTH_URL`／README 一致。本次環境整合檢查觀察到原 `127.0.0.1:5173` 設定與 canonical origin 不一致：`lsof` 實際看到既有 Node PID 55197 綁 `[::1]:5173`，而早先 smoke 用 `curl --resolve` 強制打 IPv4，可能令瀏覽器 `localhost` 命中另一服務，不能當 OAuth callback 證據。修正後在舊 listener 仍存在時，直接 `CIVIC_AI_EXPERIMENT=1 vp dev --mode remote` 以 exit 1／`Port 5173 is already in use` 安全拒絕；沒有停止未知 PID。人工 OAuth 前須由使用者停止其擁有的 5173 服務。臨時 `--port 5174` 僅供 no-login smoke，`BETTER_AUTH_URL` 仍是 5173，不能驗 callback。
@@ -127,7 +127,7 @@
 - 官方形狀／本站 schema 的離線檢查定位兩處：consensus.Overview 與 positions.Overview 是 `{text:[字串], evidence_ids:[...]}`，但契約要求 `[{text:字串,evidence_ids:[...]}]` 或 null。僅包外層陣列仍失敗，因為 text 仍是陣列。診斷時只在記憶體將各自唯一的 text 元素改回原字串、移入句子物件陣列，其餘內容與 ID 不動，整份回應即可通過 schema 與完整解析；這是排除其他失敗原因的反事實驗證，不是修改／接受原始工件。
 - 沿用使用者先前「只加強 prompt」的決策，加入非 null Overview 的明確格式示例與單句／兩句規則，明示 Overview 不能是單一物件、text 不能是陣列，版本為 `evidence-only-native-v5`。不放寬 schema／解析器、不自動改寫回應、不重試，不改舊工作與 ledger。新提示是否改善真實輸出仍未驗證。
 - README 的來源預檢同步選取 25／26／27，保留先前 25／26 的歷史 metadata，並明確註記該舊查核不涵蓋 27。本輪未執行新的遠端預檢，不捏造素材 27 當前狀態；後續實驗須重新確認三筆來源。
-- 後續使用者於 2026-11-01 回報：本次三素材流程已成功產出 `ai_draft`，因此 v5 提示已有該次真實工作成功的使用者驗收證據。使用者尚未查核內容品質；此回報不等於概述、候選分類、引用語義或所有驗收案例皆已通過，也不解除 Draft PR 的人工品質與其他合併門檻。本次僅記錄回報，不重新呼叫模型。
+- 後續使用者於 2026-11-01 回報：本次三素材流程已成功產出 `ai_draft`，因此 v5 提示已有該次真實工作成功的使用者驗收證據。使用者尚未查核內容品質；此回報不等於概述、候選分類、引用語義或所有驗收案例皆已通過，也不解除 PR 的人工品質與其他合併門檻。本次僅記錄回報，不重新呼叫模型。
 
 ## 當時的新版管線：Clef 判準與三項專項生成（歷史階段）
 

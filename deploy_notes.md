@@ -4,7 +4,7 @@ civic-talk-hono 的部署與環境設定參考。日常開發看 [`README.md`](.
 
 > 狀態：**已部署**於 <https://civic.vtaiwan.tw>（Worker 名稱 `civic-talk`，首次部署 2026-08-05）。第 1 節現在是**環境設定的參考**（換環境、換金鑰、新維護者接手時要看），不再是首次部署的待辦清單。
 
-> **#183 rollout：** 本次僅更新 Draft PR，不授權 merge、deploy、正式啟用或遠端 migration。`0017_evidence_pipeline.sql` 是正式保留的八張 `ct_ai_*` 表 migration，既有 SQL 不改。審查期間只使用[隔離本機手冊](./docs/evidence-api-review.md)，不可套遠端，亦不可對共用 `DB_AUTH` 執行 DDL／migration。正式新 API 預設關閉。
+> **#183 rollout：** 本次更新 PR 並標為 ready for review，不授權 merge、deploy、正式啟用或遠端 migration。`0017_evidence_pipeline.sql` 是正式保留的八張 `ct_ai_*` 表 migration，既有 SQL 不改。審查期間只使用[隔離本機手冊](./docs/evidence-api-review.md)，不可套遠端，亦不可對共用 `DB_AUTH` 執行 DDL／migration。正式新 API 預設關閉；合併後先啟用並驗證正式 API，再依 [`TODO_AFTER_MERGE.md`](./TODO_AFTER_MERGE.md) 清理實驗設定。
 
 ---
 

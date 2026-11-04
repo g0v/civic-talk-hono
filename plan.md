@@ -2,7 +2,7 @@
 
 > **現況：** 使用者已確認真實品質實驗成功，核准公開的 [結果](./results/ai-experiment_result.json) 與 [費用報告](./results/ai-experiment_cost.json) 保留該次證據；它們不是獨立人工 gold labels，也不代表每次新推論必然相同。本次交付 API-only，UI 另案。正式 Worker 已接上六條 API，但預設關閉；只以明確 `EVIDENCE_API_ENABLED=1` 啟用。
 >
-> 保留 [Draft PR #191](https://github.com/g0v/civic-talk-hono/pull/191) 供人工檢閱，使用者已授權本次 commit、push 與更新 draft，未授權 ready、merge、deploy 或遠端 migration。完整檢閱、真實實驗重現及本機六 API 操作見[檢閱手冊](./docs/evidence-api-review.md)；歷史負面結果與當時限制見 [`Insight.md`](./Insight.md)。
+> [PR #191](https://github.com/g0v/civic-talk-hono/pull/191) 供人工檢閱，使用者已授權本次文件修訂 commit、push，並將 PR 標為 ready for review，未授權 merge、deploy 或遠端 migration。完整檢閱、真實實驗重現及本機六 API 操作見[檢閱手冊](./docs/evidence-api-review.md)；歷史負面結果與當時限制見 [`Insight.md`](./Insight.md)。
 
 ## 1. 已確認的範圍與決策
 
@@ -400,7 +400,7 @@ stateDiagram-v2
 
 - 使用者已確認真實三模型品質實驗成功；[結果](./results/ai-experiment_result.json) 與 [費用報告](./results/ai-experiment_cost.json) 是已授權公開的歷史紀錄。結果為 `ai_draft`，三項 completed，ledger 記錄 23 attempts、13,362 microUSD；這不是 Cloudflare 帳單核對或獨立 gold-label 成績。過往失敗與當時的測試見 `Insight.md`，不抹除也不再冒充現況。
 - 本次為 API-only，預設關閉；完整操作、六個端點與對帳／清除風險見[檢閱手冊](./docs/evidence-api-review.md)。不要重複付費推論只為證明既有成功。
-- Draft PR #191 留待使用者與社群檢閱；本次授權 commit、push、更新 draft，未授權標記 ready、合併、部署或遠端 migration。遠端操作須在確認 main merge 後另獲授權；`DB_AUTH` 不做 DDL／migration。
+- PR #191 送交使用者與社群檢閱；本次授權文件修訂 commit、push 與 ready for review，未授權合併、部署或遠端 migration。遠端操作須在確認 main merge 後另獲授權；`DB_AUTH` 不做 DDL／migration。正式 API 可用後，再依 [`TODO_AFTER_MERGE.md`](./TODO_AFTER_MERGE.md) 清理實驗設定、簡化開發環境。
 
 ## 參考
 

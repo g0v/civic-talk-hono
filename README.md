@@ -175,9 +175,11 @@ vp run dev
 
 本次交付為 **API-only**，操作介面另案。Clairic 逐素材抽取、Clef 比較、Gemma 4 26B A4B 生成共識／爭點／立場地圖，必要時最多一次只補缺值。使用者已確認品質實驗成功；核准公開的歷史 [結果](./results/ai-experiment_result.json) 與 [費用報告](./results/ai-experiment_cost.json) 可供檢視，不是獨立 gold labels，也不能代替新一輪執行的紀錄。實驗的歷史失敗與限制留在 [`Insight.md`](./Insight.md)。
 
-正式 Worker 的 `EVIDENCE_API_ENABLED` 預設為 `0`，六條 API 的同源請求均回 404；跨站簡單寫入仍由全域 CSRF 先擋為 403，皆不觸及 Auth／DB／AI。只有明確設為 `1` 才啟用，缺少必要綁定時回 503。正常志願者 BYO token、synthesis prompt、briefing 與議題狀態不變。維持 [Draft PR #191](https://github.com/g0v/civic-talk-hono/pull/191) 供人工檢閱；本次不授權 merge、部署或遠端 migration。
+正式 Worker 的 `EVIDENCE_API_ENABLED` 預設為 `0`，六條 API 的同源請求均回 404；跨站簡單寫入仍由全域 CSRF 先擋為 403，皆不觸及 Auth／DB／AI。只有明確設為 `1` 才啟用，缺少必要綁定時回 503。正常志願者 BYO token、synthesis prompt、briefing 與議題狀態不變。[PR #191](https://github.com/g0v/civic-talk-hono/pull/191) 送交人工檢閱；本次不授權 merge、部署或遠端 migration。
 
 完整的[檢閱手冊](./docs/evidence-api-review.md)依序說明三個目標：閱讀已授權的真實實驗與費用、由程式碼掌握資料與安全邊界、在**不執行遠端 migration**的條件下操作全部六條 API。`CIVIC_AI_REVIEW=1` 使用合成的本機來源及獨立資料庫；原有 `CIVIC_AI_EXPERIMENT=1` 仍可在取得授權後唯讀真實遠端來源。兩者都使用真實 Google 認證與 Workers AI，建立新工作可能收費。
+
+合併後，先確認正式站新 API 可用，再清理實驗／審閱專用設定，讓日常開發回到單一正式入口；步驟與保留資料的限制見 [`TODO_AFTER_MERGE.md`](./TODO_AFTER_MERGE.md)。
 
 ## 部署
 

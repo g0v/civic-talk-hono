@@ -549,12 +549,12 @@ D1 migration 一般目錄包含 `0017`，一般 `apply` 會選到它。審查僅
 
 > 後續可選：切換到 `vue-router` 全站 hydration、擴充真實瀏覽器 E2E 與部署後 smoke automation——動工前先與使用者確認。
 
-### 進行中：#183 證據管線 API（Draft PR #191）
+### 進行中：#183 證據管線 API（PR #191）
 
 - API-only；正式 Worker 已接入但 `EVIDENCE_API_ENABLED=0` 預設關閉，六端點同源請求回 404；跨站簡單寫入由全域 CSRF 先回 403，均不觸及 Auth／DB／AI。設為 `1` 時必要 binding 不全回 503。正式 `SOURCE_DB` 省略時用 `DB`，不以 fake provider／auth fallback 替代。
 - 實驗 `CIVIC_AI_EXPERIMENT=1 vp run dev:remote` 保留原本 `.wrangler/ai-experiment`、本機工作庫及僅 SELECT 的遠端來源；review `CIVIC_AI_REVIEW=1 vp run dev:remote` 使用獨立 `.wrangler/evidence-review`、虛構的本機來源和本機工作庫。兩旗標不可同時使用；兩者皆用既有遠端 Better Auth 與真實 Workers AI。
 - `0017` 正式保留但 SQL 不變；審查時 migration 僅限本機，`DB_AUTH` 不做 DDL／migration 或直接 SQL 寫入。遠端 migration 須在 main merge 確認後另行授權。保留 quota、未知費用與 tombstone，不重建狀態繞過。
-- 原有 BYO token、synthesis prompt API、briefing 與 issue status 不變；`Issues.md` 只記錄兩項未實作未來工作。本次不授權 ready、merge 或部署。
+- 原有 BYO token、synthesis prompt API、briefing 與 issue status 不變；`Issues.md` 只記錄兩項未實作未來工作。使用者已授權將 PR 標為 ready for review，未授權 merge 或部署。合併後清理實驗設定的順序見 [`TODO_AFTER_MERGE.md`](./TODO_AFTER_MERGE.md)，本輪不提前刪除設定或資料。
 - 使用者已確認真實品質實驗成功，已核准公開的 [結果](./results/ai-experiment_result.json) 與 [費用](./results/ai-experiment_cost.json) 可直接審閱；非獨立 gold labels，也不是新執行的證據。完整六 API 操作、來源清除限制及程式閱讀地圖見[檢閱手冊](./docs/evidence-api-review.md)。
 - 管線依序執行固定 `@cf/google/gemma-4-26b-a4b-it` 的共識／爭點／立場地圖三個專項，使用同一份已驗證證據與必要比較資料，不串接摘要。primary／單輪補完使用原生 Chat Completions：`messages` 為 system prompt 與 JSON 字串 user payload、`max_completion_tokens:8192`、`temperature:0.2`、`chat_template_kwargs:{enable_thinking:false}`、`stream:false`、`response_format:{type:"json_schema",json_schema:{name,strict:true,schema}}`；不送 `uniqueItems`，程式仍拒絕重複 ID。prompt／schema／input 版本為 `specialized-evidence-v7`／`specialized-cited-v4`／`section-values-v6-gemma-chat`，補完為 `missing-fields-only-v3`／`cited-field-patches-v1`，回應政策為 `gemma-chat-stop-json-v3`。[Gemma 官方模型頁](https://developers.cloudflare.com/workers-ai/models/gemma-4-26b-a4b-it/)列出 `response_format`；本機 Cloudflare Workers AI 型別的 Gemma 輸入繼承 `ChatCompletionsInput`、`ResponseFormatJSONSchema` 使用具名 wrapper，但這不保證 runtime schema 或語義品質。
 - 僅接受 `model` 為字串、恰一個 `index:0`、`finish_reason:"stop"` 的 choice，message 須為 assistant 且 content 為字串，完整解析 JSON；既有完整單一 plain／json fence 例外不變。忽略 `reasoning`／`reasoning_content`，缺完成原因／不完整、refusal、工具及非字串內容均拒收；不得切取思考文字、修補、退回 Responses／其他模型或自動重試。Gemma 每百萬 input／output tokens US$0.10／0.30；以 `prompt_tokens`／`completion_tokens` 為主，別名與 total 若回報須有效一致，reasoning 已含 completion，缺失或異常保持未知，不退款未知預留。
