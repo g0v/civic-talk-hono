@@ -271,6 +271,48 @@ beforeEach(() => {
 afterEach(() => { local.sqlite.close(); source.sqlite.close() })
 
 describe('evidence API 與實際 SQLite 工作流', () => {
+  it('工作保存目前告知與伺服器同意時間，重用時不改寫既有同意', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-11-07T00:00:00.000Z'))
+    try {
+      auth.current = user('owner')
+      const response = await send('POST', '/api/issues/7/evidence-jobs', { consent: true })
+      expect(response.status).toBe(202)
+      const created = await response.json() as { job_id: string }
+      const consentQuery = local.sqlite.prepare('SELECT consent_version, consent_at FROM ct_ai_jobs WHERE id = ?')
+      const recorded = {
+        consent_version: 'evidence-processing-2026-11-07-v5',
+        consent_at: '2026-11-07T00:00:00.000Z',
+      }
+      expect(consentQuery.get(created.job_id)).toMatchObject(recorded)
+
+      vi.setSystemTime(new Date('2026-11-07T00:01:00.000Z'))
+      const reused = await send('POST', '/api/issues/7/evidence-jobs', { consent: true })
+      expect(reused.status).toBe(202)
+      expect(await reused.json()).toMatchObject({ job_id: created.job_id, cache: 'joined' })
+      expect(consentQuery.get(created.job_id)).toMatchObject(recorded)
+      expect(local.sqlite.prepare('SELECT COUNT(*) AS n FROM ct_ai_jobs').get()).toMatchObject({ n: 1 })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it.each([
+    { label: '未傳入同意', body: {} },
+    { label: '明確拒絕', body: { consent: false } },
+    { label: '以字串冒充同意', body: { consent: 'true' } },
+  ])('$label 不建立工作或費用預留', async ({ body }) => {
+    auth.current = user('owner')
+    const response = await send('POST', '/api/issues/7/evidence-jobs', body)
+    expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({ error: 'invalid_request' })
+    expect(local.sqlite.prepare(`SELECT
+      (SELECT COUNT(*) FROM ct_ai_jobs) AS jobs,
+      (SELECT COUNT(*) FROM ct_ai_executions) AS executions,
+      (SELECT COUNT(*) FROM ct_ai_usage) AS reservations`).get())
+      .toMatchObject({ jobs: 0, executions: 0, reservations: 0 })
+  })
+
   it('來源查核失聯、隱藏及變更時不得交付任何舊快照', async () => {
     auth.current = user('owner')
     const created = await (await send('POST', '/api/issues/7/evidence-jobs', { consent: true })).json() as { job_id: string }
@@ -1799,8 +1841,6 @@ describe('evidence API 與實際 SQLite 工作流', () => {
       .toMatchObject({ state: 'settled', estimate_micro_usd: estimate, actual_micro_usd: 44 })
     expect(detail.usage).toMatchObject({ attempts: 7, uncertain: 0 })
     expect(recordedRequests).toHaveLength(7)
-    expect(local.sqlite.prepare('SELECT consent_version FROM ct_ai_jobs WHERE id = ?').get(created.job_id))
-      .toMatchObject({ consent_version: 'evidence-processing-2026-11-04-v4' })
     expect(await (await send('POST', '/api/issues/7/evidence-jobs', { consent: true })).json()).toMatchObject({ job_id: created.job_id, cache: 'hit' })
     expect(local.sqlite.prepare('SELECT COUNT(*) AS n FROM ct_ai_executions').get()).toMatchObject({ n: 1 })
     expect(local.sqlite.prepare('SELECT COUNT(*) AS n FROM ct_ai_jobs').get()).toMatchObject({ n: 1 })

@@ -2,7 +2,7 @@
 
 > **現況：** 使用者已確認真實品質實驗成功，核准公開的 [結果](./results/ai-experiment_result.json) 與 [費用報告](./results/ai-experiment_cost.json) 保留該次證據；它們不是獨立人工 gold labels，也不代表每次新推論必然相同。本次交付 API-only，UI 另案。正式 Worker 已接上六條 API，但預設關閉；只以明確 `EVIDENCE_API_ENABLED=1` 啟用。
 >
-> [PR #191](https://github.com/g0v/civic-talk-hono/pull/191) 供人工檢閱，使用者已授權本次文件修訂 commit、push，並將 PR 標為 ready for review，未授權 merge、deploy 或遠端 migration。完整檢閱、真實實驗重現及本機六 API 操作見[檢閱手冊](./docs/evidence-api-review.md)；歷史負面結果與當時限制見 [`Insight.md`](./Insight.md)。
+> [PR #191](https://github.com/g0v/civic-talk-hono/pull/191) 已合併；使用者已手動套遠端原始 0017，正式旗標 `0` 版本已部署、52 項匿名 smoke 通過。本輪按現況補齊 `evidence-processing-2026-11-07-v5` 告知並完成本機驗收，尚未部署；不授權發布、啟用、遠端寫入、付費或清理。完整本機操作見[檢閱手冊](./docs/evidence-api-review.md)；歷史負面結果留在 [`Insight.md`](./Insight.md)。
 
 ## 1. 已確認的範圍與決策
 
@@ -16,15 +16,15 @@
 |真實資料|可唯讀讀取遠端業務 D1，以真實議題與素材實驗品質|
 |寫入位置|審查／實驗分別寫入各自隔離本機 `DB`；正式啟用時工件寫入正式 `DB`，部署／啟用及遠端 migration 需事後各別授權|
 |認證例外|DB_AUTH 允許既有 Better Auth 正常登入與 session 生命週期；不新增角色、人工停權／解停權操作或 auth schema|
-|來源留存|保存完整私有輸入快照；來源隱藏時停用結果，刪除時清除相關原文／引文 payload，保留雜湊與處置紀錄|
+|來源留存|無自動 TTL；隱藏／變更只撤下且保留 payload；deleted 被對帳／查核發現或管理員按來源 erase 才清跨工作／申請者相關 execution 的私有 payload／diff，保留帳號 ID、hash、同意版本／時間、usage、unknown 與永久 tombstone，來源 ID 不可重新入場|
 |判斷類別|agree／disagree／unrelated／uncertain；先對照共同問題、條件與歸屬，校準被誤判為 unrelated 的支持或對立；一般支持／相容不等於共同命題，不以類別配額硬湊判斷|
 |生成方式|Gemma 4 26B A4B 以原生 Chat Completions 分別執行共識、爭點、立場地圖三個專項，共用已驗證證據與必要關係，以具名 `response_format` JSON Schema 約束；必要時最多增加一次白名單缺值補完，不改已有值|
-|帳號日限額|每帳號每日 20 次新付費任務|
+|帳號日限額|每帳號每 UTC 日 20 次新 execution；非整 job 報價|
 |議題冷卻|同議題新付費任務間隔 5 分鐘|
 |比較規模|最多 64 段驗證後證據；不同素材的無向配對最多 2,016 組，排除同素材配對後通常較少；不是全站素材投稿上限|
 |交換律|以無向配對去重與重用判斷；不因 A／B 順序相反建立第二份正式關係|
 |遞移使用範圍|只產生待驗證候選群；A 同意 B、B 同意 C 不能直接成為 A 同意 C 的確認結果，不省略共識成立所需的直接配對驗證|
-|全站額度|本實驗環境每日 US$5 的費用估算預留額度；超額停止新增付費工作，不視為 Cloudflare 帳單硬上限|
+|環境額度|模型 US$5／日估算準入，不是全帳單硬上限，不含 Workers／Workflows／D1；unknown 預留跨日不自動退，不保證次日恢復|
 |快取|相同輸入與有效設定直接重用工件；命中或加入同一進行中工作不扣新任務配額|
 |合併後待辦|`Issues.md` 列出素材投稿上限與再彙整 UI 移除／未來意見綜整；本輪不實作、不提前建立 GitHub issues|
 
@@ -36,7 +36,7 @@
 - 既有 `POST /api/issues/:id/briefing` 透過 `createBriefing()` 建立版本並把正常議題推進 `published`。**新 AI 草稿不能借用此路徑儲存。** 管理端 PUT 會覆寫現有 briefing，也不能拿來充當不可變 AI 原稿。
 - 現有素材沒有版本歷史；管理端刪除素材／議題會實體刪除。只存 ID、hash、offset 不足以在刪除後重建原文。
 - 開工前 `wrangler.jsonc` 有 `DB`、`DB_AUTH` 與 `FACT_CHECK_CORE`；現已接上 AI 與 Workflow，但正式新 API 預設關閉。一般 `vp run dev:remote` 連遠端綁定，不能直接作本地隔離審查。
-- `0017_evidence_pipeline.sql` 是正式保留的八張 `ct_ai_*` 表與索引；已套用隔離本機，SQL 不得改寫或重用。審查期間 migration 只跑隔離本機；確認合併 `main` 後遠端仍須另外授權，不對 `DB_AUTH` 建表或套 migration。
+- `0017_evidence_pipeline.sql` 已套隔離本機及遠端業務庫，SQL byte-for-byte 不改。使用者手動套用後已核對 ledger id 18、`applied_at=2026-11-06 19:29:04`、八張表與七個顯式索引；0016 ledger 時間為 `2026-10-23 21:26:16`。後續遠端操作仍須另獲授權；不對 `DB_AUTH` 建表或套 migration。正式關閉版來源及 Worker version 見[部署紀錄](./deploy_notes.md)。
 - 本輪保留既有 API、`.html` 導向、SSR／hydration、投票、結案與自帶 token 的 prompt 流程。結案不是禁止本實驗的條件。合併後另案移除「再彙整」UI，但保留 `GET /api/issues/:id/prompt?type=synthesis` 的登入守門、語意與成功回應；不以 UI 移除為由刪除既有 API。
 - 投稿安全審查的 OpenRouter fail-open 規則不變。**生成實驗失敗不能套用 fail-open 來偽造成功草稿。**
 
@@ -98,13 +98,16 @@
 ### 4.2 隱藏、變更與刪除
 
 - 每個付費階段前、草稿／證據／修訂交付前重新確認來源可讀性與 hash；遠端查核失敗時不返回先前快照內容。
-- 隱藏或 hash 改變：停用關聯工件的一般調閱，標為 withdrawn／stale，不把新原文套到舊 offset，也不自動發布任何版本。
-- 確認來源刪除或收到清除請求：使關聯工件失效，清除會保留原文／引文的快照、AI 原始 payload、生成結果、人改 payload 與 diff；保留 hash、時間及清除原因等不含正文的稽核 tombstone。
+- 隱藏或 hash 改變：只停止交付，標為 withdrawn／stale，仍保留 payload，不把新原文套到舊 offset，不自動發布。
+- 對帳／查核發現 deleted，或管理員按來源 erase：跨依賴該來源的工作／申請者清除相關 execution 的所有私有快照、完整模型 request／response、引文、生成、人改 payload 與 diff。不是單 job 自助刪除；保留帳號 ID、hash、同意時間／版本、usage、unknown 與永久 tombstone，來源 ID 不可重新入場。權利請求由 `info@vtaiwan.tw` 人工受理，不代表來信即自動完成 erase。
 - **清除與在途推論的競態：** 清除須在同一本機交易中持久化來源 tombstone、遞增 generation fence，並刪除關聯 payload。每次模型呼叫捕獲所有依賴來源的 generation；回應落地、快取登記與人改版本保存時，必須以同一原子寫入條件確認來源未被清除且 generation 仍一致，不得用「先 SELECT、稍後無條件 INSERT」代替。寫入與清除無論先後，清除完成後都不能留下該次舊回應的正文。
 - 延遲回應未通過 fence 時，丟棄正文／引文，只允許保存不含內容的狀態與費用結算；不得寫入錯誤日誌、Workflow checkpoint 或其他快取。重啟、重放及重新匯入來源不能重設舊 generation 或刪掉 tombstone，讓舊呼叫重新取得寫入資格。
 - 清除是明列的留存例外，不是假裝原稿從未改過；原稿不可變不等於可以拒絕資料刪除。
 - 啟動時先對帳現有快照，再開放內容調閱；另提供本機清除／對帳命令，處理權利請求與無人讀取的舊工作。
 - **跨庫限制：** 遠端來源唯讀且沒有刪除通知，本輪不能保證刪除瞬間同步抹除關閉中的本機庫。清除發生在啟動／對帳或首次查核發現刪除時；記錄 `source_checked_at`，不宣稱跨庫原子性或零延遲。此限制需隨計畫人工檢核，若不可接受須改環境／通知架構，不能默認略過。
+- 無自動 TTL／固定刪除時限，不保證即時發現刪除，不能撤回已送模型請求。D1 Time Travel 依方案保留 7／30 天，不保證 erase 即時清備份；Workers AI 一般推論零資料留存／不訓練有營運 metadata、安全及法律例外，不能套稱 D1 零留存。官方參考與完整告知見[手冊](./docs/evidence-api-review.md#3-模式前置與保護範圍)。
+- 正式內容存業務 `DB` 而非 `DB_AUTH`，含來源紀錄及完整私有工件；owner／admin 可讀、owner 可改。作者快照欄不送模型，但正文、名稱／網址本身可能含個資，未匿名化。每個建立請求須 `consent:true`，伺服器保存版本／時間；同帳號命中既有 job 不新增同意事件，不代表已取得正文所有人的同意。
+- 官方每百萬 tokens 單價：Clairic input US$0.10、Clef US$0.24、Gemma input／output US$0.10／0.30；沿用現有估算控制，不新增自動刪除機制。
 
 ## 5. 三模型流程與證據規則
 
@@ -218,7 +221,7 @@
 - Overview 只能引用所屬分區已採用項目使用的證據；Core_concern 只能引用該群證據。程式拒收未知／重複／缺漏指標、舊 base、非白名單覆寫、額外欄位、空值及錯群／缺引用，所有 patch 驗完才套用。原始三項與補完回應分別保存；只為新文字附加由程式計算的引用範圍。
 - 補 `/consensus/Overview` 時須將已驗證 adopted 的類型、項目 pointer 與 evidence_ids 投影成唯讀 consensus_items，讓補完模型保留 shared_fact／shared_challenge／shared_position 的差別：前者與共同立場須有各來源明示共同命題，挑戰可由正面相關證據綜整，不把共享事實／挑戰升格成共同解法或超出原來源範圍。此投影納入計畫 hash，索引、枚舉、項目數與引用須符合 base，不能重用不同分類的補完；其他補完目標不額外傳入。data 與 patch schema 不加 kind，補完 prompt／計畫政策分別為 `missing-fields-only-v3`／`required-fields-exact-cited-patches-v2`；不改寫已有值、不新增呼叫或放寬語義品質的人工驗收。
 - 沒有缺值則不呼叫補完。必要補完失敗、context／額度不足或無可靠回應時，保留可用 primary 工件與費用，但工作為 failed，不交付仍缺必填的 data；不作第五次補完、重試、JSON 修復或改用其他模型。來源／授權失效仍依原 fence 停止，不洩露快照。
-- 補完使用 `complete:draft` 嘗試鍵，獨立預留完整 schema 請求與最大輸出、結算及重放復用，仍算同一工作。進度的 current_section:completion 與 completion 狀態不改，sections 保持三項。因生成模型改變，告知版本改為 `evidence-processing-2026-11-04-v4`；每個新工作仍須明確同意。模型及 primary／completion 原生 schema 都納入指紋，既有結果與未知費用不改。
+- 補完使用 `complete:draft` 嘗試鍵，獨立預留完整 schema 請求與最大輸出、結算及重放復用，仍算同一工作。進度的 current_section:completion 與 completion 狀態不改，sections 保持三項。模型更換時曾使用歷史告知 `evidence-processing-2026-11-04-v4`；本輪正式告知修訂為尚未發布的 `evidence-processing-2026-11-07-v5`，不回寫舊同意、raw 或結果。模型及 primary／completion 原生 schema 納入指紋，既有結果與未知費用不改。
 
 
 ## 6. 結構化輸出與版本

@@ -1,6 +1,6 @@
 # #183 證據管線：檢閱與本機操作手冊
 
-這份手冊服務三個目標：**看已完成的品質實驗與費用、理解程式及安全邊界、在不套遠端 migration 的情況下操作六條 API**。本次交付 API-only；沒有新的操作 UI。PR #191 送交人工檢閱；ready for review 不代表已核准 merge、部署或正式啟用。合併後正式 API 可用，再依[清理待辦](../TODO_AFTER_MERGE.md) 簡化實驗設定；目前下列本機流程仍保留。
+這份手冊服務三個目標：**看已完成的品質實驗與費用、理解程式及安全邊界、在不套遠端 migration 的情況下操作六條 API**。交付為 API-only；沒有新的操作 UI。PR #191 已合併、原始 0017 已由使用者手動套遠端，正式 flag `0` 版本已部署並通過 52 項匿名 smoke；不代表啟用後六 API、真人 OAuth、登入後寫入或付費推論已驗收。本輪 v5 告知已完成本機驗收，尚未部署，發布與啟用仍須另獲授權。[清理待辦](../TODO_AFTER_MERGE.md)尚未獲清理授權，目前下列本機流程保留，但付費與 erase 均須取得該次授權。
 
 ## 1. 先看已完成的實驗
 
@@ -30,11 +30,15 @@
 |`CIVIC_AI_REVIEW=1 vp run dev:remote`|本機 `DB` 與另一個本機 `SOURCE_DB`，獨立 `.wrangler/evidence-review`；固定虛構圖書館素材|既有遠端 `DB_AUTH`，真實 Workers AI|完整六 API 檢閱，不碰遠端業務來源或遠端 migration|
 |`CIVIC_AI_EXPERIMENT=1 vp run dev:remote`|本機 `DB`／Workflow、`.wrangler/ai-experiment`；遠端 `SOURCE_DB` 僅供固定 SELECT|既有遠端 `DB_AUTH`，真實 Workers AI|經授權重現真實來源實驗，見第 7 節|
 
-兩個 `CIVIC_AI_*` opt-in 不可同時設定；啟動前確認另一旗標未設定。**兩個 profile 都使用真實付費 AI，不是 mock。** 新 job 的 `consent:true` 是每工作對素材處理與平台費用的明確同意；即使是合成來源也可能產生費用。Clairic 逐素材、Clef 配對、Gemma 共識／爭點／立場三項，必要時最多另呼叫一次補完。每日每帳號 20 個新工作、同議題五分鐘冷卻、US$5／日估算預留為應用控制，不是 Cloudflare 帳單硬上限；unknown 費用保留預留，不當零費用退款。改語言、選材或設定可能 cache miss 並再計費；失敗不應透過清庫、修改輸入或重試繞過。
+兩個 `CIVIC_AI_*` opt-in 不可同時設定；啟動前確認另一旗標未設定。**兩個 profile 都使用真實付費 AI，不是 mock；以下指令不是本輪付費或清除授權。** Clairic 逐素材、Clef 配對、Gemma 共識／爭點／立場三項，必要時最多另呼叫一次補完。現行官方單價：每百萬 tokens，Clairic input US$0.10、Clef US$0.24、Gemma input／output US$0.10／0.30。每帳號每 UTC 日最多 20 個新付費工作、同議題五分鐘、環境模型 US$5／日估算準入不是整 job 報價或全帳單硬上限，不含 Workers／Workflows／D1；unknown 預留跨日不自動退，也不保證次日恢復。改語言、選材或設定可能 cache miss 並再計費；不得為繞過失敗狀態、配額或費用而清庫、偽變輸入或重試。
+
+本輪告知版本 `evidence-processing-2026-11-07-v5` 尚未發布；v4 是歷史告知，不重寫舊同意或 raw。每個建立請求須 `consent:true`，伺服器存版本／時間；同帳號命中既有 job 不新增同意事件，不代表已取得正文所有人的同意。作者快照欄不送模型，但正文、名稱／網址仍可能含個資，未匿名化。正式資料存業務 `DB`（非 `DB_AUTH`），含原始快照、完整模型 request／response、引用、來源紀錄、人改及 diff；owner／admin 可讀，owner 可新增人工修訂，AI 原稿不覆寫，不自動發布或改 briefing／status。
+
+**無自動 TTL 或固定刪除時限。** 隱藏／變更只 withdrawn 停止交付，payload 保留。對帳／查核發現 deleted 或管理員按來源 erase 才清相關 execution 全部私有 payload／diff，跨依賴該來源的工作／申請者，不是單 job 自助刪除；保留帳號 ID、hash、同意時間／版本、usage、unknown 與永久 tombstone，來源 ID 不可重新入場。不保證即時發現刪除，不能撤回已送模型請求。人工權利請求：`info@vtaiwan.tw`。D1 Time Travel 依方案 7／30 天，erase 不保證即時清備份；Workers AI 一般推論零資料留存／不訓練有營運 metadata、安全及法律例外，D1 不是零留存。參考 [Workers AI](https://developers.cloudflare.com/workers-ai/platform/data-usage/)、[D1 Time Travel](https://developers.cloudflare.com/d1/reference/time-travel/)、[Workflows 計價](https://developers.cloudflare.com/workflows/reference/pricing/)。
 
 需要 `vp`、Node.js `>=22.18`、`curl`、`jq`、Wrangler 的 Workers／D1／Workers AI 權限、Google OAuth 與 Better Auth 設定。先在本機私下用 `vp exec wrangler whoami` 核對帳號，不貼輸出。`.dev.vars` 私下配置 `BETTER_AUTH_URL=http://localhost:5173` 與 `BETTER_AUTH_SECRET`、Google／GitHub client ID／secret；不印出、不提交。由維護者確認 Google app 允許 `http://localhost:5173/api/auth/callback/google`；目前 GitHub app 不允許 localhost callback，本機**只使用 Google**。需要既有未停權的 admin／super-admin 與另一位一般使用者 Google 帳號；不以 SQL 改 role、不建立 auth 表或假 session。正常 Better Auth OAuth／session 生命週期可能寫遠端 `DB_AUTH`，除此之外不直接寫入，也不對它跑 DDL／migration。
 
-`0017_evidence_pipeline.sql` 是正式保留的八張 `ct_ai_*` 表 migration，已套進原隔離本機庫，**SQL 必須 byte-for-byte 不變**。本節 setup 只套本機，兩個 reviewer DB 使用不同的虛構 database ID；不要對 `DB_AUTH` 跑 migration。原實驗 config 的 `DB.remote:false` 不是 CLI `--remote` 安全鎖，顯式 `--remote` 仍可能命中正式 database ID。任何遠端 migration 都須先確認 PR 已合併 `main`，再另行取得授權並核對 pending；本次不執行。若疑似誤套，停止、保留紀錄並聯繫維護者，不自行 DROP、修改 ledger 或重試。
+`0017_evidence_pipeline.sql` 是正式保留的八張 `ct_ai_*` 表 migration，已套隔離本機；使用者亦已手動套用遠端原始 SQL，ledger id 18、`applied_at=2026-11-06 19:29:04`，八張表與七個顯式索引已核對。**SQL 必須 byte-for-byte 不變，不重跑或修改 ledger。** 本節 setup 只套本機，兩個 reviewer DB 使用不同虛構 database ID；不要對 `DB_AUTH` 跑 migration。`DB.remote:false` 不是 CLI `--remote` 安全鎖。後續遠端操作仍須另獲授權，本輪不執行；唯讀核對方式見[部署須知](../deploy_notes.md)，不以會初始化 ledger 的 `migrations list` 作零寫入檢查。
 
 以下以 repo root、**同一個私有 Bash session**操作。不要啟用 `set -x`，不把 Cookie、token、`.dev.vars`、`/api/me` 原始回應、私人 payload 或未核准來源貼到終端錄影、PR、聊天或 git。確認 5173 的 IPv4／IPv6 listener：
 
@@ -335,4 +339,4 @@ done
 
 ## 8. 合併後的分階段 rollout
 
-本次不 merge、deploy、正式啟用或套任何遠端 migration。未來須依序：(1) 完成人工檢閱，經使用者授權合併並確認實際進入 `main`；(2) 另獲遠端業務 migration 授權，核對帳號、pending、0017 原 SQL 與順序，執行並核對 ledger／八張表；(3) 另獲部署授權，部署時保持 flag `0`，檢查六端點 404 與一般 API；(4) 確認 AI／Workflow／DB／Auth bindings、隱私、費用與留存，另獲啟用授權才設 `1`。絕不對 `DB_AUTH` 套本 repo migration。詳細部署與來源版本查核見 [`deploy_notes.md`](../deploy_notes.md)。
+PR #191 已合併；遠端原始 0017 與旗標 `0` 部署已完成，ledger／八張表／七個顯式索引及 52 項匿名 smoke 已核對（版本見 [`deploy_notes.md`](../deploy_notes.md)）。本輪 v5 告知已完成本機驗收，尚未部署，且保持 `EVIDENCE_API_ENABLED=0`。後續仍須另取得政策發布授權，確認 AI／Workflow／DB／Auth bindings、費用與留存，再另獲啟用授權才設 `1`，並按授權驗收六 API；旗標 `0` smoke 不可代替此驗收。profile／CLI／fixtures 暫留，清理另需授權。絕不對 `DB_AUTH` 套本站 migration，本輪不做遠端寫入、付費或 erase。

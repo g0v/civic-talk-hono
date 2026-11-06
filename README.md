@@ -73,7 +73,7 @@
 
 ## 開發
 
-> **#183 migration 注意事項：** `migrations/0017_evidence_pipeline.sql` 是預定正式保留的八張 `ct_ai_*` 業務表 migration，不能改寫已在隔離庫套用的 SQL。一般 migration apply 也會選到它；PR 審查期間只使用[專用隔離本機命令](./docs/evidence-api-review.md)，不得套用遠端。確認 PR 已合併到 `main` 後，仍須另獲授權才可處理遠端 `0017`；不得對 `DB_AUTH` 套用 migration。
+> **#183 migration 注意事項：** PR #191 已合併；使用者已手動套用原始 `0017_evidence_pipeline.sql` 至遠端業務庫，八張 `ct_ai_*` 表與七個顯式索引已核對。SQL 必須保持 byte-for-byte；不重跑、不改 ledger，也不得對 `DB_AUTH` 套用 migration。後續遠端操作仍需另獲授權，詳見[部署紀錄](./deploy_notes.md)。
 
 ```bash
 cp -n .dev.vars.example .dev.vars   # 僅首次建立；私下填入 Better Auth 與 Google／GitHub OAuth 憑證
@@ -169,17 +169,23 @@ vp run dev
 - `migrations/0014_user_feedback.sql` 新增 `ct_feedback`；本機與遠端皆已套用。2026-10-16 經使用者授權套用遠端 0014，查核 pending 清單為空、schema 與索引符合預期，新增業務表僅 `ct_feedback`； Worker已部部，正式站功能已上線。
 - `migrations/0015_issue_tags.sql` 為 `ct_issues` 新增 `tags` JSON 文字欄位，舊議題預設 `[]`、不新增資料表。本機與遠端皆已套用：2026-10-20 經使用者授權套用遠端 0015，查核 pending 清單為空、資料表清單未變，16 筆既有議題的 tags 皆為 `[]`。此次未部署 Worker。
 - 認證資料庫：D1 `vtaiwan-auth`（binding：`DB_AUTH`），schema 由 `../vTaiwan-hono` 維護；本 repo 不改 schema、不對它跑 migration 或直接 SQL 寫入，Better Auth 正常登入／session 生命週期是既有寫入例外。
-- `0017_evidence_pipeline.sql` 建立八張 `ct_ai_*` 表；SQL 與既有隔離本機 migration ledger 須保持一致。審查時僅在專用本機 DB 套用；遠端須在確認合併 `main` 後另行授權、核對 pending 與依賴順序再執行。不得對 `DB_AUTH` 執行 migration 或 auth DDL；操作步驟與 rollout 順序見[檢閱手冊](./docs/evidence-api-review.md)。
+- `0017_evidence_pipeline.sql` 已套用隔離本機與遠端業務庫；原 SQL 與 ledger 保留不變。遠端 ledger id 18、`applied_at=2026-11-06 19:29:04`，八張表／七個顯式索引已核對；不得對 `DB_AUTH` 執行 migration 或 auth DDL。後續操作與 rollout 見[檢閱手冊](./docs/evidence-api-review.md)。
 
 ## #183 證據管線 API
 
 本次交付為 **API-only**，操作介面另案。Clairic 逐素材抽取、Clef 比較、Gemma 4 26B A4B 生成共識／爭點／立場地圖，必要時最多一次只補缺值。使用者已確認品質實驗成功；核准公開的歷史 [結果](./results/ai-experiment_result.json) 與 [費用報告](./results/ai-experiment_cost.json) 可供檢視，不是獨立 gold labels，也不能代替新一輪執行的紀錄。實驗的歷史失敗與限制留在 [`Insight.md`](./Insight.md)。
 
-正式 Worker 的 `EVIDENCE_API_ENABLED` 預設為 `0`，六條 API 的同源請求均回 404；跨站簡單寫入仍由全域 CSRF 先擋為 403，皆不觸及 Auth／DB／AI。只有明確設為 `1` 才啟用，缺少必要綁定時回 503。正常志願者 BYO token、synthesis prompt、briefing 與議題狀態不變。[PR #191](https://github.com/g0v/civic-talk-hono/pull/191) 送交人工檢閱；本次不授權 merge、部署或遠端 migration。
+正式 Worker 已部署 `EVIDENCE_API_ENABLED=0` 版本，52 項匿名 smoke 通過；這不是啟用後六 API、真人 OAuth、登入後寫入或付費推論驗收。六條 API 的同源請求均回 404；跨站簡單寫入仍由全域 CSRF 先擋為 403，皆不觸及 Auth／DB／AI。只有另獲啟用授權明確設為 `1` 才啟用，缺少必要綁定時回 503。正常 BYO token、synthesis prompt、briefing 與議題狀態不變。[PR #191](https://github.com/g0v/civic-talk-hono/pull/191) 已合併；本輪 v5 告知修訂已完成本機驗收，尚未部署，發布及啟用仍須另獲授權。
+
+本輪處理告知為 `evidence-processing-2026-11-07-v5`（v4 為歷史告知，不回寫舊紀錄）。每個建立請求均須 `consent:true`，伺服器保存版本與時間；同帳號命中既有 job 不新增同意事件，也不代表取得正文所有人的同意。模型不收作者快照欄位，但正文、名稱／網址仍可能含個資，並未匿名化。正式私有資料存業務 `DB` 而非 `DB_AUTH`，包括原始快照、完整模型 request／response、引用、來源紀錄、人改與 diff；owner／admin 可讀，只有 owner 可新增人工修訂，AI 原稿不覆寫，不自動發布。
+
+沿用現有估算控制：Clairic input US$0.10／百萬 tokens、Clef US$0.24／百萬 tokens、Gemma input／output US$0.10／0.30／百萬 tokens；每帳號每 UTC 日最多 20 個新付費工作、議題冷卻五分鐘、環境模型 US$5／日估算準入。這不是整 job 報價或全帳單硬上限，不含 Workers／Workflows／D1；unknown 預留跨日不自動退，不保證次日恢復。
+
+**沒有自動 TTL 或固定刪除期限。** 來源隱藏／變更只撤下交付，仍保留 payload；對帳／查核發現來源 deleted，或管理員按來源 erase，才清除依賴該來源的所有相關 execution 私有 payload／diff，跨工作及申請者，不是單 job 自助刪除。帳號 ID、hash、同意時間／版本、usage、unknown 與永久 tombstone 保留，來源 ID 不可重新入場。不保證即時發現刪除，也不能撤回已送模型請求；人工權利請求請寄 `info@vtaiwan.tw`。D1 Time Travel 依方案留存 7／30 天，不保證 erase 即時清除備份；Workers AI 一般推論零資料留存／不訓練仍有營運 metadata、安全及法律例外，不能套稱 D1 零留存。官方說明見 [Workers AI](https://developers.cloudflare.com/workers-ai/platform/data-usage/)、[D1](https://developers.cloudflare.com/d1/reference/time-travel/)、[Workflows 費用](https://developers.cloudflare.com/workflows/reference/pricing/)。
 
 完整的[檢閱手冊](./docs/evidence-api-review.md)依序說明三個目標：閱讀已授權的真實實驗與費用、由程式碼掌握資料與安全邊界、在**不執行遠端 migration**的條件下操作全部六條 API。`CIVIC_AI_REVIEW=1` 使用合成的本機來源及獨立資料庫；原有 `CIVIC_AI_EXPERIMENT=1` 仍可在取得授權後唯讀真實遠端來源。兩者都使用真實 Google 認證與 Workers AI，建立新工作可能收費。
 
-合併後，先確認正式站新 API 可用，再清理實驗／審閱專用設定，讓日常開發回到單一正式入口；步驟與保留資料的限制見 [`TODO_AFTER_MERGE.md`](./TODO_AFTER_MERGE.md)。
+政策修訂發布、正式啟用及授權驗收完成後，仍須另獲清理授權才處理實驗／審閱專用設定；目前 profile、CLI、fixtures 與本機指令保留。步驟及保留資料限制見 [`TODO_AFTER_MERGE.md`](./TODO_AFTER_MERGE.md)。
 
 ## 部署
 

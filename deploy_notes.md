@@ -4,7 +4,7 @@ civic-talk-hono 的部署與環境設定參考。日常開發看 [`README.md`](.
 
 > 狀態：**已部署**於 <https://civic.vtaiwan.tw>（Worker 名稱 `civic-talk`，首次部署 2026-08-05）。第 1 節現在是**環境設定的參考**（換環境、換金鑰、新維護者接手時要看），不再是首次部署的待辦清單。
 
-> **#183 rollout：** 本次更新 PR 並標為 ready for review，不授權 merge、deploy、正式啟用或遠端 migration。`0017_evidence_pipeline.sql` 是正式保留的八張 `ct_ai_*` 表 migration，既有 SQL 不改。審查期間只使用[隔離本機手冊](./docs/evidence-api-review.md)，不可套遠端，亦不可對共用 `DB_AUTH` 執行 DDL／migration。正式新 API 預設關閉；合併後先啟用並驗證正式 API，再依 [`TODO_AFTER_MERGE.md`](./TODO_AFTER_MERGE.md) 清理實驗設定。
+> **#183 rollout：** PR #191 已合併、遠端原始 0017 已由使用者手動套用、正式 flag `0` 版本已部署，52 項匿名 smoke 通過。本輪 v5 告知已完成本機驗收，尚未部署，保持 `EVIDENCE_API_ENABLED=0`；發布、啟用、付費、遠端寫入及清理須另獲授權。SQL byte-for-byte 保留，不對 `DB_AUTH` 執行 DDL／migration；[本機手冊](./docs/evidence-api-review.md)與 [`TODO_AFTER_MERGE.md`](./TODO_AFTER_MERGE.md) 的 profiles／CLI／fixtures 暫留。
 
 ---
 
@@ -146,26 +146,34 @@ vp run deploy    # = build + 建置產物／公開原始碼檢查 + wrangler dep
 - **`wrangler.jsonc` 裡 D1 綁定的 `"remote": true` 只影響本機開發**（`vp run dev` 用本機模擬、`vp run dev:remote` 連遠端）。正式環境本來就是真的資料庫，這個欄位不改變部署行為。
 - **正式網域不在設定檔裡**（見 1.1）——`vp run deploy` 不會重建網域綁定，也不會因為設定檔沒寫就把它拆掉。
 - **`compatibility_flags: ["nodejs_compat"]` 不能拿掉**。better-auth 直接 import `node:crypto` 與 `node:async_hooks`，少了這個 flag 連本機 dev 都起不來。
-- 業務資料庫 `vtaiwan-civic-talks` 的 migration 必須與 Worker 程式一起規劃。**2026-09-24 使用者回報目前應已套用 `0001`–`0013`；本次未查詢遠端**。這項紀錄不能取代每次部署前的實際 pending 清單：
+- 未授權寫入時，勿用 `d1 migrations list --remote` 作唯讀檢查：它會 `CREATE TABLE IF NOT EXISTS` 初始化 ledger。先核對帳號、明確 config／業務 DB，再查詢 ledger 是否存在：
   ```bash
   npx wrangler whoami
-  npx wrangler d1 migrations list vtaiwan-civic-talks --remote
+  npx wrangler d1 execute vtaiwan-civic-talks --remote --config wrangler.jsonc --command "SELECT name, sql FROM sqlite_master WHERE type='table' AND name='d1_migrations';"
+  ```
+  表存在才查下列 ledger，與本機 `migrations/*.sql` 檔名比 pending；缺表即停止，不自行初始化：
+  ```bash
+  npx wrangler d1 execute vtaiwan-civic-talks --remote --config wrangler.jsonc --command "SELECT id,name,applied_at FROM d1_migrations ORDER BY id;"
   ```
 - 若仍有 pending migration，先核對檔案內容、相依順序與部署程式；`0009`–`0013` 不得跳號。取得使用者明確授權後才能套用，而且 migration 必須在依賴新 schema 的 Worker 部署前成功：
   ```bash
-  npx wrangler d1 migrations apply vtaiwan-civic-talks --remote
+  npx wrangler d1 migrations apply vtaiwan-civic-talks --remote --config wrangler.jsonc
   ```
 - 套用後要再確認 pending 清單為空，並檢查 `sqlite_master`：本 repo 新增的業務表只能是 `ct_*`。不能只因 repo 裡已有 `0013` 就推定遠端也已套用。
 - #148 的 `0014_user_feedback.sql` 新增 `ct_feedback`，匿名回報寫入及管理端回報列表皆依賴此表。本機與遠端皆已套用：2026-10-16 經使用者授權、確認 vTaiwan.tw 帳號後，遠端 pending 僅 0014，套用後清單為空，`sqlite_master`／欄位／分類約束與排序索引查核符合 migration；只新增 `ct_feedback` 業務表，未操作 `vtaiwan-auth`。部署 Worker已，正式站功能已上線。
 - #95 的 `0015_issue_tags.sql` 為 `ct_issues` 新增 `tags TEXT NOT NULL DEFAULT '[]'`。2026-10-20 經使用者授權，確認 Cloudflare 帳號為 vTaiwan.tw，且檔案與已合併的 `main` 一致後，執行 `npx wrangler d1 migrations apply vtaiwan-civic-talks --remote --config wrangler.jsonc`；套用前 pending 僅 0015，套用後清單為空。已核對 `sqlite_master` 資料表清單未變、欄位型別／NOT NULL／預設值正確，既有議題仍為 16 筆，tags 全為 `[]` 且無 NULL／無效 JSON；未操作 `vtaiwan-auth`，未部署 Worker。
-- #159 的 `0016_issue_closure.sql` 為 `ct_issues` 新增 `is_closed`、`closure_reason`、`closure_changed_at`，不新增資料表，也不操作認證庫。**2026-10-21 僅套用本機；尚未套用遠端、尚未部署**。公開議題查詢也依賴這些欄位，因此須先取得使用者授權、核對 pending 清單並套用 migration，再部署 Worker。
-- **#183 / `0017_evidence_pipeline.sql`：** SQL 已在隔離本機套用，決定作正式業務 migration，八張表皆為 `ct_ai_*`。不要改寫已套用 SQL 或刪除本機 ledger；目前這個 draft 的工作沒有對遠端執行 0017。一般 migration apply 會選到它，`remote:false` 不是 CLI `--remote` 的安全鎖。
+- `0016_issue_closure.sql` 已有遠端 ledger，`applied_at=2026-10-23 21:26:16`；早期「僅套本機」不是現況。
+- **0017 已完成：** 使用者手動套遠端原始 SQL，ledger id 18、`applied_at=2026-11-06 19:29:04`，八張 `ct_ai_*` 表／七個顯式索引已核對。原 SQL byte-for-byte 與 ledger 保留，不重跑、DROP 或改 ledger；`remote:false` 不是 CLI `--remote` 安全鎖。
+- **正式關閉版已完成：** source commit `a2ff8ae526aee59a37234562bad1001c65e8c8b5`、Worker version `e398bed0-1a14-46d2-8f73-5222fd05b71d`、`EVIDENCE_API_ENABLED=0`，52 項匿名 smoke 通過。這不是啟用後六 API、真人 OAuth、登入後寫入或付費推論驗收。
 
-  **未來 rollout 順序，非本次操作授權：**
-  1. 先完成人工檢閱，使用者明確同意後合併，**確認實際已進 `main`**；Draft 更新不等於合併。
-  2. 另取得該次遠端業務 migration 授權，核對帳號、目標 `DB`、main 上原始 0017、遠端 pending 與前序 migration，依序執行並檢查 ledger／八張表／索引。不得套到 `DB_AUTH`、以 DROP 或改 ledger 代替修復。
-  3. 另取得部署授權，按本文件完成建置與來源查核後部署；旗標維持 `EVIDENCE_API_ENABLED=0`，驗證六端點均 404 與既有 API 不受影響。部署不自動執行 D1 migration。
-  4. 另決定是否啟用與取得授權，先核對 Workers AI、Workflow、業務 DB、認證及費用／留存政策，才明確設 `EVIDENCE_API_ENABLED=1` 並按授權驗證。必要綁定缺失須 503，不提供假 fallback。新 UI 不屬本次交付。
+  **後續 rollout，非本輪操作授權：**
+  1. 本輪 `evidence-processing-2026-11-07-v5` 已完成本機驗收，尚未部署；歷史 v4、舊同意、raw／results／Insight 不回寫。另取得政策發布授權後才公開來源並依本文件發布，旗標保持 `0`。
+  2. 核對 Workers AI、Workflow、業務 DB、Auth、費用與留存，再另獲啟用授權才設 `1`，缺必要 binding 回 503，不提供 fallback。
+  3. 按另外授權的帳號、資料與費用範圍驗收六 API，erase 須額外確認跨來源依賴範圍。之後仍需清理授權，不能先刪 profiles／CLI／fixtures 或私人資料。
+
+  **政策核對：** 每帳號每 UTC 日最多 20 個新付費工作、議題五分鐘、環境模型 US$5／日估算準入；Clairic input／Clef 每百萬 tokens US$0.10／0.24、Gemma input／output US$0.10／0.30。非整 job 報價或全帳單硬上限，不含 Workers／Workflows／D1；unknown 跨日不自動退，不保證次日恢復。每個建立請求須 `consent:true`，伺服器存版本／時間，同帳號命中既有 job 不新增事件，也不代表正文所有人已同意。
+
+  無自動 TTL／固定刪除期限；hidden／changed 只撤下且保留 payload。deleted 被對帳／查核發現或管理員按來源 erase 才清跨工作／申請者相關 execution 私有 payload／diff，保留帳號 ID、hash、同意版本／時間、usage、unknown 與永久 tombstone，來源 ID 不可重新入場。權利請求寄 `info@vtaiwan.tw` 人工受理，不保證即時發現刪除、不能撤回在途請求。D1 Time Travel 依方案 7／30 天，erase 不保證即時清備份；Workers AI 一般推論 ZDR／不訓練有營運 metadata、安全及法律例外，不代表 D1 零留存。完整資料／權限及官方連結見[手冊第 3 節](./docs/evidence-api-review.md#3-模式前置與保護範圍)。
 
 
 ---

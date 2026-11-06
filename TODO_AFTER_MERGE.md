@@ -1,21 +1,24 @@
 # PR #191 合併後：正式 API 啟用與實驗設定清理
 
-本文件是合併後的執行待辦，不代表下列步驟已完成或已取得遠端操作授權。本次只新增文件、提交並送審；不刪設定、資料或 Cloudflare 資源。
+PR #191 已合併、遠端原始 0017 已由使用者手動套用、正式旗標 `0` 版本已部署並通過 52 項匿名 smoke。本輪 v5 告知已完成本機驗收，尚未部署；不授權發布、啟用、遠端寫入、付費或清理，profiles／CLI／fixtures 與私有資料保留。
 
 ## 目標與執行順序
 
-正式站可直接使用 #183 的六條證據 API；日常開發回到 `wrangler.jsonc`、`src/worker.ts` 與一般 `vp run dev`／`vp run dev:remote`，不再需要選取實驗或 reviewer profile。UI 仍待後續議題，既有 BYO token、synthesis prompt 與 briefing 不變。
+目標是在另獲政策發布／啟用及驗收授權後，讓正式站使用六條證據 API；再另獲清理授權才回到一般設定。這不是當前已啟用狀態。UI 另案，既有 BYO token、synthesis prompt 與 briefing 不變。
 
-**先確認合併 main → 另獲授權套用業務 migration → 部署及啟用正式 API → 驗證可用 → 再清理專用設定。** 不能只因 PR 合併就刪掉目前唯一可重現實驗的入口。
+**已完成合併 → migration → flag `0` 部署／匿名驗收；待另獲政策發布授權 → 啟用授權 → 六 API 授權驗收 → 清理授權。** 關閉版 smoke 不代替啟用驗收，不能只因合併就刪實驗入口。
 
 ## 1. 先讓正式站 API 可用
 
 - [x] 確認 PR #191 已實際合併至 `main`，從合併後的來源建立後續修訂；ready for review 不等於已合併。
 - [x] 另行取得遠端 migration 授權，先核對 Wrangler 登入帳號、業務 `DB` 目標、pending 與前序 migration，再套用 `0017_evidence_pipeline.sql`。保留原 SQL，不改 migration ledger；絕不對 `DB_AUTH` 套本 repo migration 或執行 auth DDL。
-- [ ] 核對正式 `AI`、`EVIDENCE_WORKFLOW`、`DB`、`DB_AUTH` 與認證設定；正式來源使用 `DB`，不需要額外的遠端 `SOURCE_DB`。確認費用、處理同意、隱私與資料留存政策。
-- [ ] 取得部署授權，依 [部署須知](./deploy_notes.md) 提交／公開來源並從乾淨 checkout 建置，只用 `vp run deploy`。先保持 `EVIDENCE_API_ENABLED=0`，確認既有 API 不受影響；再另獲啟用授權設為 `1`，不可省略 migration 或默認已啟用。
+- [x] 已部署 source `a2ff8ae526aee59a37234562bad1001c65e8c8b5`、Worker `e398bed0-1a14-46d2-8f73-5222fd05b71d`，flag `0`／52 項匿名 smoke 通過；0017 ledger id 18、`2026-11-06 19:29:04`，八張表／七個顯式索引已核對。0016 ledger `2026-10-23 21:26:16`。
+- [ ] 另獲授權發布 `evidence-processing-2026-11-07-v5`；本機修訂與驗收已完成，尚未部署，歷史 v4／舊同意／raw 不回寫。核對正式 bindings、費用、隱私與留存；完整政策見[手冊第 3 節](./docs/evidence-api-review.md#3-模式前置與保護範圍)。
+- [ ] 新政策依[部署須知](./deploy_notes.md)另獲發布授權後，公開來源並建置、維持 flag `0`；之後另獲啟用授權才設 `1`，不將已完成的關閉版 smoke 當作啟用成功。
 - [ ] 以授權的帳號、測試資料與費用同意，在正式站確認六支 API 的建立／輪詢、快取、修訂／衝突、權限及維護行為。新的模型工作會計費；reconcile／erase 可能永久清除資料，必須另外確認處置範圍，不拿真實議題 13／素材 25、26、27 作破壞性測試。
 - [ ] 確認正常登入者與管理員能從正式站使用 API；保留不公開原始 Cookie／私人工作內容的驗收紀錄。正式驗收成功後才進行第 2 節。
+
+政策無自動 TTL／固定刪除期限，hidden／changed 只撤下、保留 payload；deleted 被發現或管理員按來源 erase 才清跨依賴工作／申請者相關 execution 私有 payload／diff。保留帳號 ID、hash、同意版本／時間、usage、unknown、永久 tombstone，來源 ID 不可重新入場。人工權利請求寄 `info@vtaiwan.tw`；不保證即時發現刪除或撤回已送模型請求，D1 依方案 7／30 天 Time Travel 備份不保證即時清除。Workers AI 一般推論 ZDR／不訓練有 metadata、安全及法律例外，不代表 D1 零留存。估算控制非整 job 報價／全帳單上限，不含 Workers／Workflows／D1；unknown 跨日不自動退，不保證次日恢復。
 
 ## 2. 清理專用設定與完整呼叫鏈
 

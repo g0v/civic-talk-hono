@@ -69,8 +69,8 @@ Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑�
 - `migrations/0005_author_email.sql` — 四種內容補齊投稿當下的作者快照；`author_email` 一律保存，`show_email`（0／1）只控制前台是否公開。本機與遠端皆已套用。遠端先前另有舊檔名 `0004_author_email.sql`（只加三表 `author_email`），因此遠端是補齊 `show_email` 與 briefing 快照後再標記 0005 已套用。
 - `migrations/0006_submission_consent.sql` — 議題、素材與意見保存伺服器端確認的 `terms_version`／`terms_accepted_at`。本機與遠端皆已套用。
 - `migrations/0007_abuse_reports.sql`–`0013_query_indexes.sql` — 濫用／失效連結回報、AI 審查與申訴、投稿併發、議題活動時間、意見投票與查詢索引。**2026-09-24 使用者回報目前應已套用遠端 `0001`–`0013`；本次未查詢遠端**。部署前仍須以 remote pending 清單核對，不能只憑 repo 中的檔案或本紀錄推定遠端狀態。
-- `migrations/0016_issue_closure.sql` — #159 為 `ct_issues` 新增獨立的 `is_closed`、`closure_reason`、`closure_changed_at`，2026-10-21 僅套用本機，未套用遠端。結案／重開只影響首頁分類，不得拿來阻擋投稿、投票、匯出，或取代 `collecting`／`summarizing`／`published`。只有 admin／super-admin 能透過 `PATCH /api/issues/:id/closure` 操作，兩者都必須填理由；最近一次理由與日期公開顯示於議題頁（使用者裁示），不另建歷史紀錄。首頁預設進行中，已結案使用 `?tab=closed`，與搜尋、預覽及歷史雙向同步，沿用角色篩選／排序；一般編輯不得清掉結案資訊。
-- `migrations/0017_evidence_pipeline.sql` — #183 的八張正式 `ct_ai_*` 業務表；已套用隔離本機，必須保留 SQL byte-for-byte 與 ledger 對應。審查期間只對隔離本機套用；確認 PR 合併 `main` 後還須另獲授權才能對遠端業務庫執行，不得對認證庫建 DDL／migration。
+- `migrations/0016_issue_closure.sql` — #159 新增獨立結案欄位，遠端 ledger `applied_at=2026-10-23 21:26:16` 已核對；早期「僅套本機」不是現況。結案／重開只影響首頁分類，不阻擋投稿、投票、匯出或取代議題 status；只有 admin／super-admin 能操作，必填公開理由，保留最近一次理由／日期。首頁進行中／已結案與搜尋、預覽及歷史同步；一般編輯不得清掉結案資訊。
+- `migrations/0017_evidence_pipeline.sql` — #183 八張正式 `ct_ai_*` 業務表；PR #191 已合併，使用者已手動套用遠端原始 SQL，ledger id 18、`applied_at=2026-11-06 19:29:04`，八張表／七個顯式索引已核對。保留 SQL byte-for-byte 與 ledger，不重跑、不對認證庫建 DDL／migration；後續遠端操作另需授權。
 - `src/components/OpinionVote.vue` — 公民意見同意／不同意／略過控制；投票前隱藏分布，投票後或作者才顯示；匿名點擊保留意見內容並展開登入入口。
 - `src/ssr/render.ts` — SSR + 注入 `window.__PAGE__`／`__SSR_STATE__` + `/js/civic.js`（dev 走 `/src/client/civic-entry.ts`）。
 - `src/views/` — `Home`／`Issue`／`Contribute`／`About`／`Profile`／`Appeals`／`Privacy`／`Terms`／`Admin`／`MaterialDetail`／`OpinionDetail`／`NotFound`；`Issue` 無 `step` 時顯示 briefing 四張 carousel，volunteer hydration 後有第五張導航 slide，citizen 在最後一張可進 comments；`?step=comments|materials|volunteer` 可雙向同步且直接進入對應版面。#143 起桌機與手機的 carousel 主畫面均固定在 `100dvh` 內，以 flex 扣除標頭、議題資訊、tabs、分頁與精簡授權列的自然高度，長文只在卡內捲動；輪播不顯示上方狀態標籤，`AppFooter` 使用 `compact` 模式保留原始碼、授權及 client／Worker notices 入口，說明內文均為 16px。意見、素材與志願者工具仍自然捲動、保留完整 footer；carousel CSS 由 `src/styles/app.css` 納入。共用 `AppHeader`／`AppFooter`／`StatusBadge`／`IssueCard`／`IssuePreviewCard`／`Toast`。首頁點議題卡時以 `?action=click_issue_card&issue=<id>` 留在 `Home` 顯示單張預覽，按「進入」才切換到議題內容路由。
@@ -327,7 +327,7 @@ vp run deploy                       # build + 產物／公開原始碼檢查 + w
 
 **測試**：`vp test` 跑 `src/tests/**/*.test.ts`，涵蓋 i18n、SSR、API 安全邊界、作者隱私、moderation、投稿併發、首頁排序與意見投票等。新測試放進 `src/tests/`，從 `vite-plus/test` import `describe`／`it`／`expect`；`.github/workflows/ci.yml` 會在 push 到 `main` 與 pull request 執行完整測試。
 
-D1 migration 一般目錄包含 `0017`，一般 `apply` 會選到它。審查僅使用[手冊](./docs/evidence-api-review.md)的專用隔離本機 setup；不要用一般 `--local` 覆蓋既有開發狀態，或在 PR 合併前對遠端執行。確認合併 `main` 後仍需明確授權與核對 pending 才可套用遠端。**本 repo 不對 `DB_AUTH` 建 DDL 或跑 migration**；真實登入使用既有遠端 Better Auth。
+D1 migration 目錄包含已套遠端的 `0017`，原 SQL／ledger 不改。隔離審查用[手冊](./docs/evidence-api-review.md)專用本機 setup；不得覆蓋既有本機狀態。後續遠端操作仍需明確授權；零寫入核對先 `SELECT sqlite_master` 確認 ledger 存在，再 `SELECT d1_migrations` 比本機檔名，不能用會初始化 ledger 的 `migrations list`。**本 repo 不對 `DB_AUTH` 建 DDL 或跑 migration**；真實登入使用既有遠端 Better Auth。
 
 ## 語言與溝通慣例
 
@@ -562,7 +562,11 @@ D1 migration 一般目錄包含 `0017`，一般 `apply` 會選到它。審查僅
 - 生成 `section-values-v6-gemma-chat` 各項收到完整已驗證 quote、ID／素材 ID 及必要關係投影，JSON payload 內容保持原有投影，詳細 metadata 留在本機。共識限於跨素材直接 agree 候選及有效子集、至少兩素材，每個候選須交代採用或拒絕，每個參與來源均須有正文引用。共識依 canonical ID 排序建立 C1…Cn，動態 schema enum 限制採用／拒絕 ID，空候選時兩清單必須為空；程式保留 `candidate_map`，驗證後診斷使用 canonical ID，未知／舊格式 ID、漏交代、重複拒絕或採用又拒絕都拒收，不猜測修補。立場仍僅由 opinions 的 Title／description 引用推導成員／Sources；群名／Core_concern 的引用須屬該群，保留 direct disagree 互斥與完整覆蓋／排除守門。此次未批准放寬 context citation 或新增共識來源支持矩陣，先前背景引文越界問題仍可能重現；不修改舊 raw 或新增相容 fallback。
 - 各項獨立記帳、驗證與保存；`diagnostics.generation.sections` 區分 completed／no_findings／failed／not_started，進行中另看 `generation_progress`。partial 不代表失敗空段沒有爭點；來源 fence、停權、去重及禁止自動重試仍適用。
 - 最終三段 Overview 與每組 Core_concern 均須非空；Core_concern 可依明示主張有據綜整，不推測動機。三項後僅在有內容的必填仍為 null 時，最多一輪 Gemma 白名單補完，不能改已有值、來源、順序或舊引用。共識 Overview 補完仍須保留三型的差別、條件與來源範圍，不將共享挑戰或事實升格成共同解法。空／失敗／未啟動分區的 Overview 由程式以三語狀態文字明示，不偽造來源結論或 citation。
-- 補完獨立預留／結算且仍屬同一工作，進度可為 completion；無缺值不付費，必要補完失敗不交付缺值草稿。原始分項、舊結果、unknown 費用與 tombstone 不覆寫；不新增第五輪、自動重試或格式修復。因模型更換，告知版本改為 `evidence-processing-2026-11-04-v4`，每個新工作仍須明確同意。
+- 補完獨立預留／結算且仍屬同一工作，進度可為 completion；無缺值不付費，必要補完失敗不交付缺值草稿。原始分項、舊結果、unknown 費用與 tombstone 不覆寫；不新增第五輪、自動重試或格式修復。模型更換時的 `evidence-processing-2026-11-04-v4` 為歷史告知；本輪 `evidence-processing-2026-11-07-v5` 已完成本機驗收，尚未部署，不回寫舊同意或 raw。每個建立請求須 `consent:true`，伺服器存版本／時間；同帳號命中既有 job 不新增同意事件，不代表取得正文所有人的同意。
+- 正式 flag `0` 版本已部署、52 項匿名 smoke 通過；不是啟用後六 API、真人 OAuth、登入後寫入或付費驗收。本輪只補正式告知，保持 `EVIDENCE_API_ENABLED=0`；發布／啟用／清理須另獲授權，保留 review／experiment profiles、CLI、fixtures。
+- 沿用每帳號每 UTC 日最多 20 個新付費工作、議題五分鐘、環境模型 US$5／日估算準入，非整 job 報價或全帳單硬上限，不含 Workers／Workflows／D1；unknown 跨日不自動退，不保證次日恢復。Clairic input／Clef 每百萬 tokens US$0.10／0.24，Gemma input／output US$0.10／0.30。
+- 無自動 TTL／固定刪除時限；hidden／changed 只撤下且保留 payload。查核／對帳發現 deleted 或管理員按來源 erase 才清跨依賴工作／申請者的 execution 私有 payload／diff，非單 job 自助刪除；保留帳號 ID、hash、同意版本／時間、usage、unknown 與永久 tombstone，來源 ID 不可重新入場。人工權利請求寄 `info@vtaiwan.tw`；不保證即時發現刪除，不能撤回在途模型請求。
+- 正式資料存業務 `DB`（非 `DB_AUTH`），含原始快照、完整模型 request／response、引用、來源紀錄、人改／diff；owner／admin 讀、owner 改，不自動發布。模型不收作者快照欄，但正文、名稱／網址仍可能含個資，未匿名化。D1 Time Travel 依方案 7／30 天，erase 不保證即時清備份；Workers AI 一般推論零留存／不訓練有營運 metadata、安全及法律例外，不代表 D1 零留存。完整政策及官方連結見[手冊](./docs/evidence-api-review.md#3-模式前置與保護範圍)。
 - Clef `symmetric-four-way-v2` 以共同問題／條件校準四分類，不追求特定分布；`scripts/evidence-clef-calibration.mjs` 只對照已人工核可資料，不能證明 labels／hash 來源。歷史 GPT-OSS probes 與失敗案例保留於 `Insight.md`，不能取代使用者確認的成功紀錄；也不要另行付費重跑以確認已成功。
 
 
