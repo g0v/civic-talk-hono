@@ -10,8 +10,8 @@
 
 ## 1. 先讓正式站 API 可用
 
-- [ ] 確認 PR #191 已實際合併至 `main`，從合併後的來源建立後續修訂；ready for review 不等於已合併。
-- [ ] 另行取得遠端 migration 授權，先核對 Wrangler 登入帳號、業務 `DB` 目標、pending 與前序 migration，再套用 `0017_evidence_pipeline.sql`。保留原 SQL，不改 migration ledger；絕不對 `DB_AUTH` 套本 repo migration 或執行 auth DDL。
+- [x] 確認 PR #191 已實際合併至 `main`，從合併後的來源建立後續修訂；ready for review 不等於已合併。
+- [x] 另行取得遠端 migration 授權，先核對 Wrangler 登入帳號、業務 `DB` 目標、pending 與前序 migration，再套用 `0017_evidence_pipeline.sql`。保留原 SQL，不改 migration ledger；絕不對 `DB_AUTH` 套本 repo migration 或執行 auth DDL。
 - [ ] 核對正式 `AI`、`EVIDENCE_WORKFLOW`、`DB`、`DB_AUTH` 與認證設定；正式來源使用 `DB`，不需要額外的遠端 `SOURCE_DB`。確認費用、處理同意、隱私與資料留存政策。
 - [ ] 取得部署授權，依 [部署須知](./deploy_notes.md) 提交／公開來源並從乾淨 checkout 建置，只用 `vp run deploy`。先保持 `EVIDENCE_API_ENABLED=0`，確認既有 API 不受影響；再另獲啟用授權設為 `1`，不可省略 migration 或默認已啟用。
 - [ ] 以授權的帳號、測試資料與費用同意，在正式站確認六支 API 的建立／輪詢、快取、修訂／衝突、權限及維護行為。新的模型工作會計費；reconcile／erase 可能永久清除資料，必須另外確認處置範圍，不拿真實議題 13／素材 25、26、27 作破壞性測試。
