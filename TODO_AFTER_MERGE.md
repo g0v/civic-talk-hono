@@ -1,12 +1,12 @@
 # PR #191 合併後：正式 API 啟用與實驗設定清理
 
-PR #191、遠端原始 0017 與正式關閉版已完成；v5 告知已隨 `e11d6b9` 由使用者手動推送／部署，20 項匿名發布／關閉檢查通過，正式仍為 `0`。本輪授權本機開關改為 `1`、驗證及提交，不含推送、部署、遠端寫入、付費試跑或清理；profiles／CLI／fixtures 與私有資料保留。
+PR #191、遠端原始 0017、v5 告知發布與正式啟用版均已完成。使用者已手動推送／部署啟用提交 `73800643596b7114efd0c7623ea436023cd244b9`，並回報六支 API 匿名 401、跨站 403，以及 `/api/me` 的 `200`／`super-admin`／`banned:false`。**使用者目前要求暫停；尚未執行 `consent:false` 拒絕測試、正式付費工作、有效維護操作或設定清理。** 本輪只更新本檔與保存進度，並依另行授權做本機提交與來源產物重建；不再呼叫 API、寫入遠端、推送或部署；profiles／CLI／fixtures 與私有資料保留。本檔為目前驗收進度，先前 rollout 文件中的「正式仍為 0／尚未發布」敘述不代表最新狀態。
 
 ## 目標與執行順序
 
-目標是在另獲發布授權後，讓正式站使用六條證據 API，再按授權資料與費用範圍完成驗收；之後另獲清理授權才回到一般設定。正式站尚未啟用，本機設定已準備為 `1`。UI 另案，既有 BYO token、synthesis prompt 與 briefing 不變。
+目標是完成正式六條證據 API 的授權驗收，之後另獲清理授權才回到一般設定。**正式站目前保持 `EVIDENCE_API_ENABLED=1`；暫停驗收不等於關閉功能，未停權登入者仍可逐工作同意使用。** 目前僅完成啟用、匿名守門／CSRF 與驗收帳號身分確認，不能視為六 API 功能全數驗收。UI 另案，既有 BYO token、synthesis prompt 與 briefing 不變。
 
-**已完成合併 → migration → flag `0` 部署／匿名驗收 → v5 告知發布；本輪準備本機開關 `1` 並獲提交授權。待另獲推送／部署授權 → 啟用後六 API 授權驗收 → 清理授權。** 關閉版 smoke 不代替啟用驗收，不能只因合併就刪實驗入口。
+**已完成合併 → migration → flag `0` 部署／匿名驗收 → v5 告知發布 → flag `1` 部署 → 匿名守門／CSRF → super-admin 身分確認；目前暫停於未同意拒絕測試之前。** 下次接續：`consent:false` 拒絕測試 → 確認指定來源與新費用同意 → 六 API 完整授權驗收 → 清理授權。關閉版及匿名 smoke 不代替登入後功能驗收，不能只因合併或部署就刪實驗入口。
 
 ## 1. 先讓正式站 API 可用
 
@@ -14,11 +14,29 @@ PR #191、遠端原始 0017 與正式關閉版已完成；v5 告知已隨 `e11d6
 - [x] 另行取得遠端 migration 授權，先核對 Wrangler 登入帳號、業務 `DB` 目標、pending 與前序 migration，再套用 `0017_evidence_pipeline.sql`。保留原 SQL，不改 migration ledger；絕不對 `DB_AUTH` 套本 repo migration 或執行 auth DDL。
 - [x] 已部署 source `a2ff8ae526aee59a37234562bad1001c65e8c8b5`、Worker `e398bed0-1a14-46d2-8f73-5222fd05b71d`，flag `0`／52 項匿名 smoke 通過；0017 ledger id 18、`2026-11-06 19:29:04`，八張表／七個顯式索引已核對。0016 ledger `2026-10-23 21:26:16`。
 - [x] `evidence-processing-2026-11-07-v5` 已隨 source `e11d6b912d5a3e60c47a074e95b7a09b33df9f11` 公開並部署；20 項匿名發布／關閉檢查通過。費用估算與無 TTL 按來源清除政策已由使用者接受，歷史 v4／舊同意／raw 不回寫。完整政策見[手冊第 3 節](./docs/evidence-api-review.md#3-模式前置與保護範圍)。
-- [ ] 本機 `EVIDENCE_API_ENABLED=1` 的修改、驗證及提交已獲授權，已通過型別檢查、603 項測試、build 與 19 項不登入、不付費的 HTTP 檢查；正式仍為 `0`。另獲推送／部署授權後才依[部署須知](./deploy_notes.md)發布啟用版；這會讓所有未停權登入者可在逐工作同意後使用付費功能，不限管理員。發布後匿名預期 401，缺必要 binding 則 503，不將已完成的關閉版檢查當作功能驗收成功。
+- [x] 本機 `EVIDENCE_API_ENABLED=1` 已修改、重新產生型別並通過型別檢查、603 項測試、build 與 19 項不登入、不付費的 HTTP 檢查；已提交 `7380064`（`feat: 準備證據 API 啟用設定`），提交後已重建並核對 Worker／client／部署資產的來源產物。
+- [x] 使用者回報已手動推送／部署 source `73800643596b7114efd0c7623ea436023cd244b9` 的正式啟用版；後續匿名回應符合開啟後的守門行為。新版 Worker Version ID 尚未提供，不沿用上方歷史 `e398bed0-1a14-46d2-8f73-5222fd05b71d`。
+- [x] 正式匿名 `POST /api/issues/0/evidence-jobs` 回 `401`。
+- [x] 正式匿名 `GET /api/evidence-jobs/:jobId` 回 `401`（使用虛構 UUID，未查詢私人工作）。
+- [x] 正式匿名 `GET /api/evidence-jobs/:jobId/revisions` 回 `401`。
+- [x] 正式匿名 `POST /api/evidence-jobs/:jobId/revisions` 回 `401`。
+- [x] 正式匿名 `POST /api/evidence-maintenance/reconcile` 回 `401`；只驗未登入拒絕，未執行有效對帳。
+- [x] 正式匿名 `POST /api/evidence-maintenance/erase` 回 `401`；只驗未登入拒絕，未執行清除。
+- [x] 正式跨站簡單 `POST /api/issues/0/evidence-jobs` 回 `403`（`Origin: https://example.invalid`、`Content-Type: text/plain`）。以上七項由使用者回報成功，不重跑確認；未傳 Cookie 或有效同意／維護 payload。
+- [x] 使用者在正式站已登入分頁的 Console 確認 `GET /api/me` 為 `{"http":200,"role":"super-admin","banned":false}`；未匯出 Cookie、帳號 ID、email 或完整個人資料。這只證實本次驗收帳號身分，不代表一般使用者／非 owner 權限已驗。
+- [ ] 在已登入的正式站 Console 送出 `POST /api/issues/13/evidence-jobs`，JSON body 為 `{"consent":false}`，確認預期 `400`／`invalid_request`。**僅提供指令，使用者尚未執行或回報結果，不能勾選。**
+- [ ] 另行確認本次正式付費驗收的指定議題／素材、處理同意與新費用範圍；先前接受費用／留存政策及啟用授權，不等於已授權這次新工作、重送快取 miss 或維護清除。不能為確認已成功的品質實驗而自行重跑。
 - [ ] 以授權的帳號、測試資料與費用同意，在正式站確認六支 API 的建立／輪詢、快取、修訂／衝突、權限及維護行為。新的模型工作會計費；reconcile／erase 可能永久清除資料，必須另外確認處置範圍，不拿真實議題 13／素材 25、26、27 作破壞性測試。
-- [ ] 確認正常登入者與管理員能從正式站使用 API；保留不公開原始 Cookie／私人工作內容的驗收紀錄。正式驗收成功後才進行第 2 節。
+- [ ] 確認正常登入者與管理員能從正式站使用 API，包含非 owner 的私有資料隔離與非 admin 的維護拒絕；保留不公開原始 Cookie／私人工作內容的驗收紀錄。正式驗收成功後才進行第 2 節。
 
 政策無自動 TTL／固定刪除期限，hidden／changed 只撤下、保留 payload；deleted 被發現或管理員按來源 erase 才清跨依賴工作／申請者相關 execution 私有 payload／diff。保留帳號 ID、hash、同意版本／時間、usage、unknown、永久 tombstone，來源 ID 不可重新入場。人工權利請求寄 `info@vtaiwan.tw`；不保證即時發現刪除或撤回已送模型請求，D1 依方案 7／30 天 Time Travel 備份不保證即時清除。Workers AI 一般推論 ZDR／不訓練有 metadata、安全及法律例外，不代表 D1 零留存。估算控制非整 job 報價／全帳單上限，不含 Workers／Workflows／D1；unknown 跨日不自動退，不保證次日恢復。
+
+### 暫停點與下次接續
+
+下次先從上方第一個未勾選項目開始：**未同意拒絕測試，尚未執行。** 使用正式站已登入分頁的瀏覽器 Console（不是終端機），送 JSON `{"consent":false}`；這一步不把同意改成 `true`。依 `src/ai/routes.ts` 的現行順序，未同意會在來源讀取、`ensureStartup()`、工作建立或模型推論前被拒絕。`400`／`invalid_request` 是待確認的預期值，不是已觀察結果。
+
+後續有效的證據請求可能先執行來源對帳並恢復既有 queued 工作；來源已刪除時，對帳可能清除相關私有 payload。因此不要把登入後 evidence GET 或正式 reconcile 一概當成純唯讀，也不要未經授權直接建立工作、重送 POST、重試模型或執行 erase。既有 unknown 費用、ledger、tombstone 與私人資料不重設；本輪不動其他設定或遠端資源。
+
 
 ## 2. 清理專用設定與完整呼叫鏈
 
