@@ -1,8 +1,8 @@
 # Issue #183：證據抽取、跨素材判斷與結構化彙整實驗計畫
 
-> **現況：** 使用者已確認真實品質實驗成功，核准公開的 [結果](./results/ai-experiment_result.json) 與 [費用報告](./results/ai-experiment_cost.json) 保留該次證據；它們不是獨立人工 gold labels，也不代表每次新推論必然相同。本次交付 API-only，UI 另案。正式 Worker 已接上六條 API，但預設關閉；只以明確 `EVIDENCE_API_ENABLED=1` 啟用。
+> **現況：** 使用者已確認真實品質實驗成功，核准公開的 [結果](./results/ai-experiment_result.json) 與 [費用報告](./results/ai-experiment_cost.json) 保留該次證據；它們不是獨立人工 gold labels，也不代表每次新推論必然相同。交付為 API-only，UI 另案；正式已部署版本仍為 `0`，本機設定已準備為 `EVIDENCE_API_ENABLED=1`。
 >
-> [PR #191](https://github.com/g0v/civic-talk-hono/pull/191) 已合併；使用者已手動套遠端原始 0017，正式旗標 `0` 版本已部署、52 項匿名 smoke 通過。本輪按現況補齊 `evidence-processing-2026-11-07-v5` 告知並完成本機驗收，尚未部署；不授權發布、啟用、遠端寫入、付費或清理。完整本機操作見[檢閱手冊](./docs/evidence-api-review.md)；歷史負面結果留在 [`Insight.md`](./Insight.md)。
+> [PR #191](https://github.com/g0v/civic-talk-hono/pull/191) 與遠端原始 0017 已完成；v5 告知已隨 `e11d6b9` 由使用者手動推送／部署，20 項匿名發布／關閉檢查通過。本輪授權本機開關 `1` 的修改、驗證及提交，不含推送、部署、遠端寫入、付費或清理。完整本機操作見[檢閱手冊](./docs/evidence-api-review.md)；歷史負面結果留在 [`Insight.md`](./Insight.md)。
 
 ## 1. 已確認的範圍與決策
 
@@ -35,7 +35,7 @@
 - 共用 `src/api/requireUser.ts` 處理未登入 401、停權 403，既有路由與證據 API 均沿用；所有登入者可以使用志願者工具。`useViewerRole` 是介面偏好，不是認證角色。
 - 既有 `POST /api/issues/:id/briefing` 透過 `createBriefing()` 建立版本並把正常議題推進 `published`。**新 AI 草稿不能借用此路徑儲存。** 管理端 PUT 會覆寫現有 briefing，也不能拿來充當不可變 AI 原稿。
 - 現有素材沒有版本歷史；管理端刪除素材／議題會實體刪除。只存 ID、hash、offset 不足以在刪除後重建原文。
-- 開工前 `wrangler.jsonc` 有 `DB`、`DB_AUTH` 與 `FACT_CHECK_CORE`；現已接上 AI 與 Workflow，但正式新 API 預設關閉。一般 `vp run dev:remote` 連遠端綁定，不能直接作本地隔離審查。
+- 開工前 `wrangler.jsonc` 有 `DB`、`DB_AUTH` 與 `FACT_CHECK_CORE`；現已接上 AI 與 Workflow。本機新 API 設定準備為 `1`，正式已部署版本仍為 `0`。一般 `vp run dev:remote` 連遠端綁定，不能直接作本地隔離審查，也不能用於未授權的真實資料或付費工作。
 - `0017_evidence_pipeline.sql` 已套隔離本機及遠端業務庫，SQL byte-for-byte 不改。使用者手動套用後已核對 ledger id 18、`applied_at=2026-11-06 19:29:04`、八張表與七個顯式索引；0016 ledger 時間為 `2026-10-23 21:26:16`。後續遠端操作仍須另獲授權；不對 `DB_AUTH` 建表或套 migration。正式關閉版來源及 Worker version 見[部署紀錄](./deploy_notes.md)。
 - 本輪保留既有 API、`.html` 導向、SSR／hydration、投票、結案與自帶 token 的 prompt 流程。結案不是禁止本實驗的條件。合併後另案移除「再彙整」UI，但保留 `GET /api/issues/:id/prompt?type=synthesis` 的登入守門、語意與成功回應；不以 UI 移除為由刪除既有 API。
 - 投稿安全審查的 OpenRouter fail-open 規則不變。**生成實驗失敗不能套用 fail-open 來偽造成功草稿。**
@@ -46,10 +46,10 @@
 
 目前入口與審查環境：
 
-- 正式 Worker 已接入一般應用，`EVIDENCE_API_ENABLED` 預設 `0`；只設為 `1` 才啟用新 API，必要綁定缺失時 fail closed 503。未提供 `SOURCE_DB` 時正式來源預設 `DB`；可選的獨立來源綁定供隔離環境使用。
+- 正式 Worker 已接入一般應用；只有 `EVIDENCE_API_ENABLED=1` 才啟用新 API，未設定或其他值均關閉，必要綁定缺失時 fail closed 503。本機設定為 `1` 不會改動已部署的正式 `0` 版本。未提供 `SOURCE_DB` 時正式來源預設 `DB`；可選的獨立來源綁定供隔離環境使用。
 - `CIVIC_AI_EXPERIMENT=1 vp run dev:remote` 保留原隔離實驗入口、`.wrangler/ai-experiment` 及唯讀遠端來源；只掛證據與必要 OAuth/session API。
 - `CIVIC_AI_REVIEW=1 vp run dev:remote` 選擇獨立 `.wrangler/evidence-review`、本機工作及合成來源庫、既有遠端 `DB_AUTH` 與真實 Workers AI；兩個 opt-in 不可同時設定。
-- 一般 `vp run dev` 刻意停用 Auth；預設 `vp run dev:remote` 使用既有遠端 Auth，兩者的新 API 默認 404。完整命令及安全邊界見[檢閱手冊](./docs/evidence-api-review.md)。
+- 一般 `vp run dev` 刻意停用 Auth；本機開關為 `1` 且必要 binding 完整時，六 API 的匿名請求回 401，登入仍回 503，不提供假登入。`vp run dev:remote` 沿用遠端 Auth／DB／AI 語意，但開關為 `1` 後，真實登入者的有效同意請求可能寫入業務庫及產生費用；未獲該次授權不得試跑。完整命令及安全邊界見[檢閱手冊](./docs/evidence-api-review.md)。
 - OAuth／session 的正常維護寫入是唯一認證例外；不轉存 cookie、secret、OAuth token 到工作流或 AI 紀錄。
 - 需要抽出共用登入守門或縮窄 auth helper 的 binding 型別時，先查 LSP references，再遷移所有呼叫端；不建立平行的認證規則。
 
@@ -247,7 +247,7 @@ AI 原稿為不可覆寫工件。申請者可另存人改版本，保存 parent�
 
 ### 7.1 API 契約
 
-正式應用以 `EVIDENCE_API_ENABLED=1` 明確啟用時及隔離實驗／審查設定中提供；預設關閉時同源請求回 404，跨站簡單寫入由全域 CSRF 先回 403，均不觸及認證／DB／AI。啟用但缺必要綁定 fail closed 503。沿用 `/api/*` 全域 `apiCsrf` 與既有 CORS 規則，不逐端點重造 Origin 檢查；敏感回應為 private／no-store。
+正式應用以 `EVIDENCE_API_ENABLED=1` 明確啟用時及隔離實驗／審查設定中提供；開關非 `1` 時同源請求回 404，跨站簡單寫入由全域 CSRF 先回 403，均不觸及認證／DB／AI。啟用但缺必要綁定 fail closed 503。沿用 `/api/*` 全域 `apiCsrf` 與既有 CORS 規則，不逐端點重造 Origin 檢查；敏感回應為 private／no-store。
 
 |方法／路徑|用途|
 |---|---|
@@ -368,7 +368,7 @@ stateDiagram-v2
 
 ## 11. 預計影響檔案與文件
 
-主要責任如下；本次接上預設關閉的正式入口與獨立 reviewer profile，不改模型／prompt 或舊工件。
+主要責任如下；原移植工作曾接上關閉的正式入口與獨立 reviewer profile。本輪只準備本機啟用設定，不改模型／prompt 或舊工件。
 
 - 重點修改 `src/ai/models.ts`、`comparison.ts`、`generation.ts`、`runner.ts` 及必要的 `store.ts`／`routes.ts`／`pricing.ts`，完成 Clef 題目校準、可追溯分群、三項生成與分項診斷；沿用既有來源／生命週期邊界，不引入通用 AI agent 框架。
 - `migrations/0017_evidence_pipeline.sql` 的既有 SQL 不變，作為正式業務 migration；保持所有表 `ct_` 前綴與隔離本機 ledger。遠端 rollout 僅在合併 main 且另獲授權後進行。
@@ -402,8 +402,8 @@ stateDiagram-v2
 ## 12. 交付與人工關卡
 
 - 使用者已確認真實三模型品質實驗成功；[結果](./results/ai-experiment_result.json) 與 [費用報告](./results/ai-experiment_cost.json) 是已授權公開的歷史紀錄。結果為 `ai_draft`，三項 completed，ledger 記錄 23 attempts、13,362 microUSD；這不是 Cloudflare 帳單核對或獨立 gold-label 成績。過往失敗與當時的測試見 `Insight.md`，不抹除也不再冒充現況。
-- 本次為 API-only，預設關閉；完整操作、六個端點與對帳／清除風險見[檢閱手冊](./docs/evidence-api-review.md)。不要重複付費推論只為證明既有成功。
-- PR #191 送交使用者與社群檢閱；本次授權文件修訂 commit、push 與 ready for review，未授權合併、部署或遠端 migration。遠端操作須在確認 main merge 後另獲授權；`DB_AUTH` 不做 DDL／migration。正式 API 可用後，再依 [`TODO_AFTER_MERGE.md`](./TODO_AFTER_MERGE.md) 清理實驗設定、簡化開發環境。
+- API-only；正式 `e11d6b9` 仍為 `0`，本機準備 `1` 尚未發布。完整操作、六個端點與對帳／清除風險見[檢閱手冊](./docs/evidence-api-review.md)。不要重複付費推論只為證明既有成功。
+- PR #191 已合併，原始 0017 與正式關閉版已完成。本輪授權本機開關修改、驗證及提交；推送／部署、遠端操作、付費與清理仍須另獲授權。`DB_AUTH` 不做 DDL／migration；正式 API 功能驗收後，再依 [`TODO_AFTER_MERGE.md`](./TODO_AFTER_MERGE.md) 清理實驗設定、簡化開發環境。
 
 ## 參考
 

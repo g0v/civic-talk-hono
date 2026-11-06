@@ -4,7 +4,7 @@ civic-talk-hono 的部署與環境設定參考。日常開發看 [`README.md`](.
 
 > 狀態：**已部署**於 <https://civic.vtaiwan.tw>（Worker 名稱 `civic-talk`，首次部署 2026-08-05）。第 1 節現在是**環境設定的參考**（換環境、換金鑰、新維護者接手時要看），不再是首次部署的待辦清單。
 
-> **#183 rollout：** PR #191 已合併、遠端原始 0017 已由使用者手動套用、正式 flag `0` 版本已部署，52 項匿名 smoke 通過。本輪 v5 告知已完成本機驗收，尚未部署，保持 `EVIDENCE_API_ENABLED=0`；發布、啟用、付費、遠端寫入及清理須另獲授權。SQL byte-for-byte 保留，不對 `DB_AUTH` 執行 DDL／migration；[本機手冊](./docs/evidence-api-review.md)與 [`TODO_AFTER_MERGE.md`](./TODO_AFTER_MERGE.md) 的 profiles／CLI／fixtures 暫留。
+> **#183 rollout：** PR #191 與遠端原始 0017 已完成，v5 告知已隨 `e11d6b9` 由使用者手動推送／部署，20 項匿名發布／關閉檢查通過，正式仍為 `EVIDENCE_API_ENABLED=0`。本機設定已準備為 `1`，本輪授權修改、驗證及提交，不含推送、部署、付費或清理。SQL byte-for-byte 保留，不對 `DB_AUTH` 執行 DDL／migration；[本機手冊](./docs/evidence-api-review.md)與 [`TODO_AFTER_MERGE.md`](./TODO_AFTER_MERGE.md) 的 profiles／CLI／fixtures 暫留。
 
 ---
 
@@ -165,10 +165,11 @@ vp run deploy    # = build + 建置產物／公開原始碼檢查 + wrangler dep
 - `0016_issue_closure.sql` 已有遠端 ledger，`applied_at=2026-10-23 21:26:16`；早期「僅套本機」不是現況。
 - **0017 已完成：** 使用者手動套遠端原始 SQL，ledger id 18、`applied_at=2026-11-06 19:29:04`，八張 `ct_ai_*` 表／七個顯式索引已核對。原 SQL byte-for-byte 與 ledger 保留，不重跑、DROP 或改 ledger；`remote:false` 不是 CLI `--remote` 安全鎖。
 - **正式關閉版已完成：** source commit `a2ff8ae526aee59a37234562bad1001c65e8c8b5`、Worker version `e398bed0-1a14-46d2-8f73-5222fd05b71d`、`EVIDENCE_API_ENABLED=0`，52 項匿名 smoke 通過。這不是啟用後六 API、真人 OAuth、登入後寫入或付費推論驗收。
+- **正式 v5 告知已發布：** 使用者手動推送並部署 source `e11d6b912d5a3e60c47a074e95b7a09b33df9f11`，正式仍為 `0`。20 項匿名檢查確認 v5、來源 metadata、JS／notices 原件一致性、六端點關閉、CSRF 及基本既有 API；沒有建立 AI 工作或執行維護處置。此輪未取得新的 Worker version ID，不沿用上列舊值。
 
   **後續 rollout，非本輪操作授權：**
-  1. 本輪 `evidence-processing-2026-11-07-v5` 已完成本機驗收，尚未部署；歷史 v4、舊同意、raw／results／Insight 不回寫。另取得政策發布授權後才公開來源並依本文件發布，旗標保持 `0`。
-  2. 核對 Workers AI、Workflow、業務 DB、Auth、費用與留存，再另獲啟用授權才設 `1`，缺必要 binding 回 503，不提供 fallback。
+  1. `evidence-processing-2026-11-07-v5` 已隨 `e11d6b9` 發布；歷史 v4、舊同意、raw／results／Insight 不回寫。正式關閉版已完成，勿重套 migration 或為確認品質重跑模型。
+  2. 本輪準備本機 `EVIDENCE_API_ENABLED=1`、驗證並提交；推送及正式部署仍須另獲授權。發布前核對 AI／Workflow／DB／Auth bindings 與已接受的費用／留存政策。啟用後未停權登入者可逐工作同意使用；匿名預期 401，缺必要 binding 回 503，不提供 fallback。
   3. 按另外授權的帳號、資料與費用範圍驗收六 API，erase 須額外確認跨來源依賴範圍。之後仍需清理授權，不能先刪 profiles／CLI／fixtures 或私人資料。
 
   **政策核對：** 每帳號每 UTC 日最多 20 個新付費工作、議題五分鐘、環境模型 US$5／日估算準入；Clairic input／Clef 每百萬 tokens US$0.10／0.24、Gemma input／output US$0.10／0.30。非整 job 報價或全帳單硬上限，不含 Workers／Workflows／D1；unknown 跨日不自動退，不保證次日恢復。每個建立請求須 `consent:true`，伺服器存版本／時間，同帳號命中既有 job 不新增事件，也不代表正文所有人已同意。

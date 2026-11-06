@@ -1,6 +1,6 @@
 # #183 證據管線：檢閱與本機操作手冊
 
-這份手冊服務三個目標：**看已完成的品質實驗與費用、理解程式及安全邊界、在不套遠端 migration 的情況下操作六條 API**。交付為 API-only；沒有新的操作 UI。PR #191 已合併、原始 0017 已由使用者手動套遠端，正式 flag `0` 版本已部署並通過 52 項匿名 smoke；不代表啟用後六 API、真人 OAuth、登入後寫入或付費推論已驗收。本輪 v5 告知已完成本機驗收，尚未部署，發布與啟用仍須另獲授權。[清理待辦](../TODO_AFTER_MERGE.md)尚未獲清理授權，目前下列本機流程保留，但付費與 erase 均須取得該次授權。
+這份手冊服務三個目標：**看已完成的品質實驗與費用、理解程式及安全邊界、在不套遠端 migration 的情況下操作六條 API**。交付為 API-only；沒有新的操作 UI。PR #191 與原始 0017 已完成；v5 告知已隨 `e11d6b9` 由使用者手動推送／部署，20 項匿名發布／關閉檢查通過，正式仍為 `0`。本機設定已準備為 `1`，本輪授權修改、驗證及提交，不含推送、部署、付費或清理；這不代表啟用後六 API、真人 OAuth 或登入後寫入已驗收。[清理待辦](../TODO_AFTER_MERGE.md)尚未獲清理授權，目前下列本機流程保留，但付費與 erase 均須取得該次授權。
 
 ## 1. 先看已完成的實驗
 
@@ -12,21 +12,21 @@
 
 |檢閱焦點|檔案與問題|
 |---|---|
-|接入與預設關閉|`src/worker.ts`、`src/index.ts`、`src/ai/endpoints.ts`、`src/ai/env.ts`、`wrangler.jsonc`：只在明確 `EVIDENCE_API_ENABLED=1` 時提供新端點；關閉及缺失 binding 不得碰私有資源或假裝成功。一般正式 profile 未指定 `SOURCE_DB` 時使用 `DB`；review／experiment 缺少各自明定的 `SOURCE_DB` 則 503，不回退。一般 API 的 headers／錯誤處理不得被證據子路由覆蓋。|
+|接入與開關|`src/worker.ts`、`src/index.ts`、`src/ai/endpoints.ts`、`src/ai/env.ts`、`wrangler.jsonc`：只在明確 `EVIDENCE_API_ENABLED=1` 時提供新端點；關閉時不進入 Auth／DB／AI，啟用但缺必要 binding 時 fail closed 503。一般正式 profile 未指定 `SOURCE_DB` 時使用 `DB`；review／experiment 缺少各自明定的 `SOURCE_DB` 則 503，不回退。一般 API 的 headers／錯誤處理不得被證據子路由覆蓋。|
 |來源與隱私|`src/ai/source.ts`、`src/ai/lifecycle.ts`：固定參數化 SELECT、未正規化 UTF-8 hash、作者快照欄位排除、來源 hidden／changed／deleted 的處理。素材正文仍可能有個資，不等於匿名化。|
 |API 與授權|`src/ai/routes.ts`、`src/api/requireUser.ts`、`src/api/csrf.ts`：owner／admin 讀取、只有 owner 可新增 revision、maintenance admin、body／限額與跨站防護。|
 |工件與競態|`src/ai/store.ts`、`migrations/0017_evidence_pipeline.sql`、`src/ai/human.ts`：私有快照、usage ledger、不可覆寫 AI 基底、人工 diff、來源 generation fence 與永久 tombstone。檢查 revision 回應在讀取後再次確認來源狀態，避免清除競態洩漏。|
 |工作流與品質|`src/ai/workflow.ts`、`src/ai/runner.ts`、`src/ai/models.ts`、`src/ai/comparison.ts`、`src/ai/generation.ts`、`src/ai/pricing.ts`：Clairic 抽取、Clef 四分類、Gemma 三項與必要時單次補完，引用守門、分項狀態、attempt／預留／未知成本。檢查 workflow 觀察 RPC 失聯或 unknown 不被當成確定終態；排隊建立失敗後固定 instance ID 的恢復不是模型重試。|
 |環境與驗收|`vite.config.mts`、`wrangler.ai-experiment.jsonc`、`wrangler.evidence-review.jsonc`、`src/ai/entry.ts`、`scripts/evidence-review-setup.mjs`、`scripts/evidence-review-smoke.mjs`、`src/tests/evidencePipeline.test.ts`、`src/tests/evidenceStorage.test.ts`：分離設定、真實與合成測試證據。|
 
-正式 Worker 預設 `EVIDENCE_API_ENABLED=0`，六條新 API 的同源請求回 404；跨站簡單寫入仍由全域 CSRF 先擋為 403，均不觸及 Auth／DB／AI。明確為 `1` 且缺少必要 binding 時回 503。現有 BYO token、`GET /api/issues/:id/prompt?type=synthesis`、briefing 與議題狀態不變。AI／人工草稿分別是 `ai_unverified`／`human_unverified`，不是可公開的 briefing。
+正式已部署的 `e11d6b9` 仍為 `EVIDENCE_API_ENABLED=0`，六條 API 的同源請求回 404。本機一般設定已準備為 `1`，尚未發布；必要 binding 完整時匿名回 401，缺失則回 503。跨站簡單寫入仍由全域 CSRF 先擋為 403。現有 BYO token、`GET /api/issues/:id/prompt?type=synthesis`、briefing 與議題狀態不變。AI／人工草稿分別是 `ai_unverified`／`human_unverified`，不是可公開的 briefing。
 
 ## 3. 模式、前置與保護範圍
 
 |模式|工作 DB／來源|認證／AI|用途|
 |---|---|---|---|
-|一般 `vp run dev`|本機；新 API 預設關閉|Auth 刻意停用、匿名；登入回 503|一般開發，不是假登入|
-|一般 `vp run dev:remote`|既有遠端 binding；新 API 預設關閉|既有遠端 Auth|一般登入開發，不作 #183 本機隔離測試|
+|一般 `vp run dev`|本機；設定為 `1`，必要 binding 完整時六 API 匿名回 401|Auth 刻意停用、登入回 503|一般開發，不是假登入；不建立付費工作|
+|一般 `vp run dev:remote`|既有遠端 binding；本機設定為 `1`|既有遠端 Auth／AI|有效登入及同意請求可能寫入業務庫並付費，不作未授權的 #183 試跑|
 |`CIVIC_AI_REVIEW=1 vp run dev:remote`|本機 `DB` 與另一個本機 `SOURCE_DB`，獨立 `.wrangler/evidence-review`；固定虛構圖書館素材|既有遠端 `DB_AUTH`，真實 Workers AI|完整六 API 檢閱，不碰遠端業務來源或遠端 migration|
 |`CIVIC_AI_EXPERIMENT=1 vp run dev:remote`|本機 `DB`／Workflow、`.wrangler/ai-experiment`；遠端 `SOURCE_DB` 僅供固定 SELECT|既有遠端 `DB_AUTH`，真實 Workers AI|經授權重現真實來源實驗，見第 7 節|
 
@@ -212,7 +212,7 @@ jq '{ai_base: {id: .ai_base.id, verification: .ai_base.verification},
 |`POST /api/evidence-maintenance/reconcile`|admin／super-admin；body 精確 `{}`，回 `{ok,checked,withdrawn,erased}`，並觀察活動工作流的已知終態。可能發現來源刪除並清除 payload。|
 |`POST /api/evidence-maintenance/erase`|admin／super-admin；body 精確包含 `kind`（`issue` 或 `material`）與正安全整數 `id`，清除目前工作 DB 的相關 payload 並留下永久 tombstone；不改來源 DB。|
 
-預設關閉時六端點的同源請求回 `404`；跨站簡單寫入先經全域 CSRF 回 `403`，兩者都不進行 Auth／DB／AI 操作。已開啟但必要 binding 缺失回 `503`。啟用且同源請求時，未登入 `401`、停權 `403`；非 owner 非 admin 查 job／revisions 回 `404`，非 owner 的 revision POST 回 `404`，maintenance 非 admin 回 `403`。同源寫入送 `Origin: http://localhost:5173` 和 JSON content type；跨來源 JSON 依不提供 CORS 放行而無法通過瀏覽器 preflight。不要把 CORS 當作唯一寫入保護。
+開關非 `1` 時六端點的同源請求回 `404`；跨站簡單寫入先經全域 CSRF 回 `403`，兩者都不進行 Auth／DB／AI 操作。已開啟但必要 binding 缺失回 `503`。啟用且同源請求時，未登入 `401`、停權 `403`；非 owner 非 admin 查 job／revisions 回 `404`，非 owner 的 revision POST 回 `404`，maintenance 非 admin 回 `403`。同源寫入送 `Origin: http://localhost:5173` 和 JSON content type；跨來源 JSON 依不提供 CORS 放行而無法通過瀏覽器 preflight。不要把 CORS 當作唯一寫入保護。
 
 其他常見狀態：`400` 無效 JSON／欄位／語言或未同意、`413` body 過大、`422` 來源不合格／空正文／無可用 draft 或來源已撤下／清除、`409` 輸入或 revision 衝突、`429` 帳號日限或議題冷卻（看 `reset_at`／`retry_at`）、`503` 日預算／來源或服務不可用。單次最多 64 份素材、單份 48 KiB、總正文 512 KiB；抽取後超過 64 段以 job `failed`／`too_many_evidence` 顯示，不截斷冒充成功。這不是全站素材投稿上限。
 
@@ -339,4 +339,4 @@ done
 
 ## 8. 合併後的分階段 rollout
 
-PR #191 已合併；遠端原始 0017 與旗標 `0` 部署已完成，ledger／八張表／七個顯式索引及 52 項匿名 smoke 已核對（版本見 [`deploy_notes.md`](../deploy_notes.md)）。本輪 v5 告知已完成本機驗收，尚未部署，且保持 `EVIDENCE_API_ENABLED=0`。後續仍須另取得政策發布授權，確認 AI／Workflow／DB／Auth bindings、費用與留存，再另獲啟用授權才設 `1`，並按授權驗收六 API；旗標 `0` smoke 不可代替此驗收。profile／CLI／fixtures 暫留，清理另需授權。絕不對 `DB_AUTH` 套本站 migration，本輪不做遠端寫入、付費或 erase。
+PR #191、遠端原始 0017 與關閉版驗收已完成；v5 告知已隨 `e11d6b9` 公開並部署，20 項匿名發布／關閉檢查通過（歷史版本見 [`deploy_notes.md`](../deploy_notes.md)）。正式仍為 `0`，本輪準備本機設定 `1`、驗證並提交，不含推送／部署。後續另獲發布授權後才上傳啟用版；有效登入者逐工作同意即可使用，不限管理員。再按授權帳號、資料與費用範圍驗收六 API；關閉版 smoke 不代替此驗收。profile／CLI／fixtures 暫留，清理另需授權。絕不對 `DB_AUTH` 套本站 migration，本輪不做遠端寫入、付費或 erase。

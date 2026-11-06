@@ -4,7 +4,7 @@
 
 本站受[ronnywang](https://www.github.com/ronnywang)提出的[原始構想](https://ronnywang.github.io/civic-notes/civic-talk/)的啟發。
 
-一般內容生成仍由志願者使用自己的 AI token 完成。Issue #183 增加預設關閉的證據管線 API：每個工作須明確同意，選定素材送交 Cloudflare Workers AI，費用由平台帳號承擔；草稿只供申請者與管理員讀取，不會改寫 briefing、改變議題狀態或自動發布。正式 Worker 已接上實作但預設不啟用；審查可用隔離本機模式，詳見 [#183 檢閱手冊](./docs/evidence-api-review.md)。投稿安全審查仍使用 OpenRouter；素材事實查核仍呼叫不公開的 `fact-check-core` Worker。
+一般內容生成仍由志願者使用自己的 AI token 完成。Issue #183 提供須明確啟用的證據管線 API：每個工作須明確同意，選定素材送交 Cloudflare Workers AI，費用由平台帳號承擔；草稿只供申請者與管理員讀取，不會改寫 briefing、改變議題狀態或自動發布。本機設定已準備為 `EVIDENCE_API_ENABLED=1`，尚未發布；正式已部署版本仍為 `0`。審查可用隔離本機模式，詳見 [#183 檢閱手冊](./docs/evidence-api-review.md)。投稿安全審查仍使用 OpenRouter；素材事實查核仍呼叫不公開的 `fact-check-core` Worker。
 
 ## 軟體授權
 
@@ -175,7 +175,7 @@ vp run dev
 
 本次交付為 **API-only**，操作介面另案。Clairic 逐素材抽取、Clef 比較、Gemma 4 26B A4B 生成共識／爭點／立場地圖，必要時最多一次只補缺值。使用者已確認品質實驗成功；核准公開的歷史 [結果](./results/ai-experiment_result.json) 與 [費用報告](./results/ai-experiment_cost.json) 可供檢視，不是獨立 gold labels，也不能代替新一輪執行的紀錄。實驗的歷史失敗與限制留在 [`Insight.md`](./Insight.md)。
 
-正式 Worker 已部署 `EVIDENCE_API_ENABLED=0` 版本，52 項匿名 smoke 通過；這不是啟用後六 API、真人 OAuth、登入後寫入或付費推論驗收。六條 API 的同源請求均回 404；跨站簡單寫入仍由全域 CSRF 先擋為 403，皆不觸及 Auth／DB／AI。只有另獲啟用授權明確設為 `1` 才啟用，缺少必要綁定時回 503。正常 BYO token、synthesis prompt、briefing 與議題狀態不變。[PR #191](https://github.com/g0v/civic-talk-hono/pull/191) 已合併；本輪 v5 告知修訂已完成本機驗收，尚未部署，發布及啟用仍須另獲授權。
+使用者已手動推送並部署 source `e11d6b912d5a3e60c47a074e95b7a09b33df9f11`，v5 告知已在正式站生效；本次 20 項匿名發布／關閉檢查通過，六條證據 API 仍回 404，跨站簡單寫入回 403。這不是啟用後六 API、真人 OAuth、登入後寫入或付費推論驗收。本輪已獲授權把本機設定準備為 `EVIDENCE_API_ENABLED=1`、驗證並提交，不包含推送、部署、付費試跑或清除。開關非 `1` 時不進入 Auth／DB／AI；明確為 `1` 但缺必要綁定回 503，綁定完整時匿名回 401。正常 BYO token、synthesis prompt、briefing 與議題狀態不變；實驗設定暫留，發布與清理仍須另獲授權。
 
 本輪處理告知為 `evidence-processing-2026-11-07-v5`（v4 為歷史告知，不回寫舊紀錄）。每個建立請求均須 `consent:true`，伺服器保存版本與時間；同帳號命中既有 job 不新增同意事件，也不代表取得正文所有人的同意。模型不收作者快照欄位，但正文、名稱／網址仍可能含個資，並未匿名化。正式私有資料存業務 `DB` 而非 `DB_AUTH`，包括原始快照、完整模型 request／response、引用、來源紀錄、人改與 diff；owner／admin 可讀，只有 owner 可新增人工修訂，AI 原稿不覆寫，不自動發布。
 
