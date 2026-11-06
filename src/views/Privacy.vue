@@ -55,6 +55,7 @@ const { t } = useI18n()
               <li>{{ t('privacy_s4_li2') }}</li>
               <li>{{ t('privacy_s4_li3') }}</li>
               <li>{{ t('privacy_s4_li4') }}</li>
+              <li>{{ t('privacy_s4_li5') }}</li>
             </ul>
           </section>
 

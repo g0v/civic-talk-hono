@@ -562,7 +562,7 @@ async function copyRssUrl() {
               <div class="flex justify-center">
                 <button
                   type="button"
-                  class="btn btn-jade-green min-h-11 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-vt-jade-green"
+                  class="btn btn-jade-green home-back-to-top min-h-11 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-vt-jade-green"
                   @click="scrollToTop"
                 >
                   {{ t('idx_back_to_top') }}

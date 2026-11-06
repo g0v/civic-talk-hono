@@ -345,6 +345,11 @@
     color: var(--color-vt-white);
   }
 
+  /* 首頁返回頂部沿用翠玉綠色相，加深底色以維持一般字級白字的對比。 */
+  .home-back-to-top {
+    background: color-mix(in srgb, var(--color-vt-jade-green), var(--color-vt-black) 5%);
+  }
+
   .btn-jade-green:hover:not(:disabled) {
     background: color-mix(in srgb, var(--color-vt-jade-green), var(--color-vt-black) 10%);
   }

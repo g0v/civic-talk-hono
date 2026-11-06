@@ -1,0 +1,200 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2400" height="2860" viewBox="0 0 2400 2860" role="img" aria-labelledby="title desc">
+<title id="title">Civic Talk 工程藍圖：#183 證據抽取、跨素材判斷與結構化彙整</title>
+<desc id="desc">依 plan.md 與現有程式架構繪製的待核准設計。從遠端唯讀素材、登入與配額守門、本機 Workflows，到 Clairic 抽取、Clef 判斷、Gemma 4 生成，最後交付具來源引用的私人 AI 草稿及獨立人改版本。所有實驗內容寫入隔離本機 D1，不發布到正式站。包含來源清除、成本控制、API 與五階段工程驗收。</desc>
+<defs>
+ <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse"><path d="M32 0H0V32" fill="none" stroke="#DBE6EE" stroke-width="0.7"/></pattern>
+ <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto-start-reverse"><path d="M0 1L8 5L0 9" fill="none" stroke="context-stroke" stroke-width="1.6"/></marker>
+ <style>text { font-family: 'Heiti TC','Arial Unicode MS',sans-serif; fill:#244760; } .mono { font-family: 'Menlo','DejaVu Sans Mono',monospace; } .muted { fill:#607A8E; }</style>
+</defs>
+<rect width="2400" height="2860" fill="#F6F9FC"/><rect width="2400" height="2860" fill="url(#grid)"/>
+
+<rect x="64" y="56" width="9" height="185" rx="4" fill="#087C82" stroke="#087C82" stroke-width="1.8"/>
+<text x="94" y="84" font-size="23" fill="#2769AD" style="fill:#2769AD" font-weight="600" class="">CIVIC TALK  /  ENGINEERING BLUEPRINT  /  ISSUE #183</text>
+<text x="91" y="161" font-size="70" fill="#102F4D" style="fill:#102F4D" font-weight="700" class="">工程藍圖</text>
+<text x="94" y="214" font-size="37" fill="#102F4D" style="fill:#102F4D" font-weight="500" class="">證據抽取 → 跨素材判斷 → 結構化彙整</text>
+<rect x="1938" y="60" width="398" height="39" rx="19" fill="#FFF0D9" stroke="#FFF0D9" stroke-width="0"/>
+<text x="2137.0" y="87" font-size="21" fill="#AB631C" style="fill:#AB631C" font-weight="600" class="" text-anchor="middle">計畫待人工檢核・尚未開發</text>
+<text x="2336" y="136" font-size="25" fill="#607A8E" style="fill:#607A8E" font-weight="400" class="" text-anchor="end">設計依據  plan.md</text>
+<text x="2336" y="177" font-size="23" fill="#607A8E" style="fill:#607A8E" font-weight="400" class="" text-anchor="end">2026-10-28  /  程式參照 619aef9</text>
+<text x="94" y="269" font-size="27" fill="#087C82" style="fill:#087C82" font-weight="600" class="">工程主張：先讓每句話可追溯，再讓模型整理；先證明隔離與成本邊界，再擴充功能。</text>
+<rect x="64" y="300" width="2272" height="64" rx="12" fill="#EAF1F7" stroke="#D4E1EB" stroke-width="1.8"/>
+<text x="86" y="341" font-size="23" fill="#102F4D" style="fill:#102F4D" font-weight="700" class="">既有接點</text>
+<text x="210" y="341" font-size="24" fill="#244760" style="fill:#244760" font-weight="400" class="">Hono API／全域 CSRF／Better Auth／DB repository；沿用 Vite+，新流程放入專用實驗入口與 src/ai/。</text>
+<rect x="64" y="393" width="48" height="42" rx="8" fill="#102F4D" stroke="#102F4D" stroke-width="1.8"/>
+<text x="88" y="423" font-size="23" fill="#FFFFFF" style="fill:#FFFFFF" font-weight="700" class="" text-anchor="middle">01</text>
+<text x="130" y="423" font-size="32" fill="#102F4D" style="fill:#102F4D" font-weight="700" class="">從素材到任務：入口先守住邊界</text>
+<text x="2336" y="423" font-size="22" fill="#607A8E" style="fill:#607A8E" font-weight="400" class="" text-anchor="end">以下皆為待核准設計  ·  不新增一鍵 UI</text>
+<rect x="64" y="458" width="720" height="206" rx="18" fill="#FFFFFF" stroke="#91B3CE" stroke-width="1.8" stroke-dasharray="9 6"/>
+<rect x="840" y="458" width="720" height="206" rx="18" fill="#FFFFFF" stroke="#91B3CE" stroke-width="1.8" stroke-dasharray="9 6"/>
+<rect x="1616" y="458" width="720" height="206" rx="18" fill="#FFFFFF" stroke="#91B3CE" stroke-width="1.8" stroke-dasharray="9 6"/>
+<rect x="86" y="477" width="165" height="39" rx="19" fill="#E9F3F9" stroke="#E9F3F9" stroke-width="0"/>
+<text x="168.5" y="504" font-size="21" fill="#2769AD" style="fill:#2769AD" font-weight="600" class="" text-anchor="middle">來源唯讀</text>
+<text x="86" y="552" font-size="33" fill="#102F4D" style="fill:#102F4D" font-weight="700" class="">遠端議題與素材</text>
+<text x="86" y="593" font-size="24" fill="#244760" style="fill:#244760" font-weight="400" class="">SOURCE_DB：固定、參數化 SELECT</text>
+<text x="86" y="629" font-size="24" fill="#244760" style="fill:#244760" font-weight="400" class="">只取可讀內容；不爬外部 URL、不取作者快照</text>
+<rect x="862" y="477" width="173" height="39" rx="19" fill="#E9F3F9" stroke="#E9F3F9" stroke-width="0"/>
+<text x="948.5" y="504" font-size="21" fill="#2769AD" style="fill:#2769AD" font-weight="600" class="" text-anchor="middle">登入者發起</text>
+<text x="862" y="552" font-size="33" fill="#102F4D" style="fill:#102F4D" font-weight="700" class="">API／curl 申請工作</text>
+<text x="862" y="593" font-size="24" fill="#244760" style="fill:#244760" font-weight="400" class="">登入、停權、CSRF、處理告知同意</text>
+<text x="862" y="629" font-size="24" fill="#244760" style="fill:#244760" font-weight="400" class="">來源快照 → 去重 → 原子預留配額與預算</text>
+<rect x="1638" y="477" width="214" height="39" rx="19" fill="#E9F3F9" stroke="#E9F3F9" stroke-width="0"/>
+<text x="1745.0" y="504" font-size="21" fill="#2769AD" style="fill:#2769AD" font-weight="600" class="" text-anchor="middle">本機持久任務</text>
+<text x="1638" y="552" font-size="33" fill="#102F4D" style="fill:#102F4D" font-weight="700" class="">Cloudflare Workflows</text>
+<text x="1638" y="593" font-size="24" fill="#244760" style="fill:#244760" font-weight="400" class="">只傳工作 ID；進度與工件落隔離本機 D1</text>
+<text x="1638" y="629" font-size="24" fill="#244760" style="fill:#244760" font-weight="400" class="">先查快取；命中結果／加入同任務不再付費</text>
+<path d="M790 559 L834 559" fill="none" stroke="#087C82" stroke-width="3" marker-end="url(#arrow)"/>
+<path d="M1566 559 L1610 559" fill="none" stroke="#087C82" stroke-width="3" marker-end="url(#arrow)"/>
+<path d="M2336 610H2360V756H424V774" fill="none" stroke="#087C82" stroke-width="2.5" marker-end="url(#arrow)"/>
+<rect x="64" y="707" width="48" height="42" rx="8" fill="#102F4D" stroke="#102F4D" stroke-width="1.8"/>
+<text x="88" y="737" font-size="23" fill="#FFFFFF" style="fill:#FFFFFF" font-weight="700" class="" text-anchor="middle">02</text>
+<text x="130" y="737" font-size="32" fill="#102F4D" style="fill:#102F4D" font-weight="700" class="">三模型分工：每一關通過，才走下一步</text>
+<text x="2336" y="737" font-size="22" fill="#607A8E" style="fill:#607A8E" font-weight="400" class="" text-anchor="end">模型推論：遠端 Workers AI  /  AI binding（擬新增）</text>
+<rect x="64" y="774" width="720" height="470" rx="18" fill="#FFFFFF" stroke="#7CAFB6" stroke-width="1.8" stroke-dasharray="9 6"/>
+<rect x="64" y="774" width="720" height="10" rx="4" fill="#087C82" stroke="#087C82" stroke-width="0"/>
+<text x="89" y="829" font-size="29" fill="#087C82" style="fill:#087C82" font-weight="700" class="">1</text>
+<text x="133" y="831" font-size="39" fill="#102F4D" style="fill:#102F4D" font-weight="700" class="">Clairic</text>
+<text x="89" y="880" font-size="29" fill="#087C82" style="fill:#087C82" font-weight="600" class="">逐份找出「原文說了什麼」</text>
+<text x="89" y="921" font-size="21" fill="#607A8E" style="fill:#607A8E" font-weight="400" class="mono">@cf/cloudflare/clairic</text>
+<text x="89" y="970" font-size="24" fill="#244760" style="fill:#244760" font-weight="400" class="">每份素材獨立抽取主張與必要條件</text>
+<text x="89" y="1008" font-size="24" fill="#244760" style="fill:#244760" font-weight="400" class="">保留 exact quote、原始／擴展 span</text>
+<text x="89" y="1046" font-size="24" fill="#244760" style="fill:#244760" font-weight="400" class="">依中英日句界擴展上下文，拒絕猜出處</text>
+<rect x="84" y="1084" width="680" height="137" rx="12" fill="#FFF6E8" stroke="#E5C797" stroke-width="1.8"/>
+<text x="103" y="1118" font-size="25" fill="#AB631C" style="fill:#AB631C" font-weight="700" class="">關卡 A｜原文錨定</text>
+<text x="103" y="1159" font-size="23" fill="#244760" style="fill:#244760" font-weight="400" class="">Unicode／offset／重複片語可唯一定位</text>
+<text x="103" y="1194" font-size="23" fill="#244760" style="fill:#244760" font-weight="400" class="">單份失敗可隔離；有效證據超過 64 段即停</text>
+<rect x="840" y="774" width="720" height="470" rx="18" fill="#FFFFFF" stroke="#7CAFB6" stroke-width="1.8" stroke-dasharray="9 6"/>
+<rect x="840" y="774" width="720" height="10" rx="4" fill="#087C82" stroke="#087C82" stroke-width="0"/>
+<text x="865" y="829" font-size="29" fill="#087C82" style="fill:#087C82" font-weight="700" class="">2</text>
+<text x="909" y="831" font-size="39" fill="#102F4D" style="fill:#102F4D" font-weight="700" class="">Clef</text>
+<text x="865" y="880" font-size="29" fill="#087C82" style="fill:#087C82" font-weight="600" class="">判斷「不同素材如何相互關聯」</text>
+<text x="865" y="921" font-size="21" fill="#607A8E" style="fill:#607A8E" font-weight="400" class="mono">@cf/cloudflare/clef</text>
+<text x="865" y="970" font-size="24" fill="#244760" style="fill:#244760" font-weight="400" class="">只比較跨素材證據；四選一關係</text>
+<text x="865" y="1008" font-size="24" fill="#244760" style="fill:#244760" font-weight="400" class="">同意／不同意／無關／不確定</text>
+<text x="865" y="1046" font-size="24" fill="#244760" style="fill:#244760" font-weight="400" class="">程式建立共識候選、爭點與立場候選</text>
+<rect x="860" y="1084" width="680" height="137" rx="12" fill="#FFF6E8" stroke="#E5C797" stroke-width="1.8"/>
+<text x="879" y="1118" font-size="25" fill="#AB631C" style="fill:#AB631C" font-weight="700" class="">關卡 B｜關係與候選群組</text>
+<text x="879" y="1159" font-size="23" fill="#244760" style="fill:#244760" font-weight="400" class="">不把 uncertain 當支持；不強迫每段歸隊</text>
+<text x="879" y="1194" font-size="23" fill="#244760" style="fill:#244760" font-weight="400" class="">A 同意 B、B 同意 C，不能推得 A 同意 C</text>
+<rect x="1616" y="774" width="720" height="470" rx="18" fill="#FFFFFF" stroke="#7CAFB6" stroke-width="1.8" stroke-dasharray="9 6"/>
+<rect x="1616" y="774" width="720" height="10" rx="4" fill="#087C82" stroke="#087C82" stroke-width="0"/>
+<text x="1641" y="829" font-size="29" fill="#087C82" style="fill:#087C82" font-weight="700" class="">3</text>
+<text x="1685" y="831" font-size="39" fill="#102F4D" style="fill:#102F4D" font-weight="700" class="">Gemma 4</text>
+<text x="1641" y="880" font-size="29" fill="#087C82" style="fill:#087C82" font-weight="600" class="">把「已驗證證據」整理成草稿</text>
+<text x="1641" y="921" font-size="21" fill="#607A8E" style="fill:#607A8E" font-weight="400" class="mono">@cf/google/gemma-4-26b-a4b-it</text>
+<text x="1641" y="970" font-size="24" fill="#244760" style="fill:#244760" font-weight="400" class="">僅接收證據＋候選結構，不重讀全部原文</text>
+<text x="1641" y="1008" font-size="24" fill="#244760" style="fill:#244760" font-weight="400" class="">輸出句子文字＋evidence IDs</text>
+<text x="1641" y="1046" font-size="24" fill="#244760" style="fill:#244760" font-weight="400" class="">程式組裝 schema 與逐句 citation map</text>
+<rect x="1636" y="1084" width="680" height="137" rx="12" fill="#FFF6E8" stroke="#E5C797" stroke-width="1.8"/>
+<text x="1655" y="1118" font-size="25" fill="#AB631C" style="fill:#AB631C" font-weight="700" class="">關卡 C｜結構與引用驗證</text>
+<text x="1655" y="1159" font-size="23" fill="#244760" style="fill:#244760" font-weight="400" class="">嚴格 JSON／schema／每句有效引用</text>
+<text x="1655" y="1194" font-size="23" fill="#244760" style="fill:#244760" font-weight="400" class="">拒絕截斷、假引文、未知 ID 與跨組錯引</text>
+<path d="M790 1010 L834 1010" fill="none" stroke="#087C82" stroke-width="3" marker-end="url(#arrow)"/>
+<path d="M1566 1010 L1610 1010" fill="none" stroke="#087C82" stroke-width="3" marker-end="url(#arrow)"/>
+<text x="64" y="1289" font-size="23" fill="#087C82" style="fill:#087C82" font-weight="700" class="">規模邊界</text>
+<text x="210" y="1289" font-size="24" fill="#244760" style="fill:#244760" font-weight="400" class="">最多 64 份素材（單份 48 KiB／合計 512 KiB）；最多 64 段有效證據，跨素材配對不超過 2,016 組。</text>
+<text x="210" y="1327" font-size="24" fill="#607A8E" style="fill:#607A8E" font-weight="400" class="">Clef 每批最多 64 題，仍依 context 縮小批次；超限明確停止，正文不裁切。</text>
+<rect x="64" y="1369" width="48" height="42" rx="8" fill="#102F4D" stroke="#102F4D" stroke-width="1.8"/>
+<text x="88" y="1399" font-size="23" fill="#FFFFFF" style="fill:#FFFFFF" font-weight="700" class="" text-anchor="middle">03</text>
+<text x="130" y="1399" font-size="32" fill="#102F4D" style="fill:#102F4D" font-weight="700" class="">交付什麼：私人草稿，可核對、可修訂</text>
+<text x="2336" y="1399" font-size="22" fill="#607A8E" style="fill:#607A8E" font-weight="400" class="" text-anchor="end">引用存在 ≠ 語義正確  ·  所有結果仍須人工確認</text>
+<rect x="64" y="1436" width="720" height="178" rx="18" fill="#F0F7F8" stroke="#B6D4D6" stroke-width="1.8"/>
+<rect x="840" y="1436" width="720" height="178" rx="18" fill="#F0F7F8" stroke="#B6D4D6" stroke-width="1.8"/>
+<rect x="1616" y="1436" width="720" height="178" rx="18" fill="#F0F7F8" stroke="#B6D4D6" stroke-width="1.8"/>
+<text x="88" y="1481" font-size="30" fill="#102F4D" style="fill:#102F4D" font-weight="700" class="">結構化內容</text>
+<text x="88" y="1525" font-size="24" fill="#244760" style="fill:#244760" font-weight="400" class="">共識 consensus／爭點 disputes／立場 positions</text>
+<text x="88" y="1563" font-size="24" fill="#244760" style="fill:#244760" font-weight="400" class="">Overview 缺證據為 null；清單可為 []</text>
+<text x="864" y="1481" font-size="30" fill="#102F4D" style="fill:#102F4D" font-weight="700" class="">證據與可追溯紀錄</text>
+<text x="864" y="1525" font-size="24" fill="#244760" style="fill:#244760" font-weight="400" class="">逐句引用、原文位置、來源 hash 與覆蓋診斷</text>
+<text x="864" y="1563" font-size="24" fill="#244760" style="fill:#244760" font-weight="400" class="">保留 prompt／模型／schema 版本與用量</text>
+<text x="1640" y="1481" font-size="30" fill="#102F4D" style="fill:#102F4D" font-weight="700" class="">AI 原稿 → 獨立人改版本</text>
+<text x="1640" y="1525" font-size="24" fill="#244760" style="fill:#244760" font-weight="400" class="">原稿不可覆寫；人改另存 parent、diff、編輯者</text>
+<text x="1640" y="1563" font-size="24" fill="#244760" style="fill:#244760" font-weight="400" class="">修改處標 human_unverified；過時 parent 回 409</text>
+<rect x="64" y="1650" width="48" height="42" rx="8" fill="#102F4D" stroke="#102F4D" stroke-width="1.8"/>
+<text x="88" y="1680" font-size="23" fill="#FFFFFF" style="fill:#FFFFFF" font-weight="700" class="" text-anchor="middle">04</text>
+<text x="130" y="1680" font-size="32" fill="#102F4D" style="fill:#102F4D" font-weight="700" class="">三道橫向護欄：資料、來源生命週期、費用</text>
+<text x="2336" y="1680" font-size="22" fill="#607A8E" style="fill:#607A8E" font-weight="400" class="" text-anchor="end">每次付費前與交付前重驗來源；失敗不能冒充成功草稿</text>
+<rect x="64" y="1716" width="720" height="398" rx="18" fill="#FFFFFF" stroke="#CAD9E5" stroke-width="1.8"/>
+<rect x="840" y="1716" width="720" height="398" rx="18" fill="#FFFFFF" stroke="#CAD9E5" stroke-width="1.8"/>
+<rect x="1616" y="1716" width="720" height="398" rx="18" fill="#FFFFFF" stroke="#CAD9E5" stroke-width="1.8"/>
+<rect x="86" y="1738" width="154" height="39" rx="19" fill="#E9F3F9" stroke="#E9F3F9" stroke-width="0"/>
+<text x="163.0" y="1765" font-size="21" fill="#2769AD" style="fill:#2769AD" font-weight="600" class="" text-anchor="middle">隔離邊界</text>
+<text x="88" y="1814" font-size="31" fill="#102F4D" style="fill:#102F4D" font-weight="700" class="">讀遠端，寫本機</text>
+<text x="88" y="1858" font-size="24" fill="#244760" style="fill:#244760" font-weight="400" class="">SOURCE_DB → 唯讀 repository → 本機快照</text>
+<text x="88" y="1895" font-size="24" fill="#244760" style="fill:#244760" font-weight="400" class="">DB → 隔離 persist 目錄；六類 ct_ai_* 表</text>
+<text x="88" y="1932" font-size="24" fill="#244760" style="fill:#244760" font-weight="400" class="">jobs／sources／artifacts／revisions</text>
+<text x="88" y="1969" font-size="24" fill="#244760" style="fill:#244760" font-weight="400" class="">usage／issue_cooldowns</text>
+<text x="88" y="2006" font-size="24" fill="#244760" style="fill:#244760" font-weight="400" class="">DB_AUTH 只作必要授權讀取與正常認證</text>
+<text x="88" y="2043" font-size="24" fill="#244760" style="fill:#244760" font-weight="400" class="">實驗入口僅保留必要 auth 端點</text>
+<rect x="862" y="1738" width="180" height="39" rx="19" fill="#E9F3F9" stroke="#E9F3F9" stroke-width="0"/>
+<text x="952.0" y="1765" font-size="21" fill="#2769AD" style="fill:#2769AD" font-weight="600" class="" text-anchor="middle">撤下與清除</text>
+<text x="864" y="1814" font-size="31" fill="#102F4D" style="fill:#102F4D" font-weight="700" class="">原文撤回，工件也失效</text>
+<text x="864" y="1858" font-size="24" fill="#244760" style="fill:#244760" font-weight="400" class="">隱藏／hash 改變 → 停用一般內容調閱</text>
+<text x="864" y="1895" font-size="24" fill="#244760" style="fill:#244760" font-weight="400" class="">刪除／清除請求 → 刪正文、引文與 diff</text>
+<text x="864" y="1932" font-size="24" fill="#244760" style="fill:#244760" font-weight="400" class="">同一交易：tombstone＋generation fence</text>
+<text x="864" y="1969" font-size="24" fill="#244760" style="fill:#244760" font-weight="400" class="">延遲模型回應須原子檢查 fence 才能落地</text>
+<text x="864" y="2006" font-size="24" fill="#244760" style="fill:#244760" font-weight="400" class="">啟動先對帳；遠端查核失敗不交付快照</text>
+<text x="864" y="2043" font-size="24" fill="#244760" style="fill:#244760" font-weight="400" class="">跨庫無刪除通知，清除存在偵測延遲</text>
+<rect x="1638" y="1738" width="154" height="39" rx="19" fill="#E9F3F9" stroke="#E9F3F9" stroke-width="0"/>
+<text x="1715.0" y="1765" font-size="21" fill="#2769AD" style="fill:#2769AD" font-weight="600" class="" text-anchor="middle">成本邊界</text>
+<text x="1640" y="1814" font-size="31" fill="#102F4D" style="fill:#102F4D" font-weight="700" class="">先預留，才呼叫模型</text>
+<text x="1640" y="1858" font-size="24" fill="#244760" style="fill:#244760" font-weight="400" class="">每帳號每日 20 個新付費任務（UTC）</text>
+<text x="1640" y="1895" font-size="24" fill="#244760" style="fill:#244760" font-weight="400" class="">同議題新付費任務間隔 5 分鐘</text>
+<text x="1640" y="1932" font-size="24" fill="#244760" style="fill:#244760" font-weight="400" class="">環境每日 US$5 估算預留，非帳單硬上限</text>
+<text x="1640" y="1969" font-size="24" fill="#244760" style="fill:#244760" font-weight="400" class="">模型不自動重試；逾時／中斷不算零成本</text>
+<text x="1640" y="2006" font-size="24" fill="#244760" style="fill:#244760" font-weight="400" class="">付費結果不確定 → 記錄狀態，不偷偷重打</text>
+<text x="1640" y="2043" font-size="24" fill="#244760" style="fill:#244760" font-weight="400" class="">快取含輸入與設定版本；不洩露他人修訂</text>
+<rect x="64" y="2152" width="48" height="42" rx="8" fill="#102F4D" stroke="#102F4D" stroke-width="1.8"/>
+<text x="88" y="2182" font-size="23" fill="#FFFFFF" style="fill:#FFFFFF" font-weight="700" class="" text-anchor="middle">05</text>
+<text x="130" y="2182" font-size="32" fill="#102F4D" style="fill:#102F4D" font-weight="700" class="">API 與狀態：先完成可操作的實驗介面</text>
+<text x="2336" y="2182" font-size="22" fill="#607A8E" style="fill:#607A8E" font-weight="400" class="" text-anchor="end">草稿只給申請者與 admin／super-admin；敏感回應 private／no-store</text>
+<rect x="64" y="2218" width="1112" height="218" rx="18" fill="#FFFFFF" stroke="#91B3CE" stroke-width="1.8" stroke-dasharray="9 6"/>
+<text x="88" y="2260" font-size="25" fill="#2769AD" style="fill:#2769AD" font-weight="600" class="mono">POST /api/issues/:id/evidence-jobs</text>
+<text x="88" y="2298" font-size="24" fill="#244760" style="fill:#244760" font-weight="400" class="">新工作 202；完成快取 200。未登入 401／停權 403。</text>
+<text x="88" y="2340" font-size="25" fill="#2769AD" style="fill:#2769AD" font-weight="600" class="mono">GET /api/evidence-jobs/:jobId</text>
+<text x="88" y="2376" font-size="24" fill="#244760" style="fill:#244760" font-weight="400" class="">GET／POST …/:jobId/revisions：歷史、diff、另存人改。</text>
+<text x="88" y="2412" font-size="23" fill="#607A8E" style="fill:#607A8E" font-weight="400" class="">跨申請者 404；限額／冷卻 429；新工作預算不足 503。</text>
+<rect x="1200" y="2218" width="1136" height="218" rx="18" fill="#FFFFFF" stroke="#91B3CE" stroke-width="1.8" stroke-dasharray="9 6"/>
+<text x="1226" y="2262" font-size="24" fill="#087C82" style="fill:#087C82" font-weight="600" class="mono">queued → extracting → comparing → generating</text>
+<text x="1226" y="2304" font-size="24" fill="#244760" style="fill:#244760" font-weight="400" class="">通過驗證 → ai_draft；來源覆蓋不完整 → partial_draft</text>
+<text x="1226" y="2345" font-size="24" fill="#244760" style="fill:#244760" font-weight="400" class="">執行失敗 → failed；來源失效 → withdrawn／stale</text>
+<text x="1226" y="2386" font-size="24" fill="#244760" style="fill:#244760" font-weight="400" class="">來源刪除／清除 → erased；人改版本另存。</text>
+<text x="1226" y="2418" font-size="22" fill="#607A8E" style="fill:#607A8E" font-weight="400" class="">任何階段皆可能因停權、來源或預算問題停止。</text>
+<rect x="64" y="2473" width="48" height="42" rx="8" fill="#102F4D" stroke="#102F4D" stroke-width="1.8"/>
+<text x="88" y="2503" font-size="23" fill="#FFFFFF" style="fill:#FFFFFF" font-weight="700" class="" text-anchor="middle">06</text>
+<text x="130" y="2503" font-size="32" fill="#102F4D" style="fill:#102F4D" font-weight="700" class="">工程順序：先通過關卡，再往下蓋</text>
+<text x="2336" y="2503" font-size="22" fill="#607A8E" style="fill:#607A8E" font-weight="400" class="" text-anchor="end">時程未估算  ·  真實模型能力與品質需實測，不以 HTTP 200 代替</text>
+<rect x="64" y="2541" width="432" height="143" rx="13" fill="#EAF1F7" stroke="#C7D8E6" stroke-width="1.8"/>
+<text x="83" y="2580" font-size="23" fill="#2769AD" style="fill:#2769AD" font-weight="700" class="">01</text>
+<text x="129" y="2580" font-size="27" fill="#102F4D" style="fill:#102F4D" font-weight="700" class="">隔離與合約</text>
+<text x="83" y="2621" font-size="21" fill="#244760" style="fill:#244760" font-weight="400" class="">唯讀來源／本機寫入</text>
+<text x="83" y="2654" font-size="21" fill="#244760" style="fill:#244760" font-weight="400" class="">Workflow 重啟與模型 smoke</text>
+<path d="M501 2611 L519 2611" fill="none" stroke="#2769AD" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="524" y="2541" width="432" height="143" rx="13" fill="#EAF1F7" stroke="#C7D8E6" stroke-width="1.8"/>
+<text x="543" y="2580" font-size="23" fill="#2769AD" style="fill:#2769AD" font-weight="700" class="">02</text>
+<text x="589" y="2580" font-size="27" fill="#102F4D" style="fill:#102F4D" font-weight="700" class="">證據與生命週期</text>
+<text x="543" y="2621" font-size="21" fill="#244760" style="fill:#244760" font-weight="400" class="">錨定／覆蓋／清除</text>
+<text x="543" y="2654" font-size="21" fill="#244760" style="fill:#244760" font-weight="400" class="">驗證 fence 與延遲回應競態</text>
+<path d="M961 2611 L979 2611" fill="none" stroke="#2769AD" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="984" y="2541" width="432" height="143" rx="13" fill="#EAF1F7" stroke="#C7D8E6" stroke-width="1.8"/>
+<text x="1003" y="2580" font-size="23" fill="#2769AD" style="fill:#2769AD" font-weight="700" class="">03</text>
+<text x="1049" y="2580" font-size="27" fill="#102F4D" style="fill:#102F4D" font-weight="700" class="">比較與生成</text>
+<text x="1003" y="2621" font-size="21" fill="#244760" style="fill:#244760" font-weight="400" class="">四分類／候選群組</text>
+<text x="1003" y="2654" font-size="21" fill="#244760" style="fill:#244760" font-weight="400" class="">schema＋逐句引用驗證</text>
+<path d="M1421 2611 L1439 2611" fill="none" stroke="#2769AD" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="1444" y="2541" width="432" height="143" rx="13" fill="#EAF1F7" stroke="#C7D8E6" stroke-width="1.8"/>
+<text x="1463" y="2580" font-size="23" fill="#2769AD" style="fill:#2769AD" font-weight="700" class="">04</text>
+<text x="1509" y="2580" font-size="27" fill="#102F4D" style="fill:#102F4D" font-weight="700" class="">API 與成本控制</text>
+<text x="1463" y="2621" font-size="21" fill="#244760" style="fill:#244760" font-weight="400" class="">去重／額度／私人版本</text>
+<text x="1463" y="2654" font-size="21" fill="#244760" style="fill:#244760" font-weight="400" class="">任何真實呼叫先有費用保護</text>
+<path d="M1881 2611 L1899 2611" fill="none" stroke="#2769AD" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="1904" y="2541" width="432" height="143" rx="13" fill="#EAF1F7" stroke="#C7D8E6" stroke-width="1.8"/>
+<text x="1923" y="2580" font-size="23" fill="#2769AD" style="fill:#2769AD" font-weight="700" class="">05</text>
+<text x="1969" y="2580" font-size="27" fill="#102F4D" style="fill:#102F4D" font-weight="700" class="">完整驗收</text>
+<text x="1923" y="2621" font-size="21" fill="#244760" style="fill:#244760" font-weight="400" class="">自動檢查＋真實 curl</text>
+<text x="1923" y="2654" font-size="21" fill="#244760" style="fill:#244760" font-weight="400" class="">人工標註與真實議題品質報告</text>
+<path d="M64 2720 L2336 2720" fill="none" stroke="#C6D8E7" stroke-width="2"/>
+<text x="64" y="2756" font-size="23" fill="#AB631C" style="fill:#AB631C" font-weight="700" class="">人工關卡</text>
+<text x="200" y="2756" font-size="24" fill="#102F4D" style="fill:#102F4D" font-weight="400" class="">核准計畫後才開發與付費實測；本輪不寫既有 briefing、不自動發布、不取代自帶 AI token 流程。</text>
+<text x="64" y="2800" font-size="21" fill="#607A8E" style="fill:#607A8E" font-weight="400" class="">依據：plan.md §§1–12；架構核對：src/api/、src/auth/、src/db/、wrangler.jsonc、vite.config.mts。</text>
+<text x="2336" y="2833" font-size="19" fill="#2769AD" style="fill:#2769AD" font-weight="600" class="" text-anchor="end">CIVIC TALK  /  ENGINEERING REVIEW  /  01</text>
+</svg>

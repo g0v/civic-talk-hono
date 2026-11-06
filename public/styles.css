@@ -2173,6 +2173,12 @@
     background: var(--color-vt-jade-green);
     color: var(--color-vt-white);
   }
+  .home-back-to-top {
+    background: color-mix(in srgb, #008888, #000000 5%);
+    @supports (color: color-mix(in lab, red, red)) {
+      background: color-mix(in srgb, var(--color-vt-jade-green), var(--color-vt-black) 5%);
+    }
+  }
   .btn-jade-green:hover:not(:disabled) {
     background: color-mix(in srgb, #008888, #000000 10%);
     @supports (color: color-mix(in lab, red, red)) {

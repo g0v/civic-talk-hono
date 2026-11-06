@@ -23,6 +23,7 @@ import { normalizeIssueTags } from '../lib/issueTags'
 import { moderationReasonForPolicy, moderateSubmission, moderateSubmissionWithDiagnostics, type ModerationDecision, type ModerationSubmission } from '../moderation/service'
 import type { Context } from 'hono'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
+import { requireUser } from './requireUser'
 import type { App, AppBindings } from './types'
 
 const CONTENTFUL_STATUS_CODES = [
@@ -149,19 +150,6 @@ async function adminUnbanUser(c: Context, userId: string): Promise<Response | nu
   }
 }
 
-/**
- * 登入守衛（不看角色，任何登入者都通過）：通過回 AuthContext，否則回 401 Response。
- *
- * #9 用它把素材投稿限縮成「登入才能投」——目的是素材品質與濫用時的可追溯性，
- * 不是權限分級，所以一般 user 角色就夠，不要在這裡誤用 isAdminRole()。
- */
-async function requireUser(c: Context): Promise<{ context: AuthContext } | { denied: Response }> {
-  const context = await tryGetAuthContext(c.env, c.req.raw.headers)
-  if (!context) return { denied: error(c, 'Unauthorized', 401) }
-  // 停權帳號不得執行任何寫入動作（#11）
-  if (context.banned) return { denied: error(c, 'Forbidden: account is banned', 403) }
-  return { context }
-}
 
 /**
  * 申訴守衛只要求仍有有效 session，不檢查 banned；

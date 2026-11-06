@@ -1,295 +1,414 @@
-# Issue #107 公民意見投票實作計畫
+# Issue #183：證據抽取、跨素材判斷與結構化彙整實驗計畫
 
-## 目標
+> **現況：** 使用者已確認真實品質實驗成功，核准公開的 [結果](./results/ai-experiment_result.json) 與 [費用報告](./results/ai-experiment_cost.json) 保留該次證據；它們不是獨立人工 gold labels，也不代表每次新推論必然相同。本次交付 API-only，UI 另案。正式 Worker 已接上六條 API，但預設關閉；只以明確 `EVIDENCE_API_ENABLED=1` 啟用。
+>
+> [PR #191](https://github.com/g0v/civic-talk-hono/pull/191) 供人工檢閱，使用者已授權本次文件修訂 commit、push，並將 PR 標為 ready for review，未授權 merge、deploy 或遠端 migration。完整檢閱、真實實驗重現及本機六 API 操作見[檢閱手冊](./docs/evidence-api-review.md)；歷史負面結果與當時限制見 [`Insight.md`](./Insight.md)。
 
-在 Civic Talk 自有的 `ct_opinions` 上加入 Polis 式三態投票：同意（`1`）、不同意（`-1`）、略過（`0`）。投票需登入；一人對同一則意見最多一筆，可改票、可收回。完成後移除 `/about` 步驟 3 的「功能研發中」標記。
+## 1. 已確認的範圍與決策
 
-本計畫只處理 Civic Talk 自有意見，不改外部 Polis embed，不把資料回寫 Polis，也不把票數餵進既有 AI synthesis prompt。
+|項目|本次確認|
+|---|---|
+|分支|從 main 新建 `feat/issue-183-evidence-pipeline`，不接續舊實驗分支|
+|本輪交付|完整 API／curl 實驗：三模型流程、非同步任務、可追溯 AI 草稿、人改版本與差異、快取、配額及預算控制|
+|不在本輪|一鍵操作 UI、正式站啟用、寫入既有 briefing、自動發布、替換原自帶 AI token 流程；素材投稿上限與移除再彙整 UI 只記入合併後待辦，不在本輪實作|
+|使用者|任何未停權的登入者；不要求 admin 或帳號層級的 volunteer 角色|
+|草稿權限|申請者與 admin／super-admin；不是公開草稿庫|
+|真實資料|可唯讀讀取遠端業務 D1，以真實議題與素材實驗品質|
+|寫入位置|審查／實驗分別寫入各自隔離本機 `DB`；正式啟用時工件寫入正式 `DB`，部署／啟用及遠端 migration 需事後各別授權|
+|認證例外|DB_AUTH 允許既有 Better Auth 正常登入與 session 生命週期；不新增角色、人工停權／解停權操作或 auth schema|
+|來源留存|保存完整私有輸入快照；來源隱藏時停用結果，刪除時清除相關原文／引文 payload，保留雜湊與處置紀錄|
+|判斷類別|agree／disagree／unrelated／uncertain；先對照共同問題、條件與歸屬，校準被誤判為 unrelated 的支持或對立；一般支持／相容不等於共同命題，不以類別配額硬湊判斷|
+|生成方式|Gemma 4 26B A4B 以原生 Chat Completions 分別執行共識、爭點、立場地圖三個專項，共用已驗證證據與必要關係，以具名 `response_format` JSON Schema 約束；必要時最多增加一次白名單缺值補完，不改已有值|
+|帳號日限額|每帳號每日 20 次新付費任務|
+|議題冷卻|同議題新付費任務間隔 5 分鐘|
+|比較規模|最多 64 段驗證後證據；不同素材的無向配對最多 2,016 組，排除同素材配對後通常較少；不是全站素材投稿上限|
+|交換律|以無向配對去重與重用判斷；不因 A／B 順序相反建立第二份正式關係|
+|遞移使用範圍|只產生待驗證候選群；A 同意 B、B 同意 C 不能直接成為 A 同意 C 的確認結果，不省略共識成立所需的直接配對驗證|
+|全站額度|本實驗環境每日 US$5 的費用估算預留額度；超額停止新增付費工作，不視為 Cloudflare 帳單硬上限|
+|快取|相同輸入與有效設定直接重用工件；命中或加入同一進行中工作不扣新任務配額|
+|合併後待辦|`Issues.md` 列出素材投稿上限與再彙整 UI 移除／未來意見綜整；本輪不實作、不提前建立 GitHub issues|
 
-## 權威決策
+舊 [PR #187](https://github.com/g0v/civic-talk-hono/pull/187)、[PR #188](https://github.com/g0v/civic-talk-hono/pull/188) 保留實驗紀錄；只選擇性重用逐份抽取與來源錨定概念，不整批 merge／cherry-pick，也不帶回 `scope: "issue"` 的 Clairic 全素材抽取模式。
 
-以下以 issue comment `#issuecomment-5772029029` 與本次問答為準，覆蓋 issue 原始施工建議中衝突的部分：
+## 2. main 現況與不得破壞的契約
 
-1. 投票必須登入；停權帳號沿用 `requireUser()`，回 `403`。
-2. 預設維持最新意見優先；另提供「最多回應」排序。
-3. 票數不進 AI synthesis prompt。
-4. 作者不能另投自己的意見；只要 `ct_opinions.author_id` 存在，查詢、顯示、排序與 CSV 均虛擬加上一票同意。此票不寫入 `ct_opinion_votes`，不回填舊資料。
-5. 使用者投票前看不到該則意見的分布；投票後可看並可改票。作者因已有虛擬同意票，可直接看自己意見的分布。
-6. 收回投票後重新隱藏該則意見的分布，不保存 `ever-voted` 狀態。
-7. `abuse_flagged = 1`（被回報、待審）仍可投票；`2`（確認違規）與 `3`（AI 隱藏待複核）不可投。
-8. CSV 只做 pol.is／Sensemaker 相容的 `comments.csv`，不做 Pocket Polis 長格式 `votes.csv`，也不做 `participants-votes.csv`。
-9. CSV 需登入才能下載；不看角色。它是唯讀公開內容的匯出，因此登入停權者仍可下載，但不得投票。
-10. CSV 是刻意提供的資料檢視入口；一般頁面仍執行投票前隱藏分布的介面規則。
+- 共用 `src/api/requireUser.ts` 處理未登入 401、停權 403，既有路由與證據 API 均沿用；所有登入者可以使用志願者工具。`useViewerRole` 是介面偏好，不是認證角色。
+- 既有 `POST /api/issues/:id/briefing` 透過 `createBriefing()` 建立版本並把正常議題推進 `published`。**新 AI 草稿不能借用此路徑儲存。** 管理端 PUT 會覆寫現有 briefing，也不能拿來充當不可變 AI 原稿。
+- 現有素材沒有版本歷史；管理端刪除素材／議題會實體刪除。只存 ID、hash、offset 不足以在刪除後重建原文。
+- 開工前 `wrangler.jsonc` 有 `DB`、`DB_AUTH` 與 `FACT_CHECK_CORE`；現已接上 AI 與 Workflow，但正式新 API 預設關閉。一般 `vp run dev:remote` 連遠端綁定，不能直接作本地隔離審查。
+- `0017_evidence_pipeline.sql` 是正式保留的八張 `ct_ai_*` 表與索引；已套用隔離本機，SQL 不得改寫或重用。審查期間 migration 只跑隔離本機；確認合併 `main` 後遠端仍須另外授權，不對 `DB_AUTH` 建表或套 migration。
+- 本輪保留既有 API、`.html` 導向、SSR／hydration、投票、結案與自帶 token 的 prompt 流程。結案不是禁止本實驗的條件。合併後另案移除「再彙整」UI，但保留 `GET /api/issues/:id/prompt?type=synthesis` 的登入守門、語意與成功回應；不以 UI 移除為由刪除既有 API。
+- 投稿安全審查的 OpenRouter fail-open 規則不變。**生成實驗失敗不能套用 fail-open 來偽造成功草稿。**
 
-## 已確認的現況與參考實作
+## 3. 實驗環境與遠端寫入隔離
 
-- workspace 已包含 `../pocket-polis`。
-- Pocket Polis 的 `src/export.ts` 與 `src/conversation.ts` 已成熟實作：
-  - `comments.csv` header：`timestamp,datetime,comment-id,author-id,agrees,disagrees,moderated,comment-body`
-  - UTF-8、LF、無 BOM、結尾換行。
-  - `datetime` 使用固定英文星期／月份與 UTC 字串。
-  - `comment-body` 一律以雙引號包住，內部雙引號加倍。
-- Civic Talk 目前由 `src/db/queries.ts` 集中所有 D1 SQL；`GET /api/issues/:id/opinions` 已有公開／管理員兩種作者投影。
-- `Issue.vue` 與 `OpinionDetail.vue` 的 SSR state 目前不含 session；`useAuth()` 在 hydration 後載入 `/api/me`。
-- migration 最新編號為 `0011_issue_last_activity.sql`，本功能使用 `0012_opinion_votes.sql`。
-- `0009` 以後的遠端 migration 狀態不能從 repo 檔案推定；本次只做本機 migration，不寫遠端 D1。
+### 3.1 專用實驗入口與配置
 
-## API 與資料契約
+目前入口與審查環境：
 
-### 投票資料型別
+- 正式 Worker 已接入一般應用，`EVIDENCE_API_ENABLED` 預設 `0`；只設為 `1` 才啟用新 API，必要綁定缺失時 fail closed 503。未提供 `SOURCE_DB` 時正式來源預設 `DB`；可選的獨立來源綁定供隔離環境使用。
+- `CIVIC_AI_EXPERIMENT=1 vp run dev:remote` 保留原隔離實驗入口、`.wrangler/ai-experiment` 及唯讀遠端來源；只掛證據與必要 OAuth/session API。
+- `CIVIC_AI_REVIEW=1 vp run dev:remote` 選擇獨立 `.wrangler/evidence-review`、本機工作及合成來源庫、既有遠端 `DB_AUTH` 與真實 Workers AI；兩個 opt-in 不可同時設定。
+- 一般 `vp run dev` 刻意停用 Auth；預設 `vp run dev:remote` 使用既有遠端 Auth，兩者的新 API 默認 404。完整命令及安全邊界見[檢閱手冊](./docs/evidence-api-review.md)。
+- OAuth／session 的正常維護寫入是唯一認證例外；不轉存 cookie、secret、OAuth token 到工作流或 AI 紀錄。
+- 需要抽出共用登入守門或縮窄 auth helper 的 binding 型別時，先查 LSP references，再遷移所有呼叫端；不建立平行的認證規則。
 
-新增：
+下表是原真實來源實驗 profile；其他 profile 的 binding 位置見[檢閱手冊](./docs/evidence-api-review.md#3-模式前置與保護範圍)。
 
-```ts
-type OpinionVoteValue = -1 | 0 | 1
 
-interface OpinionVoteState {
-  vote_agree: number | null
-  vote_disagree: number | null
-  vote_pass: number | null
-  my_vote: OpinionVoteValue | null
-  can_view_vote_distribution: boolean
-  can_vote: boolean
-  is_author: boolean
-}
+|Binding|連線與用途|允許操作|
+|---|---|---|
+|`DB`|隔離本機 D1；所有實驗狀態與 `ct_*` 新表|本機讀寫|
+|`SOURCE_DB`|遠端 `vtaiwan-civic-talks`，僅來源 repository 使用|固定、參數化的 SELECT；不交給寫入 repository|
+|`DB_AUTH`|既有遠端 `vtaiwan-auth`|既有 Better Auth 正常認證生命週期；必要授權 SELECT|
+|`AI`|遠端 Workers AI|本計畫三模型推論|
+|`EVIDENCE_WORKFLOW`|本機 Workflows 模擬與持久狀態|僅本機執行與保存工作進度|
+
+`SOURCE_DB` 的 remote binding 本身不是資料庫授予的唯讀 credential，不能如此宣稱。隔離依靠專用入口、只提供讀取方法的來源 repository、固定 SELECT、不同的本機寫入 binding，以及行為測試；不得把遠端 binding 傳入通用寫入函式。若實作無法維持此邊界，須停下重新討論，不以「開發模式」當作安全保證。
+
+### 3.2 持久任務與付費呼叫
+
+使用 Cloudflare Workflows 承接非同步工作，不用 `waitUntil()`、單次長 HTTP 連線或模組記憶體假裝耐久佇列。正式 Worker 可有多個 isolate，啟動或對帳時只觀察既有 instance 的明確終態，不因 isolate 冷啟重啟可能仍在執行的工作；RPC 失聯或 unknown 不視為終止。
+
+- Workflow 參數只有工作 ID；step 回傳工件 ID／狀態，不包含全文、引文或原始模型輸出，避免 checkpoint 留下另一份無法清除的內容。
+- 審查時內容只放隔離本機 D1；正式啟用後放業務 `DB`。日誌、step 名稱及錯誤訊息不放原文、prompt、cookie、姓名／email 快照。
+- 模型呼叫明確停用自動重試。每次呼叫先記錄付費嘗試與預留額度，再呼叫 provider，最後保存結果／用量。
+- 若程序在 provider 可能已接受請求後中斷，記錄為結果／費用不確定，不在恢復時偷偷重打；保留保守預算扣帳與診斷。
+- 不提供任意 force-refresh、任意模型 ID 或任意 prompt 來繞過去重。相同失敗工作也不因重按而自動新增付費嘗試；實驗調整輸入或受版本管理的設定後才產生新工作。
+- 取消來源授權、素材撤下或帳號停權後，不繼續啟動新的付費步驟。已送出的推論不能宣稱可完整撤回。
+- 依實際環境的 Workflow step／subrequest／CPU 限額預檢工作量，不把 64 段證據誤當成任何長度與批次都可完成的保證。超限須在下一個付費階段前明確停止；不為了湊完工作而自動增加帳戶額度、改部署或把多個模型呼叫塞成不可追蹤的一步。
+
+## 4. 輸入、快照與來源生命週期
+
+### 4.1 輸入白名單
+
+預設使用指定議題的全部合格素材，亦允許請求明確指定 `material_ids` 子集合；不默默只取前幾份。
+
+- 議題與素材必須符合實驗可讀條件，`abuse_flagged = 0`；待審、確認違規與 AI 隱藏內容不送模型。
+- 只取議題 ID／標題／必要描述與素材 ID、標題、來源名稱、URL、content。**不取或傳送作者 ID、姓名、email、show_email、條款快照。** 素材內文本身仍可能含個資，不能宣稱已匿名化。
+- 不爬取外部 URL、不讀取 URL 指向的網頁、不使用管理員作者投影；素材 URL 僅作來源資料。
+- API 不接受呼叫者自行冒充來源的正文或 hash；快照與雜湊由伺服器從來源 repository 產生。
+- content 保持原樣，不 trim、不正規化換行或 Unicode 後再計算 offset。雜湊明訂為原始字串 UTF-8 的 SHA-256；若提供模型的 state 含包裝，另存包裝與原文的映射。
+- 素材排序採穩定 ID 順序；輸入 manifest 包含 source namespace、議題／素材 ID、內容與相關 metadata hash。模型、prompt、schema、抽句／比較演算法、語言與推論參數也納入快取鍵。
+
+供本次計畫檢核的起始資源配置：最多 64 份素材、單份 content 48 KiB UTF-8、合計 content 512 KiB；超限在付費呼叫前明確拒絕並列出可縮小集合的資訊，不裁切正文。這些是應用保護界線，不冒充精確 tokenizer 計數；provider 若仍拒絕 context，保留失敗而不偷偷截斷。
+
+此處的 64 份是「單次實驗輸入」上限，64 段是「抽取後證據」上限；兩者均不代表已實作「每議題最多投稿 64 則素材」。後者的第 33 則起警示與第 65 則禁止提交屬第 11.1 節的合併後待辦，本輪不得宣稱 UI／API 已有該投稿關卡。
+
+### 4.2 隱藏、變更與刪除
+
+- 每個付費階段前、草稿／證據／修訂交付前重新確認來源可讀性與 hash；遠端查核失敗時不返回先前快照內容。
+- 隱藏或 hash 改變：停用關聯工件的一般調閱，標為 withdrawn／stale，不把新原文套到舊 offset，也不自動發布任何版本。
+- 確認來源刪除或收到清除請求：使關聯工件失效，清除會保留原文／引文的快照、AI 原始 payload、生成結果、人改 payload 與 diff；保留 hash、時間及清除原因等不含正文的稽核 tombstone。
+- **清除與在途推論的競態：** 清除須在同一本機交易中持久化來源 tombstone、遞增 generation fence，並刪除關聯 payload。每次模型呼叫捕獲所有依賴來源的 generation；回應落地、快取登記與人改版本保存時，必須以同一原子寫入條件確認來源未被清除且 generation 仍一致，不得用「先 SELECT、稍後無條件 INSERT」代替。寫入與清除無論先後，清除完成後都不能留下該次舊回應的正文。
+- 延遲回應未通過 fence 時，丟棄正文／引文，只允許保存不含內容的狀態與費用結算；不得寫入錯誤日誌、Workflow checkpoint 或其他快取。重啟、重放及重新匯入來源不能重設舊 generation 或刪掉 tombstone，讓舊呼叫重新取得寫入資格。
+- 清除是明列的留存例外，不是假裝原稿從未改過；原稿不可變不等於可以拒絕資料刪除。
+- 啟動時先對帳現有快照，再開放內容調閱；另提供本機清除／對帳命令，處理權利請求與無人讀取的舊工作。
+- **跨庫限制：** 遠端來源唯讀且沒有刪除通知，本輪不能保證刪除瞬間同步抹除關閉中的本機庫。清除發生在啟動／對帳或首次查核發現刪除時；記錄 `source_checked_at`，不宣稱跨庫原子性或零延遲。此限制需隨計畫人工檢核，若不可接受須改環境／通知架構，不能默認略過。
+
+## 5. 三模型流程與證據規則
+
+|模型|識別字|責任|
+|---|---|---|
+|Clairic|`@cf/cloudflare/clairic`|每份素材獨立抽取原文主張／條件，使用 text／list primitive，不要求 #181 巢狀結構|
+|Clef|`@cf/cloudflare/clef`|跨素材證據關係的四選一判斷；不是生成最終摘要|
+|Gemma 4 26B A4B|`@cf/google/gemma-4-26b-a4b-it`|本輪取代 GPT-OSS，三次專項生成共同命題、爭點／張力、立場分群；依已驗證證據及關係輸出受約束文字與逐句引用，結構化輸出不能替代語義檢核|
+
+### 5.1 Clairic：逐素材抽取與原文錨定
+
+1. 每份素材一個 state、一次抽取、單一 `claims` list；`claims-list-v3` 先閱讀全文，再優先擷取通常 1～3 個最能代表全文的明示核心主張，不再以每段全面收錄為目標。避免同一論點的標題、說明與例子重複摘錄，優先選條件、限定及轉述歸屬完整的正文；沒有核心主張或必要例外的篇名／作者介紹、純主題標題與枝節例子不另列證據。
+2. **主張數不等於證據段數。** 一個核心主張可用多段原文保留條件、歸屬與必要脈絡；重要明示反例、限制與少數觀點可例外保留，不為湊三點而刪除。不設每篇三段硬上限、不強制最低筆數、不在回應後截前三筆。每個 list item 都是按原文順序擷取的連續 exact span，不是改寫主張；不摘要、不拼接不相鄰文字，沒有實質明示主張或必要例外就接受 null，不從沉默、guess、p_null 或既有 stance 補造立場、動機、未表達價值或數值。
+3. 取得 provider 回傳的 state text（若合約提供），驗證 span 的單位、起迄與切片。以繁中、日文、英文、emoji、CRLF 與重複片語實測；不直接假定 JS UTF-16 index 等於 provider offset。
+4. 只有能唯一、正確定位到該份原文的片段才能進下一步；重複字串而無有效 span 時不能任選第一次出現。`value` 與 span 衝突亦拒收。
+5. 由程式按有版本的中英日標點／段落規則擴展成完整句子，保留原始及擴展後 span、offset 單位與 exact quote；跨多句的主張保留完整範圍，不改寫成摘要。
+6. 去除同素材中相同範圍的重複證據。缺 span 或無法證明出處時不退回整份正文、不用其他素材補證。
+7. 單素材失敗予以隔離，記錄原因與覆蓋範圍；其餘有效素材可產生明示為 partial 的待審草稿。有效證據總數超過 64 時停在證據診斷，不任意挑前 64 段；使用者須縮小素材集合另建不同輸入的任務。
+
+句子擴展只解決上下文／碎片問題，不能證明摘錄真的相關；`p_null` 與 confidence 都只作診斷，不能宣稱是正確率。
+
+提示版本及實際請求納入既有設定指紋，不覆寫舊工件或自動付費重跑。此輪不增加 Clairic 呼叫、不提高全工作 64 段證據上限；實際證據數仍影響後續 Clef 配對與成本。離線驗證只能證明相容性與出處守門，核心主張選取、必要例外保留及下游品質須以人工標註與新模型回應對照，不以筆數增減或機械檢查通過宣稱品質改善。
+
+### 5.2 Clef（B 階段）：交換律、遞移候選與跨素材判斷
+
+- **保留一般支持判斷，但補足可比較的語境。** agree 不要求完全同義，也不是等價關係；必須能指出在共同問題／判斷維度及各自明示條件下的支持、補充或有意義的相容。僅同屬一個議題、或兩句話可以同時成立，不足以證明共同主張。遞移仍僅用於候選，不補寫已確認的 agree 邊。
+- 只比較不同素材的證據；同一來源不因重複段落變成多票，也不把素材數當作獨立公民人數。
+- **交換律是應用端的關係契約。** 四分類問題採兩段主張的對稱關係，而不是「A 是否蘊含 B」等有方向的問題。以兩個證據識別的固定排序建立無向 pair key；同一輸入／設定下，A-B 與 B-A 共用一份正式判斷與快取，不重複扣題數或啟動模型呼叫。保留實際送入模型的順序、題目版本、選項機率與 provider 診斷；不宣稱模型對調輸入的機率天然相同。
+- 每對仍只回答 agree／disagree／unrelated／uncertain，依第 5.2.1 節校準 instructions、四選項 criteria 與必要上下文；不新增前置模型呼叫來替 Clef 代答。正式關係保留該配對的直接模型判斷；候選推導必須另記來源路徑與待驗證狀態，不冒充另一筆模型輸出或使用其機率。
+- provider 每次最多 64 題；依實際 state 大小再縮小批次，不把 64 題誤認為無限長 context 或原生 async Batch 能力。
+- 使用固定排序與已記錄的批次策略。無法完整容納的 state 明確失敗，不接受服務端截斷後仍冒充完整比較。
+- **遞移只用於找候選、安排驗證。** 已知 A-B、B-C 為 agree 時，可以提出 A-B-C 候選群並將 A-C 列為待直接比較；不能推定 A-C 為 agree。只要共識候選仍依賴 A-C 的關係，就不能為了節省費用省略這個必要配對。
+- 程式以直接 agree 邊產生**待提煉共同命題的候選**：至少兩個不同素材，所需跨素材配對均有直接 agree，且沒有已接受反例。候選不是已成立的共識；生成模型仍須找到各參與來源真正支持的共同命題。A-C 為 disagree／unrelated／uncertain、漏比或失敗時，不能因支持路徑相連合併；可保留較小候選與未分類證據。
+- 直接 disagree 提供對立候選；生成模型可另從已驗證證據提出可並存的策略／價值張力，但必須與直接矛盾分開，不改寫 Clef 原始關係。不能以遞移覆蓋反例；支持鏈與直接比較衝突時保留鏈、直接判斷與排除原因。
+- 計算節省來自無向配對去重與既有有效工件快取；遞移候選可協助群組搜尋與比較排程，但不保證減少必要的模型題數。診斷分開列出符合資格的無向配對數、直接判斷數、快取命中數、僅推導的候選及未完成配對；後兩者不算已比較或已支持。
+- 立場地圖整理素材明示的主張／關注點；證據清單與關係圖是分群輸入，不再把「一條證據一個候選，加上共識群」當成唯一合法分群。分群提案及證據歸屬須可追溯，不推定作者人格、隱藏動機或公眾支持比例。
+- 中文人工標註樣本須抽查對調 A／B 的結果及非遞移支持鏈，揭露方向偏差與錯誤合併。反向抽查是品質診斷，不覆寫正式關係；其付費呼叫仍須記帳。若必須全面雙向判斷才能達到品質，先回來討論成本與計畫，不暗中把所有呼叫加倍。
+
+#### 5.2.1 下一輪：降低不合理的 unrelated，而非追求特定比例
+
+- **先辨識共同問題與條件，再判斷關係。** 題目保留兩段已驗證原文、來源歸屬及比較所需的原始上下文；不改寫成帶有預判的摘要，不把議題標題相同當成兩段一定相關。檢查題目、選項文字、證據句子擴展與批次 context，區分模型誤分類、上下文不足及真正無關。
+- 四類判準須有對照例：agree 為同一可比較問題下的支持／補充／有意義的相容；disagree 為相同或可對照條件下，事實結論或明示立場／建議互相對立；unrelated 為沒有可合理對照的問題／維度，不是「不是嚴格同義，也不是直接否定」的兜底類；uncertain 為條件、歸屬或資訊不足以確定關係。
+- **策略張力不硬塞成事實矛盾。** 「AI 可能取代部分工作」與「設計師應擁抱 AI」可並存，不能只因語氣悲觀／樂觀就判 disagree；兩段若對同一選擇提出明確對立建議，才依其明示條件判斷。可並存的風險、優先順序或價值張力由第 5.3 節另行整理。
+- 先由人工標註同題支持、明確對立、相容但無共同命題、同題不同維度、真正無關及資訊不足案例，再比較舊／新 prompt 的混淆矩陣與逐類 precision／recall。重點是找回被錯放到 unrelated 的支持與對立，同時避免增加錯誤 agree／disagree；不能只以 unrelated 比例下降宣稱改善。
+- 不規定每份素材或每批必須產生幾個 agree／disagree，不重分配機率、不覆寫原始 choice、不把最高分或 provider confidence 當作已校準正確率。保留機率與模糊案例；如需採用差距／信心門檻，須先以人工樣本校準、版本化並揭露影響，不能臨時選數字讓結果過關。
+- 用同一份凍結證據比較候選版本，先排查組題與解析邏輯，再安排有明確同意且受預算控制的真實模型對照；保留失敗案例與人工保留樣本，避免只針對議題 13 的字面內容調參。prompt、criteria、上下文／比較演算法版本納入 manifest 與快取鍵；舊判斷不冒充新版結果。
+
+### 5.3 Gemma 4 26B A4B：共識、爭點、立場地圖三次專項生成
+
+**取代一次生成三類內容的流程，不是把相同請求重送三遍。** 每項各有 prompt、schema、驗證、原始回應與費用工件；由程式合併為既有 `data.consensus`／`data.disputes`／`data.positions` 形狀。
+
+固定模型 `@cf/google/gemma-4-26b-a4b-it`，primary／條件式補完均使用原生 Chat Completions：`messages` 依序為 system prompt 與 `JSON.stringify` 原有 payload 的 user message，加上 `max_completion_tokens:8192`、`temperature:0.2`、`chat_template_kwargs:{enable_thinking:false}`、`stream:false`、`response_format:{type:"json_schema",json_schema:{name,strict:true,schema}}`；四個 schema 名稱依序為 `evidence_consensus`、`evidence_disputes`、`evidence_positions`、`evidence_completion`。不送 `uniqueItems`；C 候選的動態 enum 與程式對重複 ID、候選／引用／關係的嚴格驗證均保留。[Gemma 官方模型頁](https://developers.cloudflare.com/workers-ai/models/gemma-4-26b-a4b-it/)列出 `response_format`；本機已安裝的 Cloudflare Workers AI 型別中 Gemma 繼承 `ChatCompletionsInput`，`ResponseFormatJSONSchema` 使用上述具名 wrapper。這些型別與文件不等於已實測 provider 保證遵循 schema 或產生優質內容。
+
+回應須有字串 `model`，恰一個 `index:0`、`finish_reason:"stop"` 的 choice，message 的 `role` 須為 assistant 且 content 是字串；不要求可省略的頂層 object。拒絕缺少完成原因、截斷／content_filter／其他完成原因、refusal、工具呼叫、非字串 content 及非法 JSON。忽略 `reasoning`／`reasoning_content`，不將其作為答案，亦不串接 content 陣列；既有單一完整 code fence 例外不變，不裁切思考、不掃描或修補、不退回 Responses 或其他模型、不新增備援、裁判或付費重試。
+
+完整 schema 計入輸入，每百萬 input／output tokens 依 [Gemma 官方價目](https://developers.cloudflare.com/workers-ai/models/gemma-4-26b-a4b-it/) US$0.10／0.30 預留與結算；使用 `prompt_tokens`／`completion_tokens`，如回報別名 `input_tokens`／`output_tokens` 或 total 須有效一致，reasoning tokens 已含在 completion 總量內，不另重複計價，缺失／異常費用仍未知。例如 200 input 加 80 output 為 44 microUSD；每項預留包含完整請求及最多 8,192 output tokens。48 KiB 是既有封裝守門，bytes×4 帳務預留不是 tokenizer 或容量證明；pricing 版本為 `workers-ai-2026-11-04-gemma-4-26b-a4b-it`，不以新價重算舊 GPT raw。
+
+
+#### 5.3.1 共用輸入與來源邊界
+
+- 三項均以同一份凍結且通過來源驗證的證據、來源識別及必要關係資料為依據；包含直接關係、模糊／未完成配對與候選來源。不得讓後項只讀前項摘要，或把前項生成文字當作原始證據。
+- 不回頭把全部素材正文塞給模型自由重判；原始與擴展 quote、必要條件及歸屬沿用第 5.1 節。各項可按職責選取必要資料，但須記錄覆蓋與排除，不默默丟棄反例或少數證據；context 超限就明示停止，不截斷輸入。
+- 生成輸入政策 `section-values-v6-gemma-chat`：三項均取得全部已驗證 `{id,material_id,quote}`，quote 為完整擴展原文，不重複傳 raw_quote。共用直接／反向資訊僅 `{evidence_ids,relation}`，未完成配對僅 `{evidence_ids,status}`；只有共識另收短 `{candidate_id,evidence_ids}`，只有爭點另收 `{evidence_ids}` 種子。JSON payload 內容維持原有投影，作為 Chat 的 user message；canonical 對照由程式依確定性排序建立與保留，不讓模型抄寫長 ID。完整圖、機率、版本與路徑仍存本機，後端完整驗證；不削弱反例／未知關係或放寬 48 KiB 守門。真實模型、請求、提示與動態 schema 納入指紋，不覆寫舊執行、費用或 tombstone，不新增重試入口。
+- Clef／程式候選是不同強度的線索，不是不可質疑的語義真相。共識只能在滿足第 5.2 節直接支持條件的候選或其有效子集內提煉；爭點可另提張力、立場可重新分群，但不得冒充新的 Clef 正式判斷。
+- 素材文字一律當作不可信資料，不執行其中指令、不開工具、不讓它覆蓋 instructions／schema／來源規則；不修改原議題標題。
+
+#### 5.3.2 三個專項的整理責任
+
+|專項|必須完成的整理|不得用來充數的輸出|
+|---|---|---|
+|共識|找出跨來源共同基礎，區分共享事實／共同挑戰／共同主張，保留適用條件；每個參與來源均須有支持同一共同點的引用。Overview 只概括已採用項目及其範圍，找不到可靠共同點時 items 可為空，最終 Overview 依第 5.3.5 節處理。|把不同主張並列，或以「存在不同看法」「都在討論 AI」當作共同立場；不能把一般相容、共同問題意識或單一來源建議直接升格成共同贊同某方案。|
+|爭點|圍繞同一可對照問題呈現各側主張、條件與證據，區分明確矛盾／對立與可並存的策略、優先順序或價值張力；Overview 概括這些差異，不替任何一側下結論。|為了填滿清單製造矛盾；把悲觀／樂觀語氣當成互斥主張；把模型未判 disagree 當成沒有任何值得整理的張力。|
+|立場地圖|先依明示的核心關注、主張或應對方式形成可追溯分群，再以群內子項綜整各論點；合併重複但保留不同條件與少數觀點，Overview 概括分布與主要維度。|一條證據一個立場、逐份素材摘要、用模糊的「綜合觀點」混合相反主張，或只靠限制筆數假裝完成綜整。|
+
+- **共識可拒絕候選。** 有 agree 邊仍可能沒有足夠具體的共同基礎；須保留未採用原因，不能改寫來源以湊出結果。Overview 與 description 都遵守相同語義與分型範圍，不把歧見移到 Overview 後假裝解決，也不把共同挑戰包裝成共同解法。
+- **項目品質不靠筆數。** 不設定約三項或其他目標；檢視所有有據維度，零項、一項或更多項均可。共識先逐來源找正面支持的共同基礎，不把不同風險與需求回升或互不相關的建議並成共同立場；具體挑戰的窄化綜整依下一條判準。相同爭議的多筆統計、來源配對與相近條件應在單一爭點逐側綜整，不拆項充數；真正獨立的問題與必要條件仍保留。同一候選／證據可支持不同共同命題，完全相同的項目仍拒收；items 與引用筆數不同。
+- **共同基礎三型（本輪使用者裁示）。** `shared_fact` 仍要求各參與素材明示或報告同一可對照的事實命題，不代表平台已獨立查證；`shared_position` 仍要求各素材明示支持同一判斷、立場或建議。僅 `shared_challenge` 可根據各來源正面相關引文，跨措辭或觀點差異綜整出具體、窄化且共同受支持的問題／限制。不能從沉默推論，只有共同話題不足；風險與建議僅在建議確實回應同一挑戰時，才能支持窄化的共同挑戰，不能冒充共同贊同某個方案。三型均沿用第 5.2 節既有跨素材直接 agree 候選及有效子集、至少兩素材，不開放候選外新提案、不改寫 Clef 原判斷；須保留條件與歸屬，轉述不得冒充作者認可。
+- **分類只放診斷。** 原生共識 item 必填 kind，驗證後保存於 adopted[]；新輸出的 classification_source 固定為 `generation_proposal`，不是新的 Clef 正式判斷。data.consensus.items 仍為 Title／description，人改與引用契約不變，舊標記不回填。prompt／schema／input 為 `specialized-evidence-v7`／`specialized-cited-v4`／`section-values-v6-gemma-chat`，Clairic／Clef 不變，補完仍須繼承共識分型，不新增步驟。
+- **保留共識證據宣告，只強化提示。** 模型先逐來源找共同點的有據交集、窄化範圍，再選型與撰文；送出前自行核對宣告 evidence_ids 等於 Title／description 的實際引用聯集，各宣告來源均在 description 引用。可先選真正支持的候選子集，不整組照抄後漏引、不加裝飾性引用湊數。程式仍嚴格拒收漏引、未知／候選外引用、不足兩素材、非法分類或偽造來源欄位；不改成自動推導成員、修剪、改寫、部分救回或另叫模型修復。無發現與驗證失敗仍分別記錄，舊工作與原始回應不回填。
+- **短候選與完整交代。** 每輪依 canonical ID 排序編號 C1…Cn；模型 payload／輸出只用精確短 ID，動態 schema enum 同時約束 items 與 rejected_candidates。空候選時兩陣列 maxItems:0，不提供非法空 enum。程式驗證短 ID 後才映回 canonical，診斷保留 candidate_map:[{candidate_id,canonical_id}]，adopted／rejected 的 candidate_id 仍記 canonical。長字串、evidence ID、改寫／未知 ID 直接拒收，不猜測還原。每候選須採用或有理由拒絕；重複拒絕、採用又拒絕及漏交代仍拒收。映射與動態 schema 綁定 context／設定，不重用不同輪映射。
+- **爭點先組題再綜整。** 每個原生 item 新增 `question:CitedSentence[]`，與逐側 claim／comparison_conditions 均須引用該項合法證據；至少兩素材，保留既有關係與側內不可對立守門。question 僅放 diagnostics，不擴充 data.items。模型須合併同問題的數據／配對，程式正規化問題文字的空白與大小寫後，重複即以 `generation_duplicate_question` 拒收，不靠換標題、分類或佐證重列。不做模糊刪除、語義判官或自動合併，換句話說的近似重複仍須人工驗收。來源標為 direct_clef 或 generation_proposal，不冒充新 Clef 判斷；確無有據爭點時可空。
+- **立場重新分群，不強制一素材一立場。** 同一素材可出現在不同關注群，多素材也可支持同一群；不要求每群必須跨素材，不把素材數當支持人數。不得將相反主張壓成同一立場，亦不靠固定群數裁掉內容；無法合併的少數觀點可獨立保留，不推測作者動機。
+- 立場原生 item 僅有 `{group_id,name,Core_concern,opinions}`，不再由模型重複宣告群組 evidence_ids；程式從每個 opinion 的 Title／description 有效引用聯集推導成員與 Sources，再驗證群名／Core_concern 僅引用群內成員、已知 direct disagree 不同群及全證據覆蓋／排除。未納入的證據須明示排除理由，不能因移除宣告就默默丟失；舊 evidence_ids 額外欄位仍嚴格拒收。保留重疊／少數觀點及原有引用順序。Core_concern 可有據綜整明示主張，不推測動機；primary null 仍僅能依第 5.3.5 節補完。
+- 本次只切換生成模型／原生傳輸、計價與告知，未批准或實作放寬立場 context citation，也未加入共識來源支持矩陣。群名或 Core_concern 引用了未被該群 opinions 的 Title／description 納入的背景證據時，既有群內引用守門仍會拒收；先前問題因此可能重現，模型切換不是其修復證據。
+
+#### 5.3.3 引用、組裝與跨項檢核
+
+- 內部生成格式維持「句子文字＋evidence IDs」，另外保存共同命題／爭點各側／立場分群的證據歸屬與提案來源。由程式組成 #181 字串與逐句 citation map，不要求模型計算輸出 offset。
+- 每個模型生成文字欄位的每句，包括 Title、Overview、立場名稱，都須有有效證據。程式核對 exact quote、來源歸屬、各項專用的分群與配對限制；共識不得引用未列入該命題的來源，立場不得接受未知證據。第 5.3.5 節的程式狀態 Overview 是明示例外，不冒充來源結論，也不建立虛假引文。
+- 各項分別嚴格驗證 JSON、schema、必需欄位、完成原因與 citation coverage；拒絕截斷、refusal、偽造 quote、跨素材錯配或缺引用。**依本次格式處理裁示，僅增加完整單一 JSON code fence 的外框辨識**：整份回應只能是原始 JSON，或以獨立行開閉的一個三反引號外框，標記僅可省略或為小寫 json；支援外側空白及 CRLF。只拆外框，不從混雜 Markdown／說明擷取片段，不修補非法 JSON、不另呼叫模型修格式。Overview 單句物件不自動包成陣列，空清單附概述仍拒收；改以明確提示預防。原始回應／失敗工作不覆寫，完成解析政策納入版本指紋。
+- 合併時核對三項的輸入／證據／比較版本一致、JSON Pointer 與 offset 正確，並保留共識與反例衝突、爭點兩側、立場覆蓋／重複診斷。結構上違反支持邊或引用限制者拒收；語義上是否真正共識、合理張力或有效綜整仍須人工檢核，不宣稱程式能證明引用蘊含生成文字。
+- 不新增自由改寫的第四次總整或裁判；僅允許第 5.3.5 節核准的條件式缺值補完。結果固定標為 `ai_unverified`，不自動寫入 briefing 或改變議題狀態。
+
+#### 5.3.4 工作流、分項狀態與失敗
+
+- 初版固定依共識、爭點、立場地圖順序執行三個獨立付費 step；順序只為控制資源，不構成摘要依賴，不以並行化為本輪必要範圍。每項有獨立且不含原文的 step／嘗試鍵、工件、驗證與結算，成功結果不被其他項失敗覆寫。
+- `diagnostics.generation.sections` 分別記錄三項的狀態、原因與工件關聯：`completed` 為驗證通過且有內容；`no_findings` 為驗證通過但無足夠可整理內容；`failed` 為該項呼叫或驗證失敗；`not_started` 為未能啟動。進行中另呈現當前 step，不把未完成當作 no_findings。
+- 單項 provider／schema／引用失敗，若授權、來源與預算仍有效，可繼續其他專項，不自動重打。至少一項驗證通過而其餘失敗／未啟動時，須完成第 5.3.5 節的必填欄位與狀態說明才可交付 `partial_draft`；全部失敗／未啟動則為 `failed`。三項 completed／no_findings、來源與比較覆蓋完整且最終必填完整，才可為 `ai_draft`；上游覆蓋不完整仍為 partial。
+- 預算不足停止尚未啟動的付費步驟，記錄 not_started 與原因；來源失效、清除或授權失效則沿用全域守門，不藉 partial 返回已失去調閱資格的內容。每項回應保存及最後組裝均須通過來源 generation fence。
+- 不新增付費重試入口、隱藏抽樣或 force-refresh；重啟／重放重用已保存的有效分項工件，未知費用仍保留預留，缺回應不自動再呼叫。
+- **生成銜接也必須受控。** `bounded-generation-handoffs-v2` 將分項工件復用及生成前／後來源與帳號查核、完成診斷寫入放進 `load-generation-state`、`prepare-generation-*`、`finish-generation-*`。已確認可冪等的銜接／清理每次 30 秒、最多重試三次（首次加三次共四次，1 秒起指數退避）；其餘非模型規劃／驗證／組裝每次 30 秒、零重試；模型呼叫保留 10 分鐘、零重試。不讓這些跨服務銜接 I/O 在 step 外無界等待，亦不把未確認冪等的步驟盲目加重試。
+- **重試不繞過守門與費用。** 完成事件須處理寫入成功但回應遺失，以及 checkpoint gap 的冪等重放；來源撤下、停權、配置改變與非法儲存輸入等確定性失敗不重試。暫時 I/O 錯誤只交固定機器碼給 native SDK，不洩漏原始例外。checkpoint 只存識別符、狀態與數量／費用，不存原文、請求或生成 data；比較階段預估納入新增控制步驟及其重試，不放寬既有上限。
+- **失敗收尾與終態對帳。** 銜接重試耗盡經受控 `fail-workflow` 處理，不啟動下一個付費階段，保留已結算費用與成功工件；仍未結算的呼叫才標 unknown。清理本身也耗盡時拋固定安全錯誤讓原生引擎 errored，不吞掉後假裝完成。GET 對 active 工作僅觀察既有 instance，明確 complete／errored／terminated 才依既有 fence 收斂；觀察 RPC 失聯或 unknown 不誤改在途工作與費用，也不從輪詢重啟或建立 instance。
+- 控制政策與實際 step 選項納入 pipelineSettings；保留既有短時限銜接、attempt key、單輪補完及來源／停權守門。Gemma 與新契約自然改變設定指紋，舊在途工作不得跨配置付費續跑；不清庫、退未知費用或 force-refresh 來救結果。
+
+#### 5.3.5 最終必填與單輪缺值補完（使用者後續核准）
+
+- 新版最終三段 Overview 與每組 Core_concern 均為非空字串。三項 primary 的 nullable schema 只作中間格式；有內容時提示先完成有據概述與核心關注，不以歧見概括假裝共識。
+- no_findings／failed／not_started 且空清單的 Overview 由程式依語言填入明確處理狀態，標記於 `diagnostics.generation.status_overviews` 的 `origin:program`、`kind:status`；不宣稱素材不存在相關觀點，不附虛假引用，不讓模型為失敗段編造結論。
+- 有內容且必填仍為 null 時，程式從已採用項目的引用推導白名單 JSON Pointer 與證據範圍，保存補完計畫及 base/context hash。最多增加一次 Gemma 呼叫，只回傳 `{base_hash,fills:[{pointer,sentences:[{text,evidence_ids}]}]}`，不得改寫任何已有值、來源、清單／順序或舊引用，不重分群或新增論點。
+- Overview 只能引用所屬分區已採用項目使用的證據；Core_concern 只能引用該群證據。程式拒收未知／重複／缺漏指標、舊 base、非白名單覆寫、額外欄位、空值及錯群／缺引用，所有 patch 驗完才套用。原始三項與補完回應分別保存；只為新文字附加由程式計算的引用範圍。
+- 補 `/consensus/Overview` 時須將已驗證 adopted 的類型、項目 pointer 與 evidence_ids 投影成唯讀 consensus_items，讓補完模型保留 shared_fact／shared_challenge／shared_position 的差別：前者與共同立場須有各來源明示共同命題，挑戰可由正面相關證據綜整，不把共享事實／挑戰升格成共同解法或超出原來源範圍。此投影納入計畫 hash，索引、枚舉、項目數與引用須符合 base，不能重用不同分類的補完；其他補完目標不額外傳入。data 與 patch schema 不加 kind，補完 prompt／計畫政策分別為 `missing-fields-only-v3`／`required-fields-exact-cited-patches-v2`；不改寫已有值、不新增呼叫或放寬語義品質的人工驗收。
+- 沒有缺值則不呼叫補完。必要補完失敗、context／額度不足或無可靠回應時，保留可用 primary 工件與費用，但工作為 failed，不交付仍缺必填的 data；不作第五次補完、重試、JSON 修復或改用其他模型。來源／授權失效仍依原 fence 停止，不洩露快照。
+- 補完使用 `complete:draft` 嘗試鍵，獨立預留完整 schema 請求與最大輸出、結算及重放復用，仍算同一工作。進度的 current_section:completion 與 completion 狀態不改，sections 保持三項。因生成模型改變，告知版本改為 `evidence-processing-2026-11-04-v4`；每個新工作仍須明確同意。模型及 primary／completion 原生 schema 都納入指紋，既有結果與未知費用不改。
+
+
+## 6. 結構化輸出與版本
+
+沿用 [#181](https://github.com/g0v/civic-talk-hono/issues/181) 的欄位名稱與輸出語意，不修改既有 briefing JSON；依使用者後續裁示，新版實驗最終必填收緊如下。nullable 僅留 primary 中間格式，已保存的舊版工件與結果不回填、不覆寫：
+
+- `data.consensus`：`{ Overview: string, items: Opinion[] }`
+- `data.disputes`：`{ Overview: string, items: Opinion[] }`
+- `data.positions`：`{ Overview: string, items: Position[] }`
+- `Opinion`：`{ Title: string, description: string }`
+- `Position`：`{ name: string, Sources: Source[], Core_concern: string, opinions: Opinion[] }`
+- `Source`：`{ Title: string, href: string, material_id: number }`；href 由程式用已驗證來源資料組成，不由模型隨意填網址。
+- 三類 Overview 與每組 Core_concern 均須非空。空／失敗／未啟動分區保留空清單，但 Overview 是明示的程式狀態，不冒充有引用的素材結論；`diagnostics.generation.sections` 保留各段真正結果，`status_overviews` 區分狀態來源。人改提交亦不得將這些必填改為 null／空白；含 null 的舊稿仍可只讀，提交新修訂前須人工補齊。
+- `citation_map` 以 data 的 JSON Pointer、句子範圍與 evidence IDs 對應來源；範圍由程式組裝文字時計算。附帶 `evidence`、覆蓋範圍、排除理由及 provenance，供 curl 檢視。
+
+provenance 保存輸入 manifest／hash、原文與 state 映射、原始及擴展 span、比較 pair key／實際題序／直接判斷與候選路徑、模型 selector／provider metadata、參數、完整 prompt／schema／演算法版本與 hash、程式版本、原始回應、驗證結果、用量與時間。三項生成另存各自依賴、分群／爭點類型及費用；補完另存計畫／base hash、目標與證據白名單、原始／驗證工件及狀態來源。新版指紋包含三語狀態文字與補完政策，不冒用或覆寫舊工件。
+
+模型 selector 不是不可變權重 SHA；provider 未提供的 revision 必須標 unknown／null，不補造。「可重現」指可取回同一份保存的工件及核對其來源，不保證未來再次推論逐字相同。
+
+AI 原稿為不可覆寫工件。申請者可另存人改版本，保存 parent、editor ID、時間、內容 hash 與程式計算的欄位差異；管理員可稽核，不冒用申請者編輯。修改過的文字明確標為 `human_unverified`，不能沿用舊 citation 就假裝新句子已被 AI／程式語義驗證。並發編輯使用 parent/version 檢查，過時提交回 409。
+
+## 7. API、狀態與資料表
+
+### 7.1 API 契約
+
+正式應用以 `EVIDENCE_API_ENABLED=1` 明確啟用時及隔離實驗／審查設定中提供；預設關閉時同源請求回 404，跨站簡單寫入由全域 CSRF 先回 403，均不觸及認證／DB／AI。啟用但缺必要綁定 fail closed 503。沿用 `/api/*` 全域 `apiCsrf` 與既有 CORS 規則，不逐端點重造 Origin 檢查；敏感回應為 private／no-store。
+
+|方法／路徑|用途|
+|---|---|
+|`POST /api/issues/:id/evidence-jobs`|登入／停權守門；接受選填素材集合、生成語言與明確的處理告知同意，凍結來源、去重、預留並排入工作；新工作 202，命中完成工件 200|
+|`GET /api/evidence-jobs/:jobId`|申請者／管理員取得進度、來源覆蓋、費用狀態、驗證後的草稿或失敗診斷；取得 payload 前重驗來源|
+|`GET /api/evidence-jobs/:jobId/revisions`|取得該申請者工作下的 AI 基底與人改歷史／差異，不帶出其他申請者的私人修訂|
+|`POST /api/evidence-jobs/:jobId/revisions`|申請者以 parent revision 另存人改版本；不能覆寫 AI 原稿或竄改 provenance|
+|`POST /api/evidence-maintenance/reconcile`|admin／super-admin，以 `{}` 對帳來源並觀察 active Workflow 的明確終態|
+|`POST /api/evidence-maintenance/erase`|admin／super-admin，以 `{kind:"issue" 或 "material",id}` 清除相關 payload 並持久化 tombstone|
+
+未登入 401、停權／maintenance 無管理權限 403；非申請者且非管理員讀取以 404 避免枚舉，寫 revision 僅 owner，其他人含管理員皆為 404。輸入錯誤 400、無可用來源／草稿 422、請求過大 413、版本或輸入衝突 409、帳號限額／議題冷卻 429、預算或必要資源不可用 503；抽取後證據超限以非同步工作失敗呈現。完整錯誤與 CSRF 規則見[手冊](./docs/evidence-api-review.md#api-與權限矩陣)。
+
+```mermaid
+stateDiagram-v2
+    [*] --> queued: 授權、來源與額度通過
+    queued --> extracting
+    extracting --> comparing: 有有效且未超限的證據
+    comparing --> generating
+    generating --> ai_draft: 三項驗證通過且上游覆蓋完整
+    generating --> partial_draft: 有有效分項但上游或生成覆蓋不完整
+    queued --> failed
+    extracting --> failed
+    comparing --> failed
+    generating --> failed
+    ai_draft --> withdrawn: 來源隱藏或改變
+    partial_draft --> withdrawn: 來源隱藏或改變
+    ai_draft --> erased: 來源刪除／清除請求
+    partial_draft --> erased: 來源刪除／清除請求
+    withdrawn --> erased
 ```
 
-規則：
+任何階段都可能因來源失效、帳號停權或預算不足終止；不能把失敗狀態強轉成完成。人改版本另存，不改動這條 AI 原稿狀態歷史。
 
-- 未登入，或已登入但尚未投該則意見：三個統計欄位為 `null`。
-- 已投票者：三個統計欄位為數字，`my_vote` 為目前選擇。
-- 作者：`is_author = true`、`can_vote = false`、`my_vote = null`，但可看分布；UI 另以「作者當然同意票」呈現鎖定的同意狀態，避免把虛擬票誤認成可刪除的資料列。
-- `abuse_flagged = 2/3`：`can_vote = false`；不提供分布。
-- 所有回應都不得包含 `voter_id` 或可反推投票者的資料。
-- 分布遮蔽必須在伺服器查詢／API 投影層完成，不能只由 Vue 元件隱藏。公開 SSR state、匿名 GET、已登入但未投者的 GET 回應都不得夾帶真實票數；只有存在實體票的目前使用者或意見作者可取得數字。登入限定的 CSV 是另一條明確授權的資料出口，不得拿來放寬一般 JSON／SSR 回應。
+### 7.2 資料設計
 
-### 既有列表端點
+保留 `migrations/0017_evidence_pipeline.sql` 原始 SQL 作為正式業務 migration，對齊既有隔離本機 ledger；不清空帳本或重設來源 tombstone。審查時僅套本機，確認合併到 `main` 後需另取得授權才能考慮遠端套用，且不操作認證庫。
 
-擴充 `GET /api/issues/:id/opinions`：
+資料責任分離（與原始 0017 SQL 對齊）：
 
-- 每筆意見新增上述 `OpinionVoteState` 欄位；既有欄位與預設順序不變。
-- query：`sort=recent|responses`，缺省為 `recent`。
-- `responses` 定義為：顯式同意＋不同意＋略過＋作者虛擬同意票；同票數時以 `created_at DESC, id DESC` 穩定排序。
-- 使用一個統計子查詢 `LEFT JOIN` 聚合整個議題，不逐則查 D1。
-- 以當前 session user id JOIN 自己的實體票；匿名請求綁定 `NULL`。SQL／資料層只在「本人已有實體票」或「本人是作者」時投影統計數字，其他情況直接投影 `NULL`，而非先把數字送到前端再隱藏。
-- 保留 `publicJson()` 的 `Cache-Control: private, no-store`、`Vary: Cookie`、`X-Content-Type-Options: nosniff` 與公開唯讀 CORS。
-- 管理員版本仍可取得完整作者快照，但投票分布可見性規則與一般使用者相同；不得順便公開 voter 資料。
+- `ct_ai_executions`：唯一 input key、議題／語言、原啟動者、manifest、狀態、錯誤碼與最終工件；多個申請者可共用同一推論。
+- `ct_ai_jobs`：申請者與 execution 的關聯、處理告知版本／同意時間；每位申請者保有自己的 revision 歷史。
+- `ct_ai_source_fences`：namespace／來源種類／ID 的 generation、永久 erase tombstone 與處置原因，供所有相依工作共同核對。
+- `ct_ai_sources`：每個 execution 的來源 hash、捕捉的 generation、私有 payload 與查核時間；不 FK 到業務來源或認證表。
+- `ct_ai_artifacts`：raw／抽取／判斷／生成／診斷工件，關聯 paid attempt 並保存 payload hash；不以成功輸出覆寫原稿或失敗回應。
+- `ct_ai_revisions`：個別 job 的 parent、editor、人工 payload／hash 與程式計算的 diff；同一 parent 只能新增一個後繼版本。
+- `ct_ai_usage`：每個 execution／step 的預留、started／unknown／settled、估算／實際整數微美元與歸屬日期；配合 executions 計算帳號日限與環境預算。
+- `ct_ai_issue_cooldowns`：namespace／議題的原子 admission 冷卻時間。
 
-`GET /api/issues/:id` 與 SSR 查詢維持匿名公開投影，不把票數放進 SSR state。SSR 與 hydration 首幀都顯示「尚未揭露」狀態；登入後再由前端重新抓 opinions 列表。
+執行 cache key 用唯一約束控制同輸入的完成工件／進行中執行；每個申請者使用自己的工作關聯，不因快取命中洩露首位申請者、帳號額度或其人改版本。交易／原子條件寫入避免並發雙跑、雙扣額度與預算穿透。
 
-### 寫入端點
+## 8. 配額、計價與失敗政策
 
-新增：
+- 每日以 UTC 00:00 重設，回傳絕對 `reset_at`；這是本計畫的起始工程配置，可於人工檢核改為台北日界線。
+- 次數計的是啟動新模型執行的任務，不是 GET 次數；付費嘗試已開始後的失敗仍算次數與已發生費用，避免惡意輸入一直免費耗模型。
+- 先查授權與當下來源，再查完成／進行中快取；命中仍可在日限額或新工作預算耗盡時讀取有效結果。
+- 冷卻以議題為單位，只擋新付費工作；使用帳號，不以同 IP 阻擋工作坊參與者。
+- 用版本化價目及保守的輸入／最大輸出估計預留成本；已知實際工作量後如需增額，必須先原子取得額度，否則停止，不先呼叫再算超支。
+- 生成階段估算涵蓋三個專項各自的 prompt／證據輸入及最大輸出；若有缺值，補完另依實際請求與最大輸出預留／結算，不能先呼叫再補額度。日次數仍按一個新工作計一次，不因三項及條件式補完變成四個新工作；不宣稱總費用必然乘三或乘四。
+- provider 回報可靠用量時結算；逾時、連線中斷或缺用量不能當作零成本退款。保留估算／實際／未知的區別。
+- 日預算按呼叫歸屬與已預留額度跨午夜結算，不能重設時計算遺漏未完成工作。新的一天也不自動重打失敗模型呼叫。
+- US$5 只涵蓋本功能的模型費用估算控制，不涵蓋帳號其他 Worker、D1、認證與其他費用，也不是 provider 保證的硬支出上限。
+- 不新增自動修 JSON、多次抽樣、改用其他模型或模型呼叫重試等隱藏成本。
 
-- `POST /api/opinions/:id/vote`
-  - `requireUser()`。
-  - body 嚴格接受 `{ value: 1 | -1 | 0 }`；其他值或型別回 `400`。
-  - 意見不存在回 `404`。
-  - 作者自投回 `400`。
-  - `abuse_flagged = 2/3` 回 `400`；`0/1` 可投。
-  - 以 `INSERT ... ON CONFLICT(opinion_id, voter_id) DO UPDATE` 原子新增／改票，並更新 `updated_at`。
-  - 回傳該則意見最新的可見統計與 `my_vote`。
-- `DELETE /api/opinions/:id/vote`
-  - `requireUser()`。
-  - 只刪目前使用者的票。
-  - 意見不存在或沒有可收回的票回 `404`，不偽裝成功。
-  - 成功後回傳 hidden state；前端立即重新隱藏分布。
+## 9. 原實驗的工程順序與停止條件（歷史計畫）
 
-兩支端點沿用全域 `hono/csrf`；不加逐端點 Origin 檢查，不輸出 CORS 放行標頭。
+以下保留原先的工作順序與安全目的；其中額外的人工 gold-label 研究尚未進行，但不是否定使用者已確認的成功，也不是要求重跑付費實驗的條件。正式多 isolate 環境不因冷啟而 restart 可能仍在執行的 Workflow。
 
-### CSV 端點
+1. **凍結基準與人工答案。** 沿用現有隔離環境及安全守門，保存本次三素材品質失敗案例的私有快照／hash 與基準工件；人工標註關係及預期整理重點，將提示校準樣本與保留驗收樣本分開。不以重新建立環境或再次成功 HTTP 回應取代語義檢查。
+2. **校準 Clef。** 先核對組題、criteria、原文上下文、對稱關係與解析；依第 5.2.1 節以固定樣本比較新版，保留無向去重、非遞移支持與直接反例。真正付費對照仍須明確同意與既有預算記帳。
+3. **修訂候選與引用契約。** 區分相容候選與共同命題、直接對立與可並存張力；立場允許可追溯的多證據重新分群，不再受單條候選枚舉限制。先完成行為回歸測試與每項 schema／引用驗證，不用關鍵字或輸出筆數冒充語義判斷。
+4. **切換三項生成與工作流。** 實作三個專用 prompt／schema／付費 step、分項狀態、工件、預算與組裝，另依第 5.3.5 節條件式只補必填缺值；移除舊一次生成路徑，不保留雙軌 fallback。證明快取、重啟、清除 fence、部分失敗與補完不會重複付費、不會復活正文或誤報完整結果，再進真實模型驗收。
+5. **完整 smoke 與品質報告。** 跑既有完整檢查，使用固定真實來源檢視三項內容、逐句引用、快取、人改 diff、來源與費用邊界；依第 10.2、10.3 節比較品質與實際成本／時間，更新 README 及 Insight 紀錄。`Issues.md` 的兩項合併後待辦不擴充、不提前實作；本輪沒有自動合併、發布或部署步驟。
 
-新增 `GET /api/issues/:id/opinions/comments.csv`：
+若真實 schema 合約、offset 定位、Workflows 本機恢復或費用隔離不成立，保留負面結果並先討論修訂計畫；不暗換模型、不改遠端工作流、不降級成無出處摘要，也不把未達品質的產出當作成功發布。
 
-- 必須有 Better Auth session，未登入回 JSON `{ error: 'Unauthorized' }` 與 `401`；不看角色，停權不影響唯讀下載。
-- 檔名：`civic-talk-issue-<id>-comments.csv`。
-- header 與 Pocket Polis／pol.is 完全一致：
+## 10. 自動測試、實測與品質驗收
 
-```text
-timestamp,datetime,comment-id,author-id,agrees,disagrees,moderated,comment-body
-```
+### 10.1 永久回歸測試
 
-- `timestamp`：`created_at` 的 Unix 秒。
-- `datetime`：固定 UTC 英文格式，避免 Worker locale 造成內容漂移。
-- `comment-id`：`ct_opinions.id`。
-- `author-id`：議題範圍內的匿名流水號，依每位已登入作者第一則可匯出意見的 id 穩定排序；同一個非 NULL `author_id` 在同一份匯出中沿用同一匿名號碼。每一則 `author_id IS NULL` 的舊意見各自視為無法連結的獨立匿名作者，配置互不衝突的流水號，不能全部使用 Pocket Polis 保留給 seed／host 的 `0`。不回填 DB，且絕不輸出 Better Auth user id、name 或 email。
-- `agrees`：顯式同意票＋有 `author_id` 時的虛擬作者同意票。
-- `disagrees`：顯式不同意票。
-- `moderated`：`abuse_flagged = 0/1` 都映射 `1`，因為兩者在 Civic Talk 都仍是公開、有效且可投票的意見；`1` 只代表回報待審，不等於 pol.is 的未核准 pending statement。
-- `comment-body`：原始意見文字，依 CSV 規則 escaping。
-- `abuse_flagged = 2/3` 完全排除，避免匯出已確認或暫時隱藏內容；目前匯出不會產生 `moderated = 0/-1` 的內容列。
-- `pass` 不在 pol.is `comments.csv` schema 內，不另加私有欄位。
-- response：`text/csv; charset=utf-8`、attachment、`Cache-Control: private, no-store`、`Vary: Cookie`、`X-Content-Type-Options: nosniff`；因需登入，不加 `Access-Control-Allow-Origin: *`。
+依現有 `src/tests/`／`vite-plus/test` 慣例，針對行為而非程式碼文字或 wiring：
 
-## 分階段施工
+- 多語句界線、emoji／UTF-16 差異、CRLF、重複片語、錯素材引文、value／span 衝突、缺 span 與 null，不讓錯錨定進入下一階段。
+- A-B／B-A 重用同一正式關係，不重複啟動付費呼叫；同素材不建立跨素材支持票。
+- A-B／B-C 的 agree 可產生待驗證 A-C 候選，但不能補寫確認邊；A-C 為 disagree／uncertain／漏比／失敗時不得合併成三方共識，unrelated 亦不算支持。反例不被候選覆蓋，候選路徑與直接判斷可區分，partial 覆蓋不可冒充完整。
+- JSON 結構、逐句 citation coverage、未知 evidence、跨組錯引，以及 Chat 單一 choice／index／stop 狀態、忽略 reasoning、字串 content、截斷／refusal／工具呼叫等邊界；拒收 Responses envelope，不拼接非字串 content。引用存在的檢查不假裝測得語義正確率。
+- 三項生成的共同命題引用涵蓋每個參與來源；爭點各側與張力提案的類型／證據可追溯，空的直接對立候選不阻止張力整理；多條證據可合成一個立場而不是被單條候選限制。以可控結構案例驗證契約，不以 mocked 文字或字串關鍵字宣稱測得綜整品質。
+- 共識／爭點零、一、多項均可通過合法契約，不把三項目標變成硬配額；不同命題可共用同一候選與證據，完全重複項目拒收。立場群組／Sources 由 opinions 的實際引用推導，群名／Core 越界、未知／相反引用、漏覆蓋及不合法排除仍拒收；不接受舊群組宣告欄位或自動修復舊 raw。
+- 共識三型僅存診斷、分類來源由程式控制；缺／未知 kind 或模型偽造分類來源拒收。共享事實／挑戰不得繞過候選及兩素材門檻，換型不能繞過完全重複檢查。宣告同一素材的額外證據卻漏引亦須拒收，不自動修剪；標題含第二來源但正文未引仍使該分項失敗，其他有效分項可交付且重入不重付。這些是結構與出處回歸，不冒充語義品質測試。
+- 分項完成、no_findings、失敗與未啟動可區分；一項失敗不丟棄其他有效工件，全失敗不交付草稿，覆蓋缺漏只交付 partial。三項同輸入版本、獨立預留／結算、重啟不重打、預算不足不啟動下一項，及來源清除後分項與合併均不得重新落下正文。
+- 驗證後的銜接 step 逾時／儲存失敗不得永遠 generating 或啟動後續模型；成功分項與結算保留。finish checkpoint gap 重放不重付或重複完成事件；銜接前來源撤下／清除仍阻擋舊正文。清理失敗須以安全錯誤結束引擎，GET 只對確認終態收斂；查詢失聯／unknown 不得誤判在途工作或改寫費用。
+- 必填缺值只觸發一個額外嘗試；已有值、來源、順序與舊引用不變；白名單外／重複／缺漏 patch、錯 base、錯群及無引用拒收。無缺值與三語空分區不付補完費，程式狀態沒有虛假引用；必要補完失敗／額度不足不交付缺值草稿，checkpoint gap 重用 raw／驗證工件，未知費用與清除 fence 不被繞過。
+- 401／403、跨申請者 404、管理員稽核、CSRF、預設關閉時六條 API 404、來源作者快照不進模型／輸出。
+- 並發相同輸入只啟動一個付費執行、快取不雙扣、20 次邊界、5 分鐘冷卻、UTC 日界線與在途預留、日預算並發、未知費用不退款。
+- 人改不覆蓋 AI 原稿、過時 parent 409、變更文字不沿用「已驗證」標籤、其他申請者無法取得私人修訂。
+- 來源隱藏／刪除／hash 改變、查核失敗不洩露快照、清除涵蓋原始模型 payload 與 diff、重啟不從 checkpoint 復活正文。
+- 以可控制的延遲回應重現「模型已啟動 → 清除交易完成 → 模型回應返回」，確認原文／引文不會回到工件、快取、人改 payload、日誌或 checkpoint；另覆蓋回應先提交再清除、清除與人改／快取提交並發，以及清除後重啟／重放，驗證 fence 持續有效而非僅阻擋新呼叫。
+- 用可觀察的資料庫行為證明工作只改本機狀態，來源庫資料不被工作流程修改；不以比對 SQL 字串代替此驗證。
 
-### 1. Migration 與刪除不變量
+### 10.2 必做實際執行
 
-新增 `migrations/0012_opinion_votes.sql`：
+整合者執行 `vp check --no-fmt --no-lint`、`vp test`、`vp run build` 及隔離 runtime smoke；合成 provider 不能當真實模型能力證據。使用者已確認真實品質實驗成功，見兩份已授權公開報告；不為重確認成功而要求新付費呼叫。
 
-- 建立 `ct_opinion_votes`。
-- 欄位：`id`、`opinion_id`、`voter_id`、`value`、`created_at`、`updated_at`。
-- `value CHECK (value IN (-1, 0, 1))`。
-- `UNIQUE(opinion_id, voter_id)` 作為平行請求的一人一票防線。
-- 建立 `opinion_id` 索引。
-- 表名與索引名都維持 `ct_` 業務命名。
-- 不建立作者虛擬票，不回填任何既有意見或投票。
+可重現的指令與人工判讀集中於[檢閱手冊](./docs/evidence-api-review.md)，既有結果與新執行須分開記錄。
 
-更新 `deleteOpinion()`／`deleteIssueCascade()`：先刪 `ct_opinion_votes`，再刪意見。維持目前手動 cascade 慣例，不假設 D1 已啟用 foreign key cascade。
+驗收檢核分三類，保留實際案例、輸入／工件 hash、用量與失敗原因：
 
-本機驗證：
+1. **可選的獨立人工標註小樣本：** 若將來要比較四分類 precision／recall，應先由真人標註各至少三個中文例子，涵蓋條件支持、反例、轉述、prompt injection、A／B 對調及非遞移支持鏈，並分開校準與保留樣本。目前不捏造 gold labels，也不把此額外研究當作否定使用者已確認的成功實驗。
+2. **真實議題與三項生成：** 優先使用議題 13、素材 25／26／27，先確認仍可讀且與基準 hash 一致；來源變更時記錄差異，不假稱同樣本對照。人工分別檢查共同命題及條件、明確對立／可並存張力與兩側證據、立場分群／群內綜整、少數觀點及遺漏。沿用本次已發現的三類品質失敗作回歸案例，不把它們變成強迫非空輸出的模板。
+3. **成本與失敗對照：** 記錄相同證據／語言下的 token、預留／實際／未知費用、時間與結果，抽取／比較與生成費用分開。新 Gemma 與前次 GPT-OSS Responses 比較時須揭露模型與原生傳輸不同；更早的 Gemma／GPT-OSS Chat 歷史基準還有 schema、短 ID／enum、question 去重與提示差異，不把全部改善歸因於模型。推理與輸出量可能增加，不以單價倍數冒充實際費用；優先用保存基準，不為補表自動重跑付費模型。
 
-1. 套用 `vp exec wrangler d1 migrations apply vtaiwan-civic-talks --local`。
-2. 查本機 `sqlite_master`，確認新增表只有 `ct_opinion_votes`，且沒有未加 `ct_` 前綴的業務表。
-3. 驗證唯一約束可擋平行重複新增。
+機械門檻：偽造出處、跨素材錯錨、缺引用、漏交代候選、未知／舊格式候選 ID、已知對立同群及重複問題都必須拒收；未直接驗證的候選或生成張力不得算 Clef 已確認關係。品質報告保留抽取／關係混淆、方向偏差、支持鏈反例與三項缺漏／人工修正，不以 HTTP 200、schema、items 數量或 confidence 宣稱品質過關。已知反例仍列共識、對立漏掉／混作共識、或立場只逐條枚舉未綜整時，品質驗收不通過；程式檢查全綠不取代此門檻。
 
-### 2. 資料層
+本輪不新增一鍵 UI；若為隱私告知而修改既有介面文字，仍須 zh-TW／en／ja 同步，並以真實瀏覽器檢查桌機／手機、淺色／深色與 hydration。未實測的登入、語言或正式站行為不得在報告勾成通過。
 
-在 `src/db/queries.ts`：
+### 10.3 檢閱與重現手冊
 
-- 新增 `OpinionVoteValue`、`OpinionVoteState` 與帶投票狀態的公開／管理員型別。
-- 新增單次聚合的意見列表查詢；支援 viewer id 與 `recent|responses` 排序。
-- 新增 `upsertOpinionVote()`、`deleteOpinionVote()`、單筆最新統計查詢。
-- 把作者虛擬同意票集中在 SQL 投影中計算，避免 API、CSV、排序各自出現不同口徑。
-- 寫入條件同時檢查意見存在、非作者、`abuse_flagged IN (0, 1)`；失敗後只做必要的一次狀態查詢，以映射正確的 `400/404`。
-- 禁止 `SELECT *`；公開投影不含 `author_id`、`show_email` 或 `voter_id`。
+[`docs/evidence-api-review.md`](./docs/evidence-api-review.md) 是唯一完整操作手冊：連結兩份已授權的歷史真實結果與成本、列出程式閱讀地圖，並提供不需遠端 migration 的六 API 操作、私有登入及不可逆來源處置說明。原本以真實遠端來源唯讀的實驗入口與本機資料仍保留；每次新增模型工作都需另行確認平台費用與素材處理同意。
 
-### 3. CSV formatter 與查詢
+## 11. 預計影響檔案與文件
 
-新增 `src/opinions/export.ts`：
+主要責任如下；本次接上預設關閉的正式入口與獨立 reviewer profile，不改模型／prompt 或舊工件。
 
-- 從 Pocket Polis 移植必要且最小的 `polisDatetime()`、CSV quote 與 `formatCommentsCsv()` 邏輯。
-- 不 import 或複製 Pocket Polis 的 Durable Object／投票引擎。
-- formatter 使用純資料列，便於黃金樣本測試。
+- 重點修改 `src/ai/models.ts`、`comparison.ts`、`generation.ts`、`runner.ts` 及必要的 `store.ts`／`routes.ts`／`pricing.ts`，完成 Clef 題目校準、可追溯分群、三項生成與分項診斷；沿用既有來源／生命週期邊界，不引入通用 AI agent 框架。
+- `migrations/0017_evidence_pipeline.sql` 的既有 SQL 不變，作為正式業務 migration；保持所有表 `ct_` 前綴與隔離本機 ledger。遠端 rollout 僅在合併 main 且另獲授權後進行。
+- 一般 Worker 以明確旗標啟用；review profile 使用本機合成來源與工作 DB，既有實驗 profile 保持遠端唯讀來源。兩者不建立 auth schema。
+- `README.md` 為入口，`docs/evidence-api-review.md` 集中完整手冊；保留隔離、認證例外、本機留存、費用與 BYO 流程說明。
+- 保留現有 `Issues.md`：依第 11.1 節保存兩項合併後待辦，不擴充其範圍，不把清單當作已建立 GitHub issue 或已完成開發。
+- 更新 `AGENTS.md` 的 #183 專屬授權／狀態敘述，不把舊 admin-only 抽取實驗當作新版規格，不放寬成一般伺服器任意生成。
+- 更新既有隱私／條款必要敘述與三語 key：素材會由平台送交 Cloudflare Workers AI，可能含個資；說明私有快照、清除時機與原稿／人改區別。若法律條款實質改版，同步 `TERMS_VERSION`，但不順手改寫所有舊投稿 API 的同意契約。
+- `.dev.vars.example` 只在確有新設定時加入假值；cookie jar、快照與本機結果留在忽略的實驗目錄，不提交真實個資或憑證。保留現有授權／notices／自動來源版本機制。
 
-在資料層新增一次查詢取得可匯出的意見、匿名 author sequence 與聚合票數；不做每意見一次查詢。
+### 11.1 `Issues.md`：本 PR 合併後待開議題
 
-### 4. API 路由
+既有 `Issues.md` 保留下列兩項後續工作及驗收條件；本輪不提前實作、開 GitHub issue 或把其完成狀態混入 #183 的模型實驗。實際建立 GitHub issues 仍須另取得使用者授權。
 
-在 `src/api/routes.ts`：
+#### 待辦一：素材投稿警示與每議題 64 則上限
 
-- 擴充 opinions GET 的 viewer-aware 投影與 sort 驗證；未知 sort 回 `400`。
-- 新增 POST／DELETE vote 路由。
-- 新增登入限定的 comments.csv route 與下載 headers。
-- 寫入錯誤維持 `{ error: string }`；CSV 未登入仍回 JSON 錯誤，不回假 CSV。
+- 目的：使用者在到達上限前就收到提示；不能只有 AI 實驗拒收時才發現超限。
+- UI／API 兩層設關卡。議題超過 32 則、即第 33 則起，使用者皆能看到接近上限的警語；達 64 則後不得提交第 65 則，不能只靠前端禁用按鈕。
+- API 的限額判斷與新增須能承受並發，不得讓兩筆同時投稿繞過 64 則上限；既有已超限資料不能因此被自動裁切或刪除。
+- 該議題實作前須明訂素材計數口徑（包含隱藏、刪除如何計算）及相容的錯誤回應；驗收覆蓋 32／33／64／65 邊界、直接呼叫 API 與並發提交。
+- 警語／拒收文字同步 zh-TW／en／ja，驗收桌機／手機、淺色／深色；與第 4.1、5.1 節實驗輸入／證據上限分開說明。
 
-### 5. 共用投票元件
+#### 待辦二：移除再彙整 UI，公民意見另走未來意見綜整
 
-新增 `src/components/OpinionVote.vue`，只用 Tailwind utilities，不新增 `<style scoped>`：
+- 依使用者裁示，只移除志願者工具中的「再彙整」操作、僅供該介面使用的狀態／處理函式與相關導覽、三語說明；不移除素材彙整、說明頁或其他 BYO 流程，也不修改既有 briefing 資料。
+- **既有 API 保留：** `GET /api/issues/:id/prompt?type=synthesis` 的登入／停權守門、prompt 語意與成功回應不變；後續清理不能誤刪此分支或改成 404，不將「UI 下架」說成「API 淘汰」。
+- 公民意見綜整留給待研發的「意見綜整」程序，以類似 polis.tw 的視覺化呈現為方向；具體分群／共識算法、資料契約與操作設計另案確認，不混入本輪素材證據彙整。
+- 此方向不等於恢復舊版 polis.tw 外部 embed，也不代表授權接入新服務；本站現有投票與 `comments.csv` 保留。
+- 驗收確認再彙整 UI 不再出現、保留的 prompt API 與其餘志願者流程仍可用，相關說明不再引導使用已移除的操作；UI 變更仍須三語、桌機／手機及淺色／深色檢查。
 
-- 三個按鈕：同意、不同意、略過。
-- `authState === 'loading'`：SSR 與 hydration 首幀一致的中性骨架／停用狀態。
-- 未登入：按鈕可見、不顯示票數；點擊後展開 `SignInButtons`，不替換或隱藏原意見。
-- 已登入未投：按鈕可操作、不顯示分布。
-- 已投：顯示三種票數、標示自己的選擇；點其他按鈕改票，點已選按鈕收回。
-- 作者：顯示鎖定的「作者當然同意」狀態與分布，不呼叫寫入端點。
-- `abuse_flagged = 1`：只在既有展開內容後顯示並允許投票。
-- `2/3`：不顯示投票控制。
-- 防重入：請求進行中停用三個按鈕；錯誤保留原狀態並顯示可翻譯訊息。
-- 以 emit 回傳最新 `OpinionVoteState`，由頁面更新對應意見，不整頁重載。
+## 12. 交付與人工關卡
 
-### 6. 接入兩個頁面與排序
+- 使用者已確認真實三模型品質實驗成功；[結果](./results/ai-experiment_result.json) 與 [費用報告](./results/ai-experiment_cost.json) 是已授權公開的歷史紀錄。結果為 `ai_draft`，三項 completed，ledger 記錄 23 attempts、13,362 microUSD；這不是 Cloudflare 帳單核對或獨立 gold-label 成績。過往失敗與當時的測試見 `Insight.md`，不抹除也不再冒充現況。
+- 本次為 API-only，預設關閉；完整操作、六個端點與對帳／清除風險見[檢閱手冊](./docs/evidence-api-review.md)。不要重複付費推論只為證明既有成功。
+- PR #191 送交使用者與社群檢閱；本次授權文件修訂 commit、push 與 ready for review，未授權合併、部署或遠端 migration。遠端操作須在確認 main merge 後另獲授權；`DB_AUTH` 不做 DDL／migration。正式 API 可用後，再依 [`TODO_AFTER_MERGE.md`](./TODO_AFTER_MERGE.md) 清理實驗設定、簡化開發環境。
 
-`src/views/Issue.vue`：
+## 參考
 
-- 在意見卡內容後放 `OpinionVote`。
-- 新增「最新／最多回應」選擇器；預設最新。
-- 變更排序時呼叫 `/api/issues/:id/opinions?sort=...`，由伺服器排序；不把隱藏票數偷偷塞到前端做 client sort。
-- hydration 後等待共用 `ensureAuthSession()`；登入時抓一次 opinions endpoint，取得自己的票與可見分布。匿名 SSR 不額外抓分布。
-- 在意見分頁提供 `comments.csv` 下載入口。匿名狀態顯示登入提示；登入後連到下載 endpoint。
-
-`src/views/OpinionDetail.vue`：
-
-- 在主卡內容後放同一個 `OpinionVote`。
-- hydration 後登入者從既有 opinions 列表 endpoint 取得這一則的 viewer-aware 狀態；不新增 N+1 或另一套投票 API。
-- SSR state 維持公開內容，不含 `my_vote` 或可見統計。
-
-### 7. i18n、About 與文件
-
-同步更新 `src/l10n/zh-TW.ts`、`src/l10n/en.ts`：
-
-- 三種投票、票數、投票前隱藏、作者虛擬同意、登入提示、收回、錯誤、排序、CSV 下載等 key。
-- `abt_step3_desc` 改成同時描述提交意見與已上線的投票功能；兩個語言檔一起移除已失去用途的 `abt_step3_wip_note`。
-
-更新 `src/views/About.vue`：
-
-- 步驟 3 `wip: false`、`wipNote: ''`，不再顯示 `abt_wip_badge`；實際功能文字由 `abt_step3_desc` 顯示。
-- 步驟 5 的 Sensemaker 研發中標記保留，不因本 issue 一併移除。
-
-更新 `AGENTS.md`：
-
-- migration 現況與 API 契約新增三個 endpoint。
-- 記錄作者虛擬同意、分布揭露與 CSV 隱私規則。
-- 不把功能標成已部署；只記錄程式碼完成度與待遠端 migration／部署驗證。
-
-若新 Tailwind class 造成輸出變更，透過 `vp run css` 重新生成 tracked 的 `public/styles.css`，不手改生成物。
-
-## 測試策略
-
-新增真正保護契約的測試，不測 source text 或單純 wiring：
-
-1. **資料／migration**
-   - 唯一索引讓同一 `(opinion_id, voter_id)` 只有一列。
-   - 首投、同值重投、改票、收回後統計正確。
-   - 作者虛擬票不落表，但統計與 response sort 都加一票同意。
-   - 舊資料 `author_id = NULL` 不虛增票。
-   - status `1` 可投；`2/3` 不可投。
-   - 刪除意見／議題後無殘留票。
-2. **API**
-   - 未登入 POST／DELETE `401`；停權 `403`。
-   - 非法 value `400`、不存在 `404`、作者自投 `400`。
-   - 改票與收回的可見狀態正確；收回後統計回 `null`。
-   - 匿名、已登入未投使用者及公開 SSR state 都拿不到分布；投過者與作者拿得到。測試直接檢查序列化 JSON／SSR state 不含被遮蔽數字，避免只測畫面隱藏。
-   - 作者回應帶 `is_author = true`、`my_vote = null`，不可把虛擬同意票誤做成可 DELETE 的實體票。
-   - `recent` 與 `responses` 排序、tie-break 穩定。
-   - 公開回應不含 `voter_id`。
-3. **CSV 黃金樣本**
-   - header、UTC datetime、Unix 秒、LF、無 BOM、結尾換行逐位元組相符。
-   - 逗號、雙引號、換行與中文正確 escaping。
-   - 已登入作者匿名化且同作者編號一致；每則 legacy `author_id = NULL` 意見取得不同、互不衝突且非 `0` 的匿名編號；檔案不含 Better Auth id／email／name。
-   - 作者虛擬同意計入；pass 不新增欄位。
-   - status `0/1` 的 `moderated` 都是 `1`；`2/3` 不出現在檔案。
-   - 未登入 `401`；登入後 content type／attachment／cache headers 正確。
-4. **i18n**
-   - 既有 `l10n.test.ts` 保證中英文 key 集合一致；人工核對語意。
-
-## 驗證流程
-
-實作完成後依序執行：
-
-1. `vp check --no-fmt --no-lint`
-2. `vp test`
-3. `vp run build`
-4. 本機 D1 API smoke test：首投、改票、收回、作者自投、status `1/2/3`、兩種排序、CSV 下載、刪除 cascade。
-5. 啟動實際 UI，以 browser 驗證桌機與手機：
-   - 匿名按投票只展開登入入口，不吃掉意見內容。
-   - 投票前無分布；投票後顯示；改票即時更新；收回後重新隱藏。
-   - 作者顯示虛擬同意且不可另投。
-   - status `1` 展開後可投，`3` placeholder 無投票控制。
-   - 最新／最多回應切換正確。
-   - CSV 未登入提示與登入後下載入口正確。
-   - console 無 hydration mismatch。
-6. 若本機 auth 無法完成真實登入，使用瀏覽器攔截 `/api/me` 與 vote API 做 UI 狀態 smoke test；真實 OAuth／D1 端到端驗證列為部署前驗收，不以 mock 冒充完成。
-
-## 遠端與部署邊界
-
-本分支施工期間：
-
-- 不執行 `--remote` migration。
-- 不 deploy、push、merge 或關閉 issue。
-- 不操作 `vtaiwan-auth` migration。
-
-上線前另行取得明確授權，先執行 `wrangler whoami`，再查清遠端 `vtaiwan-civic-talks` migration 狀態。若 `0009`–`0011` 仍 pending，必須依序套用所有 pending migration，再套用 `0012`，確認只新增／修改 `ct_*` 業務表後才能部署程式碼。不得先部署會查詢 `ct_opinion_votes` 的程式。
-
-## 完成條件
-
-- 登入者可對他人可投意見同意／不同意／略過、改票、收回。
-- 平行請求仍維持一人一票。
-- 作者虛擬同意在統計、排序、顯示、CSV 全部一致，且不寫入 vote table。
-- 投票前隱藏分布；作者與已投者可見；收回後重新隱藏。
-- status `1` 可投，`2/3` 不可投。
-- 最新與最多回應排序可切換。
-- 登入者可下載逐位元組符合 pol.is schema、可直接交給 Sensemaker 的 `comments.csv`。
-- 公開 API 與 CSV 均不洩漏 voter identity。
-- `/about` 步驟 3 移除研發中，步驟 5 保留。
-- typecheck、tests、build 與本機 smoke test 全部通過。
+- [新版 #183](https://github.com/g0v/civic-talk-hono/issues/183)、[#181 輸出語意](https://github.com/g0v/civic-talk-hono/issues/181)、[#185 Gemma 實驗需求](https://github.com/g0v/civic-talk-hono/issues/185)
+- [工程師人工檢閱與決策](./plan_review.md)；交換律／遞移範圍及再彙整 API 的取捨，以本文件第 1、5.2、11.1 節記錄的本次使用者裁示為準。
+- [PR #187](https://github.com/g0v/civic-talk-hono/pull/187)、[PR #188](https://github.com/g0v/civic-talk-hono/pull/188)
+- [Jigsaw #124：span 抽取](https://github.com/Jigsaw-Code/sensemaking-tools/pull/124)、[#125：摘錄與判斷的品質限制](https://github.com/Jigsaw-Code/sensemaking-tools/pull/125)
+- [Clairic](https://developers.cloudflare.com/workers-ai/models/clairic/)、[Clef](https://developers.cloudflare.com/workers-ai/models/clef/)、[Gemma 4 26B A4B](https://developers.cloudflare.com/workers-ai/models/gemma-4-26b-a4b-it/)、[JSON Mode 限制](https://developers.cloudflare.com/workers-ai/features/json-mode/)；模型頁與 SDK 所列具名 schema 是請求契約，不保證未來每次 provider 行為或語義品質；本次成功工作見第 12 節公開報告。
+- [GPT-OSS-120B](https://developers.cloudflare.com/workers-ai/models/gpt-oss-120b/)、[Cloudflare GPT-OSS Responses 原生契約](https://developers.cloudflare.com/changelog/post/2025-08-05-openai-open-models/)與 [OpenAI Responses 結構化輸出格式](https://developers.openai.com/api/docs/guides/structured-outputs)僅供歷史 GPT-OSS probe 參考，不能用來代表後續 Gemma 實驗結果。
+- [本機／遠端 binding 支援表](https://developers.cloudflare.com/workers/local-development/bindings-per-env/)、[本機 Workflows 存取遠端資源](https://developers.cloudflare.com/workers/local-development/#using-remote-resources-with-durable-objects-and-workflows)、[Workflows 冪等與持久化規則](https://developers.cloudflare.com/workflows/build/rules-of-workflows/)
+- [Workflows step、subrequest 與 checkpoint 限額](https://developers.cloudflare.com/workflows/reference/limits/)

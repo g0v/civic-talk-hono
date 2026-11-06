@@ -4,7 +4,7 @@
 
 本站受[ronnywang](https://www.github.com/ronnywang)提出的[原始構想](https://ronnywang.github.io/civic-notes/civic-talk/)的啟發。
 
-內容生成仍由志願者使用自己的 AI token 完成，平台只產生 prompt 並收回結果；例外是投稿安全審查會呼叫外部 moderation 服務，素材事實查核則由 Civic Talk Worker 透過 Cloudflare Service Binding 呼叫不公開的 `fact-check-core` Worker。
+一般內容生成仍由志願者使用自己的 AI token 完成。Issue #183 增加預設關閉的證據管線 API：每個工作須明確同意，選定素材送交 Cloudflare Workers AI，費用由平台帳號承擔；草稿只供申請者與管理員讀取，不會改寫 briefing、改變議題狀態或自動發布。正式 Worker 已接上實作但預設不啟用；審查可用隔離本機模式，詳見 [#183 檢閱手冊](./docs/evidence-api-review.md)。投稿安全審查仍使用 OpenRouter；素材事實查核仍呼叫不公開的 `fact-check-core` Worker。
 
 ## 軟體授權
 
@@ -73,10 +73,11 @@
 
 ## 開發
 
+> **#183 migration 注意事項：** `migrations/0017_evidence_pipeline.sql` 是預定正式保留的八張 `ct_ai_*` 業務表 migration，不能改寫已在隔離庫套用的 SQL。一般 migration apply 也會選到它；PR 審查期間只使用[專用隔離本機命令](./docs/evidence-api-review.md)，不得套用遠端。確認 PR 已合併到 `main` 後，仍須另獲授權才可處理遠端 `0017`；不得對 `DB_AUTH` 套用 migration。
+
 ```bash
-cp .dev.vars.example .dev.vars   # 填入 Better Auth 與 Google／GitHub OAuth 憑證
+cp -n .dev.vars.example .dev.vars   # 僅首次建立；私下填入 Better Auth 與 Google／GitHub OAuth 憑證
 npm install
-npx wrangler d1 migrations apply vtaiwan-civic-talks --local
 vp run dev
 ```
 
@@ -117,7 +118,7 @@ vp run dev
 
 首頁「新增議題」入口（#198）只在議題列表的 Hero 顯示，不放在共用 NavBar 或手機選單。小於 `sm`（640px）時，按鈕位於「選擇一個議題」右側；`sm` 起與「關於我們／訂閱 RSS」同列，維持民主紅底。Hero 花園插圖從 `md`（768px）起顯示，避免較窄的英／日文版把三個按鈕擠成兩列。按鈕展開既有的頁內建立區塊，未登入仍顯示登入入口；議題預覽不提供新增入口，須先返回列表，不另建彈窗或內容路由。
 
-首頁議題列表在最後一張議題卡下方沿用 16px 卡片間距，置中放置翠玉綠「返回頂部」按鈕，三語文字右側搭配向上箭頭。按鈕位於主內容中、與 footer 保持間隔，不採浮動定位或頁尾可見性判斷，也不額外縮窄頁尾；空清單、沒有搜尋結果與議題預覽均不顯示。按下後焦點回到 Hero 標題，沿用 CSS 平滑捲動並遵守 `prefers-reduced-motion`，不改寫 query 或 hash。
+首頁議題列表在最後一張議題卡下方沿用 16px 卡片間距，置中放置翠玉綠「返回頂部」按鈕，三語文字右側搭配向上箭頭。此按鈕專用底色以既有翠玉綠／黑色 token 混色加深，改善一般字級白字對比，hover 沿用較深底色，不改議題頁共用綠色按鈕。按鈕位於主內容中、與 footer 保持間隔，不採浮動定位或頁尾可見性判斷，也不額外縮窄頁尾；空清單、沒有搜尋結果與議題預覽均不顯示。按下後焦點回到 Hero 標題，沿用 CSS 平滑捲動並遵守 `prefers-reduced-motion`，不改寫 query 或 hash。
 
 暗黑模式的輪播左右箭頭使用白色，懸停時維持白色，停用時保留半透明；最後一張的「前往公民意見」箭頭也沿用此設定。淺色模式維持套件原有箭頭色彩。
 
@@ -167,8 +168,18 @@ vp run dev
 - `migrations/0001`–`0006`（初始 schema、作者快照、條款同意）**本機與遠端皆已套用**
 - `migrations/0014_user_feedback.sql` 新增 `ct_feedback`；本機與遠端皆已套用。2026-10-16 經使用者授權套用遠端 0014，查核 pending 清單為空、schema 與索引符合預期，新增業務表僅 `ct_feedback`； Worker已部部，正式站功能已上線。
 - `migrations/0015_issue_tags.sql` 為 `ct_issues` 新增 `tags` JSON 文字欄位，舊議題預設 `[]`、不新增資料表。本機與遠端皆已套用：2026-10-20 經使用者授權套用遠端 0015，查核 pending 清單為空、資料表清單未變，16 筆既有議題的 tags 皆為 `[]`。此次未部署 Worker。
-- 認證資料庫：D1 `vtaiwan-auth`（binding：`DB_AUTH`），schema 由 `../vTaiwan-hono` 維護——本 repo **只讀不改**，🚫 不對它跑任何 migration
-- 遠端 migration 需先取得授權：`npx wrangler d1 migrations apply vtaiwan-civic-talks --remote`
+- 認證資料庫：D1 `vtaiwan-auth`（binding：`DB_AUTH`），schema 由 `../vTaiwan-hono` 維護；本 repo 不改 schema、不對它跑 migration 或直接 SQL 寫入，Better Auth 正常登入／session 生命週期是既有寫入例外。
+- `0017_evidence_pipeline.sql` 建立八張 `ct_ai_*` 表；SQL 與既有隔離本機 migration ledger 須保持一致。審查時僅在專用本機 DB 套用；遠端須在確認合併 `main` 後另行授權、核對 pending 與依賴順序再執行。不得對 `DB_AUTH` 執行 migration 或 auth DDL；操作步驟與 rollout 順序見[檢閱手冊](./docs/evidence-api-review.md)。
+
+## #183 證據管線 API
+
+本次交付為 **API-only**，操作介面另案。Clairic 逐素材抽取、Clef 比較、Gemma 4 26B A4B 生成共識／爭點／立場地圖，必要時最多一次只補缺值。使用者已確認品質實驗成功；核准公開的歷史 [結果](./results/ai-experiment_result.json) 與 [費用報告](./results/ai-experiment_cost.json) 可供檢視，不是獨立 gold labels，也不能代替新一輪執行的紀錄。實驗的歷史失敗與限制留在 [`Insight.md`](./Insight.md)。
+
+正式 Worker 的 `EVIDENCE_API_ENABLED` 預設為 `0`，六條 API 的同源請求均回 404；跨站簡單寫入仍由全域 CSRF 先擋為 403，皆不觸及 Auth／DB／AI。只有明確設為 `1` 才啟用，缺少必要綁定時回 503。正常志願者 BYO token、synthesis prompt、briefing 與議題狀態不變。[PR #191](https://github.com/g0v/civic-talk-hono/pull/191) 送交人工檢閱；本次不授權 merge、部署或遠端 migration。
+
+完整的[檢閱手冊](./docs/evidence-api-review.md)依序說明三個目標：閱讀已授權的真實實驗與費用、由程式碼掌握資料與安全邊界、在**不執行遠端 migration**的條件下操作全部六條 API。`CIVIC_AI_REVIEW=1` 使用合成的本機來源及獨立資料庫；原有 `CIVIC_AI_EXPERIMENT=1` 仍可在取得授權後唯讀真實遠端來源。兩者都使用真實 Google 認證與 Workers AI，建立新工作可能收費。
+
+合併後，先確認正式站新 API 可用，再清理實驗／審閱專用設定，讓日常開發回到單一正式入口；步驟與保留資料的限制見 [`TODO_AFTER_MERGE.md`](./TODO_AFTER_MERGE.md)。
 
 ## 部署
 
