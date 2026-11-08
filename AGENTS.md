@@ -138,7 +138,7 @@ API-only 私有草稿，來源為 `SOURCE_DB ?? DB`，保存到業務 DB，非 D
 ### 建立、輪詢與修訂
 
 1. 建立只收上述欄位，不收正文／hash／作者。`consent` 必須 boolean true，缺／false／字串在啟動對帳與讀來源**之前**回 400/invalid_request。伺服器保存告知版本／時間；命中舊 job 不覆寫原同意，不代表已取得正文所有人的同意。
-2. 省略 material_ids 代表所有合格素材並回排除清單；指定時須非空、同議題、可見、不重複的正安全整數 ID。**目前只拒絕零份，不要求至少兩份**；不要把未實作 UI 條件寫成 API 契約。
+2. 省略 material_ids 代表所有合格素材並回排除清單；指定時須非空、同議題、可見、不重複的正安全整數 ID。**實際選入至少兩份合格素材才可開始彙整**，隱藏素材不計入；單份在 claim／費用預留前回 422/insufficient_materials（minimum:2、count:1、exclusions），零份維持 no_available_materials，明選空陣列仍為 400/invalid_material_ids。既有工作 GET／修訂與來源生命週期不套用此門檻。
 3. 用 job_id 輪詢；`queued/extracting/comparing/generating` 是進行中，`ai_draft/partial_draft/failed/withdrawn/erased` 停止。partial 非完整報告，failed／no_findings 不混同；看分區 diagnostics 與 progress，不憑 HTTP 200 判斷。
 4. 人改先 GET revisions；無人改時 parent=`'ai'`，否則用最新 revision.id。從 ai_base.data 或最新 revision.payload 複製**完整** data 再改，不只送片段；須有完整 consensus／disputes／positions、三段 Overview 與群 Core_concern，Sources 保持真實來源。revision 欄位用 `id/parentId/payload/diff`，不猜 snake_case。保留 AI 原稿／diff；human_unverified 不冒稱已驗證。
 

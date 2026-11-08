@@ -92,17 +92,17 @@ Clairic 逐素材抽取 → Clef 比較 → Gemma 生成草稿；歷史[品質�
 
 ### 建立與取結果
 
-經授權後，在同源登入環境送出以下 HTTP 請求（`<ISSUE_ID>`／`<MATERIAL_ID>` 須替換為獲准來源）：
+經授權後，在同源登入環境送出以下 HTTP 請求（議題及兩份素材 ID 須替換為獲准來源）：
 
 ```http
 POST /api/issues/<ISSUE_ID>/evidence-jobs
 Content-Type: application/json
 
-{"consent":true,"language":"zh-TW","material_ids":[<MATERIAL_ID>]}
+{"consent":true,"language":"zh-TW","material_ids":[<MATERIAL_ID_1>,<MATERIAL_ID_2>]}
 ```
 
 - `consent` 必須為 boolean `true`；缺少／false／字串皆拒絕。伺服器保存告知版本與時間，舊工作命中不覆寫原同意。
-- `language` 可省略（預設 `zh-TW`），另支援 `en`、`ja`。省略 `material_ids` 代表所有合格素材；指定時須非空、不重複、同議題且可見的正安全整數。至少須有一份合格素材，**#166 的至少兩份是待實作需求，不是現行 API 限制**。不接受正文、hash、作者或未知欄位。
+- `language` 可省略（預設 `zh-TW`），另支援 `en`、`ja`。省略 `material_ids` 代表所有合格素材；指定時須非空、不重複、同議題且可見的正安全整數。**實際選入至少兩份合格素材才可開始彙整**，隱藏素材不計入；只有一份回 `422 insufficient_materials`（`minimum:2`、`count:1`、`exclusions`），零份維持 `422 no_available_materials`。拒絕時不為該輸入建立工作或預留費用；既有工作的讀取與修訂不受此門檻影響。不接受正文、hash、作者或未知欄位。
 - 回應含 `job_id`、`status`、`cache` 與 `input_coverage`（選材及 exclusions）：新建為 **202/miss**，加入進行中為 **202/joined**，完成快取為 **200/hit**；既存 failed 也可為 **200/joined**，HTTP 200 不代表生成成功。
 
 使用回傳 `job_id`，經確認後單次查詢：

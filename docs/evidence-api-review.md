@@ -44,6 +44,8 @@ Clairic 逐素材、Clef 配對、Gemma 共識／爭點／立場三項，必要�
 
 建立新工作通常 `202`／`miss`；同一進行中執行為 `202`／`joined`，完成快取為 `200`／`hit`。舊失敗工作可能直接返回 `200`／`joined`／`failed`，不是新一次模型執行。快取重送仍走 admission，意外 miss 可能新增計費，不應為確認既有成功重跑模型。
 
+開始彙整時，省略 `material_ids` 採所有合格素材，指定時則只計選入且同議題、可見、不重複的素材；兩種方式都須至少兩份。隱藏素材不計入，空正文仍拒絕。單份回 `422 {error:"insufficient_materials",minimum:2,count:1,exclusions:[...]}`；零份保留 `no_available_materials`，明選空陣列／重複 ID 仍為 `400 invalid_material_ids`。門檻在 claim／費用預留前檢查，不能以議題總素材數或快取命中繞過；不影響既有 job 的 GET／修訂或既有來源對帳／Workflow 恢復機制。
+
 `queued`／`extracting`／`comparing`／`generating` 是進行中；`ai_draft`、`partial_draft`、`failed`、`withdrawn`、`erased` 應停止輪詢。停止等待不取消在途推論或退費。GET 不是保證唯讀：首次認證 evidence request 可能對帳、清除已刪來源 payload，並恢復既有 queued Workflow；不可當成無副作用的檢查。網路或 GET 錯誤不能把舊回應當最新結果，也不能因不確定重送 POST。
 
 逐句核對引用、原素材與條件，區分直接比較與候選路徑、模型提議與 Clef 正式關係。`no_findings`、`failed`、`not_started` 不可混同，`partial_draft` 不是完整草稿；來源失聯 fail closed。非同步失敗查看 `status`、`error_code`、分項 diagnostics、`generation_progress` 與 `usage.uncertain`，HTTP 200 不代表模型成功，job 帳本不代表 Cloudflare invoice。

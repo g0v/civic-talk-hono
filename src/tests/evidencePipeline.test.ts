@@ -347,6 +347,39 @@ afterEach(() => {
 })
 
 describe('evidence API 與實際 SQLite 工作流', () => {
+  it.each(['selected', 'deleted', 'hidden-1', 'hidden-2', 'hidden-3'])('不足兩份素材時拒絕建立，不占額度、冷卻或啟動工作流（%s）', async scenario => {
+    auth.current = user('owner')
+    if (scenario === 'deleted') source.sqlite.prepare('DELETE FROM ct_materials WHERE id = 4').run()
+    if (scenario.startsWith('hidden-')) source.sqlite.prepare('UPDATE ct_materials SET abuse_flagged = ? WHERE id = 4').run(Number(scenario.at(-1)))
+    const body = scenario === 'selected' ? { consent: true, material_ids: [2] } : { consent: true }
+    const response = await send('POST', '/api/issues/7/evidence-jobs', body)
+    expect(response.status).toBe(422)
+    expect(await response.json()).toEqual({
+      error: 'insufficient_materials',
+      minimum: 2,
+      count: 1,
+      exclusions: scenario.startsWith('hidden-') ? [{ id: 4, reason: 'hidden' }] : [],
+    })
+    for (const table of ['ct_ai_jobs', 'ct_ai_executions', 'ct_ai_usage', 'ct_ai_issue_cooldowns']) {
+      expect(local.sqlite.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get()).toMatchObject({ n: 0 })
+    }
+    expect(workflowCreates).toBe(0)
+    expect(recordedRequests).toEqual([])
+  })
+
+  it.each([undefined, [4, 2]])('剛好兩份合格素材允許開始彙整（選材 %j）', async materialIds => {
+    auth.current = user('owner')
+    const response = await send('POST', '/api/issues/7/evidence-jobs', { consent: true, ...(materialIds ? { material_ids: materialIds } : {}) })
+    expect(response.status).toBe(202)
+    expect(await response.json()).toMatchObject({
+      status: 'queued',
+      cache: 'miss',
+      input_coverage: { selection: materialIds ? 'selected' : 'all_eligible', material_ids: [2, 4], exclusions: [] },
+    })
+    expect(workflowCreates).toBe(1)
+    expect(local.sqlite.prepare('SELECT COUNT(*) AS n FROM ct_ai_jobs').get()).toMatchObject({ n: 1 })
+  })
+
   it('工作保存目前告知與伺服器同意時間，重用時不改寫既有同意', async () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date('2026-11-07T00:00:00.000Z'))
@@ -505,6 +538,7 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     source.sqlite.exec(`
       INSERT INTO ct_issues VALUES (8, '另一議題', '另一說明。', 0, 'private-author', 'private@example.test');
       INSERT INTO ct_materials VALUES (6, 8, '另一來源', NULL, '另一議題的材料。', 0, 'private-author', 'private@example.test');
+      INSERT INTO ct_materials VALUES (7, 8, '另一來源乙', NULL, '另一議題的補充材料。', 0, 'private-author', 'private@example.test');
     `)
     auth.current = user('owner')
     const first = (await (await send('POST', '/api/issues/7/evidence-jobs', { consent: true })).json()) as { job_id: string }
@@ -800,27 +834,29 @@ describe('evidence API 與實際 SQLite 工作流', () => {
   })
 
   it('明選素材不因未選素材隱藏或刪除而多次付費，仍顯示目前排除狀態', async () => {
+    addThirdMaterial()
     auth.current = user('owner')
-    const body = { consent: true, material_ids: [2] }
+    const body = { consent: true, material_ids: [2, 6] }
     const created = (await (await send('POST', '/api/issues/7/evidence-jobs', body)).json()) as { job_id: string }
     expect(await runEvidenceWorkflow(env, created.job_id, testStep())).toEqual({ status: 'ai_draft' })
-    expect(recordedRequests).toHaveLength(4)
+    expect(recordedRequests).toHaveLength(6)
     source.sqlite.prepare('UPDATE ct_materials SET abuse_flagged = 3 WHERE id = 4').run()
     const hidden = await send('POST', '/api/issues/7/evidence-jobs', body)
     expect(hidden.status).toBe(200)
-    expect(await hidden.json()).toMatchObject({ job_id: created.job_id, cache: 'hit', input_coverage: { selection: 'selected', material_ids: [2], exclusions: [] } })
+    expect(await hidden.json()).toMatchObject({ job_id: created.job_id, cache: 'hit', input_coverage: { selection: 'selected', material_ids: [2, 6], exclusions: [] } })
     const detail = await (await send('GET', `/api/evidence-jobs/${created.job_id}`)).json()
     expect(detail).toMatchObject({ current_issue_exclusions: [{ id: 4, reason: 'hidden' }], initial_input_diagnostics: [{ stage: 'input', initial_issue_exclusions: [] }] })
     source.sqlite.prepare('DELETE FROM ct_materials WHERE id = 4').run()
     const deleted = await send('POST', '/api/issues/7/evidence-jobs', body)
     expect(deleted.status).toBe(200)
     expect(await deleted.json()).toMatchObject({ job_id: created.job_id, cache: 'hit' })
-    expect(recordedRequests).toHaveLength(4)
+    expect(recordedRequests).toHaveLength(6)
     expect(local.sqlite.prepare('SELECT COUNT(*) AS n FROM ct_ai_executions').get()).toMatchObject({ n: 1 })
-    expect(local.sqlite.prepare('SELECT COUNT(*) AS n FROM ct_ai_usage').get()).toMatchObject({ n: 4 })
+    expect(local.sqlite.prepare('SELECT COUNT(*) AS n FROM ct_ai_usage').get()).toMatchObject({ n: 6 })
   })
 
   it('全量合格素材集合變更必須使用新快取鍵；未選隱藏素材後續刪除不影響新工作', async () => {
+    addThirdMaterial()
     auth.current = user('owner')
     const body = { consent: true }
     const first = (await (await send('POST', '/api/issues/7/evidence-jobs', body)).json()) as { job_id: string }
@@ -833,7 +869,7 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     expect(next.status).toBe(202)
     const nextBody = (await next.json()) as { job_id: string; input_coverage: unknown }
     expect(nextBody.job_id).not.toBe(first.job_id)
-    expect(nextBody.input_coverage).toMatchObject({ selection: 'all_eligible', material_ids: [2], exclusions: [{ id: 4, reason: 'hidden' }] })
+    expect(nextBody.input_coverage).toMatchObject({ selection: 'all_eligible', material_ids: [2, 6], exclusions: [{ id: 4, reason: 'hidden' }] })
     source.sqlite.prepare('DELETE FROM ct_materials WHERE id = 4').run()
     const joined = await send('POST', '/api/issues/7/evidence-jobs', body)
     expect(joined.status).toBe(202)
@@ -1758,12 +1794,17 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     let calls = 0
     aiRun = async (modelName, input) => {
       calls++
+      // 第一份沒有可抽取主張；第二份在途遺失時，整個工作仍無可交付證據。
+      if (calls === 1) {
+        const response = object(await model(modelName, input))
+        return { ...response, answers: { claims: { type: 'list', value: [], spans: [] } } }
+      }
       started()
       await waiting
       return model(modelName, input)
     }
     auth.current = user('owner')
-    const created = (await (await send('POST', '/api/issues/7/evidence-jobs', { consent: true, material_ids: [2] })).json()) as { job_id: string }
+    const created = (await (await send('POST', '/api/issues/7/evidence-jobs', { consent: true, material_ids: [2, 4] })).json()) as { job_id: string }
     const interrupted = runEvidenceWorkflow(env, created.job_id, testStep())
     await called
     expect(await runEvidenceWorkflow(env, created.job_id, testStep())).toEqual({ status: 'failed' })
@@ -1771,11 +1812,12 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     const uncertain = await store.getJob(created.job_id, 'owner')
     expect(uncertain).toMatchObject({ status: 'failed', errorCode: 'provider_uncertain', usage: { uncertain: 1 } })
     expect(uncertain!.usage.reservedMicroUsd).toBeGreaterThan(0)
-    expect(calls).toBe(1)
+    expect(calls).toBe(2)
+    const savedRaw = await store.listArtifacts(uncertain!.executionId, 'raw')
     release()
     await interrupted
-    expect(calls).toBe(1)
-    expect(await store.listArtifacts(uncertain!.executionId, 'raw')).toEqual([])
+    expect(calls).toBe(2)
+    expect(await store.listArtifacts(uncertain!.executionId, 'raw')).toEqual(savedRaw)
   })
 
   it('模型已啟動後本機清除，延遲回應不能回到任何工件或 checkpoint', async () => {

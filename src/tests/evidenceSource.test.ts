@@ -50,7 +50,7 @@ describe('唯讀來源快照', () => {
   })
 
   it('對隱藏、刪除、變更及查核失敗不沿用舊內容', async () => {
-    const input = await readSourceInput(db, 7, [2])
+    const input = await readSourceInput(db, 7, [2, 4])
     const material = input.sources[1]
     expect(await inspectSource(db, 'material', 2, material.hash)).toEqual({ status: 'valid', hash: material.hash })
     sqlite.prepare('UPDATE ct_materials SET content = ? WHERE id = 2').run('變更後')
@@ -76,7 +76,17 @@ describe('唯讀來源快照', () => {
   it('不得選入隱藏素材，並在任何推論前拒絕單份過大', async () => {
     await expect(readSourceInput(db, 7, [3])).rejects.toMatchObject({ code: 'material_unavailable', status: 422 })
     sqlite.prepare('UPDATE ct_materials SET content = ? WHERE id = 2').run('a'.repeat(MAX_MATERIAL_BYTES + 1))
-    await expect(readSourceInput(db, 7, [2])).rejects.toBeInstanceOf(SourceInputError)
-    await expect(readSourceInput(db, 7, [2])).rejects.toMatchObject({ code: 'material_too_large' })
+    await expect(readSourceInput(db, 7, [2, 4])).rejects.toBeInstanceOf(SourceInputError)
+    await expect(readSourceInput(db, 7, [2, 4])).rejects.toMatchObject({ code: 'material_too_large' })
+  })
+
+  it('不能用重複、隱藏、跨議題或空正文素材湊足兩份', async () => {
+    await expect(readSourceInput(db, 7, [2, 2])).rejects.toMatchObject({ code: 'invalid_material_ids', status: 400 })
+    await expect(readSourceInput(db, 7, [2, 3])).rejects.toMatchObject({ code: 'material_unavailable', status: 422 })
+    sqlite.exec("INSERT INTO ct_issues VALUES (8, '另一議題', NULL, 0, NULL, NULL)")
+    sqlite.prepare('UPDATE ct_materials SET issue_id = 8 WHERE id = 4').run()
+    await expect(readSourceInput(db, 7, [2, 4])).rejects.toMatchObject({ code: 'material_unavailable', status: 422 })
+    sqlite.prepare("UPDATE ct_materials SET issue_id = 7, content = '  ' WHERE id = 4").run()
+    await expect(readSourceInput(db, 7)).rejects.toMatchObject({ code: 'empty_material', status: 422 })
   })
 })
