@@ -115,6 +115,7 @@ Civic Talk 使用 Hono、Vue 3 SSR/hydration、Tailwind 與 Cloudflare Workers�
 | GET `/api/admin/moderation/appeals`、PATCH `/api/admin/moderation/appeals/:id/resolve` | 管理申訴列表／維持或推翻；帳號處置經 Better Auth                                                               |
 
 - 正常素材投稿 `collecting → summarizing`；正常 briefing 投稿 `collecting/summarizing → published`。安全審查違規仍保存／維持成功形狀，附 `moderation` 資訊，INSERT 時 `abuse_flagged=3` 並建 `source='ai'` 回報，公開只見 placeholder；素材／briefing 不推進狀態，解除誤報也不補推。無自動停權或自動隱藏門檻。
+- **彙整至少兩份素材（#203 使用者授權）**：舊版 summarize／synthesis Prompt 與含非空 consensus／disputes／positions 的 briefing POST 只計同議題 abuse_flagged=0 素材；不足在審查／寫入前回 422 `{error:'insufficient_materials',minimum:2,count}`。UI 同步停用生成／複製／送出，三語提示且保留可編輯草稿；單獨 narrative／opinion_prompt 更新與管理員 PUT 不新增此限制。
 - **closure 與 status 獨立**：只影響首頁進行中／已結案分類，不阻擋投稿、投票、匯出；公開理由／日期保留，一般編輯不得清除。
 - 意見 API 提供 `vote_agree/disagree/pass`、`my_vote`、`can_view_vote_distribution`、`can_vote`、`is_author`。匿名／未投票時**伺服器以 null 遮蔽分布**，非前端藏起來；投票後或作者可見。作者是虛擬同意票，不寫 votes 表、不可自投；撤回後再隱藏。SSR 只注入不含投票欄位的公開 Opinion。
 - `abuse_flagged=1` 展開內容後才提供控制，2/3 不可投。CSV 只匯公開意見／匿名作者序號，不輸出 Better Auth id、email、voter identity。

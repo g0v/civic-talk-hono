@@ -885,9 +885,17 @@ export async function getAdminStats(db: D1Database): Promise<AdminStats> {
   }
 }
 
+// 與 Prompt 素材清單共用同一口徑，避免計數納入其他議題或待審素材。
+const PROMPT_MATERIAL_FILTER = 'issue_id = ? AND abuse_flagged = 0'
+
+export async function countMaterialsForPrompt(db: D1Database, issueId: number): Promise<number> {
+  const row = await db.prepare(`SELECT COUNT(*) AS count FROM ct_materials WHERE ${PROMPT_MATERIAL_FILTER}`).bind(issueId).first<{ count: number }>()
+  return row?.count ?? 0
+}
+
 export async function listMaterialsForPrompt(db: D1Database, issueId: number): Promise<{ source_name: string | null; source_url: string | null; stance: Stance | null; content: string | null }[]> {
   const { results } = await db
-    .prepare('SELECT source_name, source_url, stance, content FROM ct_materials WHERE issue_id = ? AND abuse_flagged = 0 ORDER BY created_at ASC, id ASC')
+    .prepare(`SELECT source_name, source_url, stance, content FROM ct_materials WHERE ${PROMPT_MATERIAL_FILTER} ORDER BY created_at ASC, id ASC`)
     .bind(issueId)
     .all<{ source_name: string | null; source_url: string | null; stance: Stance | null; content: string | null }>()
   return results ?? []

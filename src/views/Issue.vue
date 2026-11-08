@@ -54,6 +54,8 @@ const toast = ref<{ show: (msg: string) => void } | null>(null)
 
 const issue = ref<Issue | null>(props.initialDetail?.issue ?? null)
 const materials = ref<Material[]>(props.initialDetail?.materials ?? [])
+const eligibleMaterialCount = computed(() => materials.value.reduce((count, material) => count + Number(material.abuse_flagged === 0), 0))
+const canSummarize = computed(() => eligibleMaterialCount.value >= 2)
 const briefing = ref<Briefing | null>(props.initialDetail?.briefing ?? null)
 const opinions = ref<Opinion[]>(props.initialDetail?.opinions ?? [])
 const opinionSort = ref<'recent' | 'responses'>('recent')
@@ -481,13 +483,29 @@ watch(viewerRole, role => {
   }
 })
 
+function requireSummaryMaterials(): boolean {
+  if (canSummarize.value) return true
+  toast.value?.show(t('vol_min_materials', { count: eligibleMaterialCount.value }))
+  return false
+}
+
+async function handleMaterialMinimum(res: Response, notify = true): Promise<boolean> {
+  if (res.status !== 422) return false
+  const data = (await res.clone().json().catch(() => null)) as { error?: string; count?: number } | null
+  if (data?.error !== 'insufficient_materials') return false
+  if (notify) toast.value?.show(t('vol_min_materials', { count: data.count ?? eligibleMaterialCount.value }))
+  return true
+}
+
 async function loadPrompt(type: 'summarize' | 'narrative' | 'synthesis', notifyError = true): Promise<string | null> {
+  if (type !== 'narrative' && !requireSummaryMaterials()) return null
   const res = await fetch(`/api/issues/${props.issueId}/prompt?type=${type}`)
   if (res.status === 401) {
     volunteerSessionExpired.value = true
     if (notifyError) toast.value?.show(t('login_expired_toast'))
     return null
   }
+  if (await handleMaterialMinimum(res, notifyError)) return null
   if (!res.ok) {
     const e = await res.json().catch(() => ({}))
     if (notifyError) toast.value?.show((e as { error?: string }).error || t('vol_toast_load_fail'))
@@ -500,6 +518,7 @@ async function loadPrompt(type: 'summarize' | 'narrative' | 'synthesis', notifyE
 }
 
 async function copyPrompt(type: string) {
+  if ((type === 'summarize' || type === 'synthesis') && !requireSummaryMaterials()) return
   const text = promptText.value[type]
   if (!text) return
   try {
@@ -521,6 +540,7 @@ async function copyRssUrl() {
 }
 
 async function submitSummarize(copyNarrative = false) {
+  if (!requireSummaryMaterials()) return
   await runSummarySubmit(async () => {
     const body = {
       consensus: consensus.value.trim(),
@@ -544,6 +564,7 @@ async function submitSummarize(copyNarrative = false) {
           toast.value?.show(t('login_expired_toast'))
           return null
         }
+        if (await handleMaterialMinimum(res)) return null
         if (await handleModerationResult(res, 'volunteer')) return null
         if (!res.ok) {
           toast.value?.show(t('vol_toast_save_fail'))
@@ -573,6 +594,7 @@ async function submitSummarize(copyNarrative = false) {
 }
 
 async function submitSynthesis() {
+  if (!requireSummaryMaterials()) return
   const body = {
     consensus: synthConsensus.value.trim(),
     disputes: synthDisputes.value.trim(),
@@ -592,6 +614,7 @@ async function submitSynthesis() {
     toast.value?.show(t('login_expired_toast'))
     return
   }
+  if (await handleMaterialMinimum(res)) return
   if (await handleModerationResult(res, 'volunteer')) return
   if (res.ok) {
     toast.value?.show(t('vol_toast_synthesis_ok'))
@@ -1041,15 +1064,16 @@ async function submitOpinion() {
               <div class="card mb-4">
                 <h3 class="mt-0 mb-2 text-base">{{ t('vol_s1_title') }}</h3>
                 <p class="mb-3 text-sm text-muted">{{ t('vol_s1_desc') }}</p>
+                <p v-if="!canSummarize" id="summary-material-minimum" class="alert alert-warn mb-3 text-sm" role="status">{{ t('vol_min_materials', { count: eligibleMaterialCount }) }}</p>
                 <div class="mb-3 flex flex-wrap gap-2">
-                  <button type="button" class="btn btn-primary btn-sm" @click="loadPrompt('summarize')">
+                  <button type="button" class="btn btn-primary btn-sm" :disabled="!canSummarize" :aria-describedby="!canSummarize ? 'summary-material-minimum' : undefined" @click="loadPrompt('summarize')">
                     {{ t('vol_gen_summarize') }}
                   </button>
-                  <button v-if="promptVisible.summarize" type="button" class="btn btn-secondary btn-sm" @click="copyPrompt('summarize')">
+                  <button v-if="promptVisible.summarize" type="button" class="btn btn-secondary btn-sm" :disabled="!canSummarize" @click="copyPrompt('summarize')">
                     {{ t('vol_copy') }}
                   </button>
                 </div>
-                <div v-if="promptVisible.summarize" class="prompt-box mb-4">{{ promptText.summarize }}</div>
+                <div v-if="canSummarize && promptVisible.summarize" class="prompt-box mb-4">{{ promptText.summarize }}</div>
                 <p class="mb-2 text-sm font-medium">{{ t('vol_paste_title') }}</p>
                 <p class="mb-3 text-sm text-muted">{{ t('vol_paste_desc') }}</p>
                 <div class="form-group">
@@ -1065,10 +1089,10 @@ async function submitOpinion() {
                   <MarkdownEditor id="briefing-positions" v-model="positions" :label="t('vol_label_positions')" :rows="4" :placeholder="t('vol_ph_positions')" />
                 </div>
                 <div class="flex flex-col gap-3 sm:flex-row sm:flex-wrap" :aria-busy="summarySubmitting">
-                  <button type="button" class="btn btn-primary" :disabled="summarySubmitting" @click="submitSummarize()">
+                  <button type="button" class="btn btn-primary" :disabled="summarySubmitting || !canSummarize" :aria-describedby="!canSummarize ? 'summary-material-minimum' : undefined" @click="submitSummarize()">
                     {{ summarySubmitting ? t('submitting_pending') : t('vol_submit_summarize') }}
                   </button>
-                  <button type="button" class="btn btn-wheat-yellow whitespace-normal text-vt-black" :disabled="summarySubmitting" @click="submitSummarize(true)">
+                  <button type="button" class="btn btn-wheat-yellow whitespace-normal text-vt-black" :disabled="summarySubmitting || !canSummarize" :aria-describedby="!canSummarize ? 'summary-material-minimum' : undefined" @click="submitSummarize(true)">
                     {{ summarySubmitting ? t('submitting_pending') : t('vol_submit_summarize_copy') }}
                   </button>
                 </div>
@@ -1098,15 +1122,16 @@ async function submitOpinion() {
               <div class="card">
                 <h3 class="mt-0 mb-2 text-base">{{ t('vol_s3_title') }}</h3>
                 <p class="mb-3 text-sm text-muted">{{ t('vol_s3_desc') }}</p>
+                <p v-if="!canSummarize" id="synthesis-material-minimum" class="alert alert-warn mb-3 text-sm" role="status">{{ t('vol_min_materials', { count: eligibleMaterialCount }) }}</p>
                 <div class="mb-3 flex flex-wrap gap-2">
-                  <button type="button" class="btn btn-primary btn-sm" @click="loadPrompt('synthesis')">
+                  <button type="button" class="btn btn-primary btn-sm" :disabled="!canSummarize" :aria-describedby="!canSummarize ? 'synthesis-material-minimum' : undefined" @click="loadPrompt('synthesis')">
                     {{ t('vol_gen_synthesis') }}
                   </button>
-                  <button v-if="promptVisible.synthesis" type="button" class="btn btn-secondary btn-sm" @click="copyPrompt('synthesis')">
+                  <button v-if="promptVisible.synthesis" type="button" class="btn btn-secondary btn-sm" :disabled="!canSummarize" @click="copyPrompt('synthesis')">
                     {{ t('vol_copy') }}
                   </button>
                 </div>
-                <div v-if="promptVisible.synthesis" class="prompt-box mb-4">{{ promptText.synthesis }}</div>
+                <div v-if="canSummarize && promptVisible.synthesis" class="prompt-box mb-4">{{ promptText.synthesis }}</div>
                 <p class="mb-2 text-sm font-medium">{{ t('vol_paste_title') }}</p>
                 <div class="alert alert-info mb-3 text-sm">{{ t('vol_s3_partial_hint') }}</div>
                 <div class="form-group">
@@ -1121,7 +1146,7 @@ async function submitOpinion() {
                   <label for="synthesis-positions">{{ t('vol_label_positions') }}</label>
                   <MarkdownEditor id="synthesis-positions" v-model="synthPositions" :label="t('vol_label_positions')" :rows="4" :placeholder="t('vol_ph_positions')" />
                 </div>
-                <button type="button" class="btn btn-primary" @click="submitSynthesis">
+                <button type="button" class="btn btn-primary" :disabled="!canSummarize" :aria-describedby="!canSummarize ? 'synthesis-material-minimum' : undefined" @click="submitSynthesis">
                   {{ t('vol_submit_synthesis') }}
                 </button>
                 <div v-if="synthesisDone" class="alert alert-info mt-4 text-sm">{{ t('vol_synth_done_hint') }}</div>
