@@ -1,198 +1,166 @@
 # Civic Talk（Hono + Vue SSR）
 
-公共議題審議平台，**受原始版 [Civic Talk](https://github.com/v-taiwan/civic-talk) 啟發**，由該版靜態站移植而來：**Hono + Vue 3 SSR/hydration + Tailwind v4 + Cloudflare Workers / D1**。
+公共議題審議平台，受 [Civic Talk 原始版](https://github.com/v-taiwan/civic-talk) 與 [ronnywang 的構想](https://ronnywang.github.io/civic-notes/civic-talk/)啟發，由靜態站移植為 **Hono + Vue 3 SSR/hydration + Tailwind v4 + Cloudflare Workers / D1**。正式站：<https://civic.vtaiwan.tw>。
 
-本站受[ronnywang](https://www.github.com/ronnywang)提出的[原始構想](https://ronnywang.github.io/civic-notes/civic-talk/)的啟發。
+## 用途與現況
 
-一般內容生成仍由志願者使用自己的 AI token 完成。Issue #183 提供證據管線 API：每個工作須明確同意，選定素材送交 Cloudflare Workers AI，費用由平台帳號承擔；草稿只供申請者與管理員讀取，不會改寫 briefing、改變議題狀態或自動發布。使用者已部署 source `73800643596b7114efd0c7623ea436023cd244b9`、`EVIDENCE_API_ENABLED=1`，實質契約見 [#183 API 手冊](./docs/evidence-api-review.md)。投稿安全審查仍使用 OpenRouter；素材事實查核仍呼叫不公開的 `fact-check-core` Worker。
+- 公民建立議題、提供素材、發表意見並投票；志願者使用自己的 AI 工具與 token 彙整素材、製作議題說明。
+- 平台另提供「一鍵彙整」證據 API：Workers AI 產生共識／爭點／立場地圖草稿，平台支付費用。**只產生私有草稿，不自動發布、不改 briefing 或議題 status**；目前 API-only，UI 與一般 API 驗收見 [#166](https://github.com/g0v/civic-talk-hono/issues/166)，維護驗收見 [#201](https://github.com/g0v/civic-talk-hono/issues/201)。
+- 正式站 Google／GitHub 登入、投稿與管理角色已驗；**同 email 帳號整合成功**，見 [#5 確認](https://github.com/g0v/civic-talk-hono/issues/5#issuecomment-6225088110)。這不代表跨網域 SSO；四種寫入與管理端的完整作者快照仍未逐項正式驗證。
+- 證據 API 已有品質實驗及正式匿名 401／跨站 403、管理員身分確認；登入後建立、快取、修訂、權限、費用與有效維護操作尚未完整正式驗收，`consent:false` 拒絕測試也未執行。進度以 [`TODO_AFTER_MERGE.md`](./TODO_AFTER_MERGE.md) 為準，不把本機通過視為正式全驗。
+- 一般設定保留 `EVIDENCE_API_ENABLED=1`；上輪清理已由使用者 push，未回報部署。原始碼推送不等於正式站更新；專用實驗／審閱 profiles、CLI 與 fixtures 已移除。
 
-## 軟體授權
+## 架構與重要檔案
 
-本專案的軟體與建置／執行文件整體採 **GNU Affero General Public License version 3 only（AGPL-3.0-only）**，完整條款見 [`LICENSE`](./LICENSE)。既有 MIT 部分與其他元件保留各自授權及 notices，詳見 [`NOTICE`](./NOTICE) 與 [`THIRD-PARTY-NOTICES.md`](./THIRD-PARTY-NOTICES.md)。
+| 位置 | 用途 |
+| --- | --- |
+| `src/worker.ts`、`src/index.ts` | Worker 入口與 Hono 應用 |
+| `src/views/`、`src/components/`、`src/client/`、`src/ssr/` | Vue 頁面、共用元件、hydration 與 SSR |
+| `src/api/`、`src/auth/`、`src/moderation/` | 一般 API、Better Auth、投稿安全審查 |
+| `src/ai/` | 證據 API、來源快照、Workflow、模型生成、費用與生命週期 |
+| `src/l10n/`、`src/styles/app.css` | 繁中／英文／日文與 Tailwind；設計 token 來源為 `../vtaiwan-design-system/project/colors_and_type.css` |
+| `migrations/`、`wrangler.jsonc` | 業務 D1 schema 與 Workers bindings |
+| `scripts/`、`src/tests/` | 建置、來源／授權產物檢查與自動化測試 |
 
-截至 [`v0.1.0-mit-final`](https://github.com/g0v/civic-talk-hono/tree/v0.1.0-mit-final)（含該版本，commit `0cb5f309fa373e69ff60563bdc3fb0201332ceba`）已依 MIT 發布的軟體，仍可依 MIT 使用；原文保留於 [`LICENSE-MIT`](./LICENSE-MIT)。後續整體軟體版本採 AGPL-3.0-only，這不撤銷既有 MIT 權利，也不將新 AGPL 貢獻提供為可任選 MIT 的版本。
+業務庫為 `vtaiwan-civic-talks`（`DB`，表名 `ct_` 前綴）；證據來源預設讀 `SOURCE_DB ?? DB`。共享認證庫 `vtaiwan-auth`（`DB_AUTH`）由 [`../vTaiwan-hono`](../vTaiwan-hono) 維護，本站只讀角色，**不可對它套本站 migration、修改 schema 或直接 SQL 寫入**；正常 Auth 登入／session 生命週期是既有寫入例外。原始 `0017_evidence_pipeline.sql` 已套業務庫，保留原 SQL 與 ledger，不重跑或改寫；遠端操作須另獲授權，見[部署紀錄](./deploy_notes.md)。
 
-首個 AGPL 正式版以 `v0.2.0` tag 界定；合併後由維護者將該 tag 指向實際 merge commit，不預填尚未存在的 SHA 或發布日期。2026-10-11 維護者兼法務已核准本次切換；來源盤點、限制與決策紀錄見 [`docs/licensing-review.md`](./docs/licensing-review.md)。核准不代表已合併、建立 tag 或部署。
+## npm + vp 開發
 
-**軟體與投稿內容分開**：公民意見摘要維持平台現有條款的 **CC-BY-SA 4.0**，素材依原來源授權；這是依現有條款澄清 footer 的內容範圍，不撤銷先前已合法授出的 CC 許可。本次不替其他內容、資料或外部服務輸出新增一體適用的授權。軟體授權切換不授予額外的商標使用權，未釐清的品牌圖像與設計來源也不因更換 `LICENSE` 就被視為已取得許可。
-
-修改版透過網路提供服務時，需依 AGPL 向使用者提供該運行版本的 Corresponding Source。footer 的原始碼入口指向建置 commit 的 archive；部署前查核與 fork 設定見 [`deploy_notes.md`](./deploy_notes.md)。新增貢獻與舊分支的來源／授權處理見 [`CONTRIBUTING.md`](./CONTRIBUTING.md)。
-
-## 目前狀態
-
-已部署於 **<https://civic.vtaiwan.tw>**（Cloudflare Workers，Worker 名稱 `civic-talk`，首次部署 2026-08-05）。
-
-已在正式站驗過（2026-08-11）：
-
-- 首頁與 `/api/issues` 皆 200、未登入打 `/api/me` 與 `/api/admin/stats` 得 401、`/api/auth/admin/list-users` 得 404（本站刻意不開成員管理端點）、`/index.html` 301 導向 `/`。
-- **Google 與 GitHub 登入都成功**、`admin` 角色進得了後台、登入後投稿成功。
-
-**同一個 email 的 Google／GitHub 帳號整合也已在正式站實測成功**（使用者確認 2026-10-16，見 [#5 留言](https://github.com/g0v/civic-talk-hono/issues/5#issuecomment-6225088110)）。
-
-⚠️ 尚未實證：四種寫入是否都落下完整作者快照（含管理端取得完整快照）。
-
-功能面重點：
-
-- **投稿與志願者工具需登入**：建立議題、投稿素材、投稿意見、送出說明頁與產生志願者 prompt 都要先登入（任何未停權的登入者皆可，不看角色）。
-- **志願者連續操作（#171）**：議題頁 `?step=volunteer` 的 Step 1 保留原「送出彙整結果」，旁邊新增麥穗黃底黑字的「送出彙整結果 + 自動複製說明頁 Prompt」。只有彙整成功且未被安全審查隱藏時，才取得最新的 Step 2 prompt 並自動複製，完成後合併顯示提醒。兩個按鈕共用送出中狀態；若彙整已儲存但後續取得／複製失敗，提示不必重送，已取得的 prompt 可在 Step 2 手動複製。三語同步，內容生成仍由志願者自己的 AI 工具完成。
-- **歡迎導覽（#163）**：首頁 Welcome 彈框的角色說明後提供「瞭解更多」行內文字連結，前往 `/about`；桌機與手機皆顯示，並同步繁中、英文與日文。
-- **首頁親和點綴（#175）**：保留首頁深色漸層，以「發芽與共好」的原創靜態 SVG 點綴；640px 起在主視覺右側顯示小花園，手機改用標語旁的小芽。歡迎框的公民／志願者選項使用同系列的萌芽／照料幼苗插畫，文字與操作流程不變。共用元件為 `HomeGrowthIllustration.vue`，沿用設計 token，純裝飾、不攔截點擊、不進入鍵盤焦點，也不新增套件或動畫。
-  - 歡迎框、議題清單與首頁議題預覽（`?action=click_issue_card&issue=<id>`）的留白由 `HomeNatureBackdrop.vue` 共用自然元素背景：淺色模式顯示淡雲朵，深色模式顯示稀疏星星，兩者保留小葉片。背景置於內容下方，手機縮小並減少點綴；清單與預覽底部利用 footer 原有的 `mt-16` 留白，不增加頁面高度。所有裝飾皆對輔助技術隱藏，且不接收點擊或鍵盤焦點；預覽的返回、進入議題與瀏覽器歷史操作不變。
-  - 角色插畫以輪廓區分：公民維持單株小芽，志願者改為手托土堆與幼苗、旁置小鏟子，保留原有圖示尺寸。淺色白雲提高描邊不透明度與線寬，小雲同步提高不透明度；位置、大小與深色星星維持不變。
-  - 首頁議題卡使用 `IssueCard.vue` 的 `issue-list-card` 樣式，在 `src/styles/app.css` 定義低彩度玉綠表面漸層、玉綠／麥穗黃細邊框與柔和陰影。支援懸停的裝置移入時加強邊框與陰影；鍵盤焦點由整張卡片的玉綠外框呈現，避免標題重複外框。沒有位移、掃光或循環動畫，並沿用全站的減少動態偏好；卡片排版及首頁預覽操作不變，其他 `.card` 不受影響。
-- **素材投稿先做事實查核**：素材表單呼叫同源 `POST /api/fact-check`；Civic Talk 驗證登入與停權狀態後，以 Service Binding 轉送到沒有公開 route 的 `fact-check-core`，不需要前端 token 或跨站 CORS。查核完成且結果允許前不顯示張貼按鈕；送出時仍由 Civic Talk API 執行條款與投稿安全審查。
-- **具名投稿與 email opt-in**：四種內容都保存投稿當下的作者快照；前台固定顯示 `author_name`，email 只在該筆內容明確同意公開時才顯示。
-- **條款同意落庫**：三類具名投稿由伺服器端驗證同意並寫入條款版本與時間。
-- **全站登入狀態**：`AppHeader` 顯示登入者與登出，未登入時提供 Google／GitHub 登入面板。
-- **管理權限走角色**：Better Auth session 的 `admin`／`super-admin`；角色由 [`../vTaiwan-hono`](../vTaiwan-hono) 管理，本站只讀。
-- **議題結案／重開（#159）**：只有 `admin`／`super-admin` 可於後台操作，兩者都必須填寫公開理由。結案狀態獨立於素材募集／彙整／發布狀態，不會停止投稿、討論、投票或匯出。首頁預設「進行中」，「已結案」使用 `?tab=closed`；頁籤、搜尋、預覽返回、重新整理及上一頁／下一頁同步保留。議題頁公開顯示最近一次結案或重開的理由與日期（不提供歷次紀錄）；繁中、英文、日文同步。`0016_issue_closure.sql` 已套用本機，尚未套用遠端，部署前須取得授權並先完成 migration。
-- **移除舊版 polis.tw 整合**：管理後台不再提供啟用開關，議題頁不再載入外部 `embed.js`。本站意見的同意／不同意／略過投票與登入後下載 `comments.csv` 維持不變；既有 `polis_id` 資料庫欄位與 API 契約保留，後台編輯不清除舊值，不需 migration。根據本站投票產生分群與跨群共識屬於未來待辦，本次不實作。
-- **公民意見引導（#172）**：三語 `OPINION.md` 除了釐清價值與立場，也引導討論可行解方、調和方式及其條件與取捨。產生摘要前回顧整段對話，保留參與者提出或明確認可的建設性結論；摘要後若繼續形成新方案，提示 AI 更新完整摘要。未獲認可的 AI 建議不得寫成參與者立場，沒有方案時保留未解問題，不強造共識。複製與下載共用同一份模板，仍由參與者使用自己的 AI 工具，不由平台代為生成。
-- **瀏覽意見總數（#174）**：議題頁的「瀏覽意見」按鈕顯示已載入意見清單的總數，例如 `瀏覽意見(2)`；沒有意見時仍顯示 `瀏覽意見(0)`。數字不受意見搜尋條件影響，沿用既有清單資料與更新流程，不新增 API 或資料庫查詢；繁中、英文、日文同步。
-- **意見分頁標頭（#197）**：議題標題在所有寬度保留；小於 640px 時字級由 20px 縮為 18px，隱藏建立資訊（建立日期、素材數、建立者）與 RSS 訂閱按鈕，640px 起維持完整標頭。僅套用於 `?step=comments`，說明輪播、素材與志願者分頁不變。
-- **議題說明輪播（#143）**：桌機與手機都以 `100dvh` 分配標頭、議題資訊、tabs、輪播與精簡授權列的高度，只在說明卡內捲動長文，避免頁面外層再出現捲軸。輪播不顯示狀態標籤與完整 footer，底部仍保留該建置版本的原始碼、授權與 client／Worker notices 入口；未提交版本沿用原始碼尚未發佈提示。寬螢幕說明內文維持 16px，訂閱鈕與 tabs 間距縮短。意見、素材與志願者工具保留自然捲動及完整 footer。
-  - 小於 640px 時，輪播底部與一般 footer 的軟體授權相關項目統一收進「軟體授權」按鈕；點擊後以原生 dialog 顯示著作權、軟體授權說明、原始碼下載及 client／Worker notices 連結。可用關閉鈕、Escape 或點擊外圍霧面關閉，焦點回到按鈕。一般 footer 仍保留平台介紹、投稿內容授權與一般導覽；桌機維持原有連結與說明。按鈕與彈框統一由 `AppFooter.vue` 管理，連結共用 `SourceLicenseLinks.vue`，沿用相同的建置版本與未發佈判斷。
-- **議題標籤與搜尋（#95）**：建立議題時可輸入自訂標籤，以 `, ` 分隔；去除開頭 `#` 與首尾空白，忽略空值，並忽略大小寫去重、保留第一個字樣。管理員可在既有議題編輯視窗增刪標籤，清空欄位即可全部移除。首頁議題卡於手機底部另起一排、桌機右下角顯示標籤；搜尋同時比對標題、簡介與標籤（含 `#tag` 寫法），並以所有未隱藏議題的標籤提供原生 autocomplete 建議。`?search=...` 可還原搜尋，輸入時以 `replaceState` 更新網址；議題預覽、返回清單與上一頁／下一頁保留搜尋及其他 query／hash。角色過濾與排序規則不變。
-  - 首頁議題卡片在 tags 右側顯示單色人頭圖示與意見數，沿用清單 API 的 `opinion_count`（不是不重複參與者人數）；0 則時不顯示整組圖示與數字。手機版位於卡片底排右側，桌機位於右下角；tags 可換行、計數不拆行，沒有 tags 時仍可顯示非零計數。無障礙名稱沿用三語意見數單位，點擊該區仍開啟原本的首頁預覽。
-  - **首頁累計票數（#178）**：意見數右側以眼睛圖示顯示 `vote_count`，不是不重複參與人數。同意、不同意、略過各計一票，每則具名意見另加一張作者當然同意票；只計 `abuse_flagged IN (0, 1)` 的公開意見，無作者的舊資料不加虛擬票。0 票時隱藏圖示與數字，三語無障礙標籤明示累計票數。
-    - 首頁議題預覽（#180）也顯示同一個 `vote_count`，即使為 0 也顯示；繁中以「0票」等精簡格式呈現，英文、日文亦有對應文案，沿用相同的計算口徑與快取。
-    - 首頁 SSR 與 `GET /api/issues`（含管理員投影）共用依 origin 隔離的 Cloudflare Cache API 統計，TTL 為 5 分鐘；投票、收回、刪除及審查變動不主動清除快取，數字可能延遲更新。快取只保存議題 ID、總票數與到期時間，不包含身分、email 或個別意見的投票分布；議題內容與作者投影仍即時查詢，API 的 `private, no-store`／`Vary: Cookie` 不變。
-    - 每個 Cloudflare 資料中心各自快取，不保證跨區共用或常駐；未命中／到期時以一個 SQL 彙總全部議題，使用既有的 `idx_ct_opinions_issue_id` 與 `idx_ct_opinion_votes_opinion` covering index，避免逐張首頁卡片額外查詢、JOIN 重複計入作者或新增計數寫入。Cache API 不可用時直接查 D1，不回假零值；無須新增表或 migration。
-    - 「最多關注／最少關注」改以 `opinion_count + vote_count` 降冪／升冪排序，不計素材數；票數沿用上述快取，可能延遲更新。角色的狀態優先序仍先套用，只在同一狀態內依關注數排序；同分保留原清單順序。
-  - **首頁日期排序（#186）**：原本的「最新」拆成「最新發布」與「最新活動」，預設「最新發布」。發布時間指議題原始建立時間（`created_at`），不是說明頁發布時間；最新活動沿用 `last_activity_at`，包含未隱藏素材／意見投稿及說明頁新增／更新，尚無活動時使用議題建立時間，不稱為「最新意見」。兩種日期排序都保留角色的狀態優先序，只在同一狀態內依日期降冪，同值保留原清單順序。
-    - 四種排序（最新發布／最新活動／最多關注／最少關注）的手動選擇存入 `localStorage.civic_home_sort_order`，hydration 後恢復，不需登入，也不寫入帳號或 D1。SSR 與初始 hydration 固定為「最新發布」；缺少偏好、舊 `newest`、無效值或儲存被封鎖時也回到「最新發布」。既有最多／最少關注偏好保留；無法保存時仍可在目前頁面切換。
-    - 首頁清單卡片與預覽都標示發布日期、最新活動日期，跟隨中英日語言切換；窄螢幕空間不足時自然換行，兩種日期各自完整呈現、不截斷，避免長文擠版。不更動 API、資料庫欄位或 migration。
-  - 首頁搜尋工具列在小於 640px 時維持直排，搜尋框佔滿容器寬度；640px 至 1023px 由外層容器保留至少 20rem 寬度並伸展使用剩餘空間，`lg`（1024px）以上則固定為工具列寬度的 50%，不再伸展或收縮。原生搜尋框固定填滿搜尋容器，不直接參與 flex 寬度分配；空間不足時工具列換行，避免 placeholder 被其他控制項擠窄。
-- **使用者回報（#148）**：桌機以相同圖示＋「使用者回報」文字合成單一按鈕，手機頂列使用回報圖示，點擊開啟 modal、不換頁。手機 Navbar 維持單列，登入頭像位於角色切換左側，右端依序為「公民／志願者 → 回報圖示 → 漢堡選單」。三種分類與描述必填，免登入匿名送出，關閉後保留當頁回報草稿。回報只保存分類、描述、頁面路徑＋query、ID 與時間，僅管理員可瀏覽；不讀取或保存回報者帳號，也不額外收集 IP／瀏覽器資料。回報視窗與後台提供另開 GitHub issues 的連結，不自動傳送回報內容。
-  - 回報按鈕在 `sm`（640px）起就顯示圖示＋文字，不必等到桌機導覽列展開；小於 640px 僅顯示圖示。所有寬度均維持同一列與同一個按鈕。
-  - 點擊回報 modal 外圍霧面、按 Escape 或關閉鈕可收起視窗，分類與未送出描述仍保留；點擊框內內容或留白不會誤關閉。送出期間這些關閉操作皆暫停，請求結束（含失敗或 15 秒逾時）後恢復。
-  - 手機回報視窗（#151）使用動態視窗高度；一般高度下由描述欄位填滿剩餘空間、長文在欄位內捲動。短螢幕、長網址或錯誤提示使內容放不下時，改由表單內層捲動，保留可用的輸入高度並讓操作按鈕可達；彈窗本身不捲動。桌機維持五列輸入框，兩種版面皆可垂直調整欄位尺寸。
-  - 管理後台的「使用者回報」排在第一個分頁；`/admin` 未指定或帶無效 `tab` 時預設顯示回報。其他分頁使用明確的 `?tab=reports|moderation|issues|materials|opinions`，`?tab=feedback` 仍可直接開啟回報；切換回報時省略 `tab`，其他 query、hash 與上一頁／下一頁狀態照常保留。
-- **三語介面（#136）**：桌機標頭與手機選單可直接選擇繁體中文、English、日本語。掛載後優先恢復 `localStorage.civic_lang` 的手動偏好（保留舊值 `zh`）；沒有有效偏好或儲存不可用時，依 `navigator.languages` 順序選第一個支援的語言，清單為空時改用 `navigator.language`。`en-*`／`ja-*` 分別使用英文／日文，`zh-*` 使用繁中，皆不支援時回繁中；自動偵測不寫入手動偏好。SSR 維持繁中，因此初次載入可能先短暫顯示中文，再於掛載後切換；停用 JavaScript 時維持繁中。日期與 `OPINION.md` 引導文件跟隨語言，使用者投稿的原始內容不自動翻譯。
-  - 三語 navbar 統一在 1280px 起展開桌機導覽，以下使用漢堡選單；桌機容器同步加寬、長名稱截斷並可懸停查看全文，避免登入後的管理連結與使用者資訊擠版。下拉選單與桌機登入面板沿用相同斷點。手機透過較小 logo 與水平間距維持單列；日語桌機仍以 `isJapanese` 使用較小字級，志願者表單標籤在日語手機版也使用較小字級；中英版不縮字，footer 正常換行。首頁排序在所有寬度均使用帶「優先顯示：」三語標籤的下拉選單（#161），提供最新發布、最新活動、最多關注與最少關注四種排序（#186）。
-
-## 開發
-
-> **#183 migration 注意事項：** PR #191 已合併；使用者已手動套用原始 `0017_evidence_pipeline.sql` 至遠端業務庫，八張 `ct_ai_*` 表與七個顯式索引已核對。SQL 必須保持 byte-for-byte；不重跑、不改 ledger，也不得對 `DB_AUTH` 套用 migration。後續遠端操作仍需另獲授權，詳見[部署紀錄](./deploy_notes.md)。
+使用專案要求的 npm（`^12.0.1`）與 Vite+ `vp`：
 
 ```bash
-cp -n .dev.vars.example .dev.vars   # 僅首次建立；私下填入 Better Auth 與 Google／GitHub OAuth 憑證
+cp -n .dev.vars.example .dev.vars  # 僅首次建立；機密私下填寫，不提交
 npm install
 vp run dev
 ```
 
-> `vp run dev` **刻意停用 Auth**，不初始化本機空的認證庫：`GET /api/auth/get-session` 回 `200/null`、`GET /api/me` 回 `401`，既有 cookie 也視為匿名。登入、OAuth callback 與個人資料更新回 `503`；投稿、投票與管理等需登入操作仍回 `401`，不提供假的登入者或匿名寫入。要實測登入請用 `vp run dev:remote`；remote 開發與正式建置的 Auth 不受影響。本機停用只限 Vite 的 `DEV` 為 true 且 mode 為 `development`，不是可以在正式環境設定的停用開關。
+| 指令 | 用途 |
+| --- | --- |
+| `vp run dev` | 先 build，再啟動本機 Worker + HMR；本機 DB、Auth 停用 |
+| `vp run dev:remote` | 先 build，再使用真實遠端 bindings 與 Auth |
+| `vp run build` | 建置 CSS、client、Worker 與 notices／來源 metadata |
+| `vp run css:watch` | 監看 Tailwind CSS |
+| `vp check --no-fmt --no-lint` | 型別檢查 |
+| `vp test` | 自動化測試 |
+| `vp exec wrangler types` | 產生 bindings 型別 |
 
-常用指令：
+日常 `dev` 刻意不初始化本機空認證庫：session 為 `200/null`、`/api/me` 與需登入操作為 401，登入／OAuth callback／個人資料更新為 503；既有 cookie 也視為匿名，沒有假使用者或匿名寫入。停用只限 Vite `DEV && mode === 'development'`，**remote 開發與正式建置不受影響**。
 
-| 指令                          | 說明                                                       |
-| ----------------------------- | ---------------------------------------------------------- |
-| `vp run dev`                  | 先完整 build，再啟動本機 Worker + HMR；Auth 停用、維持匿名 |
-| `vp run dev:remote`           | 先完整 build（含 notices），再連遠端 D1；實測登入用這個    |
-| `vp run css`                  | 由 `src/styles/app.css` 建置 `public/styles.css`           |
-| `vp run css:watch`            | 監看並自動重建 Tailwind CSS                                |
-| `vp run build`                | 依序建置 CSS、client bundle、server bundle                 |
-| `vp check --no-fmt --no-lint` | tsc 型別檢查                                               |
-| `vp test`                     | 執行自動化測試（Vitest，`src/tests/`）                     |
-| `vp exec wrangler types`      | 產生 Cloudflare 綁定型別                                   |
+**`dev:remote` 不是隔離 sandbox**：真實 Auth／D1／AI 可能寫入遠端、恢復工作及付費，不能拿來未授權試打。開發 notices 使用啟動前 build 快照，更動依賴或 imports 後須重啟。依賴／lockfile 變更須同步授權盤點與 notices，流程見[依賴安全](./docs/dependency-security.md)與[授權盤點](./docs/licensing-review.md)。
 
-開發伺服器的 `/licenses/client.txt` 與 `/licenses/worker.txt` 使用啟動前 production build 產生的 notices 快照，兩份檔案都以 UTF-8 提供；更動套件或 imports 後請重啟 `dev`／`dev:remote` 更新。頁面仍由 Vite 原始碼提供 HMR，不會切成 production bundle 執行。
+## 主要流程
 
-`vite.config.mts` 以 `optimizeDeps.include` 一起預載 `vue` 與 `vue3-carousel`，避免開發伺服器冷啟動時才發現輪播依賴、重建預載產物，讓同頁短暫混用不同 Vue runtime 而出現 `Missing ref owner context`。這只調整開發依賴預載，不改輪播模板、樣式或正式版的打包方式。驗收此設定須以 `vp dev --force` 搭配真實瀏覽器檢查首次載入及輪播切換，不能只靠 SSR 測試或檢查設定文字。
+1. **投稿**：建立議題、素材、意見、說明頁與志願者 prompt 需未停權的登入者。素材先呼叫同源 `/api/fact-check`，由 Service Binding 轉送非公開 `fact-check-core`；投稿仍須通過條款與 OpenRouter 安全審查。
+2. **志願者彙整**：取 prompt → 自己的 AI 工具生成 → 送回彙整／說明頁。公民意見引導不得把未獲認可的 AI 建議當成參與者立場，也不強造共識。
+3. **身分與隱私**：四種內容保存投稿當下作者快照，前台顯示姓名，email 僅於該筆明確同意公開時顯示；三類具名投稿保存條款版本與時間。完整快照不能直接投影到公開 API。
+4. **討論與管理**：意見提供同意／不同意／略過與登入後 CSV 匯出；不再載入 polis.tw。管理員可審查內容、編輯議題、附公開理由結案／重開；結案獨立於 status，不停止投稿、投票或匯出。
+5. **瀏覽**：三語介面不翻譯投稿原文，SSR 初始為繁中；首頁支援搜尋／標籤與排序。累計票數不是人數，含具名意見作者當然同意票，統計可能有五分鐘快取延遲。
 
-分享網址回歸可單獨執行 `vp test src/tests/detailShareSsr.test.ts`：使用既有 Vue compiler 與 Vitest，分別渲染素材／意見詳情的 SSR 模板和 client 模板，確認分享欄在掛載前同為空白、沒有 Vue 警告，且不提前讀取 `window.location`。此測試不提供 DOM，也不執行真正的 hydration；掛載後的網址與複製行為仍須在真實瀏覽器檢查兩種詳情頁，確認含 query／hash 的完整網址顯示與剪貼簿一致，且 console 沒有 hydration mismatch。
+## 重要頁面與一般 API
 
-依賴安全修補與 `package.json` overrides 的原因、移除條件見 [`docs/dependency-security.md`](./docs/dependency-security.md)。更新套件或執行 `vp migrate` 後，只要 `package-lock.json` 有變動，就須執行 `node scripts/licensing-dependencies.mjs` 重產授權盤點，並將 `docs/licensing-dependencies.tsv` 一起提交；用 `node scripts/licensing-dependencies.mjs --check` 確認與 lockfile 一致（CI 也會檢查）。同步更新 [`docs/licensing-review.md`](./docs/licensing-review.md) 的依賴統計，再跑型別檢查、測試與完整 build，讓第三方 notices 對應實際產物。
+| 頁面 | 用途 |
+| --- | --- |
+| `/` | 議題列表、搜尋、預覽與新增議題 |
+| `/issues/:id` | 說明輪播；`?step=comments\|materials\|volunteer` 切換意見、素材、志願者工具 |
+| `/issues/:id/source/:materialId`、`/issues/:id/comment/:opinionId` | 可分享的素材／意見詳情 |
+| `/contribute/:id` | 素材投稿 |
+| `/about`、`/privacy`、`/terms` | 平台介紹、隱私政策、使用條款 |
+| `/admin` | `admin`／`super-admin` 後台；預設使用者回報 |
 
-樣式 token 以 `vtaiwan-design-system/project/colors_and_type.css` 為穩定來源，透過 Tailwind v4 的 `vt-*` utilities 使用，例如 `text-vt-democratic-red`、`bg-vt-bg-2`、`font-vt-serif`。
+一般 API 入口為 `src/api/`，完整相容守則見 [`AGENTS.md`](./AGENTS.md)：
 
-議題頁的「瀏覽意見」使用 `.btn-jade-green`（翠玉綠底），「AI 幫幫忙」使用 `.btn-wheat-yellow`（麥穗黃底），兩者皆為白字、懸停時加深；樣式定義於 `src/styles/app.css`，分別沿用 `--color-vt-jade-green` 與 `--color-vt-wheat-yellow` token。意見入口在 `sm`（640px）以上顯示放大、直排置中的「發表意見／AI 幫幫忙／瀏覽意見／返回議題」，AI 入口直接切換既有 `action=ai_help`；窄螢幕維持「繼續／瀏覽意見／返回議題」三個按鈕。發表意見表單下方的操作按鈕仍在 `sm` 以上寬度橫排置中，手機維持直向排列。
+- `/api/auth/*`、`GET /api/me`：登入與身分；本站不開 Auth 成員管理端點。
+- `GET/POST /api/issues`、`PUT /api/issues/:id`：列表／新增／管理員編輯。`tags: string[]` 在新增時省略為空；編輯時省略保留、`[]` 清除。列表仍包含進行中及已結案議題。
+- `PATCH /api/issues/:id/closure`：管理員送 `{ "closed": true, "reason": "公開理由" }`；trim 後理由 1–1,000 code points，衝突 409，不自動反轉或重送。
+- `POST /api/fact-check`：登入後素材查核，不向瀏覽器提供服務 token。
+- `POST /api/feedback`：免登入，送 `{ "category": "bug", "description": "問題說明", "page_path": "/about" }`，分類可為 `bug|usability|suggestion`。只保存內容／頁面路徑／時間，不收回報者帳號或額外 IP／瀏覽器資料；`GET /api/admin/feedback` 僅管理員可讀，沒有公開查詢端點。
 
-議題頁在寬度超過 600px 時提供「概覽／共識／爭點／立場地圖／意見（公民）或行動（志願者）」三語文字頁籤；前四項切換說明輪播，公民的第五項進入公民意見，志願者的「行動」切到手機第五張的同一張導航卡，提供公民意見、素材庫與志願者工具三個入口。桌機左右箭頭位於輪播高度的 30%，下方圓點為 16px；手機維持原有控制。輪播頁面以 `tab=consensus|disputes|positions|actions` 保存，省略 `tab` 為概覽；志願者的 `actions` 還原第五張導航卡，公民則停在最後一張立場地圖。`step=comments|materials|volunteer` 仍控制操作版面，重新整理與上一頁／下一頁會還原對應狀態。
+## 一鍵彙整：六個證據端點
 
-**共用頁面寬度（#190）**：Nav、首頁／關於頁的 Hero、各頁主內容與 footer 共用 `.page-container`。`sm`（640px）起外框以 `max-w-6xl` 對應的 1152px 為上限，視窗左右至少保留 16px，讓議題資訊、頁籤、輪播卡片及其他頁面左右對齊；不使用 Tailwind 內建 `.container`，避免其響應式寬度覆蓋本站設定。手機保留原有的標頭、內文與 Hero 留白，登入卡片、彈框等局部元件仍保留各自的寬度限制。
+Clairic 逐素材抽取 → Clef 比較 → Gemma 生成草稿；歷史[品質結果](./results/ai-experiment_result.json)與[費用報告](./results/ai-experiment_cost.json)不是本次範例的執行結果或獨立 gold labels。完整契約見 [API 手冊](./docs/evidence-api-review.md)。
 
-議題輪播不再使用舊的 `5xl`／48px 外層留白限制；卡片內文靠左、不置中，另以 `--container-prose: 65ch`（`max-w-prose` 的行長）限制文字欄，避免寬螢幕單行過長。`sm` 起卡片左側內距採 `--spacing-vt-12`（48px），讓內文避開左箭頭；右側內距沿用卡片原設定。行長與左側內距調整從 `sm` 起生效，手機不變；輪播的 `100dvh` 高度、卡內長文捲動與 Markdown 複製行為不變。
+**執行前先各別確認來源、帳號／角色與授權；新付費工作、恢復 queued 及維護操作須各別同意。以下 ID 都是佔位示意，不是可直接執行的正式測試。使用同源登入 session，不輸出或匯出 Cookie。**
 
-首頁點議題卡後的說明預覽（`?action=click_issue_card&issue=<id>`）由 `IssuePreviewCard.vue` 呈現，卡片填滿共用主容器，不再另限 `5xl`；說明文字靠左，`sm` 起以 `sm:max-w-prose` 沿用輪播的同一個 65ch 行寬上限，保留原有高度上限與捲動。手機沿用原有左右留白，「進入議題」導覽與瀏覽器歷史操作不變。
+| 方法與路徑 | 權限／用途與 JSON |
+| --- | --- |
+| `POST /api/issues/:id/evidence-jobs` | 登入者建立／加入／取快取；`{consent:true, language?, material_ids?}` |
+| `GET /api/evidence-jobs/:jobId` | owner 或管理員讀狀態、草稿、引用及來源紀錄 |
+| `GET /api/evidence-jobs/:jobId/revisions` | owner 或管理員讀 AI 基底與人工修訂；須有可交付草稿 |
+| `POST /api/evidence-jobs/:jobId/revisions` | **僅 owner** 修訂；`{parent_revision_id, data}`，管理員不可代改他人工作 |
+| `POST /api/evidence-maintenance/reconcile` | 管理員對帳；精確 JSON `{}`，回 `{ok,checked,withdrawn,erased}`，也可能恢復 queued |
+| `POST /api/evidence-maintenance/erase` | 管理員按來源清除；`{kind:"issue"或"material",id:正安全整數}`，回 `{ok:true}` |
 
-首頁「新增議題」入口（#198）只在議題列表的 Hero 顯示，不放在共用 NavBar 或手機選單。小於 `sm`（640px）時，按鈕位於「選擇一個議題」右側；`sm` 起與「關於我們／訂閱 RSS」同列，維持民主紅底。Hero 花園插圖從 `md`（768px）起顯示，避免較窄的英／日文版把三個按鈕擠成兩列。按鈕展開既有的頁內建立區塊，未登入仍顯示登入入口；議題預覽不提供新增入口，須先返回列表，不另建彈窗或內容路由。
+### 建立與取結果
 
-首頁議題列表在最後一張議題卡下方沿用 16px 卡片間距，置中放置翠玉綠「返回頂部」按鈕，三語文字右側搭配向上箭頭。此按鈕專用底色以既有翠玉綠／黑色 token 混色加深，改善一般字級白字對比，hover 沿用較深底色，不改議題頁共用綠色按鈕。按鈕位於主內容中、與 footer 保持間隔，不採浮動定位或頁尾可見性判斷，也不額外縮窄頁尾；空清單、沒有搜尋結果與議題預覽均不顯示。按下後焦點回到 Hero 標題，沿用 CSS 平滑捲動並遵守 `prefers-reduced-motion`，不改寫 query 或 hash。
+經授權後，在同源登入環境送出以下 HTTP 請求（`<ISSUE_ID>`／`<MATERIAL_ID>` 須替換為獲准來源）：
 
-暗黑模式的輪播左右箭頭使用白色，懸停時維持白色，停用時保留半透明；最後一張的「前往公民意見」箭頭也沿用此設定。淺色模式維持套件原有箭頭色彩。
+```http
+POST /api/issues/<ISSUE_ID>/evidence-jobs
+Content-Type: application/json
 
-議題頁的表單、意見投票與標頭登入入口共用目前的導覽網址；頁籤、步驟、意見操作、搜尋與上一頁／下一頁都會同步登入 `callbackURL`，保留目前 query 與 hash，不會回到首次開啟的舊版面。
-
-匿名點擊某筆意見的投票按鈕，或投票時遇到 session 過期，會把登入回跳定位設為 `#opinion-<id>`。回到意見列表後，等待登入狀態與意見資料載入，展開該筆長文／待審核內容並捲到投票控制；已確認違規或暫時隱藏的內容不會被展開。回跳不會自動投票，使用者須再按一次確認；意見已移除或定位無效時不強制捲動。
-
-## 路由
-
-| 路徑                             | 說明                                                            |
-| -------------------------------- | --------------------------------------------------------------- |
-| `/`                              | 議題列表／新增議題（新增需登入）                                |
-| `/issues/:id`                    | 議題說明、素材、志願者工具、意見投票與 CSV 匯出                 |
-| `/issues/:id/source/:materialId` | 素材詳情（獨立分享連結，含 OG meta）                            |
-| `/issues/:id/comment/:opinionId` | 意見詳情（獨立分享連結，含 OG meta）                            |
-| `/contribute/:id`                | 素材投稿（需登入）                                              |
-| `/about`                         | 關於                                                            |
-| `/privacy`                       | 隱私政策（作者快照、公開選擇與帳號刪除的說明）                  |
-| `/terms`                         | 使用條款（投稿時同意的版本）                                    |
-| `/admin`                         | 管理後台（Google／GitHub 登入，需 `admin`／`super-admin` 角色） |
-
-舊網址 `/index.html`、`/issue.html?id=`、`/contribute.html?id=`、`/about.html`、`/admin.html` 會導向新路由。
-
-### 議題標籤 API
-
-- `POST /api/issues` 可帶 `tags: string[]`，省略時保存空陣列；標籤一併納入既有投稿安全審查。`PUT /api/issues/:id` 仍需 `admin`／`super-admin`，可帶 `tags: string[]` 更新，省略時保留原標籤、`[]` 明確清除；非字串陣列回 `400 { "error": "..." }`。其餘必填欄位、成功回應與授權規則不變。
-- 議題列表與詳情的議題物件新增 `tags: string[]`。AI 暫時隱藏議題在公開回應中的標籤為 `[]`，管理端列表仍可讀取原值；首頁卡片及 autocomplete 不顯示暫時隱藏或確認違規的標籤。
-
-### 議題結案 API
-
-- `PATCH /api/issues/:id/closure`：需 `admin`／`super-admin`；JSON `{ closed: boolean, reason: string }`，理由先 `trim()`，須為 1–1,000 個 Unicode code points。成功回 `200 { "ok": true }`；無效輸入 `400`、未登入 `401`、權限不足 `403`、議題不存在 `404`、狀態已相同或併發衝突 `409`。更新採原子條件，不覆寫已由其他請求完成的相同轉換。
-- 議題列表與詳情擴充 `is_closed: 0 | 1`、`closure_reason: string | null`、`closure_changed_at: string | null`。理由與時間表示最近一次結案／重開，不隨一般 `PUT /api/issues/:id` 編輯而清除，也不改變原本 `status` 或活動時間。AI 暫時隱藏議題的公開理由為 `null`，管理員仍可讀取。
-- `GET /api/issues` 仍回傳進行中及已結案議題，避免破壞既有消費端；只有首頁依頁籤分類。公民／志願者既有角色篩選與排序規則不變。
-- 後台遇到 `409` 時會重新讀取議題狀態。請取消視窗，再從同一議題的最新結案／重開按鈕開啟操作；理由草稿會保留，確認最新動作後才重新送出，不會自動反轉管理員原本的操作。草稿僅存在當前頁面記憶體，成功後清除，重新整理或離開頁面不保留。
-- 結案／重開視窗使用原生 `dialog.showModal()` 隔離背景操作與鍵盤焦點；開啟時聚焦理由欄，關閉後回到原按鈕。Escape、取消鈕與外圍霧面可關閉，框內留白不會誤關；送出中禁止關閉，失敗時保留理由。
-
-### 使用者回報 API
-
-- `POST /api/feedback`：免登入；JSON `{ category, description, page_path }`，`category` 為 `bug`／`usability`／`suggestion`，描述去除首尾空白後須為 1–10,000 個 Unicode code points；`page_path` 為最多 4,096 個 code points 的同源相對路徑＋query，不含 origin 或 hash。成功 `201 { "ok": true }`，無效資料 `400 { "error": "..." }`。表單送出不帶 session cookie，仍沿用全域 CSRF 防護，不開放跨來源寫入。
-- 回報表單的請求上限為 15 秒；逾時沿用失敗提示並解除送出鎖定，保留分類與完整描述，允許關閉／重開或手動重試，不自動重送。逾時僅中止瀏覽器等候，不保證伺服器尚未寫入。
-- `GET /api/admin/feedback`：需未停權的 `admin`／`super-admin`，未登入 `401`、無權限 `403`；回傳 `{ id, category, description, page_path, created_at }[]`，依時間與 ID 由新到舊排列，回應為 `private, no-store` 並帶 `Vary: Cookie`，無公開查詢端點。
-- `/admin?tab=feedback`：只供瀏覽，包含載入／錯誤重試／空清單狀態；分頁與 URL 雙向同步，保留其他 query 並支援上一頁／下一頁。描述以跳脫過的純文字呈現，保留換行，不執行 HTML。
-
-## 資料
-
-- 業務資料庫：D1 `vtaiwan-civic-talks`（binding：`DB`）；業務表一律 `ct_` 前綴：`ct_issues`、`ct_materials`、`ct_briefings`、`ct_opinions`
-- `migrations/0001`–`0006`（初始 schema、作者快照、條款同意）**本機與遠端皆已套用**
-- `migrations/0014_user_feedback.sql` 新增 `ct_feedback`；本機與遠端皆已套用。2026-10-16 經使用者授權套用遠端 0014，查核 pending 清單為空、schema 與索引符合預期，新增業務表僅 `ct_feedback`； Worker已部部，正式站功能已上線。
-- `migrations/0015_issue_tags.sql` 為 `ct_issues` 新增 `tags` JSON 文字欄位，舊議題預設 `[]`、不新增資料表。本機與遠端皆已套用：2026-10-20 經使用者授權套用遠端 0015，查核 pending 清單為空、資料表清單未變，16 筆既有議題的 tags 皆為 `[]`。此次未部署 Worker。
-- 認證資料庫：D1 `vtaiwan-auth`（binding：`DB_AUTH`），schema 由 `../vTaiwan-hono` 維護；本 repo 不改 schema、不對它跑 migration 或直接 SQL 寫入，Better Auth 正常登入／session 生命週期是既有寫入例外。
-- `0017_evidence_pipeline.sql` 已套用隔離本機與遠端業務庫；原 SQL 與 ledger 保留不變。遠端 ledger id 18、`applied_at=2026-11-06 19:29:04`，八張表／七個顯式索引已核對；不得對 `DB_AUTH` 執行 migration 或 auth DDL。後續操作與 rollout 見[檢閱手冊](./docs/evidence-api-review.md)。
-
-## #183 證據管線 API
-
-本次交付為 **API-only**，操作介面另案。Clairic 逐素材抽取、Clef 比較、Gemma 4 26B A4B 生成共識／爭點／立場地圖，必要時最多一次只補缺值。使用者已確認品質實驗成功；核准公開的歷史 [結果](./results/ai-experiment_result.json) 與 [費用報告](./results/ai-experiment_cost.json) 可供檢視，不是獨立 gold labels，也不能代替新一輪執行的紀錄。實驗的歷史失敗與限制留在 [`Insight.md`](./Insight.md)。
-
-使用者已確認啟用版六條證據 API 匿名回 401、跨站簡單 POST 回 403，及 `/api/me` 200／super-admin／banned:false；不重跑，也不視為登入後寫入、付費或完整六 API 驗收。開關非 `1` 時不進入 Auth／DB／AI；明確為 `1` 但缺必要綁定回 503。正常 BYO token、synthesis prompt、briefing 與議題狀態不變。
-
-本輪處理告知為 `evidence-processing-2026-11-07-v5`（v4 為歷史告知，不回寫舊紀錄）。每個建立請求均須 `consent:true`，伺服器保存版本與時間；同帳號命中既有 job 不新增同意事件，也不代表取得正文所有人的同意。模型不收作者快照欄位，但正文、名稱／網址仍可能含個資，並未匿名化。正式私有資料存業務 `DB` 而非 `DB_AUTH`，包括原始快照、完整模型 request／response、引用、來源紀錄、人改與 diff；owner／admin 可讀，只有 owner 可新增人工修訂，AI 原稿不覆寫，不自動發布。
-
-沿用現有估算控制：Clairic input US$0.10／百萬 tokens、Clef US$0.24／百萬 tokens、Gemma input／output US$0.10／0.30／百萬 tokens；每帳號每 UTC 日最多 20 個新付費工作、議題冷卻五分鐘、環境模型 US$5／日估算準入。這不是整 job 報價或全帳單硬上限，不含 Workers／Workflows／D1；unknown 預留跨日不自動退，不保證次日恢復。
-
-**沒有自動 TTL 或固定刪除期限。** 來源隱藏／變更只撤下交付，仍保留 payload；對帳／查核發現來源 deleted，或管理員按來源 erase，才清除依賴該來源的所有相關 execution 私有 payload／diff，跨工作及申請者，不是單 job 自助刪除。帳號 ID、hash、同意時間／版本、usage、unknown 與永久 tombstone 保留，來源 ID 不可重新入場。不保證即時發現刪除，也不能撤回已送模型請求；人工權利請求請寄 `info@vtaiwan.tw`。D1 Time Travel 依方案留存 7／30 天，不保證 erase 即時清除備份；Workers AI 一般推論零資料留存／不訓練仍有營運 metadata、安全及法律例外，不能套稱 D1 零留存。官方說明見 [Workers AI](https://developers.cloudflare.com/workers-ai/platform/data-usage/)、[D1](https://developers.cloudflare.com/d1/reference/time-travel/)、[Workflows 費用](https://developers.cloudflare.com/workflows/reference/pricing/)。
-
-完整的 [API 手冊](./docs/evidence-api-review.md)保留歷史實驗與費用入口、六 API 契約、安全／隱私、來源清除及競態說明。實驗／審閱專用 profiles、CLI 與 fixtures 已退場；一般 `vp run dev` 仍停用 Auth，`vp run dev:remote` 保留遠端 Auth／DB／AI 語意，不能當作未授權試跑環境。
-
-2026-11-08 使用者核准提前清理與本機驗證／commit，不含 push、deploy、付費或遠端寫入。清理不等於六 API 驗收；關閉 #183 只代表 API 交付與專用環境退場。UI／一般 API 驗收移交 [#166](https://github.com/g0v/civic-talk-hono/issues/166)，reconcile／erase 維護驗收見 [#201](https://github.com/g0v/civic-talk-hono/issues/201)，進度見 [`TODO_AFTER_MERGE.md`](./TODO_AFTER_MERGE.md)。全部私人 `.wrangler` 資料及帳本保留，後續真人、付費與維護操作須各別授權。
-
-## 部署
-
-```bash
-vp run deploy    # = build + 建置產物／公開原始碼檢查 + wrangler deploy（需授權）
+{"consent":true,"language":"zh-TW","material_ids":[<MATERIAL_ID>]}
 ```
 
-環境設定（機密、`BETTER_AUTH_URL`、OAuth callback 網址）、部署實際上傳的內容、煙霧測試清單與**絕對不能跑的 D1 指令**見 [`deploy_notes.md`](./deploy_notes.md)。
+- `consent` 必須為 boolean `true`；缺少／false／字串皆拒絕。伺服器保存告知版本與時間，舊工作命中不覆寫原同意。
+- `language` 可省略（預設 `zh-TW`），另支援 `en`、`ja`。省略 `material_ids` 代表所有合格素材；指定時須非空、不重複、同議題且可見的正安全整數。至少須有一份合格素材，**#166 的至少兩份是待實作需求，不是現行 API 限制**。不接受正文、hash、作者或未知欄位。
+- 回應含 `job_id`、`status`、`cache` 與 `input_coverage`（選材及 exclusions）：新建為 **202/miss**，加入進行中為 **202/joined**，完成快取為 **200/hit**；既存 failed 也可為 **200/joined**，HTTP 200 不代表生成成功。
 
-更完整的 agent／架構指引見 [`AGENTS.md`](./AGENTS.md)。
+使用回傳 `job_id`，經確認後單次查詢：
+
+```http
+GET /api/evidence-jobs/<JOB_ID>
+```
+
+回應含 `status`、可交付時的 `data`、`citation_map`、`provenance`，以及進度、usage、error_code 等。進行中為 `queued|extracting|comparing|generating`；`ai_draft|partial_draft|failed|withdrawn|erased` 應停止輪詢。部分草稿不是完整結果，失敗也不等於沒有發現。
+
+**GET 也可能啟動對帳、恢復 queued Workflow 並付費，或因來源已刪除而清 payload；不是純唯讀檢查。不要自動無限輪詢、重送或重試。** 開關非明確 `1` 時 404、缺必要 binding 時 503；匿名 401、停權 403，跨站簡單寫入可能先被 CSRF 以 403 擋下。非 owner／非管理員讀取回 404；私有回應 no-store，不開 CORS。
+
+### 人工修訂：完整 data，不是 patch
+
+先 `GET /api/evidence-jobs/<JOB_ID>/revisions`，得到 `{job_id, ai_base, revisions}`。尚無人工版本時，以 `ai_base.data` 為基底、parent 為 `"ai"`；否則用最新 revision 的 `payload` 與 `id`。以下為同源用法示意，僅在取得授權且已有可交付草稿後使用：
+
+```js
+const url = '/api/evidence-jobs/<JOB_ID>/revisions';
+const response = await fetch(url, { credentials: 'same-origin' });
+if (!response.ok) throw new Error(`讀取失敗：${response.status}`);
+const { ai_base, revisions } = await response.json();
+const latest = revisions.at(-1);
+const data = structuredClone(latest ? latest.payload : ai_base.data);
+// 人工核對完整內容與真實引用，再修改所需欄位，例如：
+data.consensus.Overview = '人工核對後的共識概述';
+const saved = await fetch(url, {
+  method: 'POST', credentials: 'same-origin',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ parent_revision_id: latest ? latest.id : 'ai', data })
+});
+if (!saved.ok) throw new Error(`修訂未成功：${saved.status}`);
+```
+
+須送完整 `consensus`、`disputes`、`positions`，各 `Overview` 與立場群 `Core_concern` 不可空白，`Sources` 必須維持真實來源。成功 201 回 `revision_id`、`parent_revision_id`、`verification:"human_unverified"`；過時 parent 回 409 `revision_conflict`，須重讀並人工合併，不自動重送。AI 原稿不覆寫，人改也不代表已驗證。
+
+### 費用、私有快照與清除
+
+- 平台 Workers AI 付費；每帳號每 UTC 日最多 20 個新付費工作、議題冷卻五分鐘、環境模型 US$5／日**估算準入，不是全帳單硬上限**，不含 Workers／Workflows／D1。unknown 預留跨日不自動退；不自動重試。
+- 私有業務庫保留來源快照、完整模型 request／response、引用、人改與 diff。模型不收作者快照欄位，但正文／名稱／網址仍可能含個資，**不是匿名化，也不代表已取得所有正文權利人的同意**。
+- **無自動 TTL**。來源 hidden／changed 只撤下交付、不刪 payload；對帳發現 deleted 或管理員按來源 erase 才清相依 execution 私有 payload／diff，跨工作與申請者，不刪來源業務資料，也不是單 job 自助刪除。
+- 帳號 ID、hash、同意、usage、unknown 與永久 tombstone 保留，來源 ID 不可重新入場；不保證即時發現刪除或清除 D1 備份，也不能撤回已送模型的請求。供應商留存例外、權利請求與維護競態見[手冊](./docs/evidence-api-review.md)及[隱私頁](https://civic.vtaiwan.tw/privacy)。
+
+## 授權、部署與進階文件
+
+軟體與建置／執行文件整體採 **AGPL-3.0-only**（[`LICENSE`](./LICENSE)）。歷史 MIT 發布版本仍可依 MIT 使用，既有權利不撤銷；新 AGPL 貢獻不是可任選 MIT。既有元件授權與 notices 保留於 [`LICENSE-MIT`](./LICENSE-MIT)、[`NOTICE`](./NOTICE)、[`THIRD-PARTY-NOTICES.md`](./THIRD-PARTY-NOTICES.md)，版本界線／首 AGPL tag 與來源限制見[授權盤點](./docs/licensing-review.md)。
+
+**投稿內容與軟體分開**：公民意見摘要依既有條款採 CC-BY-SA 4.0，素材依原來源授權，不替其他資料／外部輸出新增一體授權，也不撤銷先前合法 CC 許可；軟體授權不額外授予商標或未釐清圖像權利。
+
+修改版經網路提供服務時，須向使用者提供該運行版本的 **Corresponding Source**。footer 連到建置 commit 的原始碼 archive 與 client／Worker notices；部署須確認來源可匿名下載，fork 也須正確設定，不可用未發布的來源冒充。
+
+```bash
+vp run deploy  # 需部署授權：build → 產物／公開原始碼檢查 → wrangler deploy
+```
+
+只用正式部署流程；`dev` 會建置並可能改變 Wrangler 部署目標，不可直接沿用其產物手動 deploy。commit 後須重建來源 metadata。部署、遠端 migration、付費與維護是各別授權，不因修改文件或 push 自動取得。
+
+- [`deploy_notes.md`](./deploy_notes.md)：設定、OAuth callbacks、D1 禁令、來源檢查與發布流程。
+- [`AGENTS.md`](./AGENTS.md)：工程不變量、API 相容與開發守則。
+- [`docs/evidence-api-review.md`](./docs/evidence-api-review.md)、[`Insight.md`](./Insight.md)：證據 API 完整操作／風險與模型品質限制。
+- [`TODO_AFTER_MERGE.md`](./TODO_AFTER_MERGE.md)：當前驗收進度與未完成項目。
+- [`CONTRIBUTING.md`](./CONTRIBUTING.md)、[授權盤點](./docs/licensing-review.md)、[依賴安全](./docs/dependency-security.md)：貢獻來源、授權與依賴更新。
