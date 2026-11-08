@@ -51,7 +51,7 @@ vp run dev
 ## 主要流程
 
 1. **投稿**：建立議題、素材、意見、說明頁與志願者 prompt 需未停權的登入者。素材先呼叫同源 `/api/fact-check`，由 Service Binding 轉送非公開 `fact-check-core`；投稿仍須通過條款與 OpenRouter 安全審查。
-2. **志願者彙整**：取 prompt → 自己的 AI 工具生成 → 送回彙整／說明頁。公民意見引導不得把未獲認可的 AI 建議當成參與者立場，也不強造共識。
+2. **志願者彙整**：取 prompt → 自己的 AI 工具生成 → 送回彙整／說明頁。彙整與再彙整至少須有兩份同議題、`abuse_flagged=0` 的可用素材；不足時 UI 停用生成／複製／送出並提示數量，仍保留可編輯草稿。`GET /api/issues/:id/prompt?type=summarize|synthesis` 與含非空共識／爭點／立場欄位的 `POST /api/issues/:id/briefing` 都會在審查與寫入前回 `422 {error:"insufficient_materials",minimum:2,count}`。待審、隱藏及其他議題素材不計入；單獨更新說明頁與管理員編輯既有內容不新增此限制。公民意見引導不得把未獲認可的 AI 建議當成參與者立場，也不強造共識。
 3. **身分與隱私**：四種內容保存投稿當下作者快照，前台顯示姓名，email 僅於該筆明確同意公開時顯示；三類具名投稿保存條款版本與時間。完整快照不能直接投影到公開 API。
 4. **討論與管理**：意見提供同意／不同意／略過與登入後 CSV 匯出；不再載入 polis.tw。管理員可審查內容、編輯議題、附公開理由結案／重開；結案獨立於 status，不停止投稿、投票或匯出。
 5. **瀏覽**：三語介面不翻譯投稿原文，SSR 初始為繁中；首頁支援搜尋／標籤與排序。累計票數不是人數，含具名意見作者當然同意票，統計可能有五分鐘快取延遲。
@@ -92,17 +92,17 @@ Clairic 逐素材抽取 → Clef 比較 → Gemma 生成草稿；歷史[品質�
 
 ### 建立與取結果
 
-經授權後，在同源登入環境送出以下 HTTP 請求（`<ISSUE_ID>`／`<MATERIAL_ID>` 須替換為獲准來源）：
+經授權後，在同源登入環境送出以下 HTTP 請求（議題及兩份素材 ID 須替換為獲准來源）：
 
 ```http
 POST /api/issues/<ISSUE_ID>/evidence-jobs
 Content-Type: application/json
 
-{"consent":true,"language":"zh-TW","material_ids":[<MATERIAL_ID>]}
+{"consent":true,"language":"zh-TW","material_ids":[<MATERIAL_ID_1>,<MATERIAL_ID_2>]}
 ```
 
 - `consent` 必須為 boolean `true`；缺少／false／字串皆拒絕。伺服器保存告知版本與時間，舊工作命中不覆寫原同意。
-- `language` 可省略（預設 `zh-TW`），另支援 `en`、`ja`。省略 `material_ids` 代表所有合格素材；指定時須非空、不重複、同議題且可見的正安全整數。至少須有一份合格素材，**#166 的至少兩份是待實作需求，不是現行 API 限制**。不接受正文、hash、作者或未知欄位。
+- `language` 可省略（預設 `zh-TW`），另支援 `en`、`ja`。省略 `material_ids` 代表所有合格素材；指定時須非空、不重複、同議題且可見的正安全整數。**實際選入至少兩份合格素材才可開始彙整**，隱藏素材不計入；只有一份回 `422 insufficient_materials`（`minimum:2`、`count:1`、`exclusions`），零份維持 `422 no_available_materials`。拒絕時不為該輸入建立工作或預留費用；既有工作的讀取與修訂不受此門檻影響。不接受正文、hash、作者或未知欄位。
 - 回應含 `job_id`、`status`、`cache` 與 `input_coverage`（選材及 exclusions）：新建為 **202/miss**，加入進行中為 **202/joined**，完成快取為 **200/hit**；既存 failed 也可為 **200/joined**，HTTP 200 不代表生成成功。
 
 使用回傳 `job_id`，經確認後單次查詢：

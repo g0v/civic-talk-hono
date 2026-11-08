@@ -96,6 +96,7 @@ export async function readSourceInput(sourceDb: D1Database, issueId: number, req
     ids = available.map(row => row.id)
   }
   if (!ids.length) throw new SourceInputError('no_available_materials', 422, { exclusions })
+  if (ids.length < 2) throw new SourceInputError('insufficient_materials', 422, { minimum: 2, count: ids.length, exclusions })
   if (ids.length > MAX_MATERIALS) throw new SourceInputError('too_many_materials', 422, { maximum: MAX_MATERIALS, count: ids.length, material_ids: ids })
 
   const sources: SourceRecord[] = [await issueRecord(issue)]

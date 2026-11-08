@@ -181,6 +181,7 @@ export const messages = {
   vol_step3: '把結果貼回來',
   vol_s1_title: 'Step 1｜彙整素材 → 生成共識/爭點/立場地圖',
   vol_s1_desc: '點擊「生成 Prompt」，複製後貼到你慣用的 AI chatbot。',
+  vol_min_materials: '至少需要 2 份可用素材才能彙整或再彙整（目前 {count} 份）。請先新增素材；待審或隱藏素材不計入，已填寫的草稿會保留。',
   vol_gen_summarize: '生成彙整 Prompt',
   vol_copy: '📋 複製 Prompt',
   vol_paste_title: '把 AI 的輸出貼回這裡：',

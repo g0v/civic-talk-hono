@@ -115,6 +115,7 @@ Civic Talk 使用 Hono、Vue 3 SSR/hydration、Tailwind 與 Cloudflare Workers�
 | GET `/api/admin/moderation/appeals`、PATCH `/api/admin/moderation/appeals/:id/resolve` | 管理申訴列表／維持或推翻；帳號處置經 Better Auth                                                               |
 
 - 正常素材投稿 `collecting → summarizing`；正常 briefing 投稿 `collecting/summarizing → published`。安全審查違規仍保存／維持成功形狀，附 `moderation` 資訊，INSERT 時 `abuse_flagged=3` 並建 `source='ai'` 回報，公開只見 placeholder；素材／briefing 不推進狀態，解除誤報也不補推。無自動停權或自動隱藏門檻。
+- **彙整至少兩份素材（#203 使用者授權）**：舊版 summarize／synthesis Prompt 與含非空 consensus／disputes／positions 的 briefing POST 只計同議題 abuse_flagged=0 素材；不足在審查／寫入前回 422 `{error:'insufficient_materials',minimum:2,count}`。UI 同步停用生成／複製／送出，三語提示且保留可編輯草稿；單獨 narrative／opinion_prompt 更新與管理員 PUT 不新增此限制。
 - **closure 與 status 獨立**：只影響首頁進行中／已結案分類，不阻擋投稿、投票、匯出；公開理由／日期保留，一般編輯不得清除。
 - 意見 API 提供 `vote_agree/disagree/pass`、`my_vote`、`can_view_vote_distribution`、`can_vote`、`is_author`。匿名／未投票時**伺服器以 null 遮蔽分布**，非前端藏起來；投票後或作者可見。作者是虛擬同意票，不寫 votes 表、不可自投；撤回後再隱藏。SSR 只注入不含投票欄位的公開 Opinion。
 - `abuse_flagged=1` 展開內容後才提供控制，2/3 不可投。CSV 只匯公開意見／匿名作者序號，不輸出 Better Auth id、email、voter identity。
@@ -138,7 +139,7 @@ API-only 私有草稿，來源為 `SOURCE_DB ?? DB`，保存到業務 DB，非 D
 ### 建立、輪詢與修訂
 
 1. 建立只收上述欄位，不收正文／hash／作者。`consent` 必須 boolean true，缺／false／字串在啟動對帳與讀來源**之前**回 400/invalid_request。伺服器保存告知版本／時間；命中舊 job 不覆寫原同意，不代表已取得正文所有人的同意。
-2. 省略 material_ids 代表所有合格素材並回排除清單；指定時須非空、同議題、可見、不重複的正安全整數 ID。**目前只拒絕零份，不要求至少兩份**；不要把未實作 UI 條件寫成 API 契約。
+2. 省略 material_ids 代表所有合格素材並回排除清單；指定時須非空、同議題、可見、不重複的正安全整數 ID。**實際選入至少兩份合格素材才可開始彙整**，隱藏素材不計入；單份在 claim／費用預留前回 422/insufficient_materials（minimum:2、count:1、exclusions），零份維持 no_available_materials，明選空陣列仍為 400/invalid_material_ids。既有工作 GET／修訂與來源生命週期不套用此門檻。
 3. 用 job_id 輪詢；`queued/extracting/comparing/generating` 是進行中，`ai_draft/partial_draft/failed/withdrawn/erased` 停止。partial 非完整報告，failed／no_findings 不混同；看分區 diagnostics 與 progress，不憑 HTTP 200 判斷。
 4. 人改先 GET revisions；無人改時 parent=`'ai'`，否則用最新 revision.id。從 ai_base.data 或最新 revision.payload 複製**完整** data 再改，不只送片段；須有完整 consensus／disputes／positions、三段 Overview 與群 Core_concern，Sources 保持真實來源。revision 欄位用 `id/parentId/payload/diff`，不猜 snake_case。保留 AI 原稿／diff；human_unverified 不冒稱已驗證。
 

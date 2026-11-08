@@ -37,6 +37,7 @@ vi.mock('../db/queries', () => ({
   createBriefing: vi.fn(async () => 1),
   getBriefingIdByVersion: vi.fn(async () => 1),
   createOpinion: vi.fn(async () => 1),
+  countMaterialsForPrompt: vi.fn(async () => 2),
   getIssue: vi.fn(async () => ({ id: 1 })),
 }))
 

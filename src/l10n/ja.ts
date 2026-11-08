@@ -184,6 +184,7 @@ export const messages = {
   vol_step3: '結果を貼り戻す',
   vol_s1_title: 'Step 1｜資料を要約 → 合意点/争点/立場マップを生成',
   vol_s1_desc: '「Prompt を生成」をクリックし、コピーして普段使っている AI チャットボットに貼り付けてください。',
+  vol_min_materials: '要約・再要約には利用可能な資料が 2 件以上必要です（現在 {count} 件）。先に資料を追加してください。審査中・非表示の資料は数に含まれません。入力中の下書きは保持されます。',
   vol_gen_summarize: '要約 Prompt を生成',
   vol_copy: '📋 Prompt をコピー',
   vol_paste_title: 'AI の出力をここに貼り戻してください：',

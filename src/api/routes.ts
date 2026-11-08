@@ -49,6 +49,13 @@ function error(c: Context, msg: string, status: ContentfulStatusCode = 400): Res
   return c.json({ error: msg }, status)
 }
 
+const MIN_SUMMARY_MATERIALS = 2
+
+function insufficientMaterials(c: Context, count: number): Response | null {
+  if (count >= MIN_SUMMARY_MATERIALS) return null
+  return c.json({ error: 'insufficient_materials', minimum: MIN_SUMMARY_MATERIALS, count }, 422)
+}
+
 function publicError(c: Context, msg: string, status: ContentfulStatusCode = 400): Response {
   return publicJson(c, { error: msg }, status)
 }
@@ -587,6 +594,11 @@ export function registerApiRoutes(app: App): void {
       return error(c, 'Invalid JSON')
     }
     if (body.show_email !== undefined && typeof body.show_email !== 'boolean') return error(c, 'show_email must be a boolean')
+    // 僅更新說明頁或意見引導時沿用原行為；只要提交彙整內容就必須先達門檻。
+    if ([body.consensus, body.disputes, body.positions].some(value => typeof value === 'string' && value.trim().length > 0)) {
+      const insufficient = insufficientMaterials(c, await db.countMaterialsForPrompt(c.env.DB, id))
+      if (insufficient) return insufficient
+    }
     const duplicateNameEmailPreflight = await requireDuplicateNameEmail(c, auth.context, body.show_email)
     if (duplicateNameEmailPreflight) return duplicateNameEmailPreflight
     const submission: ModerationSubmission = {
@@ -755,9 +767,18 @@ export function registerApiRoutes(app: App): void {
     const id = parseId(c.req.param('id'))
     if (!id) return error(c, 'Invalid id')
     const type = c.req.query('type') ?? 'summarize'
-    const materials = await db.listMaterialsForPrompt(c.env.DB, id)
     const issue: Issue | null = await db.getIssue(c.env.DB, id)
     if (!issue) return error(c, 'Issue not found', 404)
+    if (type === 'summarize' || type === 'synthesis') {
+      const insufficient = insufficientMaterials(c, await db.countMaterialsForPrompt(c.env.DB, id))
+      if (insufficient) return insufficient
+    }
+    const materials = await db.listMaterialsForPrompt(c.env.DB, id)
+    // 計數後素材仍可能被刪除或標記，實際產生 Prompt 時再核對清單。
+    if (type === 'summarize' || type === 'synthesis') {
+      const insufficient = insufficientMaterials(c, materials.length)
+      if (insufficient) return insufficient
+    }
     if (materials.length === 0) return error(c, '尚無素材，請先新增素材再生成 Prompt。')
 
     const materialsText = materials.map((m, i) => `【素材 ${i + 1}】來源：${m.source_name || '未知'}（${m.source_url || '無連結'}）\n立場：${m.stance}\n內容：\n${m.content}`).join('\n\n---\n\n')
