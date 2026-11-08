@@ -126,7 +126,7 @@ describe('Clef 離線校準', () => {
         new: { by_class: { disagree: { precision: 0.5, recall: 1 } } },
       })
 
-      writeFileSync(paths[0], JSON.stringify({ ...labels, labels: labels.labels.map((row, index) => index === 0 ? { ...row, reviewed_by_human: false } : row) }))
+      writeFileSync(paths[0], JSON.stringify({ ...labels, labels: labels.labels.map((row, index) => (index === 0 ? { ...row, reviewed_by_human: false } : row)) }))
       const unreviewed = spawnSync(process.execPath, [script, '--labels', paths[0], '--old', paths[1], '--new', paths[2]], { encoding: 'utf8' })
       expect(unreviewed.status).not.toBe(0)
       expect(unreviewed.stdout).toBe('')

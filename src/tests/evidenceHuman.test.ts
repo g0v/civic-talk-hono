@@ -9,7 +9,14 @@ function humanDraft() {
     disputes: { Overview: '這是處理狀態：本次沒有經驗證的爭點項目。', items: [] },
     positions: {
       Overview: '各組立場關注不同面向。',
-      items: [{ name: '來源呈現的主張', Sources: [{ Title: '來源甲', href: 'https://example.test/source', material_id: 25 }], Core_concern: '從明示主張綜整的核心關注。', opinions: [{ Title: '具體主張', description: '保留適用條件。' }] }],
+      items: [
+        {
+          name: '來源呈現的主張',
+          Sources: [{ Title: '來源甲', href: 'https://example.test/source', material_id: 25 }],
+          Core_concern: '從明示主張綜整的核心關注。',
+          opinions: [{ Title: '具體主張', description: '保留適用條件。' }],
+        },
+      ],
     },
   }
 }

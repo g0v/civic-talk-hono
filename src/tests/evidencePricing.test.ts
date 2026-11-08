@@ -25,10 +25,12 @@ describe('Workers AI 整數微美元計價', () => {
     expect(actualCallCost(selector, { usage: { prompt_tokens: 0, completion_tokens: 1 } })).toBe(1)
     expect(actualCallCost(selector, { usage: { prompt_tokens: 4570, completion_tokens: 2654, total_tokens: 7224 } })).toBe(1254)
     expect(actualCallCost(selector, { usage: { prompt_tokens: 200, completion_tokens: 80 } })).toBe(44)
-    expect(actualCallCost(selector, {
-      usage: { prompt_tokens: 100, completion_tokens: 80, total_tokens: 180, completion_tokens_details: { reasoning_tokens: 50 } },
-      choices: [{ message: { role: 'assistant', content: '{}', reasoning: '推理內容' } }],
-    })).toBe(34)
+    expect(
+      actualCallCost(selector, {
+        usage: { prompt_tokens: 100, completion_tokens: 80, total_tokens: 180, completion_tokens_details: { reasoning_tokens: 50 } },
+        choices: [{ message: { role: 'assistant', content: '{}', reasoning: '推理內容' } }],
+      })
+    ).toBe(34)
     expect(actualCallCost(selector, { usage: { prompt_tokens: 0, completion_tokens: 0 } })).toBe(0)
     // 別名仍可結算；同時存在時必須一致。
     expect(actualCallCost(selector, { usage: { input_tokens: 200, output_tokens: 80 } })).toBe(44)
@@ -72,7 +74,7 @@ describe('Workers AI 整數微美元計價', () => {
     const withoutSchema = { ...request, response_format: { ...request.response_format, json_schema: formatWithoutSchema } }
     expect(estimateCall(selector, request, request.max_completion_tokens)).toBe(expected)
     expect(estimateCall(selector, request, request.max_completion_tokens)).toBeGreaterThan(estimateCall(selector, withoutSchema, withoutSchema.max_completion_tokens))
-    expect(estimateCall(selector, request, request.max_completion_tokens) - estimateCall(selector, request, 0)).toBe(expected - Math.ceil(inputBound * 10 / 100))
+    expect(estimateCall(selector, request, request.max_completion_tokens) - estimateCall(selector, request, 0)).toBe(expected - Math.ceil((inputBound * 10) / 100))
   })
 
   it('provider 未提供權重版本時不把 selector 冒充不可變版本', async () => {

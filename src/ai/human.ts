@@ -24,7 +24,15 @@ export function validateHumanData(value: unknown, materials: MaterialSource[]): 
   if (!exactObject(positions, ['Overview', 'items']) || !nonempty(positions.Overview) || !Array.isArray(positions.items)) return false
   const sources = new Map(materials.map(material => [material.id, sourceFor(material)]))
   return positions.items.every(item => {
-    if (!exactObject(item, ['name', 'Sources', 'Core_concern', 'opinions']) || !nonempty(item.name) || !nonempty(item.Core_concern) || !Array.isArray(item.Sources) || !Array.isArray(item.opinions) || !item.opinions.every(opinion)) return false
+    if (
+      !exactObject(item, ['name', 'Sources', 'Core_concern', 'opinions']) ||
+      !nonempty(item.name) ||
+      !nonempty(item.Core_concern) ||
+      !Array.isArray(item.Sources) ||
+      !Array.isArray(item.opinions) ||
+      !item.opinions.every(opinion)
+    )
+      return false
     return item.Sources.every(source => {
       if (!exactObject(source, ['Title', 'href', 'material_id']) || !Number.isSafeInteger(source.material_id)) return false
       const expected = sources.get(source.material_id as number)

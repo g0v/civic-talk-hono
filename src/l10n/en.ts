@@ -175,7 +175,8 @@ export const messages = {
   stance_neutral: 'Neutral',
   stance_unknown: 'Unknown',
   vol_title: 'Volunteer Tools',
-  vol_intro: 'The standard volunteer workflow does not call generative AI APIs directly. Generate prompts below, paste them into your own Claude / ChatGPT / Gemini, then paste the output back here. A separate evidence-processing API requires explicit platform activation, sign-in, and consent for each job. It sends selected content to Cloudflare Workers AI. Costs are borne by the platform account, not charged to users. See the Privacy Policy for processing, retention, and erasure limits.',
+  vol_intro:
+    'The standard volunteer workflow does not call generative AI APIs directly. Generate prompts below, paste them into your own Claude / ChatGPT / Gemini, then paste the output back here. A separate evidence-processing API requires explicit platform activation, sign-in, and consent for each job. It sends selected content to Cloudflare Workers AI. Costs are borne by the platform account, not charged to users. See the Privacy Policy for processing, retention, and erasure limits.',
   vol_login_desc: 'Using Volunteer Tools requires signing in so prompt use and briefing changes can be traced to an account.',
   vol_step1: 'Generate prompt',
   vol_step2: 'Paste into your AI',

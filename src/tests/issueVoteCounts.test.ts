@@ -57,9 +57,15 @@ function installCache() {
   const entries = new Map<string, Response>()
   vi.stubGlobal('caches', {
     default: {
-      async match(key: Request) { return entries.get(key.url)?.clone() },
-      async put(key: Request, response: Response) { entries.set(key.url, response.clone()) },
-      async delete(key: Request) { return entries.delete(key.url) },
+      async match(key: Request) {
+        return entries.get(key.url)?.clone()
+      },
+      async put(key: Request, response: Response) {
+        entries.set(key.url, response.clone())
+      },
+      async delete(key: Request) {
+        return entries.delete(key.url)
+      },
     },
   })
   return entries
@@ -104,8 +110,11 @@ describe('首頁公開累計票數（#178）', () => {
     expect(adminIssues.find(issue => issue.id === 1)).toMatchObject({ title: 'changed', vote_count: 6, author_id: 'private-author', author_email: 'private@example.com' })
     expect(entries.size).toBe(1)
     const cached = [...entries.values()][0]!
-    const payload = await cached.clone().json() as { counts: [number, number][] }
-    expect(payload.counts).toEqual([[1, 6], [3, 0]])
+    const payload = (await cached.clone().json()) as { counts: [number, number][] }
+    expect(payload.counts).toEqual([
+      [1, 6],
+      [3, 0],
+    ])
     expect(Object.keys(payload).sort()).toEqual(['counts', 'expires_at'])
     const returnedPublicIssues = await listIssues(db, 'https://civic.example/')
     expect(returnedPublicIssues.find(issue => issue.id === 1)?.author_email).toBeNull()
@@ -131,10 +140,16 @@ describe('首頁公開累計票數（#178）', () => {
 
   it('returns real totals when Cache API reads or writes fail', async () => {
     const { db } = dataset()
-    vi.stubGlobal('caches', { default: {
-      async match() { throw new Error('cache unavailable') },
-      async put() { throw new Error('cache unavailable') },
-    } })
+    vi.stubGlobal('caches', {
+      default: {
+        async match() {
+          throw new Error('cache unavailable')
+        },
+        async put() {
+          throw new Error('cache unavailable')
+        },
+      },
+    })
     expect(totals(await listIssues(db, 'https://civic.example/'))).toEqual({ 1: 6, 2: 0, 3: 0 })
   })
 })

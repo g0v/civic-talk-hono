@@ -263,10 +263,7 @@ function openFeedback() {
     </div>
 
     <!-- ── 手機下拉選單 ── -->
-    <div
-      v-if="showMenu"
-      class="page-container mt-2 rounded-xl border border-vt-border/75 bg-vt-bg-1/95 px-5 py-4 shadow-md backdrop-blur-[20px] xl:hidden"
-    >
+    <div v-if="showMenu" class="page-container mt-2 rounded-xl border border-vt-border/75 bg-vt-bg-1/95 px-5 py-4 shadow-md backdrop-blur-[20px] xl:hidden">
       <!-- 導航連結 -->
       <nav class="mb-4 flex flex-col gap-1">
         <a v-if="backHref" :href="backHref" class="rounded-lg px-3 py-2.5 text-[15px] text-vt-fg-1 no-underline hover:bg-black/5 dark:hover:bg-white/10" @click="closeMenu"> ← {{ backText }} </a>

@@ -15,7 +15,12 @@ const CONSENT_VERSION = 'evidence-processing-2026-11-07-v5'
 const BODY_LIMIT = 256 * 1024
 
 class RequestProblem extends Error {
-  constructor(readonly code: string, readonly status: 400 | 413) { super(code) }
+  constructor(
+    readonly code: string,
+    readonly status: 400 | 413
+  ) {
+    super(code)
+  }
 }
 
 function object(value: unknown): value is Record<string, unknown> {
@@ -42,7 +47,10 @@ async function jsonBody(request: Request): Promise<unknown> {
   }
   const bytes = new Uint8Array(total)
   let offset = 0
-  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length }
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset)
+    offset += chunk.length
+  }
   try {
     return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)) as unknown
   } catch {
@@ -65,7 +73,13 @@ async function failStoppedWorkflow(env: EvidenceBindings, job: { executionId: st
   const snapshot = await store.getSnapshot(job.executionId)
   if (snapshot && ['queued', 'extracting', 'comparing', 'generating'].includes(job.status)) {
     await store.markAttemptsUnknown(job.executionId)
-    await store.setStatus({ executionId: job.executionId, expected: job.status as 'queued' | 'extracting' | 'comparing' | 'generating', next: 'failed', errorCode: 'provider_uncertain', generations: snapshot.generations })
+    await store.setStatus({
+      executionId: job.executionId,
+      expected: job.status as 'queued' | 'extracting' | 'comparing' | 'generating',
+      next: 'failed',
+      errorCode: 'provider_uncertain',
+      generations: snapshot.generations,
+    })
   }
 }
 
@@ -103,12 +117,15 @@ function sourceMetadata(): { commit: string | null; dirty: boolean } {
 }
 
 function generationProgress(events: unknown[], status: ExecutionStatus, errorCode: string | null) {
-  const sections = Object.fromEntries(GENERATION_SECTIONS.map(section => [
-    section, { status: 'pending', reason: null as string | null, artifact_id: null as string | null, raw_artifact_id: null as string | null },
-  ])) as Record<GenerationSection, { status: string; reason: string | null; artifact_id: string | null; raw_artifact_id: string | null }>
+  const sections = Object.fromEntries(
+    GENERATION_SECTIONS.map(section => [section, { status: 'pending', reason: null as string | null, artifact_id: null as string | null, raw_artifact_id: null as string | null }])
+  ) as Record<GenerationSection, { status: string; reason: string | null; artifact_id: string | null; raw_artifact_id: string | null }>
   let currentSection: GenerationSection | 'completion' | null = null
   let completion: { status: string; reason: string | null; artifact_id: string | null; raw_artifact_id: string | null } = {
-    status: 'pending', reason: null, artifact_id: null, raw_artifact_id: null,
+    status: 'pending',
+    reason: null,
+    artifact_id: null,
+    raw_artifact_id: null,
   }
   let estimatedMicroUsd: number | null = null
   let present = false
@@ -213,11 +230,11 @@ export function registerEvidenceRoutes(app: EvidenceApp): void {
     if ('denied' in auth) return auth.denied
     if (!isAdminRole(auth.context.role)) return c.json({ error: 'Forbidden' }, 403)
     const body = await jsonBody(c.req.raw)
-    if (!object(body) || Object.keys(body).length !== 2 || (body.kind !== 'issue' && body.kind !== 'material') || typeof body.id !== 'number' || !Number.isSafeInteger(body.id) || body.id <= 0) return c.json({ error: 'invalid_request' }, 400)
+    if (!object(body) || Object.keys(body).length !== 2 || (body.kind !== 'issue' && body.kind !== 'material') || typeof body.id !== 'number' || !Number.isSafeInteger(body.id) || body.id <= 0)
+      return c.json({ error: 'invalid_request' }, 400)
     await new EvidenceStore(c.env.DB).eraseSource({ namespace: SOURCE_NAMESPACE, kind: body.kind, id: body.id, reason: 'request' })
     return c.json({ ok: true })
   })
-
 
   app.post('/api/issues/:id/evidence-jobs', async c => {
     const auth = await requireUser(c)
@@ -235,7 +252,11 @@ export function registerEvidenceRoutes(app: EvidenceApp): void {
     const manifest: InputManifest = {
       namespace: SOURCE_NAMESPACE,
       issue: { id, hash: issue.hash },
-      materials: input.materials.map(material => ({ id: material.id, hash: input.sources.find(source => source.kind === 'material' && source.id === material.id)!.hash, content_hash: material.content_hash })),
+      materials: input.materials.map(material => ({
+        id: material.id,
+        hash: input.sources.find(source => source.kind === 'material' && source.id === material.id)!.hash,
+        content_hash: material.content_hash,
+      })),
       language,
       settings: { ...(await pipelineSettings()), source_code: sourceMetadata() },
     }
@@ -295,7 +316,7 @@ export function registerEvidenceRoutes(app: EvidenceApp): void {
     if (!validJobId(jobId)) return c.json({ error: 'Not found' }, 404)
     const store = new EvidenceStore(c.env.DB)
     const admin = isAdminRole(auth.context.role)
-    if (!await store.getJob(jobId, auth.context.user.id, admin)) return c.json({ error: 'Not found' }, 404)
+    if (!(await store.getJob(jobId, auth.context.user.id, admin))) return c.json({ error: 'Not found' }, 404)
     await ensureStartup(c.env)
     let job = await store.getJob(jobId, auth.context.user.id, admin)
     if (!job) return c.json({ error: 'Not found' }, 404)
@@ -305,7 +326,16 @@ export function registerEvidenceRoutes(app: EvidenceApp): void {
       job = await store.getJob(jobId, auth.context.user.id, admin)
       if (!job) return c.json({ error: 'Not found' }, 404)
     }
-    const base = { job_id: job.id, input_key: job.inputKey, status: job.status, error_code: job.errorCode, created_at: job.createdAt, updated_at: job.updatedAt, source_checked_at: job.sourceCheckedAt, usage: job.usage }
+    const base = {
+      job_id: job.id,
+      input_key: job.inputKey,
+      status: job.status,
+      error_code: job.errorCode,
+      created_at: job.createdAt,
+      updated_at: job.updatedAt,
+      source_checked_at: job.sourceCheckedAt,
+      usage: job.usage,
+    }
     if (job.status === 'erased') return c.json(base)
     if (job.status === 'withdrawn') {
       await reconcileSources(c.env, job.executionId)
@@ -318,7 +348,16 @@ export function registerEvidenceRoutes(app: EvidenceApp): void {
       if (error instanceof SourceUnavailable && (error.code === 'source_withdrawn' || error.code === 'source_erased')) {
         const updated = await store.getJob(jobId, auth.context.user.id, admin)
         if (updated && (updated.status === 'withdrawn' || updated.status === 'erased')) {
-          return c.json({ job_id: updated.id, input_key: updated.inputKey, status: updated.status, error_code: updated.errorCode, created_at: updated.createdAt, updated_at: updated.updatedAt, source_checked_at: updated.sourceCheckedAt, usage: updated.usage })
+          return c.json({
+            job_id: updated.id,
+            input_key: updated.inputKey,
+            status: updated.status,
+            error_code: updated.errorCode,
+            created_at: updated.createdAt,
+            updated_at: updated.updatedAt,
+            source_checked_at: updated.sourceCheckedAt,
+            usage: updated.usage,
+          })
         }
       }
       throw error
@@ -340,7 +379,22 @@ export function registerEvidenceRoutes(app: EvidenceApp): void {
     const payload = artifact && object(artifact.payload) ? artifact.payload : {}
     const provenance = { ...(object(payload.provenance) ? payload.provenance : {}), artifacts: artifactSummaries }
     const generationArtifact = artifact ? { id: artifact.id, sha256: artifact.payloadHash } : null
-    return c.json({ ...payload, ...refreshedBase, provenance, generation_artifact: generationArtifact, generation_progress: generationProgress(diagnostics.map(item => item.payload), updated.status, updated.errorCode), input_manifest: snapshot.manifest, sources: snapshot.sources, initial_input_diagnostics: initialInputDiagnostics, current_issue_exclusions: currentIssueExclusions, diagnostics: payload.diagnostics ?? diagnostics.map(item => item.payload) })
+    return c.json({
+      ...payload,
+      ...refreshedBase,
+      provenance,
+      generation_artifact: generationArtifact,
+      generation_progress: generationProgress(
+        diagnostics.map(item => item.payload),
+        updated.status,
+        updated.errorCode
+      ),
+      input_manifest: snapshot.manifest,
+      sources: snapshot.sources,
+      initial_input_diagnostics: initialInputDiagnostics,
+      current_issue_exclusions: currentIssueExclusions,
+      diagnostics: payload.diagnostics ?? diagnostics.map(item => item.payload),
+    })
   })
 
   app.get('/api/evidence-jobs/:jobId/revisions', async c => {
@@ -350,14 +404,14 @@ export function registerEvidenceRoutes(app: EvidenceApp): void {
     if (!validJobId(jobId)) return c.json({ error: 'Not found' }, 404)
     const store = new EvidenceStore(c.env.DB)
     const admin = isAdminRole(auth.context.role)
-    if (!await store.getJob(jobId, auth.context.user.id, admin)) return c.json({ error: 'Not found' }, 404)
+    if (!(await store.getJob(jobId, auth.context.user.id, admin))) return c.json({ error: 'Not found' }, 404)
     await ensureStartup(c.env)
     const job = await store.getJob(jobId, auth.context.user.id, admin)
     if (!job || !job.artifactId || !['ai_draft', 'partial_draft'].includes(job.status)) return c.json({ error: 'draft_unavailable' }, 422)
     await checkedSnapshot(c.env, job.executionId)
     const artifact = await store.getArtifact(job.executionId, job.artifactId)
     const revisions = await store.listRevisions(jobId, auth.context.user.id, admin)
-    if (!artifact || !object(artifact.payload) || !revisions || !await store.getSnapshot(job.executionId)) return c.json({ error: 'draft_unavailable' }, 422)
+    if (!artifact || !object(artifact.payload) || !revisions || !(await store.getSnapshot(job.executionId))) return c.json({ error: 'draft_unavailable' }, 422)
     const updated = await store.getJob(jobId, auth.context.user.id, admin)
     if (!updated || !['ai_draft', 'partial_draft'].includes(updated.status) || updated.artifactId !== artifact.id) return c.json({ error: 'draft_unavailable' }, 422)
     return c.json({ job_id: jobId, ai_base: { id: 'ai', verification: 'ai_unverified', data: artifact.payload.data, citation_map: artifact.payload.citation_map }, revisions })
@@ -369,7 +423,7 @@ export function registerEvidenceRoutes(app: EvidenceApp): void {
     const jobId = c.req.param('jobId')
     if (!validJobId(jobId)) return c.json({ error: 'Not found' }, 404)
     const store = new EvidenceStore(c.env.DB)
-    if (!await store.getJob(jobId, auth.context.user.id, false)) return c.json({ error: 'Not found' }, 404)
+    if (!(await store.getJob(jobId, auth.context.user.id, false))) return c.json({ error: 'Not found' }, 404)
     const body = await jsonBody(c.req.raw)
     if (!object(body) || Object.keys(body).length !== 2 || typeof body.parent_revision_id !== 'string' || !Object.hasOwn(body, 'data')) return c.json({ error: 'invalid_revision' }, 400)
     await ensureStartup(c.env)

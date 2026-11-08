@@ -45,26 +45,38 @@ function bindings(db: unknown = { prepare: vi.fn() }) {
 }
 
 function send(method: string, path: string, env: unknown, body: unknown = {}) {
-  return app.request(`http://localhost${path}`, {
-    method,
-    headers: { 'Content-Type': 'application/json', Origin: 'http://localhost' },
-    ...(method === 'GET' ? {} : { body: JSON.stringify(body) }),
-  }, env as never)
+  return app.request(
+    `http://localhost${path}`,
+    {
+      method,
+      headers: { 'Content-Type': 'application/json', Origin: 'http://localhost' },
+      ...(method === 'GET' ? {} : { body: JSON.stringify(body) }),
+    },
+    env as never
+  )
 }
 
 class TestD1 {
   readonly sqlite = new DatabaseSync(':memory:')
 
-  constructor(sql: string) { this.sqlite.exec(sql) }
+  constructor(sql: string) {
+    this.sqlite.exec(sql)
+  }
 
   prepare(sql: string) {
     const sqlite = this.sqlite
     return {
-      async all<T>() { return { results: sqlite.prepare(sql).all() as T[] } },
+      async all<T>() {
+        return { results: sqlite.prepare(sql).all() as T[] }
+      },
       bind(...values: SQLInputValue[]) {
         return {
-          async first<T>() { return (sqlite.prepare(sql).get(...values) ?? null) as T | null },
-          async all<T>() { return { results: sqlite.prepare(sql).all(...values) as T[] } },
+          async first<T>() {
+            return (sqlite.prepare(sql).get(...values) ?? null) as T | null
+          },
+          async all<T>() {
+            return { results: sqlite.prepare(sql).all(...values) as T[] }
+          },
         }
       },
     }
@@ -84,19 +96,26 @@ beforeEach(() => {
 describe('正式 Worker 的證據 API 邊界', () => {
   it.each([undefined, '0', 'true', '01'])('未明確啟用（%s）時六個操作都是 404，不碰認證或服務', async flag => {
     const touched: string[] = []
-    const env = new Proxy({ EVIDENCE_API_ENABLED: flag }, {
-      get(target, key, receiver) {
-        if (['DB', 'DB_AUTH', 'SOURCE_DB', 'AI', 'EVIDENCE_WORKFLOW'].includes(String(key))) touched.push(String(key))
-        return Reflect.get(target, key, receiver)
-      },
-    })
+    const env = new Proxy(
+      { EVIDENCE_API_ENABLED: flag },
+      {
+        get(target, key, receiver) {
+          if (['DB', 'DB_AUTH', 'SOURCE_DB', 'AI', 'EVIDENCE_WORKFLOW'].includes(String(key))) touched.push(String(key))
+          return Reflect.get(target, key, receiver)
+        },
+      }
+    )
     for (const [method, path] of endpoints) {
       // 同源請求維持不可見，且不進入認證或任何能力。
-      const response = await app.request(`http://localhost${path}`, {
-        method,
-        headers: { 'Content-Type': 'text/plain', Origin: 'http://localhost' },
-        ...(method === 'GET' ? {} : { body: '{}' }),
-      }, env as never)
+      const response = await app.request(
+        `http://localhost${path}`,
+        {
+          method,
+          headers: { 'Content-Type': 'text/plain', Origin: 'http://localhost' },
+          ...(method === 'GET' ? {} : { body: '{}' }),
+        },
+        env as never
+      )
       expect(response.status).toBe(404)
       await expect(response.json()).resolves.toEqual({ error: 'Not found' })
     }
@@ -106,19 +125,26 @@ describe('正式 Worker 的證據 API 邊界', () => {
 
   it('關閉時跨站寫入仍與其他 API 一樣先被全域 CSRF 擋下', async () => {
     const touched: string[] = []
-    const env = new Proxy({ EVIDENCE_API_ENABLED: '0' }, {
-      get(target, key, receiver) {
-        if (['DB', 'DB_AUTH', 'SOURCE_DB', 'AI', 'EVIDENCE_WORKFLOW'].includes(String(key))) touched.push(String(key))
-        return Reflect.get(target, key, receiver)
-      },
-    })
+    const env = new Proxy(
+      { EVIDENCE_API_ENABLED: '0' },
+      {
+        get(target, key, receiver) {
+          if (['DB', 'DB_AUTH', 'SOURCE_DB', 'AI', 'EVIDENCE_WORKFLOW'].includes(String(key))) touched.push(String(key))
+          return Reflect.get(target, key, receiver)
+        },
+      }
+    )
     const paths = endpoints.filter(([method]) => method === 'POST').map(([, path]) => path)
     for (const path of [...paths, '/api/not-an-endpoint']) {
-      const response = await app.request(`http://localhost${path}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain', Origin: 'https://other.example' },
-        body: '{}',
-      }, env as never)
+      const response = await app.request(
+        `http://localhost${path}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain', Origin: 'https://other.example' },
+          body: '{}',
+        },
+        env as never
+      )
       expect(response.status, path).toBe(403)
       await expect(response.json()).resolves.toEqual({ error: 'Forbidden: cross-site request blocked' })
     }
@@ -170,11 +196,15 @@ describe('正式 Worker 的證據 API 邊界', () => {
     const prepare = vi.fn()
     const env = bindings({ prepare })
     auth.current = { user: { id: 'banned', name: 'Banned', email: 'banned@example.test', image: null }, role: 'user', banned: true, nameChangeCooldownDays: null }
-    const crossSite = await app.request('http://localhost/api/issues/7/evidence-jobs', {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain', Origin: 'https://other.example' },
-      body: '{}',
-    }, env as never)
+    const crossSite = await app.request(
+      'http://localhost/api/issues/7/evidence-jobs',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain', Origin: 'https://other.example' },
+        body: '{}',
+      },
+      env as never
+    )
     expect(crossSite.status).toBe(403)
     expect(authorization.tryGetAuthContext).not.toHaveBeenCalled()
     const banned = await send('POST', '/api/issues/7/evidence-jobs', env, { consent: true })
@@ -187,7 +217,11 @@ describe('正式 Worker 的證據 API 邊界', () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
     try {
       auth.current = { user: { id: 'owner', name: 'Owner', email: 'owner@example.test', image: null }, role: 'user', banned: false, nameChangeCooldownDays: null }
-      const env = bindings({ prepare() { throw new Error('internal database detail') } })
+      const env = bindings({
+        prepare() {
+          throw new Error('internal database detail')
+        },
+      })
       const evidence = await send('GET', `/api/evidence-jobs/${jobId}`, env)
       expect(evidence.status).toBe(503)
       await expect(evidence.json()).resolves.toEqual({ error: 'service_unavailable' })

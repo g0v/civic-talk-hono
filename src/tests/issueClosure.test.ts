@@ -182,21 +182,16 @@ describe('independent issue closure lifecycle', () => {
     expect((await send(app, id, true, 'reason')).status).toBe(403)
 
     authState.current = admin
-    const invalidBodies: unknown[] = [
-      null,
-      [],
-      { closed: 'true', reason: 'reason' },
-      { closed: true, reason: 3 },
-      { closed: true, reason: '  \t  ' },
-      { closed: true, reason: '🍎'.repeat(1001) },
-    ]
+    const invalidBodies: unknown[] = [null, [], { closed: 'true', reason: 'reason' }, { closed: true, reason: 3 }, { closed: true, reason: '  \t  ' }, { closed: true, reason: '🍎'.repeat(1001) }]
     for (const body of invalidBodies) {
       const response = await app.request(`/api/issues/${id}/closure`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }, env())
       expect(response.status).toBe(400)
     }
     expect(sqlite.prepare('SELECT is_closed, closure_reason FROM ct_issues WHERE id = ?').get(id)).toEqual({ is_closed: 0, closure_reason: null })
 
-    expect((await app.request('/api/issues/9999/closure', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ closed: true, reason: 'Missing' }) }, env())).status).toBe(404)
+    expect(
+      (await app.request('/api/issues/9999/closure', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ closed: true, reason: 'Missing' }) }, env())).status
+    ).toBe(404)
     expect((await send(app, id, true, '🍎'.repeat(1000))).status).toBe(200)
     expect((await send(app, id, true, 'Already closed')).status).toBe(409)
 
@@ -237,7 +232,10 @@ describe('independent issue closure lifecycle', () => {
     // SSR 沒有 DOM，聚焦來源留空；不影響表單與請求操作。
     const event = { currentTarget: null } as unknown as MouseEvent
     editor.issues = issues
-    editor.openClosure(issues.find(issue => issue.id === id)!, event)
+    editor.openClosure(
+      issues.find(issue => issue.id === id)!,
+      event
+    )
     editor.closureReason = '仍有補充資料需要討論'
 
     // 另一位管理員先結案；本機表單仍持有開啟視窗時的進行中狀態。
@@ -268,14 +266,20 @@ describe('independent issue closure lifecycle', () => {
       expect(sqlite.prepare('SELECT is_closed, closure_reason FROM ct_issues WHERE id = ?').get(id)).toEqual({ is_closed: 1, closure_reason: '另一位管理員先完成結案' })
 
       editor.closeClosure()
-      editor.openClosure(editor.issues.find(issue => issue.id === id)!, event)
+      editor.openClosure(
+        editor.issues.find(issue => issue.id === id)!,
+        event
+      )
       expect(editor.closureIssue?.is_closed).toBe(1)
       expect(editor.closureReason).toBe('仍有補充資料需要討論')
       await editor.saveClosure()
       expect(statuses).toEqual([409, 200])
       expect(sqlite.prepare('SELECT is_closed, closure_reason FROM ct_issues WHERE id = ?').get(id)).toEqual({ is_closed: 0, closure_reason: '仍有補充資料需要討論' })
 
-      editor.openClosure(editor.issues.find(issue => issue.id === id)!, event)
+      editor.openClosure(
+        editor.issues.find(issue => issue.id === id)!,
+        event
+      )
       expect(editor.closureReason).toBe('')
     } finally {
       vi.unstubAllGlobals()

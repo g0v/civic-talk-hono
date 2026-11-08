@@ -21,8 +21,12 @@ beforeEach(() => {
       return {
         bind(...values: SQLInputValue[]) {
           return {
-            async first<T>() { return (statement.get(...values) ?? null) as T | null },
-            async all<T>() { return { results: statement.all(...values) as T[] } },
+            async first<T>() {
+              return (statement.get(...values) ?? null) as T | null
+            },
+            async all<T>() {
+              return { results: statement.all(...values) as T[] }
+            },
           }
         },
       }
@@ -55,7 +59,18 @@ describe('唯讀來源快照', () => {
     expect(await inspectSource(db, 'material', 2, material.hash)).toEqual({ status: 'withdrawn', hash: null })
     sqlite.prepare('DELETE FROM ct_materials WHERE id = 2').run()
     expect(await inspectSource(db, 'material', 2, material.hash)).toEqual({ status: 'deleted', hash: null })
-    await expect(inspectSource({ prepare() { throw new Error('offline') } } as unknown as D1Database, 'material', 2, material.hash)).rejects.toThrow()
+    await expect(
+      inspectSource(
+        {
+          prepare() {
+            throw new Error('offline')
+          },
+        } as unknown as D1Database,
+        'material',
+        2,
+        material.hash
+      )
+    ).rejects.toThrow()
   })
 
   it('不得選入隱藏素材，並在任何推論前拒絕單份過大', async () => {

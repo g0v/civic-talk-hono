@@ -10,23 +10,23 @@
 
 ## 2. 從程式理解資料流
 
-|檢閱焦點|檔案與問題|
-|---|---|
-|接入與開關|`src/worker.ts`、`src/index.ts`、`src/ai/endpoints.ts`、`src/ai/env.ts`、`wrangler.jsonc`：只在明確 `EVIDENCE_API_ENABLED=1` 時提供新端點；關閉時不進入 Auth／DB／AI，啟用但缺必要 binding 時 fail closed 503。來源使用業務 `DB`。一般 API 的 headers／錯誤處理不得被證據子路由覆蓋。|
-|來源與隱私|`src/ai/source.ts`、`src/ai/lifecycle.ts`：固定參數化 SELECT、未正規化 UTF-8 hash、作者快照欄位排除、來源 hidden／changed／deleted 的處理。素材正文仍可能有個資，不等於匿名化。|
-|API 與授權|`src/ai/routes.ts`、`src/api/requireUser.ts`、`src/api/csrf.ts`：owner／admin 讀取、只有 owner 可新增 revision、maintenance admin、body／限額與跨站防護。|
-|工件與競態|`src/ai/store.ts`、`migrations/0017_evidence_pipeline.sql`、`src/ai/human.ts`：私有快照、usage ledger、不可覆寫 AI 基底、人工 diff、來源 generation fence 與永久 tombstone。檢查 revision 回應在讀取後再次確認來源狀態，避免清除競態洩漏。|
-|工作流與品質|`src/ai/workflow.ts`、`src/ai/runner.ts`、`src/ai/models.ts`、`src/ai/comparison.ts`、`src/ai/generation.ts`、`src/ai/pricing.ts`：Clairic 抽取、Clef 四分類、Gemma 三項與必要時單次補完，引用守門、分項狀態、attempt／預留／未知成本。檢查 workflow 觀察 RPC 失聯或 unknown 不被當成確定終態；排隊建立失敗後固定 instance ID 的恢復不是模型重試。|
-|環境與驗收|`vite.config.mts`、`wrangler.jsonc`、`src/tests/evidencePipeline.test.ts`、`src/tests/evidenceStorage.test.ts`：一般設定、正式來源與合成測試證據的區分。|
+| 檢閱焦點     | 檔案與問題                                                                                                                                                                                                                                                                                                                                         |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 接入與開關   | `src/worker.ts`、`src/index.ts`、`src/ai/endpoints.ts`、`src/ai/env.ts`、`wrangler.jsonc`：只在明確 `EVIDENCE_API_ENABLED=1` 時提供新端點；關閉時不進入 Auth／DB／AI，啟用但缺必要 binding 時 fail closed 503。來源使用業務 `DB`。一般 API 的 headers／錯誤處理不得被證據子路由覆蓋。                                                              |
+| 來源與隱私   | `src/ai/source.ts`、`src/ai/lifecycle.ts`：固定參數化 SELECT、未正規化 UTF-8 hash、作者快照欄位排除、來源 hidden／changed／deleted 的處理。素材正文仍可能有個資，不等於匿名化。                                                                                                                                                                    |
+| API 與授權   | `src/ai/routes.ts`、`src/api/requireUser.ts`、`src/api/csrf.ts`：owner／admin 讀取、只有 owner 可新增 revision、maintenance admin、body／限額與跨站防護。                                                                                                                                                                                          |
+| 工件與競態   | `src/ai/store.ts`、`migrations/0017_evidence_pipeline.sql`、`src/ai/human.ts`：私有快照、usage ledger、不可覆寫 AI 基底、人工 diff、來源 generation fence 與永久 tombstone。檢查 revision 回應在讀取後再次確認來源狀態，避免清除競態洩漏。                                                                                                         |
+| 工作流與品質 | `src/ai/workflow.ts`、`src/ai/runner.ts`、`src/ai/models.ts`、`src/ai/comparison.ts`、`src/ai/generation.ts`、`src/ai/pricing.ts`：Clairic 抽取、Clef 四分類、Gemma 三項與必要時單次補完，引用守門、分項狀態、attempt／預留／未知成本。檢查 workflow 觀察 RPC 失聯或 unknown 不被當成確定終態；排隊建立失敗後固定 instance ID 的恢復不是模型重試。 |
+| 環境與驗收   | `vite.config.mts`、`wrangler.jsonc`、`src/tests/evidencePipeline.test.ts`、`src/tests/evidenceStorage.test.ts`：一般設定、正式來源與合成測試證據的區分。                                                                                                                                                                                           |
 
 正式來源為業務 `DB`；既有 BYO token、`GET /api/issues/:id/prompt?type=synthesis`、briefing 與議題狀態不變。AI／人工草稿分別是 `ai_unverified`／`human_unverified`，不是可公開的 briefing。
 
 ## 3. 模式、前置與保護範圍
 
-|模式|工作 DB／來源|認證／AI|用途|
-|---|---|---|---|
-|一般 `vp run dev`|本機；設定為 `1`，必要 binding 完整時六 API 匿名回 401|Auth 刻意停用、登入回 503|一般開發，不是假登入；不建立付費工作|
-|一般 `vp run dev:remote`|既有遠端 binding；本機設定為 `1`|既有遠端 Auth／AI|有效登入及同意請求可能寫入業務庫並付費，不作未授權的 #183 試跑|
+| 模式                     | 工作 DB／來源                                          | 認證／AI                  | 用途                                                           |
+| ------------------------ | ------------------------------------------------------ | ------------------------- | -------------------------------------------------------------- |
+| 一般 `vp run dev`        | 本機；設定為 `1`，必要 binding 完整時六 API 匿名回 401 | Auth 刻意停用、登入回 503 | 一般開發，不是假登入；不建立付費工作                           |
+| 一般 `vp run dev:remote` | 既有遠端 binding；本機設定為 `1`                       | 既有遠端 Auth／AI         | 有效登入及同意請求可能寫入業務庫並付費，不作未授權的 #183 試跑 |
 
 實驗／審閱專用入口已移除，不再提供其 setup、CLI、fixture 或 Cookie 匯出流程；歷史執行紀錄見 [`Insight.md`](../Insight.md)。既有私有 `.wrangler` 資料、帳本、quota、unknown 與 tombstone 全數保留，不因清理而重設。一般 `vp run dev` 與 `vp run dev:remote` 的 Auth／遠端語意不變；後者不是安全的未授權試跑環境。
 
@@ -54,14 +54,14 @@ Clairic 逐素材、Clef 配對、Gemma 共識／爭點／立場三項，必要�
 
 ### API 與權限矩陣
 
-|方法與路徑|權限、請求與主要結果|
-|---|---|
-|`POST /api/issues/:id/evidence-jobs`|未停權登入者；`{consent:true, material_ids?:number[], language?:string}`，語言可為 `zh-TW`、`en` 或 `ja`。`202` miss／joined、`200` hit 或已保存失敗狀態；不接受呼叫者自填來源正文。|
-|`GET /api/evidence-jobs/:jobId`|owner 或 admin 可讀工作／進度；非 owner 一般使用者及無效 ID `404`。|
-|`GET /api/evidence-jobs/:jobId/revisions`|owner 或 admin 可讀該 job 的 AI 基底與修訂；無可用 draft `422`。|
-|`POST /api/evidence-jobs/:jobId/revisions`|只有 owner；`{parent_revision_id,data}`，成功 `201`，過時 parent `409`；即使 admin 也不能替別人的 job 造修訂。|
-|`POST /api/evidence-maintenance/reconcile`|admin／super-admin；body 精確 `{}`，回 `{ok,checked,withdrawn,erased}`，並觀察活動工作流的已知終態。可能發現來源刪除並清除 payload。|
-|`POST /api/evidence-maintenance/erase`|admin／super-admin；body 精確包含 `kind`（`issue` 或 `material`）與正安全整數 `id`，清除目前工作 DB 的相關 payload 並留下永久 tombstone；不改來源 DB。|
+| 方法與路徑                                 | 權限、請求與主要結果                                                                                                                                                                 |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `POST /api/issues/:id/evidence-jobs`       | 未停權登入者；`{consent:true, material_ids?:number[], language?:string}`，語言可為 `zh-TW`、`en` 或 `ja`。`202` miss／joined、`200` hit 或已保存失敗狀態；不接受呼叫者自填來源正文。 |
+| `GET /api/evidence-jobs/:jobId`            | owner 或 admin 可讀工作／進度；非 owner 一般使用者及無效 ID `404`。                                                                                                                  |
+| `GET /api/evidence-jobs/:jobId/revisions`  | owner 或 admin 可讀該 job 的 AI 基底與修訂；無可用 draft `422`。                                                                                                                     |
+| `POST /api/evidence-jobs/:jobId/revisions` | 只有 owner；`{parent_revision_id,data}`，成功 `201`，過時 parent `409`；即使 admin 也不能替別人的 job 造修訂。                                                                       |
+| `POST /api/evidence-maintenance/reconcile` | admin／super-admin；body 精確 `{}`，回 `{ok,checked,withdrawn,erased}`，並觀察活動工作流的已知終態。可能發現來源刪除並清除 payload。                                                 |
+| `POST /api/evidence-maintenance/erase`     | admin／super-admin；body 精確包含 `kind`（`issue` 或 `material`）與正安全整數 `id`，清除目前工作 DB 的相關 payload 並留下永久 tombstone；不改來源 DB。                               |
 
 開關非 `1` 時六端點的同源請求回 `404`；跨站簡單寫入先經全域 CSRF 回 `403`，兩者都不進行 Auth／DB／AI 操作。已開啟但必要 binding 缺失回 `503`。啟用且同源請求時，未登入 `401`、停權 `403`；非 owner 非 admin 查 job／revisions 回 `404`，非 owner 的 revision POST 回 `404`，maintenance 非 admin 回 `403`。同源寫入送 `Origin: http://localhost:5173` 和 JSON content type；跨來源 JSON 依不提供 CORS 放行而無法通過瀏覽器 preflight。不要把 CORS 當作唯一寫入保護。
 

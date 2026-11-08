@@ -31,10 +31,14 @@ export const CLEF_EVIDENCE_ID_PREFIX = ' Evidence IDs: '
 export const CLEF_QUESTION_PREFIX = 'q'
 
 export const CLEF_CRITERIA: Record<Relation, string> = {
-  agree: 'Under a comparable question and stated conditions, the claims meaningfully support or complement each other; they need not be synonyms or explicitly endorse each other. Example: "Improve bus access by lowering fares" and "Improve bus access by increasing frequency" are complementary, not necessarily a single common proposition.',
-  disagree: 'Under the same or comparable conditions, the factual conclusions or explicitly stated positions or recommendations oppose each other. Examples: "Raise the bus fare next year" versus "Do not raise the bus fare next year"; or "The library is open at noon Monday" versus "The library is closed at noon Monday". Do not infer opposition from a risk and a compatible strategy.',
-  unrelated: 'There is enough information to tell that the passages address no reasonably comparable question or dimension. Example: "The library opens at nine on weekdays" versus "The library roof is blue". This is not a fallback merely because claims are not synonyms or directly contradictory.',
-  uncertain: 'Conditions, attribution, or other information needed to determine the relation are insufficient. Example: "Adopt this proposal" versus "They oppose it", when neither the referent of "they" nor what "it" refers to is clear.',
+  agree:
+    'Under a comparable question and stated conditions, the claims meaningfully support or complement each other; they need not be synonyms or explicitly endorse each other. Example: "Improve bus access by lowering fares" and "Improve bus access by increasing frequency" are complementary, not necessarily a single common proposition.',
+  disagree:
+    'Under the same or comparable conditions, the factual conclusions or explicitly stated positions or recommendations oppose each other. Examples: "Raise the bus fare next year" versus "Do not raise the bus fare next year"; or "The library is open at noon Monday" versus "The library is closed at noon Monday". Do not infer opposition from a risk and a compatible strategy.',
+  unrelated:
+    'There is enough information to tell that the passages address no reasonably comparable question or dimension. Example: "The library opens at nine on weekdays" versus "The library roof is blue". This is not a fallback merely because claims are not synonyms or directly contradictory.',
+  uncertain:
+    'Conditions, attribution, or other information needed to determine the relation are insufficient. Example: "Adopt this proposal" versus "They oppose it", when neither the referent of "they" nor what "it" refers to is clear.',
 }
 
 export const CLEF_MAX_QUESTIONS = 64
@@ -89,8 +93,12 @@ function probability(value: unknown): value is number {
 }
 
 function usage(value: unknown): value is { input_tokens: number; output_tokens: number; [key: string]: unknown } {
-  return object(value) && tokenCount(value.input_tokens) && tokenCount(value.output_tokens) &&
+  return (
+    object(value) &&
+    tokenCount(value.input_tokens) &&
+    tokenCount(value.output_tokens) &&
     ['state_tokens', 'image_tokens', 'schema_tokens', 'passes'].every(key => value[key] === undefined || tokenCount(value[key]))
+  )
 }
 
 export function modelUsageStatus(value: unknown): 'reported' | 'missing' | 'malformed' {
@@ -164,7 +172,16 @@ function normalizedPairs(evidence: readonly Evidence[], pairs: readonly Evidence
   if (pairs.length > 2016) throw new Error('clef_pair_limit')
   const evidenceById = new Map<string, Evidence>()
   for (const item of evidence) {
-    if (!item || typeof item.id !== 'string' || !item.id || !Number.isSafeInteger(item.material_id) || item.material_id <= 0 || typeof item.quote !== 'string' || !item.quote || evidenceById.has(item.id)) {
+    if (
+      !item ||
+      typeof item.id !== 'string' ||
+      !item.id ||
+      !Number.isSafeInteger(item.material_id) ||
+      item.material_id <= 0 ||
+      typeof item.quote !== 'string' ||
+      !item.quote ||
+      evidenceById.has(item.id)
+    ) {
       throw new Error('clef_invalid_evidence')
     }
     evidenceById.set(item.id, item)
@@ -201,9 +218,7 @@ function makeClefBatch(pairs: EvidencePair[], allEvidence: Map<string, Evidence>
   const input: ClefInput = {
     model: 'clef',
     state: {
-      evidence: [...evidence.values()]
-        .sort((a, b) => compareStrings(a.id, b.id))
-        .map(({ id, material_id, quote }) => ({ id, material_id, quote })),
+      evidence: [...evidence.values()].sort((a, b) => compareStrings(a.id, b.id)).map(({ id, material_id, quote }) => ({ id, material_id, quote })),
     },
     questions,
   }
@@ -233,12 +248,7 @@ export function buildClefBatches(evidence: readonly Evidence[], pairs: readonly 
 }
 
 export function parseClefResponse(value: unknown, batch: ClefBatch): DirectComparison[] {
-  if (
-    !object(value) ||
-    typeof value.model !== 'string' ||
-    !object(value.answers) ||
-    (value.truncated !== undefined && value.truncated !== false)
-  ) {
+  if (!object(value) || typeof value.model !== 'string' || !object(value.answers) || (value.truncated !== undefined && value.truncated !== false)) {
     throw new Error('clef_invalid_response')
   }
   const answers = value.answers
@@ -267,7 +277,15 @@ export function parseClefResponse(value: unknown, batch: ClefBatch): DirectCompa
       question_version: MODEL_VERSIONS.clef_prompt,
       probabilities: Object.fromEntries(relations.map(option => [option, probabilities[option]])) as Record<Relation, number>,
       // 官方 Clef output schema 未承諾回報 state 截斷狀態；沒有就標 unknown，不視為已驗證。
-      provider_diagnostics: { model: value.model, question_id, evidence_ids, confidence: answer.confidence, truncated: value.truncated ?? null, usage: usage(value.usage) ? value.usage : null, usage_status: modelUsageStatus(value.usage) },
+      provider_diagnostics: {
+        model: value.model,
+        question_id,
+        evidence_ids,
+        confidence: answer.confidence,
+        truncated: value.truncated ?? null,
+        usage: usage(value.usage) ? value.usage : null,
+        usage_status: modelUsageStatus(value.usage),
+      },
     }
   })
 }

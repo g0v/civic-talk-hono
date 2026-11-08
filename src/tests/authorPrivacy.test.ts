@@ -71,7 +71,6 @@ describe('作者資料隱私守護', () => {
     expect(validateSubmissionOptions({ terms_accepted: true, show_email: true })).toBeNull()
   })
 
-
   it('管理端查詢取得完整作者快照', async () => {
     const { db, sql } = recordingDb()
 

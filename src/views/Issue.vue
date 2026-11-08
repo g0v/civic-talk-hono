@@ -562,13 +562,7 @@ async function submitSummarize(copyNarrative = false) {
     const text = await prompt
     const copied = copying ? await copying : false
     if (!saved) return
-    const message = !copyNarrative
-      ? t('vol_toast_summarize_ok')
-      : !text
-        ? t('vol_toast_summarize_prompt_fail')
-        : copied
-          ? t('vol_toast_summarize_copied')
-          : t('vol_toast_summarize_copy_fail')
+    const message = !copyNarrative ? t('vol_toast_summarize_ok') : !text ? t('vol_toast_summarize_prompt_fail') : copied ? t('vol_toast_summarize_copied') : t('vol_toast_summarize_copy_fail')
     try {
       await loadIssue()
       toast.value?.show(message)
@@ -750,7 +744,9 @@ async function submitOpinion() {
                 issue.author_name || t('author_system')
               }}<template v-if="issue.author_email"> <AuthorEmailLink :email="issue.author_email" :name="issue.author_name" /></template>
             </p>
-            <button type="button" class="btn btn-secondary btn-sm mt-3" :class="activeStep === 'comments' ? 'hidden sm:inline-flex' : 'inline-flex'" @click="copyRssUrl">{{ t('issue_rss_subscribe') }}</button>
+            <button type="button" class="btn btn-secondary btn-sm mt-3" :class="activeStep === 'comments' ? 'hidden sm:inline-flex' : 'inline-flex'" @click="copyRssUrl">
+              {{ t('issue_rss_subscribe') }}
+            </button>
           </div>
 
           <nav class="issue-briefing-tabs" :aria-label="t('issue_tabs_aria')">
@@ -807,8 +803,16 @@ async function submitOpinion() {
                     <h2 class="mt-0 mb-3 font-serif text-xl">{{ t('brief_overview') }}</h2>
                     <div class="markdown-content mobile-readable" v-html="renderedBriefing?.narrative ?? ''" />
                     <p v-if="briefing.narrative" class="mt-6 flex">
-                      <button type="button" class="inline-flex cursor-pointer items-center gap-1 text-xs text-muted hover:text-teal" :aria-label="t('brief_copy_md_aria', { section: t(briefingTabKeys[0]) })" @click="copyBriefingMarkdown('narrative')">
-                        <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
+                      <button
+                        type="button"
+                        class="inline-flex cursor-pointer items-center gap-1 text-xs text-muted hover:text-teal"
+                        :aria-label="t('brief_copy_md_aria', { section: t(briefingTabKeys[0]) })"
+                        @click="copyBriefingMarkdown('narrative')"
+                      >
+                        <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                        </svg>
                         {{ t('brief_copy_md') }}
                       </button>
                     </p>
@@ -821,8 +825,16 @@ async function submitOpinion() {
                   <div v-if="briefing && briefing.abuse_flagged !== 2" class="markdown-content mobile-readable" v-html="renderedBriefing?.consensus ?? ''" />
                   <div v-else class="empty">{{ t('brief_no_briefing_alert') }}</div>
                   <p v-if="briefing && briefing.abuse_flagged !== 2 && briefing.consensus" class="mt-6 flex">
-                    <button type="button" class="inline-flex cursor-pointer items-center gap-1 text-xs text-muted hover:text-teal" :aria-label="t('brief_copy_md_aria', { section: t(briefingTabKeys[1]) })" @click="copyBriefingMarkdown('consensus')">
-                      <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
+                    <button
+                      type="button"
+                      class="inline-flex cursor-pointer items-center gap-1 text-xs text-muted hover:text-teal"
+                      :aria-label="t('brief_copy_md_aria', { section: t(briefingTabKeys[1]) })"
+                      @click="copyBriefingMarkdown('consensus')"
+                    >
+                      <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                      </svg>
                       {{ t('brief_copy_md') }}
                     </button>
                   </p>
@@ -834,8 +846,16 @@ async function submitOpinion() {
                   <div v-if="briefing && briefing.abuse_flagged !== 2" class="markdown-content mobile-readable" v-html="renderedBriefing?.disputes ?? ''" />
                   <div v-else class="empty">{{ t('brief_no_briefing_alert') }}</div>
                   <p v-if="briefing && briefing.abuse_flagged !== 2 && briefing.disputes" class="mt-6 flex">
-                    <button type="button" class="inline-flex cursor-pointer items-center gap-1 text-xs text-muted hover:text-teal" :aria-label="t('brief_copy_md_aria', { section: t(briefingTabKeys[2]) })" @click="copyBriefingMarkdown('disputes')">
-                      <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
+                    <button
+                      type="button"
+                      class="inline-flex cursor-pointer items-center gap-1 text-xs text-muted hover:text-teal"
+                      :aria-label="t('brief_copy_md_aria', { section: t(briefingTabKeys[2]) })"
+                      @click="copyBriefingMarkdown('disputes')"
+                    >
+                      <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                      </svg>
                       {{ t('brief_copy_md') }}
                     </button>
                   </p>
@@ -854,8 +874,17 @@ async function submitOpinion() {
                         }}</span
                       >
                       <AuthorEmailLink v-if="briefing.author_email" :email="briefing.author_email" :name="briefing.author_name" />
-                      <button v-if="briefing.positions" type="button" class="inline-flex cursor-pointer items-center gap-1 text-xs text-muted hover:text-teal" :aria-label="t('brief_copy_md_aria', { section: t(briefingTabKeys[3]) })" @click="copyBriefingMarkdown('positions')">
-                        <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
+                      <button
+                        v-if="briefing.positions"
+                        type="button"
+                        class="inline-flex cursor-pointer items-center gap-1 text-xs text-muted hover:text-teal"
+                        :aria-label="t('brief_copy_md_aria', { section: t(briefingTabKeys[3]) })"
+                        @click="copyBriefingMarkdown('positions')"
+                      >
+                        <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                        </svg>
                         {{ t('brief_copy_md') }}
                       </button>
                       <button v-if="authState === 'signed-in' && !briefing.abuse_flagged" type="button" class="text-xs text-muted hover:text-red" @click="openReport('briefing', briefing.id)">

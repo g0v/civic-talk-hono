@@ -8,11 +8,7 @@ defineProps<{
 </script>
 
 <template>
-  <div
-    class="pointer-events-none absolute inset-x-0 top-0 -z-10 overflow-hidden select-none"
-    :class="placement === 'issues' ? '-bottom-16' : 'bottom-0'"
-    aria-hidden="true"
-  >
+  <div class="pointer-events-none absolute inset-x-0 top-0 -z-10 overflow-hidden select-none" :class="placement === 'issues' ? '-bottom-16' : 'bottom-0'" aria-hidden="true">
     <svg
       class="absolute h-auto"
       :class="placement === 'welcome' ? 'right-14 top-3 w-24 sm:right-20 sm:top-4 sm:w-36' : 'right-3 top-0 w-28 sm:right-8 sm:w-44'"

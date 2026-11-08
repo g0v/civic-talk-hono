@@ -68,7 +68,13 @@ function labelsById(value) {
 }
 
 function predictionsById(value, labels) {
-  if (!hasKeys(value, ['evidence_snapshot_sha256', 'prompt_version', 'predictions']) || typeof value.prompt_version !== 'string' || !VERSION.test(value.prompt_version) || !Array.isArray(value.predictions)) throw new Error('invalid_prediction')
+  if (
+    !hasKeys(value, ['evidence_snapshot_sha256', 'prompt_version', 'predictions']) ||
+    typeof value.prompt_version !== 'string' ||
+    !VERSION.test(value.prompt_version) ||
+    !Array.isArray(value.predictions)
+  )
+    throw new Error('invalid_prediction')
   const predictions = new Map()
   for (const row of value.predictions) {
     if (!hasKeys(row, ['id', 'relation']) || !validId(row.id) || !validRelation(row.relation)) throw new Error('invalid_prediction')
@@ -88,18 +94,23 @@ function metrics(labels, predictions, promptVersion) {
     confusion[expected][predicted] += 1
     if (expected !== predicted) mismatches.push({ id, expected, predicted })
   }
-  mismatches.sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
-  const byClass = Object.fromEntries(RELATIONS.map(relation => {
-    const truePositive = confusion[relation][relation]
-    const support = RELATIONS.reduce((sum, predicted) => sum + confusion[relation][predicted], 0)
-    const predicted = RELATIONS.reduce((sum, expected) => sum + confusion[expected][relation], 0)
-    return [relation, {
-      support,
-      predicted,
-      precision: predicted === 0 ? null : truePositive / predicted,
-      recall: support === 0 ? null : truePositive / support,
-    }]
-  }))
+  mismatches.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+  const byClass = Object.fromEntries(
+    RELATIONS.map(relation => {
+      const truePositive = confusion[relation][relation]
+      const support = RELATIONS.reduce((sum, predicted) => sum + confusion[relation][predicted], 0)
+      const predicted = RELATIONS.reduce((sum, expected) => sum + confusion[expected][relation], 0)
+      return [
+        relation,
+        {
+          support,
+          predicted,
+          precision: predicted === 0 ? null : truePositive / predicted,
+          recall: support === 0 ? null : truePositive / support,
+        },
+      ]
+    })
+  )
   return { prompt_version: promptVersion, confusion_matrix: confusion, by_class: byClass, mismatches }
 }
 

@@ -17,8 +17,12 @@ class SQLiteD1 {
   pauseOnce(fragment: string) {
     let reached!: () => void
     let release!: () => void
-    const paused = new Promise<void>(resolve => { reached = resolve })
-    const wait = new Promise<void>(resolve => { release = resolve })
+    const paused = new Promise<void>(resolve => {
+      reached = resolve
+    })
+    const wait = new Promise<void>(resolve => {
+      release = resolve
+    })
     this.gate = { fragment, reached, wait }
     return { paused, release }
   }
@@ -27,7 +31,9 @@ class SQLiteD1 {
     const database = this
     class Statement {
       constructor(readonly values: SQLInputValue[] = []) {}
-      bind(...values: SQLInputValue[]) { return new Statement(values) }
+      bind(...values: SQLInputValue[]) {
+        return new Statement(values)
+      }
       execute() {
         const result = database.sqlite.prepare(sql).run(...this.values)
         return { success: true, results: [], meta: { changes: Number(result.changes), last_row_id: Number(result.lastInsertRowid) } }
@@ -41,8 +47,12 @@ class SQLiteD1 {
         }
         return this.execute()
       }
-      async first<T>() { return (database.sqlite.prepare(sql).get(...this.values) ?? null) as T | null }
-      async all<T>() { return { success: true, results: database.sqlite.prepare(sql).all(...this.values) as T[] } }
+      async first<T>() {
+        return (database.sqlite.prepare(sql).get(...this.values) ?? null) as T | null
+      }
+      async all<T>() {
+        return { success: true, results: database.sqlite.prepare(sql).all(...this.values) as T[] }
+      }
     }
     return new Statement()
   }
@@ -59,7 +69,9 @@ class SQLiteD1 {
     }
   }
 
-  asD1(): D1Database { return this as unknown as D1Database }
+  asD1(): D1Database {
+    return this as unknown as D1Database
+  }
 }
 
 const DAY = '2026-10-29T09:00:00.000Z'
@@ -78,8 +90,24 @@ async function input(issueId: number, ownerId: string, options: { now?: string; 
     { kind: 'issue', id: issue.id, hash: issueHash, payload: issue },
     { kind: 'material', id: material.id, hash: materialHash, payload: material },
   ]
-  const manifest = { namespace: NAMESPACE, issue: { id: issue.id, hash: issueHash }, materials: [{ id: material.id, hash: materialHash, content_hash: material.content_hash }], language: 'zh-TW', settings: { version: options.setting ?? 'v1' } }
-  return { ownerId, issueId, inputKey: await sha256(JSON.stringify(manifest)), manifest, sources, initialEstimateMicroUsd: options.estimate ?? 1_000, consentVersion: 'v1', consentAt: options.now ?? DAY, now: options.now ?? DAY }
+  const manifest = {
+    namespace: NAMESPACE,
+    issue: { id: issue.id, hash: issueHash },
+    materials: [{ id: material.id, hash: materialHash, content_hash: material.content_hash }],
+    language: 'zh-TW',
+    settings: { version: options.setting ?? 'v1' },
+  }
+  return {
+    ownerId,
+    issueId,
+    inputKey: await sha256(JSON.stringify(manifest)),
+    manifest,
+    sources,
+    initialEstimateMicroUsd: options.estimate ?? 1_000,
+    consentVersion: 'v1',
+    consentAt: options.now ?? DAY,
+    now: options.now ?? DAY,
+  }
 }
 
 async function created(claim: ClaimInput) {
@@ -168,14 +196,18 @@ describe('evidence D1 repository', () => {
     const beforeCall = await created(await input(1, 'owner'))
     for (let issue = 2; issue <= 20; issue++) await created(await input(issue, 'owner'))
     expect((await store.claimJob(await input(21, 'owner'))).outcome).toBe('quota')
-    expect(await store.setStatus({ executionId: beforeCall.executionId, generations: beforeCall.generations, expected: 'queued', next: 'failed', errorCode: 'source_unavailable', now: DAY })).toBe(true)
+    expect(await store.setStatus({ executionId: beforeCall.executionId, generations: beforeCall.generations, expected: 'queued', next: 'failed', errorCode: 'source_unavailable', now: DAY })).toBe(
+      true
+    )
     // 原本的失敗輸入不重打；可用不同有效設定的新輸入，且未付費冷卻已釋放。
     expect((await store.claimJob(await input(1, 'owner'))).outcome).toBe('joined')
     const replacement = await created(await input(1, 'owner', { setting: 'different' }))
     expect((await store.claimJob(await input(21, 'owner'))).outcome).toBe('quota')
     const started = await store.beginAttempt({ executionId: replacement.executionId, stepKey: 'extract:1', estimateMicroUsd: 1000, generations: replacement.generations, now: DAY })
     expect(started.outcome).toBe('started')
-    expect(await store.setStatus({ executionId: replacement.executionId, generations: replacement.generations, expected: 'queued', next: 'failed', errorCode: 'provider_uncertain', now: DAY })).toBe(true)
+    expect(await store.setStatus({ executionId: replacement.executionId, generations: replacement.generations, expected: 'queued', next: 'failed', errorCode: 'provider_uncertain', now: DAY })).toBe(
+      true
+    )
     expect((await store.claimJob(await input(21, 'owner'))).outcome).toBe('quota')
     expect((await store.claimJob(await input(1, 'another', { setting: 'third' }))).outcome).toBe('cooldown')
   })
@@ -208,7 +240,12 @@ describe('evidence D1 repository', () => {
     expect((await store.beginAttempt({ executionId: winner.executionId, stepKey: 'extract:2', estimateMicroUsd: 2_000_001, generations: snapshot.generations, now: DAY })).outcome).toBe('budget')
     expect(await store.settleAttempt(started.attemptId, null, DAY)).toBe('unknown')
     expect((await store.budget(DAY_NEXT)).committedMicroUsd).toBe(3_000_000)
-    expect(await store.beginAttempt({ executionId: winner.executionId, stepKey: 'extract:1', estimateMicroUsd: 3_000_000, generations: snapshot.generations, now: DAY_NEXT })).toMatchObject({ outcome: 'existing', attemptId: started.attemptId, state: 'unknown', artifactId: null })
+    expect(await store.beginAttempt({ executionId: winner.executionId, stepKey: 'extract:1', estimateMicroUsd: 3_000_000, generations: snapshot.generations, now: DAY_NEXT })).toMatchObject({
+      outcome: 'existing',
+      attemptId: started.attemptId,
+      state: 'unknown',
+      artifactId: null,
+    })
     expect(await store.settleAttempt(started.attemptId, 5_100_000, DAY_NEXT)).toBe('settled')
     expect((await store.budget(DAY)).committedMicroUsd).toBe(5_100_000)
     expect((await store.claimJob(await input(3, 'c', { now: DAY, estimate: 1 }))).outcome).toBe('budget')
@@ -221,7 +258,9 @@ describe('evidence D1 repository', () => {
     const job = await created(await input(1, 'owner', { estimate: 3_000_000 }))
     const first = await store.beginAttempt({ executionId: job.executionId, stepKey: 'extract:1', estimateMicroUsd: 3_000_000, generations: job.generations, now: DAY })
     expect(first.outcome).toBe('started')
-    const results = await Promise.all(['compare:1', 'compare:2'].map(stepKey => store.beginAttempt({ executionId: job.executionId, stepKey, estimateMicroUsd: 1_200_000, generations: job.generations, now: DAY })))
+    const results = await Promise.all(
+      ['compare:1', 'compare:2'].map(stepKey => store.beginAttempt({ executionId: job.executionId, stepKey, estimateMicroUsd: 1_200_000, generations: job.generations, now: DAY }))
+    )
     expect(results.filter(result => result.outcome === 'started')).toHaveLength(1)
     expect(results.filter(result => result.outcome === 'budget')).toHaveLength(1)
     expect((await store.budget(DAY)).committedMicroUsd).toBe(4_200_000)
@@ -251,7 +290,10 @@ describe('evidence D1 repository', () => {
     const raw = await store.saveArtifact({ executionId: job.executionId, attemptId: attempt.attemptId, kind: 'raw', payload: { text: '原始回應' }, generations: job.generations })
     if (raw.outcome !== 'saved') throw new Error('missing raw')
     expect((await store.saveArtifact({ executionId: job.executionId, attemptId: attempt.attemptId, kind: 'raw', payload: { text: '覆寫' }, generations: job.generations })).outcome).toBe('conflict')
-    expect(await store.beginAttempt({ executionId: job.executionId, stepKey: 'extract:1', estimateMicroUsd: 1_000, generations: job.generations, now: DAY })).toMatchObject({ outcome: 'existing', artifactId: raw.artifactId })
+    expect(await store.beginAttempt({ executionId: job.executionId, stepKey: 'extract:1', estimateMicroUsd: 1_000, generations: job.generations, now: DAY })).toMatchObject({
+      outcome: 'existing',
+      artifactId: raw.artifactId,
+    })
     expect((await store.getArtifact(job.executionId, raw.artifactId))?.payload).toEqual({ text: '原始回應' })
   })
 

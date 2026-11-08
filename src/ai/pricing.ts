@@ -56,8 +56,8 @@ export function actualCallCost(selector: ModelSelector, response: unknown): numb
 }
 
 export async function requestProvenance(selector: ModelSelector, input: unknown, response: unknown): Promise<Record<string, unknown>> {
-  const raw = response && typeof response === 'object' ? response as Record<string, unknown> : {}
-  const metadataString = (value: unknown): string | null => typeof value === 'string' && value.length <= 300 ? value : null
+  const raw = response && typeof response === 'object' ? (response as Record<string, unknown>) : {}
+  const metadataString = (value: unknown): string | null => (typeof value === 'string' && value.length <= 300 ? value : null)
   return {
     model_selector: selector,
     provider_model: metadataString(raw.model),

@@ -93,7 +93,6 @@ describe('listIssues 的 last_activity_at（#77）', () => {
     const issues = await listIssues(db)
     expect(issues[0]!.last_activity_at).toBe('2026-08-01 00:00:00')
   })
-
 })
 
 // ── 寫入路徑同步維護 ct_issues.last_activity_at（#77）──────────────────────
@@ -234,10 +233,7 @@ describe('filterByRole（#77）', () => {
 
 describe('sortByOrder（#77）', () => {
   it('發布與活動日期相反時，兩種排序各自依對應時間降冪且不改動輸入', () => {
-    const list = [
-      item(1, { created_at: '2026-09-01 00:00:00', last_activity_at: '2026-09-02 00:00:00' }),
-      item(2, { created_at: '2026-08-01 00:00:00', last_activity_at: '2026-10-01 00:00:00' }),
-    ]
+    const list = [item(1, { created_at: '2026-09-01 00:00:00', last_activity_at: '2026-09-02 00:00:00' }), item(2, { created_at: '2026-08-01 00:00:00', last_activity_at: '2026-10-01 00:00:00' })]
     expect(sortByOrder(list, 'published').map(i => i.id)).toEqual([1, 2])
     expect(sortByOrder(list, 'activity').map(i => i.id)).toEqual([2, 1])
     expect(list.map(i => i.id)).toEqual([1, 2])

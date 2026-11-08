@@ -19,9 +19,7 @@ export interface MaterialSource {
   content_hash: string
 }
 
-export type SourceRecord =
-  | { kind: 'issue'; id: number; hash: string; payload: IssueSource }
-  | { kind: 'material'; id: number; hash: string; payload: MaterialSource }
+export type SourceRecord = { kind: 'issue'; id: number; hash: string; payload: IssueSource } | { kind: 'material'; id: number; hash: string; payload: MaterialSource }
 
 export interface SourceInput {
   issue: IssueSource
@@ -78,10 +76,7 @@ export async function readMaterialStatuses(sourceDb: D1Database, issueId: number
 
 /** 取得當前、可送交模型的來源；不接受呼叫者提供正文、hash 或作者欄位。 */
 export async function readSourceInput(sourceDb: D1Database, issueId: number, requestedIds?: number[]): Promise<SourceInput> {
-  const issue = await sourceDb
-    .prepare('SELECT id, title, description, abuse_flagged FROM ct_issues WHERE id = ? AND abuse_flagged = 0')
-    .bind(issueId)
-    .first<IssueRow>()
+  const issue = await sourceDb.prepare('SELECT id, title, description, abuse_flagged FROM ct_issues WHERE id = ? AND abuse_flagged = 0').bind(issueId).first<IssueRow>()
   if (!issue) throw new SourceInputError('issue_unavailable', 422)
 
   const rows = await readMaterialStatuses(sourceDb, issueId)
@@ -143,7 +138,9 @@ export async function inspectSource(sourceDb: D1Database, kind: 'issue' | 'mater
     return { status: hash === expectedHash ? 'valid' : 'withdrawn', hash }
   }
   const row = await sourceDb
-    .prepare('SELECT id, issue_id, abuse_flagged, CASE WHEN abuse_flagged = 0 THEN source_name END AS source_name, CASE WHEN abuse_flagged = 0 THEN source_url END AS source_url, CASE WHEN abuse_flagged = 0 THEN content END AS content FROM ct_materials WHERE id = ?')
+    .prepare(
+      'SELECT id, issue_id, abuse_flagged, CASE WHEN abuse_flagged = 0 THEN source_name END AS source_name, CASE WHEN abuse_flagged = 0 THEN source_url END AS source_url, CASE WHEN abuse_flagged = 0 THEN content END AS content FROM ct_materials WHERE id = ?'
+    )
     .bind(id)
     .first<MaterialRow>()
   if (!row) return { status: 'deleted', hash: null }

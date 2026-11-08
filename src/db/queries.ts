@@ -284,7 +284,6 @@ const ISSUE_COUNT_SUBQUERIES = `
   (SELECT COUNT(*) FROM ct_materials WHERE issue_id = ct_issues.id AND abuse_flagged IN (0, 1)) AS material_count,
   (SELECT COUNT(*) FROM ct_opinions  WHERE issue_id = ct_issues.id AND abuse_flagged IN (0, 1)) AS opinion_count`
 
-
 /** #77：last_activity_at 由寫入路徑維護；NULL（尚無子內容活動）在 SQL 層 fallback 到 created_at */
 const ISSUE_LAST_ACTIVITY_COLUMN = 'COALESCE(last_activity_at, created_at) AS last_activity_at'
 

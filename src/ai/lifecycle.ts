@@ -43,14 +43,16 @@ export async function checkedSnapshot(env: EvidenceBindings, executionId: string
       throw new SourceUnavailable(current.status === 'deleted' ? 'source_erased' : 'source_withdrawn')
     }
   }
-  if (!await store.touchSources(executionId, snapshot.generations)) throw new SourceUnavailable('source_withdrawn')
+  if (!(await store.touchSources(executionId, snapshot.generations))) throw new SourceUnavailable('source_withdrawn')
   return snapshot
 }
 
 /** 工作流不保存 session；在每次付費前只讀取申請帳號的當前停權狀態。 */
 export async function checkInitiator(dbAuth: D1Database, userId: string): Promise<void> {
-  const user = await dbAuth.prepare(`SELECT "id" FROM "user" WHERE "id" = ?
+  const user = await dbAuth
+    .prepare(`SELECT "id" FROM "user" WHERE "id" = ?
     AND (COALESCE("banned", 0) = 0 OR ("banExpires" IS NOT NULL AND datetime("banExpires") <= CURRENT_TIMESTAMP))`)
-    .bind(userId).first<{ id: string }>()
+    .bind(userId)
+    .first<{ id: string }>()
   if (!user) throw new SourceUnavailable('account_suspended')
 }

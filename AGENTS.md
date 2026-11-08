@@ -6,21 +6,21 @@
 
 Civic Talk 使用 Hono、Vue 3 SSR/hydration、Tailwind 與 Cloudflare Workers，正式站為 <https://civic.vtaiwan.tw>，Worker 名稱 `civic-talk`。現況是每頁 `renderPage`、**單一 client entry**，沒有 `vue-router` 或 `vue-i18n`；全站 router 切換是另需確認的結構性改動。
 
-| 來源 | 用途 |
-| --- | --- |
-| `src/index.ts`、`src/worker.ts` | SSR／API／舊網址導向／ASSETS fallback；正式 wrapper 匯出 `EvidenceWorkflow`，讓可由 Node 匯入的 index 不直接依賴 `cloudflare:workers` |
-| `src/ssr/render.ts`、`src/ssr/heads.ts`、`src/client/civic-entry.ts` | HTML 殼、安全注入 `__PAGE__`／`__SSR_STATE__`、metadata、單一 hydration 註冊表 |
-| `src/views/`、`src/components/`、`src/composables/` | 頁面、共用 UI、登入與導覽狀態 |
-| `src/api/routes.ts`、`src/db/queries.ts`、`migrations/` | 業務 API、集中 SQL／型別、`ct_*` schema |
-| `src/auth/`、`src/api/auth.ts`、`src/api/requireUser.ts` | Better Auth、角色／停權守門、Auth HTTP 轉交與個人資料更新 |
-| `src/moderation/`、`src/legal/terms.ts` | 投稿審查／申訴與伺服器端條款版本 |
-| `src/ai/` | 私有證據工作、生成／引用驗證、來源生命週期、費用與 Workflow |
-| `src/l10n/`、`src/styles/app.css` | 三語 key／插值、Tailwind token 與共用樣式 |
-| `package.json`、lockfile、`wrangler.jsonc`、Vite configs | 實際工具版本、指令、bindings 與建置設定；不依本檔猜套件版本 |
-| [README](./README.md)、[部署說明](./deploy_notes.md) | 人類使用／開發入口、環境與發布程序 |
-| [證據 API 手冊](./docs/evidence-api-review.md)、`Insight.md` | 完整操作、資料／模型政策、品質實驗與歷史限制 |
-| [依賴安全](./docs/dependency-security.md)、[授權檢閱](./docs/licensing-review.md) | 升級、安全與 notices 盤點 |
-| [目前交接](./TODO_AFTER_MERGE.md)、GitHub issues | 未驗項目與後續需求；不是允許遠端操作的授權書 |
+| 來源                                                                              | 用途                                                                                                                                  |
+| --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/index.ts`、`src/worker.ts`                                                   | SSR／API／舊網址導向／ASSETS fallback；正式 wrapper 匯出 `EvidenceWorkflow`，讓可由 Node 匯入的 index 不直接依賴 `cloudflare:workers` |
+| `src/ssr/render.ts`、`src/ssr/heads.ts`、`src/client/civic-entry.ts`              | HTML 殼、安全注入 `__PAGE__`／`__SSR_STATE__`、metadata、單一 hydration 註冊表                                                        |
+| `src/views/`、`src/components/`、`src/composables/`                               | 頁面、共用 UI、登入與導覽狀態                                                                                                         |
+| `src/api/routes.ts`、`src/db/queries.ts`、`migrations/`                           | 業務 API、集中 SQL／型別、`ct_*` schema                                                                                               |
+| `src/auth/`、`src/api/auth.ts`、`src/api/requireUser.ts`                          | Better Auth、角色／停權守門、Auth HTTP 轉交與個人資料更新                                                                             |
+| `src/moderation/`、`src/legal/terms.ts`                                           | 投稿審查／申訴與伺服器端條款版本                                                                                                      |
+| `src/ai/`                                                                         | 私有證據工作、生成／引用驗證、來源生命週期、費用與 Workflow                                                                           |
+| `src/l10n/`、`src/styles/app.css`                                                 | 三語 key／插值、Tailwind token 與共用樣式                                                                                             |
+| `package.json`、lockfile、`wrangler.jsonc`、Vite configs                          | 實際工具版本、指令、bindings 與建置設定；不依本檔猜套件版本                                                                           |
+| [README](./README.md)、[部署說明](./deploy_notes.md)                              | 人類使用／開發入口、環境與發布程序                                                                                                    |
+| [證據 API 手冊](./docs/evidence-api-review.md)、`Insight.md`                      | 完整操作、資料／模型政策、品質實驗與歷史限制                                                                                          |
+| [依賴安全](./docs/dependency-security.md)、[授權檢閱](./docs/licensing-review.md) | 升級、安全與 notices 盤點                                                                                                             |
+| [目前交接](./TODO_AFTER_MERGE.md)、GitHub issues                                  | 未驗項目與後續需求；不是允許遠端操作的授權書                                                                                          |
 
 - 舊站 `../civic-talk` 是功能／內容相容來源，需要時直接讀原始碼；所有接口已整合進本站 Worker，不再呼叫舊 Pages Functions，也不搬舊部署腳本或大段手寫 CSS。
 - `../vTaiwan-hono` 的一般工程慣例僅供參考；**Better Auth 必須對齊其現行實作**，尤其 `src/server/lib/createAuth.ts`、`authorization.ts` 與 `migrations/auth/`。不引入其 LemmaScript／Dafny、會員管理或 step-up 工具鏈。
@@ -43,13 +43,13 @@ Civic Talk 使用 Hono、Vue 3 SSR/hydration、Tailwind 與 Cloudflare Workers�
 13. **footer 原始碼必須對應實際建置 commit。** metadata 自動生成，不手填 SHA、不連移動中的分支、不沿用舊產物；commit／merge／squash／rebase 改 HEAD 後重建，文件 commit 也適用。發布前後查核見第 7 節。
 14. **授權與 notices 不遺漏、不改寫。** 新本站軟體貢獻為 **AGPL-3.0-only**，非 or-later；第三方保留各自授權，保留 `LICENSE-MIT`、`NOTICE`、歷史 attribution，不補造許可。僅由 `vp run deploy` 發布，不能直接 Wrangler 上傳繞過公開來源查核；dry-run 只供預檢。已定義的 AGPL release `v0.2.0` 應指向合併後 merge commit，不推定 tag 已建立，MIT baseline tag／SHA 不移動。
 
-| 舊網址 | 新路由 |
-| --- | --- |
-| `/index.html` | `/` |
-| `/issue.html?id=<n>` | `/issues/<n>` |
+| 舊網址                    | 新路由            |
+| ------------------------- | ----------------- |
+| `/index.html`             | `/`               |
+| `/issue.html?id=<n>`      | `/issues/<n>`     |
 | `/contribute.html?id=<n>` | `/contribute/<n>` |
-| `/about.html` | `/about` |
-| `/admin.html` | `/admin` |
+| `/about.html`             | `/about`          |
+| `/admin.html`             | `/admin`          |
 
 ## 3. Auth、作者隱私與 CSRF
 
@@ -95,24 +95,24 @@ Civic Talk 使用 Hono、Vue 3 SSR/hydration、Tailwind 與 Cloudflare Workers�
 
 完整 JSON／驗證讀 `src/api/routes.ts` 與 `src/db/queries.ts`；一般錯誤 `{error:string}`。下表「登入」均含停權守門，「管理」為 admin／super-admin。
 
-| 方法／路徑 | 相容行為／權限 |
-| --- | --- |
-| GET／POST `/api/issues` | 列表／登入建立議題 |
-| GET／PUT／DELETE `/api/issues/:id` | 公開詳情／管理編輯／管理級聯刪除素材、briefings、意見 |
-| PATCH `/api/issues/:id/closure` | 管理；`{closed:boolean,reason:string}`，trim 後理由 1–1000 code points，同狀態或併發衝突 409，成功 `{ok:true}` |
-| GET／POST `/api/issues/:id/materials` | 列表／登入投稿；前端先完成同源 fact-check 且允許，server 仍做 moderation |
-| POST `/api/fact-check` | 登入；Service Binding 串流轉送私有核心 |
-| DELETE `/api/materials/:id` | 管理刪除 |
-| GET／POST／PUT `/api/issues/:id/briefing` | 最新說明頁／登入新增、版本遞增／管理編輯 |
-| GET／POST `/api/issues/:id/opinions` | viewer-aware 列表，`sort=recent\|responses`（預設 recent）／登入投稿 |
-| DELETE `/api/opinions/:id` | 管理刪除 |
-| POST／DELETE `/api/opinions/:id/vote` | 登入投 `1/-1/0`（同意／不同意／略過）／撤回 |
-| GET `/api/issues/:id/opinions/comments.csv` | 登入匯出 pol.is 相容 CSV，private/no-store |
-| GET `/api/issues/:id/prompt` | 登入；`type=summarize\|narrative\|synthesis`，預設 summarize |
-| POST `/api/appeals` | 登入申訴 rejected_submission／account_ban，停權仍可用 |
-| GET `/api/admin/stats`、`/api/admin/users/:userId` | 管理統計／投稿者目前帳號與停權狀態 |
-| GET `/api/admin/moderation/preview` | 管理模型診斷，不寫 D1，但會呼叫模型 |
-| GET `/api/admin/moderation/appeals`、PATCH `/api/admin/moderation/appeals/:id/resolve` | 管理申訴列表／維持或推翻；帳號處置經 Better Auth |
+| 方法／路徑                                                                             | 相容行為／權限                                                                                                 |
+| -------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| GET／POST `/api/issues`                                                                | 列表／登入建立議題                                                                                             |
+| GET／PUT／DELETE `/api/issues/:id`                                                     | 公開詳情／管理編輯／管理級聯刪除素材、briefings、意見                                                          |
+| PATCH `/api/issues/:id/closure`                                                        | 管理；`{closed:boolean,reason:string}`，trim 後理由 1–1000 code points，同狀態或併發衝突 409，成功 `{ok:true}` |
+| GET／POST `/api/issues/:id/materials`                                                  | 列表／登入投稿；前端先完成同源 fact-check 且允許，server 仍做 moderation                                       |
+| POST `/api/fact-check`                                                                 | 登入；Service Binding 串流轉送私有核心                                                                         |
+| DELETE `/api/materials/:id`                                                            | 管理刪除                                                                                                       |
+| GET／POST／PUT `/api/issues/:id/briefing`                                              | 最新說明頁／登入新增、版本遞增／管理編輯                                                                       |
+| GET／POST `/api/issues/:id/opinions`                                                   | viewer-aware 列表，`sort=recent\|responses`（預設 recent）／登入投稿                                           |
+| DELETE `/api/opinions/:id`                                                             | 管理刪除                                                                                                       |
+| POST／DELETE `/api/opinions/:id/vote`                                                  | 登入投 `1/-1/0`（同意／不同意／略過）／撤回                                                                    |
+| GET `/api/issues/:id/opinions/comments.csv`                                            | 登入匯出 pol.is 相容 CSV，private/no-store                                                                     |
+| GET `/api/issues/:id/prompt`                                                           | 登入；`type=summarize\|narrative\|synthesis`，預設 summarize                                                   |
+| POST `/api/appeals`                                                                    | 登入申訴 rejected_submission／account_ban，停權仍可用                                                          |
+| GET `/api/admin/stats`、`/api/admin/users/:userId`                                     | 管理統計／投稿者目前帳號與停權狀態                                                                             |
+| GET `/api/admin/moderation/preview`                                                    | 管理模型診斷，不寫 D1，但會呼叫模型                                                                            |
+| GET `/api/admin/moderation/appeals`、PATCH `/api/admin/moderation/appeals/:id/resolve` | 管理申訴列表／維持或推翻；帳號處置經 Better Auth                                                               |
 
 - 正常素材投稿 `collecting → summarizing`；正常 briefing 投稿 `collecting/summarizing → published`。安全審查違規仍保存／維持成功形狀，附 `moderation` 資訊，INSERT 時 `abuse_flagged=3` 並建 `source='ai'` 回報，公開只見 placeholder；素材／briefing 不推進狀態，解除誤報也不補推。無自動停權或自動隱藏門檻。
 - **closure 與 status 獨立**：只影響首頁進行中／已結案分類，不阻擋投稿、投票、匯出；公開理由／日期保留，一般編輯不得清除。
@@ -126,14 +126,14 @@ API-only 私有草稿，來源為 `SOURCE_DB ?? DB`，保存到業務 DB，非 D
 
 **有效建立／GET／修訂可能啟動來源對帳、恢復 queued Workflow，對帳發現 deleted 會清 payload；不是純唯讀試打。** 正式登入後呼叫、新付費、queued 恢復及有效 maintenance 需核對來源、帳號／角色與個別授權，不因 API 已啟用或範例存在而執行。
 
-| API | 請求、回應與角色 |
-| --- | --- |
-| POST `/api/issues/:id/evidence-jobs` | 任一未停權登入者；JSON `{consent:true,language?,material_ids?}`，language 預設 zh-TW，可 en／ja。回 `{job_id,status,cache,input_coverage:{selection,material_ids,exclusions}}`；新建 202/miss、進行中 202/joined、完成快取 200/hit，保存的 failed 可 200/joined；200 不等於生成成功 |
-| GET `/api/evidence-jobs/:jobId` | owner／管理可讀，其他 404；回 status、usage、error_code、generation_progress、provenance 等，有可交付草稿才有 data／citation_map |
-| GET `/api/evidence-jobs/:jobId/revisions` | owner／管理可讀；需 ai_draft／partial_draft，否則 422；回 `{job_id,ai_base:{id:'ai',verification:'ai_unverified',data,citation_map},revisions}` |
-| POST `/api/evidence-jobs/:jobId/revisions` | **僅 owner**，管理員也不能代改他人工作（404）；JSON 精確 `{parent_revision_id:string,data}`；成功 201 `{revision_id,parent_revision_id,verification:'human_unverified'}`，舊 parent 409/revision_conflict |
-| POST `/api/evidence-maintenance/reconcile` | 管理；JSON 精確 `{}`，回 `{ok,checked,withdrawn,erased}`；對帳並可能恢復 queued |
-| POST `/api/evidence-maintenance/erase` | 管理；JSON 精確 `{kind:'issue'\|'material',id:正安全整數}`，回 `{ok:true}`；按來源清跨依賴 execution／申請者私有內容，不刪業務來源 |
+| API                                        | 請求、回應與角色                                                                                                                                                                                                                                                                    |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| POST `/api/issues/:id/evidence-jobs`       | 任一未停權登入者；JSON `{consent:true,language?,material_ids?}`，language 預設 zh-TW，可 en／ja。回 `{job_id,status,cache,input_coverage:{selection,material_ids,exclusions}}`；新建 202/miss、進行中 202/joined、完成快取 200/hit，保存的 failed 可 200/joined；200 不等於生成成功 |
+| GET `/api/evidence-jobs/:jobId`            | owner／管理可讀，其他 404；回 status、usage、error_code、generation_progress、provenance 等，有可交付草稿才有 data／citation_map                                                                                                                                                    |
+| GET `/api/evidence-jobs/:jobId/revisions`  | owner／管理可讀；需 ai_draft／partial_draft，否則 422；回 `{job_id,ai_base:{id:'ai',verification:'ai_unverified',data,citation_map},revisions}`                                                                                                                                     |
+| POST `/api/evidence-jobs/:jobId/revisions` | **僅 owner**，管理員也不能代改他人工作（404）；JSON 精確 `{parent_revision_id:string,data}`；成功 201 `{revision_id,parent_revision_id,verification:'human_unverified'}`，舊 parent 409/revision_conflict                                                                           |
+| POST `/api/evidence-maintenance/reconcile` | 管理；JSON 精確 `{}`，回 `{ok,checked,withdrawn,erased}`；對帳並可能恢復 queued                                                                                                                                                                                                     |
+| POST `/api/evidence-maintenance/erase`     | 管理；JSON 精確 `{kind:'issue'\|'material',id:正安全整數}`，回 `{ok:true}`；按來源清跨依賴 execution／申請者私有內容，不刪業務來源                                                                                                                                                  |
 
 ### 建立、輪詢與修訂
 
@@ -168,16 +168,16 @@ API-only 私有草稿，來源為 `SOURCE_DB ?? DB`，保存到業務 DB，非 D
 - 識別字／技術詞英文，註解／文件／commit／溝通用繁中。先讀來源與既有模式；大型架構／新工具鏈先確認，不順手加入無關功能。
 - 套件管理用 npm，開發用 Vite+ `vp`，不換 pnpm／yarn／bun。依 `package.json` 的 devEngines 與 lockfile 安裝；lock 改動以 `node scripts/licensing-dependencies.mjs` 重產授權 TSV、加 `--check` 核對，同步授權檢閱統計與 notices。遵循依賴安全文件，不在 CI 重產盤點掩蓋 lock 不一致。
 
-| 指令 | 行為／注意 |
-| --- | --- |
-| `vp run dev` | 完整 build 後 HMR；本機業務 DB、Auth 停用；不是純啟 server |
-| `vp run dev:remote` | 完整 build 後使用真實遠端 bindings／Auth／AI，**不是隔離 sandbox，可能寫入付費** |
-| `vp run css:watch` | 另終端監看 CSS；一般 dev 不自動 watch CSS |
-| `vp check --no-fmt --no-lint`、`vp test`、`vp run build` | 型別、完整測試、CSS→client→server 與 notices 建置 |
-| `vp preview` | 預覽既有產物，不等於遠端驗收 |
-| `vp exec wrangler types` | binding 變更後由源設定產生型別 |
-| `vp check`、`vp fmt` | 全檢查／格式化，依任務授權執行，不無故重排他人改動 |
-| `vp run deploy` | build＋實際產物／匿名公開來源查核＋部署；需另外授權 |
+| 指令                                                     | 行為／注意                                                                       |
+| -------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `vp run dev`                                             | 完整 build 後 HMR；本機業務 DB、Auth 停用；不是純啟 server                       |
+| `vp run dev:remote`                                      | 完整 build 後使用真實遠端 bindings／Auth／AI，**不是隔離 sandbox，可能寫入付費** |
+| `vp run css:watch`                                       | 另終端監看 CSS；一般 dev 不自動 watch CSS                                        |
+| `vp check --no-fmt --no-lint`、`vp test`、`vp run build` | 型別、完整測試、CSS→client→server 與 notices 建置                                |
+| `vp preview`                                             | 預覽既有產物，不等於遠端驗收                                                     |
+| `vp exec wrangler types`                                 | binding 變更後由源設定產生型別                                                   |
+| `vp check`、`vp fmt`                                     | 全檢查／格式化，依任務授權執行，不無故重排他人改動                               |
+| `vp run deploy`                                          | build＋實際產物／匿名公開來源查核＋部署；需另外授權                              |
 
 - 一般程式交付跑 typecheck、完整測試、build；API／DB 補 CRUD、狀態、400/401/403/404、隱私／CSRF smoke；路由補新舊 URL；migration 先 local 並查表前綴。僅文件改動核對來源／連結／指令，不冒充程式驗證。
 - 新 bug 補可重現回歸；安全／隱私、狀態／排序／限制／併發邏輯同改動補 `src/tests/` 測試，從 `vite-plus/test` import。i18n 由既有測試驗三語 key／插值，仍人工核對翻譯；純樣式／文案不鎖無關實作字串。

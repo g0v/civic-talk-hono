@@ -40,9 +40,7 @@ export function sortByOrder(issues: IssueListItem[], order: SortOrder): IssueLis
     result.sort((a, b) => a.opinion_count + a.vote_count - (b.opinion_count + b.vote_count))
   } else {
     // 日期相同時保留 API 既有順序；兩種日期排序都只在角色的狀態階內套用。
-    const dateOf = order === 'published'
-      ? (issue: IssueListItem): string => issue.created_at
-      : (issue: IssueListItem): string => issue.last_activity_at ?? issue.created_at
+    const dateOf = order === 'published' ? (issue: IssueListItem): string => issue.created_at : (issue: IssueListItem): string => issue.last_activity_at ?? issue.created_at
     result.sort((a, b) => {
       const aAt = dateOf(a)
       const bAt = dateOf(b)

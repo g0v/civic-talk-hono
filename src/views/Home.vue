@@ -104,9 +104,7 @@ const similarIssues = computed(() => {
   return issues.value.filter(i => (i.title ?? '').toLowerCase().includes(q)).slice(0, 5)
 })
 
-const filteredAndSortedIssues = computed(() =>
-  filterAndSortHomeIssues(filterHomeIssuesByLifecycle(issues.value, lifecycleTab.value), viewerRole.value, sortOrder.value, searchQuery.value)
-)
+const filteredAndSortedIssues = computed(() => filterAndSortHomeIssues(filterHomeIssuesByLifecycle(issues.value, lifecycleTab.value), viewerRole.value, sortOrder.value, searchQuery.value))
 const tagSuggestions = computed(() => collectHomeTagSuggestions(issues.value))
 const selectedIssue = computed(() => issues.value.find(issue => issue.id === selectedIssueId.value) ?? null)
 
@@ -539,12 +537,7 @@ async function copyRssUrl() {
             </label>
           </div>
 
-          <div
-            id="home-issues-panel"
-            role="tabpanel"
-            tabindex="0"
-            :aria-labelledby="lifecycleTab === 'open' ? 'home-tab-open' : 'home-tab-closed'"
-          >
+          <div id="home-issues-panel" role="tabpanel" tabindex="0" :aria-labelledby="lifecycleTab === 'open' ? 'home-tab-open' : 'home-tab-closed'">
             <div v-if="loading" class="empty">
               <div class="empty-icon">⏳</div>
               {{ t('loading') }}

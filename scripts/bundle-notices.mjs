@@ -167,10 +167,7 @@ async function bundledPackages(bundle, root) {
 }
 
 function formatNotices(target, packages) {
-  const sections = [
-    `第三方套件授權聲明（${target} bundle）`,
-    '本文件依實際 bundle modules 產生。套件授權 metadata 與原始 LICENSE／NOTICE 全文來自實際已安裝套件。',
-  ]
+  const sections = [`第三方套件授權聲明（${target} bundle）`, '本文件依實際 bundle modules 產生。套件授權 metadata 與原始 LICENSE／NOTICE 全文來自實際已安裝套件。']
 
   if (packages.length === 0) sections.push('本 bundle 未包含可辨識的 node_modules 套件。')
   for (const item of packages) {

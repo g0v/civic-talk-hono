@@ -150,7 +150,6 @@ async function adminUnbanUser(c: Context, userId: string): Promise<Response | nu
   }
 }
 
-
 /**
  * 申訴守衛只要求仍有有效 session，不檢查 banned；
  * 被停權的人仍可送出申訴。這支只用在申訴端點，不可拿來寫投稿。

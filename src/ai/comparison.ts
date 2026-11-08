@@ -111,9 +111,29 @@ const relations: readonly Relation[] = ['agree', 'disagree', 'unrelated', 'uncer
 function validateComparison(value: DirectComparison, pairs: Map<string, EvidencePair>): void {
   if (!value || typeof value !== 'object') throw new Error('invalid_direct_comparison')
   const pair = pairs.get(value.pair_key)
-  if (!pair || !Array.isArray(value.evidence_ids) || value.evidence_ids.length !== 2 || typeof value.evidence_ids[0] !== 'string' || typeof value.evidence_ids[1] !== 'string' || pairKey(value.evidence_ids[0], value.evidence_ids[1]) !== pair.key || !relations.includes(value.relation) || typeof value.question_version !== 'string' || !value.question_version || !('provider_diagnostics' in value) || (value.cached !== undefined && typeof value.cached !== 'boolean')) throw new Error('invalid_direct_comparison')
+  if (
+    !pair ||
+    !Array.isArray(value.evidence_ids) ||
+    value.evidence_ids.length !== 2 ||
+    typeof value.evidence_ids[0] !== 'string' ||
+    typeof value.evidence_ids[1] !== 'string' ||
+    pairKey(value.evidence_ids[0], value.evidence_ids[1]) !== pair.key ||
+    !relations.includes(value.relation) ||
+    typeof value.question_version !== 'string' ||
+    !value.question_version ||
+    !('provider_diagnostics' in value) ||
+    (value.cached !== undefined && typeof value.cached !== 'boolean')
+  )
+    throw new Error('invalid_direct_comparison')
   const probabilities = value.probabilities
-  if (!probabilities || typeof probabilities !== 'object' || Array.isArray(probabilities) || Object.keys(probabilities).length !== relations.length || relations.some(relation => !Number.isFinite(probabilities[relation]) || probabilities[relation] < 0 || probabilities[relation] > 1)) throw new Error('invalid_direct_probabilities')
+  if (
+    !probabilities ||
+    typeof probabilities !== 'object' ||
+    Array.isArray(probabilities) ||
+    Object.keys(probabilities).length !== relations.length ||
+    relations.some(relation => !Number.isFinite(probabilities[relation]) || probabilities[relation] < 0 || probabilities[relation] > 1)
+  )
+    throw new Error('invalid_direct_probabilities')
   const sum = relations.reduce((total, relation) => total + probabilities[relation], 0)
   if (Math.abs(sum - 1) > 0.01 || relations.some(relation => probabilities[relation] > probabilities[value.relation] + 0.000001)) throw new Error('invalid_direct_probabilities')
 }
@@ -141,7 +161,14 @@ export function analyzeComparisons(
   }
   const failed = new Map<string, ComparisonFailure>()
   for (const failure of failures) {
-    if (!pairMap.has(failure.pair_key) || comparisons.has(failure.pair_key) || failed.has(failure.pair_key) || typeof failure.error_code !== 'string' || !/^[a-zA-Z0-9_.-]{1,80}$/.test(failure.error_code)) throw new Error('invalid_comparison_failure')
+    if (
+      !pairMap.has(failure.pair_key) ||
+      comparisons.has(failure.pair_key) ||
+      failed.has(failure.pair_key) ||
+      typeof failure.error_code !== 'string' ||
+      !/^[a-zA-Z0-9_.-]{1,80}$/.test(failure.error_code)
+    )
+      throw new Error('invalid_comparison_failure')
     failed.set(failure.pair_key, failure)
   }
   for (const result of reverseDiagnostics) validateComparison(result, pairMap)
@@ -200,7 +227,10 @@ export function analyzeComparisons(
     for (let head = 0; head < queue.length; head++) {
       const current = queue[head]
       for (const next of neighbors[current]) {
-        if (parent[next] === -1) { parent[next] = current; queue.push(next) }
+        if (parent[next] === -1) {
+          parent[next] = current
+          queue.push(next)
+        }
       }
     }
     parents.push(parent)
@@ -218,13 +248,13 @@ export function analyzeComparisons(
     path.push(pair.a)
     path.reverse()
     const failure = failed.get(pair.key) ?? null
-    const status = judgment ? judgment.relation as 'disagree' | 'unrelated' | 'uncertain' : failure ? 'failed' : 'pending'
-    const exclusionReason = status === 'pending' ? 'missing_direct_comparison' : status === 'failed' ? 'failed_direct_comparison' : `direct_${status}` as const
+    const status = judgment ? (judgment.relation as 'disagree' | 'unrelated' | 'uncertain') : failure ? 'failed' : 'pending'
+    const exclusionReason = status === 'pending' ? 'missing_direct_comparison' : status === 'failed' ? 'failed_direct_comparison' : (`direct_${status}` as const)
     candidatePaths.push({ pair_key: pair.key, evidence_ids: [pair.a, pair.b], path, status, exclusion_reason: exclusionReason, direct: judgment, failure })
   }
   return {
     pairs,
-    direct_comparisons: pairs.flatMap(pair => comparisons.has(pair.key) ? [comparisons.get(pair.key)!] : []),
+    direct_comparisons: pairs.flatMap(pair => (comparisons.has(pair.key) ? [comparisons.get(pair.key)!] : [])),
     reverse_diagnostics: [...reverseDiagnostics],
     consensus_groups: consensusGroups,
     disputes,

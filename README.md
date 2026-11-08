@@ -12,15 +12,15 @@
 
 ## 架構與重要檔案
 
-| 位置 | 用途 |
-| --- | --- |
-| `src/worker.ts`、`src/index.ts` | Worker 入口與 Hono 應用 |
-| `src/views/`、`src/components/`、`src/client/`、`src/ssr/` | Vue 頁面、共用元件、hydration 與 SSR |
-| `src/api/`、`src/auth/`、`src/moderation/` | 一般 API、Better Auth、投稿安全審查 |
-| `src/ai/` | 證據 API、來源快照、Workflow、模型生成、費用與生命週期 |
-| `src/l10n/`、`src/styles/app.css` | 繁中／英文／日文與 Tailwind；設計 token 來源為 `../vtaiwan-design-system/project/colors_and_type.css` |
-| `migrations/`、`wrangler.jsonc` | 業務 D1 schema 與 Workers bindings |
-| `scripts/`、`src/tests/` | 建置、來源／授權產物檢查與自動化測試 |
+| 位置                                                       | 用途                                                                                                  |
+| ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `src/worker.ts`、`src/index.ts`                            | Worker 入口與 Hono 應用                                                                               |
+| `src/views/`、`src/components/`、`src/client/`、`src/ssr/` | Vue 頁面、共用元件、hydration 與 SSR                                                                  |
+| `src/api/`、`src/auth/`、`src/moderation/`                 | 一般 API、Better Auth、投稿安全審查                                                                   |
+| `src/ai/`                                                  | 證據 API、來源快照、Workflow、模型生成、費用與生命週期                                                |
+| `src/l10n/`、`src/styles/app.css`                          | 繁中／英文／日文與 Tailwind；設計 token 來源為 `../vtaiwan-design-system/project/colors_and_type.css` |
+| `migrations/`、`wrangler.jsonc`                            | 業務 D1 schema 與 Workers bindings                                                                    |
+| `scripts/`、`src/tests/`                                   | 建置、來源／授權產物檢查與自動化測試                                                                  |
 
 業務庫為 `vtaiwan-civic-talks`（`DB`，表名 `ct_` 前綴）；證據來源預設讀 `SOURCE_DB ?? DB`。共享認證庫 `vtaiwan-auth`（`DB_AUTH`）由 [`../vTaiwan-hono`](../vTaiwan-hono) 維護，本站只讀角色，**不可對它套本站 migration、修改 schema 或直接 SQL 寫入**；正常 Auth 登入／session 生命週期是既有寫入例外。原始 `0017_evidence_pipeline.sql` 已套業務庫，保留原 SQL 與 ledger，不重跑或改寫；遠端操作須另獲授權，見[部署紀錄](./deploy_notes.md)。
 
@@ -34,15 +34,15 @@ npm install
 vp run dev
 ```
 
-| 指令 | 用途 |
-| --- | --- |
-| `vp run dev` | 先 build，再啟動本機 Worker + HMR；本機 DB、Auth 停用 |
-| `vp run dev:remote` | 先 build，再使用真實遠端 bindings 與 Auth |
-| `vp run build` | 建置 CSS、client、Worker 與 notices／來源 metadata |
-| `vp run css:watch` | 監看 Tailwind CSS |
-| `vp check --no-fmt --no-lint` | 型別檢查 |
-| `vp test` | 自動化測試 |
-| `vp exec wrangler types` | 產生 bindings 型別 |
+| 指令                          | 用途                                                  |
+| ----------------------------- | ----------------------------------------------------- |
+| `vp run dev`                  | 先 build，再啟動本機 Worker + HMR；本機 DB、Auth 停用 |
+| `vp run dev:remote`           | 先 build，再使用真實遠端 bindings 與 Auth             |
+| `vp run build`                | 建置 CSS、client、Worker 與 notices／來源 metadata    |
+| `vp run css:watch`            | 監看 Tailwind CSS                                     |
+| `vp check --no-fmt --no-lint` | 型別檢查                                              |
+| `vp test`                     | 自動化測試                                            |
+| `vp exec wrangler types`      | 產生 bindings 型別                                    |
 
 日常 `dev` 刻意不初始化本機空認證庫：session 為 `200/null`、`/api/me` 與需登入操作為 401，登入／OAuth callback／個人資料更新為 503；既有 cookie 也視為匿名，沒有假使用者或匿名寫入。停用只限 Vite `DEV && mode === 'development'`，**remote 開發與正式建置不受影響**。
 
@@ -58,14 +58,14 @@ vp run dev
 
 ## 重要頁面與一般 API
 
-| 頁面 | 用途 |
-| --- | --- |
-| `/` | 議題列表、搜尋、預覽與新增議題 |
-| `/issues/:id` | 說明輪播；`?step=comments\|materials\|volunteer` 切換意見、素材、志願者工具 |
-| `/issues/:id/source/:materialId`、`/issues/:id/comment/:opinionId` | 可分享的素材／意見詳情 |
-| `/contribute/:id` | 素材投稿 |
-| `/about`、`/privacy`、`/terms` | 平台介紹、隱私政策、使用條款 |
-| `/admin` | `admin`／`super-admin` 後台；預設使用者回報 |
+| 頁面                                                               | 用途                                                                        |
+| ------------------------------------------------------------------ | --------------------------------------------------------------------------- |
+| `/`                                                                | 議題列表、搜尋、預覽與新增議題                                              |
+| `/issues/:id`                                                      | 說明輪播；`?step=comments\|materials\|volunteer` 切換意見、素材、志願者工具 |
+| `/issues/:id/source/:materialId`、`/issues/:id/comment/:opinionId` | 可分享的素材／意見詳情                                                      |
+| `/contribute/:id`                                                  | 素材投稿                                                                    |
+| `/about`、`/privacy`、`/terms`                                     | 平台介紹、隱私政策、使用條款                                                |
+| `/admin`                                                           | `admin`／`super-admin` 後台；預設使用者回報                                 |
 
 一般 API 入口為 `src/api/`，完整相容守則見 [`AGENTS.md`](./AGENTS.md)：
 
@@ -81,14 +81,14 @@ Clairic 逐素材抽取 → Clef 比較 → Gemma 生成草稿；歷史[品質�
 
 **執行前先各別確認來源、帳號／角色與授權；新付費工作、恢復 queued 及維護操作須各別同意。以下 ID 都是佔位示意，不是可直接執行的正式測試。使用同源登入 session，不輸出或匯出 Cookie。**
 
-| 方法與路徑 | 權限／用途與 JSON |
-| --- | --- |
-| `POST /api/issues/:id/evidence-jobs` | 登入者建立／加入／取快取；`{consent:true, language?, material_ids?}` |
-| `GET /api/evidence-jobs/:jobId` | owner 或管理員讀狀態、草稿、引用及來源紀錄 |
-| `GET /api/evidence-jobs/:jobId/revisions` | owner 或管理員讀 AI 基底與人工修訂；須有可交付草稿 |
-| `POST /api/evidence-jobs/:jobId/revisions` | **僅 owner** 修訂；`{parent_revision_id, data}`，管理員不可代改他人工作 |
+| 方法與路徑                                 | 權限／用途與 JSON                                                                 |
+| ------------------------------------------ | --------------------------------------------------------------------------------- |
+| `POST /api/issues/:id/evidence-jobs`       | 登入者建立／加入／取快取；`{consent:true, language?, material_ids?}`              |
+| `GET /api/evidence-jobs/:jobId`            | owner 或管理員讀狀態、草稿、引用及來源紀錄                                        |
+| `GET /api/evidence-jobs/:jobId/revisions`  | owner 或管理員讀 AI 基底與人工修訂；須有可交付草稿                                |
+| `POST /api/evidence-jobs/:jobId/revisions` | **僅 owner** 修訂；`{parent_revision_id, data}`，管理員不可代改他人工作           |
 | `POST /api/evidence-maintenance/reconcile` | 管理員對帳；精確 JSON `{}`，回 `{ok,checked,withdrawn,erased}`，也可能恢復 queued |
-| `POST /api/evidence-maintenance/erase` | 管理員按來源清除；`{kind:"issue"或"material",id:正安全整數}`，回 `{ok:true}` |
+| `POST /api/evidence-maintenance/erase`     | 管理員按來源清除；`{kind:"issue"或"material",id:正安全整數}`，回 `{ok:true}`      |
 
 ### 建立與取結果
 
@@ -120,20 +120,21 @@ GET /api/evidence-jobs/<JOB_ID>
 先 `GET /api/evidence-jobs/<JOB_ID>/revisions`，得到 `{job_id, ai_base, revisions}`。尚無人工版本時，以 `ai_base.data` 為基底、parent 為 `"ai"`；否則用最新 revision 的 `payload` 與 `id`。以下為同源用法示意，僅在取得授權且已有可交付草稿後使用：
 
 ```js
-const url = '/api/evidence-jobs/<JOB_ID>/revisions';
-const response = await fetch(url, { credentials: 'same-origin' });
-if (!response.ok) throw new Error(`讀取失敗：${response.status}`);
-const { ai_base, revisions } = await response.json();
-const latest = revisions.at(-1);
-const data = structuredClone(latest ? latest.payload : ai_base.data);
+const url = '/api/evidence-jobs/<JOB_ID>/revisions'
+const response = await fetch(url, { credentials: 'same-origin' })
+if (!response.ok) throw new Error(`讀取失敗：${response.status}`)
+const { ai_base, revisions } = await response.json()
+const latest = revisions.at(-1)
+const data = structuredClone(latest ? latest.payload : ai_base.data)
 // 人工核對完整內容與真實引用，再修改所需欄位，例如：
-data.consensus.Overview = '人工核對後的共識概述';
+data.consensus.Overview = '人工核對後的共識概述'
 const saved = await fetch(url, {
-  method: 'POST', credentials: 'same-origin',
+  method: 'POST',
+  credentials: 'same-origin',
   headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ parent_revision_id: latest ? latest.id : 'ai', data })
-});
-if (!saved.ok) throw new Error(`修訂未成功：${saved.status}`);
+  body: JSON.stringify({ parent_revision_id: latest ? latest.id : 'ai', data }),
+})
+if (!saved.ok) throw new Error(`修訂未成功：${saved.status}`)
 ```
 
 須送完整 `consensus`、`disputes`、`positions`，各 `Overview` 與立場群 `Core_concern` 不可空白，`Sources` 必須維持真實來源。成功 201 回 `revision_id`、`parent_revision_id`、`verification:"human_unverified"`；過時 parent 回 409 `revision_conflict`，須重讀並人工合併，不自動重送。AI 原稿不覆寫，人改也不代表已驗證。

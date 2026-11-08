@@ -176,44 +176,43 @@ vp run deploy    # = build + 建置產物／公開原始碼檢查 + wrangler dep
 
   無自動 TTL／固定刪除期限；hidden／changed 只撤下且保留 payload。deleted 被對帳／查核發現或管理員按來源 erase 才清跨工作／申請者相關 execution 私有 payload／diff，保留帳號 ID、hash、同意版本／時間、usage、unknown 與永久 tombstone，來源 ID 不可重新入場。權利請求寄 `info@vtaiwan.tw` 人工受理，不保證即時發現刪除、不能撤回在途請求。D1 Time Travel 依方案 7／30 天，erase 不保證即時清備份；Workers AI 一般推論 ZDR／不訓練有營運 metadata、安全及法律例外，不代表 D1 零留存。完整資料／權限及官方連結見[手冊第 3 節](./docs/evidence-api-review.md#3-模式前置與保護範圍)。
 
-
 ---
 
 ## 4. 部署後的煙霧測試
 
 正式站 origin 是 `https://civic.vtaiwan.tw`。「已驗」欄記的是最近一次確認的日期；每次 deploy 後至少重跑前段那幾條。
 
-| 檢查                                              | 預期                                                                                    | 已驗                                                                                                |
-| ------------------------------------------------- | --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `GET /`                                           | 200，議題列表正常渲染                                                                   | 2026-08-11                                                                                          |
-| `GET /api/issues`                                 | 200                                                                                     | 2026-08-11                                                                                          |
-| `GET /api/me`（未登入）                           | 401                                                                                     | 2026-08-11                                                                                          |
-| `GET /api/auth/get-session`                       | 200                                                                                     | 2026-08-11                                                                                          |
-| `GET /api/auth/admin/list-users`                  | **404**（本站刻意不開成員管理端點）                                                     | 2026-08-11                                                                                          |
-| `GET /api/admin/stats`（未登入）                  | 401                                                                                     | 2026-08-11                                                                                          |
-| `GET /index.html`                                 | 301 → `/`                                                                               | 2026-08-11                                                                                          |
-| `GET /privacy`、`GET /terms`                      | 200                                                                                     | 2026-08-11                                                                                          |
-| `POST /api/fact-check`（未登入）                  | 401，且不呼叫 `fact-check-core`                                                         | —                                                                                                   |
-| 登入後執行素材事實查核                            | 200；回應保留 `X-Request-Id`、`X-Fact-Check-Cache` 與 `Cache-Control: no-store`         | —                                                                                                   |
-| `GET /issue.html?id=1`                            | 302 → `/issues/1`                                                                       | —                                                                                                   |
-| 瀏覽器開 `/admin`                                 | 顯示 Google／GitHub 登入卡片                                                            | 2026-08-11                                                                                          |
-| 用 Google 登入                                    | 導回 `/admin`；角色是 `admin`／`super-admin` 就進後台，否則顯示「沒有管理權限」         | 2026-08-11                                                                                          |
-| 用 GitHub 登入                                    | 同樣能登入並導回原頁                                                                    | 2026-08-11                                                                                          |
-| 用同一個 email 換 provider 登入                   | 同一個帳號、同樣權限，**不會變成新帳號**                                                | [2026-10-16（使用者確認）](https://github.com/g0v/civic-talk-hono/issues/5#issuecomment-6225088110) |
-| 登入後投稿素材／意見／議題                        | 寫入成功，且該筆內容顯示投稿者名稱（email 只在勾選公開時才出現）                        | 2026-08-11                                                                                          |
-| 登入後送出說明頁                                  | 寫入成功且記錄 `author_id`；管理端看得到完整作者快照                                    | —                                                                                                   |
-| 登出後 `GET /api/me`                              | 401                                                                                     | —                                                                                                   |
-| `POST`／`DELETE /api/opinions/:id/vote`（未登入） | 401                                                                                     | —                                                                                                   |
-| 登入後投票、改票、收回                            | 成功；投票後可見分布，收回後再次遮蔽；作者及 `abuse_flagged = 2/3` 不可投               | —                                                                                                   |
-| `GET /api/issues/:id/opinions?sort=responses`     | 200；按回應數排序，未投票者仍看不到分布                                                 | —                                                                                                   |
-| `GET /api/issues/:id/opinions/comments.csv`       | 未登入 401；登入後回 pol.is 相容 CSV，且不含 Better Auth id、email 或 voter identity    | —                                                                                                   |
-| 導覽列開啟使用者回報                              | 桌機文字／手機圖示可用，modal 不換頁；淺深色、三語與已登入長名稱不擠版                  | —                                                                                                   |
-| 匿名 `POST /api/feedback`                         | 有效分類、描述及相對頁面路徑得到 `201 { "ok": true }`，`ct_feedback` 不含帳號或環境資料 | —                                                                                                   |
-| `GET /api/admin/feedback`                         | 未登入 401、一般使用者 403、管理員 200；回應 private/no-store，回報依新到舊排列         | —                                                                                                   |
-| `/admin?tab=feedback`                             | 管理員可瀏覽；描述保留換行但不執行 HTML，原頁面與 GitHub 連結另開分頁                   | —                                                                                                   |
-| 議題結案／重開（#159）                            | 未登入 401、一般使用者 403；admin／super-admin 填理由後可操作，理由與日期公開；空理由 400、重複操作 409 | — |
-| 首頁 `?tab=closed`                                 | 預設僅進行中；已結案頁籤與搜尋、預覽、返回、重新整理及歷史同步，三語及淺深色正常 | — |
-| 已結案議題參與                                     | 可讀取、投稿、投票與匯出；重開不重設素材募集／彙整／發布狀態 | — |
+| 檢查                                              | 預期                                                                                                    | 已驗                                                                                                |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `GET /`                                           | 200，議題列表正常渲染                                                                                   | 2026-08-11                                                                                          |
+| `GET /api/issues`                                 | 200                                                                                                     | 2026-08-11                                                                                          |
+| `GET /api/me`（未登入）                           | 401                                                                                                     | 2026-08-11                                                                                          |
+| `GET /api/auth/get-session`                       | 200                                                                                                     | 2026-08-11                                                                                          |
+| `GET /api/auth/admin/list-users`                  | **404**（本站刻意不開成員管理端點）                                                                     | 2026-08-11                                                                                          |
+| `GET /api/admin/stats`（未登入）                  | 401                                                                                                     | 2026-08-11                                                                                          |
+| `GET /index.html`                                 | 301 → `/`                                                                                               | 2026-08-11                                                                                          |
+| `GET /privacy`、`GET /terms`                      | 200                                                                                                     | 2026-08-11                                                                                          |
+| `POST /api/fact-check`（未登入）                  | 401，且不呼叫 `fact-check-core`                                                                         | —                                                                                                   |
+| 登入後執行素材事實查核                            | 200；回應保留 `X-Request-Id`、`X-Fact-Check-Cache` 與 `Cache-Control: no-store`                         | —                                                                                                   |
+| `GET /issue.html?id=1`                            | 302 → `/issues/1`                                                                                       | —                                                                                                   |
+| 瀏覽器開 `/admin`                                 | 顯示 Google／GitHub 登入卡片                                                                            | 2026-08-11                                                                                          |
+| 用 Google 登入                                    | 導回 `/admin`；角色是 `admin`／`super-admin` 就進後台，否則顯示「沒有管理權限」                         | 2026-08-11                                                                                          |
+| 用 GitHub 登入                                    | 同樣能登入並導回原頁                                                                                    | 2026-08-11                                                                                          |
+| 用同一個 email 換 provider 登入                   | 同一個帳號、同樣權限，**不會變成新帳號**                                                                | [2026-10-16（使用者確認）](https://github.com/g0v/civic-talk-hono/issues/5#issuecomment-6225088110) |
+| 登入後投稿素材／意見／議題                        | 寫入成功，且該筆內容顯示投稿者名稱（email 只在勾選公開時才出現）                                        | 2026-08-11                                                                                          |
+| 登入後送出說明頁                                  | 寫入成功且記錄 `author_id`；管理端看得到完整作者快照                                                    | —                                                                                                   |
+| 登出後 `GET /api/me`                              | 401                                                                                                     | —                                                                                                   |
+| `POST`／`DELETE /api/opinions/:id/vote`（未登入） | 401                                                                                                     | —                                                                                                   |
+| 登入後投票、改票、收回                            | 成功；投票後可見分布，收回後再次遮蔽；作者及 `abuse_flagged = 2/3` 不可投                               | —                                                                                                   |
+| `GET /api/issues/:id/opinions?sort=responses`     | 200；按回應數排序，未投票者仍看不到分布                                                                 | —                                                                                                   |
+| `GET /api/issues/:id/opinions/comments.csv`       | 未登入 401；登入後回 pol.is 相容 CSV，且不含 Better Auth id、email 或 voter identity                    | —                                                                                                   |
+| 導覽列開啟使用者回報                              | 桌機文字／手機圖示可用，modal 不換頁；淺深色、三語與已登入長名稱不擠版                                  | —                                                                                                   |
+| 匿名 `POST /api/feedback`                         | 有效分類、描述及相對頁面路徑得到 `201 { "ok": true }`，`ct_feedback` 不含帳號或環境資料                 | —                                                                                                   |
+| `GET /api/admin/feedback`                         | 未登入 401、一般使用者 403、管理員 200；回應 private/no-store，回報依新到舊排列                         | —                                                                                                   |
+| `/admin?tab=feedback`                             | 管理員可瀏覽；描述保留換行但不執行 HTML，原頁面與 GitHub 連結另開分頁                                   | —                                                                                                   |
+| 議題結案／重開（#159）                            | 未登入 401、一般使用者 403；admin／super-admin 填理由後可操作，理由與日期公開；空理由 400、重複操作 409 | —                                                                                                   |
+| 首頁 `?tab=closed`                                | 預設僅進行中；已結案頁籤與搜尋、預覽、返回、重新整理及歷史同步，三語及淺深色正常                        | —                                                                                                   |
+| 已結案議題參與                                    | 可讀取、投稿、投票與匯出；重開不重設素材募集／彙整／發布狀態                                            | —                                                                                                   |
 
 > ⚠️ **`/api/auth/get-session` 回 200 不代表登入設定正確**——沒有 cookie 時它跟 callback 網址設錯或 `BETTER_AUTH_URL` 設錯的情況長得一樣。登入相關的列只能靠人工在瀏覽器實測；改網域或換金鑰後要重跑。
 
@@ -272,13 +271,13 @@ cp wrangler.jsonc wrangler.personal.jsonc
 
 編輯 `wrangler.personal.jsonc`，**六處都要改**：
 
-| 欄位                    | 改成什麼                                                                |
-| ----------------------- | ----------------------------------------------------------------------- |
-| `name`                  | 自己的 Worker 名稱（**不可**沿用 `civic-talk`，否則會覆蓋正式環境）     |
-| `d1_databases[DB]`      | 步驟 1 建立的業務庫名稱與 `database_id`                                 |
-| `d1_databases[DB_AUTH]` | 步驟 1 建立的認證庫名稱與 `database_id`                                 |
-| `services`              | **整段刪除**——`fact-check-core` 只存在於 vTaiwan 帳號，帶著它會部署失敗 |
-| `workflows[].name`       | 改為自己專用的 Workflow 名稱；不得沿用 `civic-talk-evidence`，避免與同帳號的其他 Worker 共用資源名稱。 |
+| 欄位                        | 改成什麼                                                                                                                              |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`                      | 自己的 Worker 名稱（**不可**沿用 `civic-talk`，否則會覆蓋正式環境）                                                                   |
+| `d1_databases[DB]`          | 步驟 1 建立的業務庫名稱與 `database_id`                                                                                               |
+| `d1_databases[DB_AUTH]`     | 步驟 1 建立的認證庫名稱與 `database_id`                                                                                               |
+| `services`                  | **整段刪除**——`fact-check-core` 只存在於 vTaiwan 帳號，帶著它會部署失敗                                                               |
+| `workflows[].name`          | 改為自己專用的 Workflow 名稱；不得沿用 `civic-talk-evidence`，避免與同帳號的其他 Worker 共用資源名稱。                                |
 | `vars.EVIDENCE_API_ENABLED` | 從複製的 `1` 改為 `0`；這只關閉個人環境，不能修改一般 `wrangler.jsonc` 的正式啟用值。開放前另外確認 migration、認證及費用／留存設定。 |
 
 ### 6.3 套用 migration

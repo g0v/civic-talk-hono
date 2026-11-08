@@ -1,18 +1,6 @@
 import { describe, expect, it } from 'vite-plus/test'
-import {
-  expandSentence,
-  extractClairicEvidence,
-  sliceEvidenceSpan,
-  type Evidence,
-  type OffsetUnit,
-} from '../ai/evidence'
-import {
-  analyzeComparisons,
-  createEvidencePairs,
-  pairKey,
-  type DirectComparison,
-  type Relation,
-} from '../ai/comparison'
+import { expandSentence, extractClairicEvidence, sliceEvidenceSpan, type Evidence, type OffsetUnit } from '../ai/evidence'
+import { analyzeComparisons, createEvidencePairs, pairKey, type DirectComparison, type Relation } from '../ai/comparison'
 import { buildClefBatches, MODEL_VERSIONS, parseClefResponse } from '../ai/models'
 
 function unitsBefore(text: string, utf16: number, unit: OffsetUnit): number {
@@ -28,7 +16,8 @@ function offsets(text: string, quote: string, unit: OffsetUnit, from = 0): [numb
 
 function clairic(values: unknown, spans?: unknown, stateText?: unknown): unknown {
   return {
-    model: 'clairic', truncated: false,
+    model: 'clairic',
+    truncated: false,
     answers: { claims: { type: 'list', value: values, ...(spans === undefined ? {} : { spans }) } },
     ...(stateText === undefined ? {} : { state_text: stateText }),
   }
@@ -44,9 +33,13 @@ function evidence(id: string, materialId: number): Evidence {
 
 function direct(a: Evidence, b: Evidence, relation: Relation, options: Partial<DirectComparison> = {}): DirectComparison {
   return {
-    pair_key: pairKey(a.id, b.id), evidence_ids: [a.id, b.id], relation,
-    question_version: 'q1', probabilities: { agree: 0.25, disagree: 0.25, unrelated: 0.25, uncertain: 0.25 },
-    provider_diagnostics: { model: 'clef' }, ...options,
+    pair_key: pairKey(a.id, b.id),
+    evidence_ids: [a.id, b.id],
+    relation,
+    question_version: 'q1',
+    probabilities: { agree: 0.25, disagree: 0.25, unrelated: 0.25, uncertain: 0.25 },
+    provider_diagnostics: { model: 'clef' },
+    ...options,
   }
 }
 
@@ -104,16 +97,14 @@ describe('Clairic 證據來源定位', () => {
   })
 
   it('單一核心主張可保留多段條件、反例與少數觀點，不因超過三段裁切', () => {
-    const sentences = [
-      '市府主張應增加偏遠地區公車。',
-      '此主張僅在已有合格司機時適用。',
-      '經費必須先取得議會核准。',
-      '反對者認為現行試辦的載客量不足。',
-      '少數居民仍要求保留低使用量路線。',
-    ]
+    const sentences = ['市府主張應增加偏遠地區公車。', '此主張僅在已有合格司機時適用。', '經費必須先取得議會核准。', '反對者認為現行試辦的載客量不足。', '少數居民仍要求保留低使用量路線。']
     const content = sentences.join('\r\n')
     const values = ['增加偏遠地區公車', '已有合格司機', '議會核准', '載客量不足', '保留低使用量路線']
-    const result = extract(content, values, values.map(value => offsets(content, value, 'utf16')))
+    const result = extract(
+      content,
+      values,
+      values.map(value => offsets(content, value, 'utf16'))
+    )
     expect(result.evidence.map(item => item.quote)).toEqual(sentences)
     for (const [index, item] of result.evidence.entries()) {
       expect(sliceEvidenceSpan(content, item.raw_span)).toBe(values[index])
@@ -173,7 +164,12 @@ describe('Clairic 證據來源定位', () => {
     expect(duplicatedWrapper.rejected[0].reason).toBe('ambiguous_value')
     const outsideWithoutSpan = extractClairicEvidence({ material_id: 1, content, state, source_start: 5, response: clairic(['外部主張']) })
     expect(outsideWithoutSpan.rejected[0].reason).toBe('outside_source')
-    const nullResult = extractClairicEvidence({ material_id: 1, content, state: content, response: { truncated: false, answers: { claims: { type: 'list', value: null, guess: ['甲'], p_null: 0.01 } } } })
+    const nullResult = extractClairicEvidence({
+      material_id: 1,
+      content,
+      state: content,
+      response: { truncated: false, answers: { claims: { type: 'list', value: null, guess: ['甲'], p_null: 0.01 } } },
+    })
     expect(nullResult).toMatchObject({ status: 'complete', evidence: [], rejected: [] })
     expect(extract(content, ['甲'], [[999, 1000]]).rejected[0].reason).toBe('span_value_conflict')
   })
@@ -247,7 +243,10 @@ describe('Clef 無向配對與支持群', () => {
   it.each(['disagree', 'unrelated', 'uncertain'] as const)('支持鏈不覆蓋直接 %s，保留兩個較小支持群', relation => {
     const ac = direct(a, c, relation)
     const result = analyzeComparisons([a, b, c], [direct(a, b, 'agree'), direct(b, c, 'agree'), ac])
-    expect(result.consensus_groups.map(group => group.evidence_ids)).toEqual([['A', 'B'], ['B', 'C']])
+    expect(result.consensus_groups.map(group => group.evidence_ids)).toEqual([
+      ['A', 'B'],
+      ['B', 'C'],
+    ])
     expect(result.candidate_paths).toMatchObject([{ pair_key: pairKey('A', 'C'), path: ['A', 'B', 'C'], status: relation, direct: ac, exclusion_reason: `direct_${relation}` }])
     expect(result.disputes).toHaveLength(relation === 'disagree' ? 1 : 0)
     expect(result.diagnostics).toMatchObject({ direct_judgments: 3, incomplete_pairs: 0, inferred_candidates: 1 })
@@ -258,7 +257,10 @@ describe('Clef 無向配對與支持群', () => {
     const bc = direct(b, c, 'agree')
     const reverse = direct(c, a, 'agree')
     const missing = analyzeComparisons([a, b, c], [ab, bc], [], [reverse])
-    expect(missing.consensus_groups.map(group => group.evidence_ids)).toEqual([['A', 'B'], ['B', 'C']])
+    expect(missing.consensus_groups.map(group => group.evidence_ids)).toEqual([
+      ['A', 'B'],
+      ['B', 'C'],
+    ])
     expect(missing.candidate_paths).toMatchObject([{ status: 'pending', path: ['A', 'B', 'C'], direct: null }])
     expect(missing.incomplete_pairs).toMatchObject([{ pair_key: pairKey('A', 'C'), status: 'missing' }])
     expect(missing.reverse_diagnostics).toEqual([reverse])

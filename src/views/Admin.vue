@@ -1092,15 +1092,7 @@ function isSafeFeedbackPagePath(pagePath: string): boolean {
         <p class="text-sm text-muted">{{ t('adm_closure_hint') }}</p>
         <div class="form-group">
           <label for="closure-reason">{{ t('adm_closure_reason') }}</label>
-          <textarea
-            id="closure-reason"
-            ref="closureReasonInput"
-            v-model="closureReason"
-            rows="4"
-            required
-            :readonly="closurePending"
-            aria-describedby="closure-reason-hint closure-error"
-          />
+          <textarea id="closure-reason" ref="closureReasonInput" v-model="closureReason" rows="4" required :readonly="closurePending" aria-describedby="closure-reason-hint closure-error" />
           <p id="closure-reason-hint" class="mt-1 text-sm text-muted">{{ t('adm_closure_reason_hint') }}</p>
         </div>
         <p id="closure-error" class="text-sm text-red" role="alert">{{ closureError }}</p>

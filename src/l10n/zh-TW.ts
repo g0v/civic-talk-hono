@@ -173,7 +173,8 @@ export const messages = {
   stance_neutral: '中立',
   stance_unknown: '立場未知',
   vol_title: '志願者工具',
-  vol_intro: '一般志願者流程不直接呼叫生成 AI API。請用以下工具生成 prompt，貼到你自己的 Claude / ChatGPT / Gemini，再把輸出結果貼回平台。另有須由平台明確啟用、登入並逐工作同意的證據處理 API，會將指定內容送交 Cloudflare Workers AI；費用由平台帳號承擔，不向使用者收費。處理、保存與清除限制詳見隱私權政策。',
+  vol_intro:
+    '一般志願者流程不直接呼叫生成 AI API。請用以下工具生成 prompt，貼到你自己的 Claude / ChatGPT / Gemini，再把輸出結果貼回平台。另有須由平台明確啟用、登入並逐工作同意的證據處理 API，會將指定內容送交 Cloudflare Workers AI；費用由平台帳號承擔，不向使用者收費。處理、保存與清除限制詳見隱私權政策。',
   vol_login_desc: '使用志願者工具需要先登入，以確保 prompt 的使用與彙整內容異動都能追溯。',
   vol_step1: '生成彙整 prompt',
   vol_step2: '貼到你的 AI',
@@ -590,7 +591,8 @@ export const messages = {
   privacy_s2_intro: '平台透過以下方式收集資料：',
   privacy_s2_li1: '<strong>OAuth 帳號資訊</strong>：當您以 Google 或 GitHub 登入時，平台取得您的顯示名稱與 email，並由 Better Auth 建立平台內部使用的 user ID。',
   privacy_s2_li2: '<strong>使用者生成內容與作者快照</strong>：您建立的議題、提交的素材、發表的意見或志願者送出的彙整，以及提交時間、user ID、提交當下的顯示名稱與 email 快照、是否公開 email 的選擇。',
-  privacy_s2_li3: '<strong>條款與處理同意記錄</strong>：建立議題、投稿素材或意見時所接受的條款版本與伺服器記錄的同意時間。證據處理 API 的每個建立工作請求均須明確傳入 consent:true；伺服器保存處理告知版本與同意時間，同帳號命中既有工作時不另增同意事件。申請者的同意不代表已取得正文中所有人的同意。',
+  privacy_s2_li3:
+    '<strong>條款與處理同意記錄</strong>：建立議題、投稿素材或意見時所接受的條款版本與伺服器記錄的同意時間。證據處理 API 的每個建立工作請求均須明確傳入 consent:true；伺服器保存處理告知版本與同意時間，同帳號命中既有工作時不另增同意事件。申請者的同意不代表已取得正文中所有人的同意。',
   privacy_s2_li4: '<strong>技術資料</strong>：IP 位址、瀏覽器類型、存取時間等伺服器日誌，用於安全與效能監控。',
   privacy_s3_h: '具名行為說明',
   privacy_s3_alert: '重要：在本平台建立議題、提交素材、發表意見均為具名行為',
@@ -612,7 +614,8 @@ export const messages = {
   privacy_s4_li5:
     '證據處理 API 僅在平台明確啟用後提供；每個工作須登入並明確同意，處理告知版本為 evidence-processing-2026-11-07-v5。指定議題與素材的原文、名稱、網址及必要來源資料會送至 Cloudflare Workers AI；不送作者快照欄位中的 ID、姓名與 email，但正文、名稱或網址仍可能含個資，並未匿名化。原始快照、完整模型 request/response、引用、來源記錄、人改版本與 diff 私下保存在業務 D1（非共用認證 DB_AUTH），僅工作擁有者與管理員可讀，僅擁有者可新增人工修訂，AI 原稿不覆寫；不會自動發布或改動彙整與議題狀態。沒有自動到期刪除（TTL）。費用由平台帳號承擔，不向使用者收費；每帳號每 UTC 日最多 20 個新付費工作、同議題間隔 5 分鐘，環境模型每日 US$5 為估算準入控制，不是全帳單上限或整項工作報價，亦不含 Workers、Workflows、D1 費用。每百萬 token 的模型單價為 Clairic 輸入 US$0.10、Clef 輸入 US$0.24、Gemma 輸入 US$0.10／輸出 US$0.30；未確定用量的預留跨日不自動退還，不保證次日恢復使用。',
   privacy_s5_h: '資料分享',
-  privacy_s5_p: '除必要的基礎設施服務（Cloudflare Workers、Workflows、D1）外，平台不會將您的個人資料出售、出租或分享給第三方用於商業目的。證據處理 API 明確啟用並取得工作同意後，選定資料會由 Cloudflare Workers AI 處理。依 Cloudflare 的資料使用政策，一般推論採零資料保留且不用於訓練，但仍有營運 metadata 及安全、法律等例外；這不代表業務 D1 也零留存。D1 Time Travel 依方案可保留 7 或 30 天的復原資料，清除正文不保證立即清除備份。',
+  privacy_s5_p:
+    '除必要的基礎設施服務（Cloudflare Workers、Workflows、D1）外，平台不會將您的個人資料出售、出租或分享給第三方用於商業目的。證據處理 API 明確啟用並取得工作同意後，選定資料會由 Cloudflare Workers AI 處理。依 Cloudflare 的資料使用政策，一般推論採零資料保留且不用於訓練，但仍有營運 metadata 及安全、法律等例外；這不代表業務 D1 也零留存。D1 Time Travel 依方案可保留 7 或 30 天的復原資料，清除正文不保證立即清除備份。',
   privacy_s5_alert_h: '執法配合聲明',
   privacy_s5_alert_body:
     '若有使用者濫用平台（包含但不限於散布不實資訊、騷擾他人、非法內容等），平台保留依法配合主管機關（包含警察機關）調查、提供相關使用記錄的權利。<strong>上述記錄包括但不限於：帳號 ID、公開顯示名稱、email（無論使用者是否選擇公開）、提交時間與 IP 位址等技術資料。</strong>',

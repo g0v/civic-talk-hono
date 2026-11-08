@@ -70,12 +70,12 @@ Zod 升級不會替 Better Auth 未限長的 `scopes` 加上長度限制，不�
 
 安裝時回報的 **3 vulnerabilities（2 low、1 critical）** 都來自 Better Auth 相依樹。`npm audit` 的數字按受影響套件計算；主套件同時包含下列多份公告，不代表只有一個漏洞。
 
-| 公告 | 風險與本站使用情況 | 修補版本 |
-| --- | --- | --- |
-| [GHSA-965c-763c-88jm](https://github.com/advisories/GHSA-965c-763c-88jm) | Critical：OAuth state 可被當成 Magic Link token，造成帳號接管；本站只有 Google／GitHub 與 admin plugin，未啟用 Magic Link | Better Auth 1.7.7 |
-| [GHSA-44jh-23m7-hpcf](https://github.com/advisories/GHSA-44jh-23m7-hpcf) | Low：PostgreSQL 資料庫限流可被併發請求突破；本站使用 D1，未採用該 PostgreSQL 限流儲存組合 | Drizzle／主套件 1.7.7；Kysely adapter 1.7.0 |
-| [GHSA-r4xp-prcw-77qf](https://github.com/advisories/GHSA-r4xp-prcw-77qf) | High：OAuth Proxy 在特定共用金鑰與 cookie state 組合下可遭帳號接管；本站未啟用 OAuth Proxy | Better Auth 1.7.7 |
-| [GHSA-q84f-53jg-9ppm](https://github.com/advisories/GHSA-q84f-53jg-9ppm) | High：裝置授權缺少 client／scope 資訊，使用者可能批准攻擊者的登入；本站未啟用 device authorization | Better Auth 1.7.0-rc.3，正式版 1.7.0 |
+| 公告                                                                     | 風險與本站使用情況                                                                                                        | 修補版本                                    |
+| ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| [GHSA-965c-763c-88jm](https://github.com/advisories/GHSA-965c-763c-88jm) | Critical：OAuth state 可被當成 Magic Link token，造成帳號接管；本站只有 Google／GitHub 與 admin plugin，未啟用 Magic Link | Better Auth 1.7.7                           |
+| [GHSA-44jh-23m7-hpcf](https://github.com/advisories/GHSA-44jh-23m7-hpcf) | Low：PostgreSQL 資料庫限流可被併發請求突破；本站使用 D1，未採用該 PostgreSQL 限流儲存組合                                 | Drizzle／主套件 1.7.7；Kysely adapter 1.7.0 |
+| [GHSA-r4xp-prcw-77qf](https://github.com/advisories/GHSA-r4xp-prcw-77qf) | High：OAuth Proxy 在特定共用金鑰與 cookie state 組合下可遭帳號接管；本站未啟用 OAuth Proxy                                | Better Auth 1.7.7                           |
+| [GHSA-q84f-53jg-9ppm](https://github.com/advisories/GHSA-q84f-53jg-9ppm) | High：裝置授權缺少 client／scope 資訊，使用者可能批准攻擊者的登入；本站未啟用 device authorization                        | Better Auth 1.7.0-rc.3，正式版 1.7.0        |
 
 未滿足公告的利用條件不等於可以繼續保留已知漏洞版本。本次將 `better-auth` 最低版本提高至 `^1.7.15`，lockfile 的主套件、core、adapters 與 telemetry 一起更新至 **1.7.15**，對齊 `../vTaiwan-hono` 當時的 package.json 與 lockfile；不修改該 repo，也不使用 `audit fix --force`、新增 override 或停用安全檢查。其餘版本更新限於 Better Auth 的相依鏈，既有 Cloudflare 工具鏈修補維持不變。
 
@@ -102,11 +102,11 @@ Zod 升級不會替 Better Auth 未限長的 `scopes` 加上長度限制，不�
 
 `src/auth/environment.ts` 以 Vite 的 `import.meta.env.DEV && import.meta.env.MODE === 'development'` 判斷本機停用模式。使用既有建置模式，不新增可在正式環境誤開的環境變數、query 或 request header 開關。正式建置即使指定 `--mode development`，`DEV` 仍為 false，不會停用 Auth。
 
-| 執行方式 | Auth 行為 |
-| --- | --- |
-| `vp run dev` | 不初始化 Better Auth，忽略既有登入 cookie；`GET /api/auth/get-session` 回 `200/null`、`GET /api/me` 回 401。其他 auth 操作回 503，auth admin HTTP 路徑仍回 404 |
-| `vp run dev:remote` | 正常啟用 Auth，沿用共用認證庫與原有守衛 |
-| 正式建置／正式站 | 正常啟用 Auth，不依賴本機停用邏輯 |
+| 執行方式            | Auth 行為                                                                                                                                                      |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `vp run dev`        | 不初始化 Better Auth，忽略既有登入 cookie；`GET /api/auth/get-session` 回 `200/null`、`GET /api/me` 回 401。其他 auth 操作回 503，auth admin HTTP 路徑仍回 404 |
+| `vp run dev:remote` | 正常啟用 Auth，沿用共用認證庫與原有守衛                                                                                                                        |
+| 正式建置／正式站    | 正常啟用 Auth，不依賴本機停用邏輯                                                                                                                              |
 
 停用 Auth **不是放寬授權**：`getAuthContext()` 明確回匿名，投稿、志願者 prompt、投票、事實查核及管理 API 仍回 401，不提供假的登入者、不允許匿名寫入。`localAuth.test.ts` 的 3 項回歸涵蓋匿名 session、阻止 OAuth／個人資料更新及上述守門；新增前 session／登入請求回 500，套用後通過。
 

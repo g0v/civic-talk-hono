@@ -36,9 +36,6 @@ export type AppBindings = {
 }
 
 /** 認證與證據管線共用的最小 Better Auth 綁定。 */
-export type AuthBindings = Pick<
-  AppBindings,
-  'DB_AUTH' | 'BETTER_AUTH_URL' | 'BETTER_AUTH_SECRET' | 'GOOGLE_CLIENT_ID' | 'GOOGLE_CLIENT_SECRET' | 'GITHUB_CLIENT_ID' | 'GITHUB_CLIENT_SECRET'
->
+export type AuthBindings = Pick<AppBindings, 'DB_AUTH' | 'BETTER_AUTH_URL' | 'BETTER_AUTH_SECRET' | 'GOOGLE_CLIENT_ID' | 'GOOGLE_CLIENT_SECRET' | 'GITHUB_CLIENT_ID' | 'GITHUB_CLIENT_SECRET'>
 
 export type App = Hono<{ Bindings: AppBindings }>

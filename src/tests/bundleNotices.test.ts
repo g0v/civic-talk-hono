@@ -134,7 +134,6 @@ describe('bundle 第三方授權聲明', () => {
 
     await expect(pluginHook(plugin, 'generateBundle').call(context as never, {} as never, bundle as never)).rejects.toThrow(/no-license-text@1\.0\.0[\s\S]*沒有可取得的 LICENSE/)
   })
-
 })
 
 describe('依賴授權 TSV 產生器', () => {

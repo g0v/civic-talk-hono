@@ -752,11 +752,7 @@
   "initial_input_diagnostics": [
     {
       "stage": "input",
-      "material_ids": [
-        25,
-        26,
-        27
-      ],
+      "material_ids": [25, 26, 27],
       "initial_issue_exclusions": []
     }
   ],
@@ -829,23 +825,13 @@
     "candidate_paths": [
       {
         "pair_key": "pair:[\"e:25:27:103\",\"e:26:21:55\"]",
-        "evidence_ids": [
-          "e:25:27:103",
-          "e:26:21:55"
-        ],
-        "path": [
-          "e:25:27:103",
-          "e:27:130:191",
-          "e:26:21:55"
-        ],
+        "evidence_ids": ["e:25:27:103", "e:26:21:55"],
+        "path": ["e:25:27:103", "e:27:130:191", "e:26:21:55"],
         "status": "disagree",
         "exclusion_reason": "direct_disagree",
         "direct": {
           "pair_key": "pair:[\"e:25:27:103\",\"e:26:21:55\"]",
-          "evidence_ids": [
-            "e:25:27:103",
-            "e:26:21:55"
-          ],
+          "evidence_ids": ["e:25:27:103", "e:26:21:55"],
           "relation": "disagree",
           "question_version": "symmetric-four-way-v2",
           "probabilities": {
@@ -857,10 +843,7 @@
           "provider_diagnostics": {
             "model": "clef",
             "question_id": "q0",
-            "evidence_ids": [
-              "e:25:27:103",
-              "e:26:21:55"
-            ],
+            "evidence_ids": ["e:25:27:103", "e:26:21:55"],
             "confidence": 0.0651,
             "truncated": null,
             "usage": {
@@ -874,23 +857,13 @@
       },
       {
         "pair_key": "pair:[\"e:25:27:103\",\"e:26:3:20\"]",
-        "evidence_ids": [
-          "e:25:27:103",
-          "e:26:3:20"
-        ],
-        "path": [
-          "e:25:27:103",
-          "e:27:288:332",
-          "e:26:3:20"
-        ],
+        "evidence_ids": ["e:25:27:103", "e:26:3:20"],
+        "path": ["e:25:27:103", "e:27:288:332", "e:26:3:20"],
         "status": "disagree",
         "exclusion_reason": "direct_disagree",
         "direct": {
           "pair_key": "pair:[\"e:25:27:103\",\"e:26:3:20\"]",
-          "evidence_ids": [
-            "e:25:27:103",
-            "e:26:3:20"
-          ],
+          "evidence_ids": ["e:25:27:103", "e:26:3:20"],
           "relation": "disagree",
           "question_version": "symmetric-four-way-v2",
           "probabilities": {
@@ -902,10 +875,7 @@
           "provider_diagnostics": {
             "model": "clef",
             "question_id": "q1",
-            "evidence_ids": [
-              "e:25:27:103",
-              "e:26:3:20"
-            ],
+            "evidence_ids": ["e:25:27:103", "e:26:3:20"],
             "confidence": 0.0982,
             "truncated": null,
             "usage": {
@@ -919,23 +889,13 @@
       },
       {
         "pair_key": "pair:[\"e:25:8:26\",\"e:27:130:191\"]",
-        "evidence_ids": [
-          "e:25:8:26",
-          "e:27:130:191"
-        ],
-        "path": [
-          "e:25:8:26",
-          "e:26:21:55",
-          "e:27:130:191"
-        ],
+        "evidence_ids": ["e:25:8:26", "e:27:130:191"],
+        "path": ["e:25:8:26", "e:26:21:55", "e:27:130:191"],
         "status": "unrelated",
         "exclusion_reason": "direct_unrelated",
         "direct": {
           "pair_key": "pair:[\"e:25:8:26\",\"e:27:130:191\"]",
-          "evidence_ids": [
-            "e:25:8:26",
-            "e:27:130:191"
-          ],
+          "evidence_ids": ["e:25:8:26", "e:27:130:191"],
           "relation": "unrelated",
           "question_version": "symmetric-four-way-v2",
           "probabilities": {
@@ -947,10 +907,7 @@
           "provider_diagnostics": {
             "model": "clef",
             "question_id": "q1",
-            "evidence_ids": [
-              "e:25:8:26",
-              "e:27:130:191"
-            ],
+            "evidence_ids": ["e:25:8:26", "e:27:130:191"],
             "confidence": 0.1316,
             "truncated": null,
             "usage": {
@@ -964,24 +921,13 @@
       },
       {
         "pair_key": "pair:[\"e:25:8:26\",\"e:27:227:288\"]",
-        "evidence_ids": [
-          "e:25:8:26",
-          "e:27:227:288"
-        ],
-        "path": [
-          "e:25:8:26",
-          "e:27:568:643",
-          "e:25:27:103",
-          "e:27:227:288"
-        ],
+        "evidence_ids": ["e:25:8:26", "e:27:227:288"],
+        "path": ["e:25:8:26", "e:27:568:643", "e:25:27:103", "e:27:227:288"],
         "status": "unrelated",
         "exclusion_reason": "direct_unrelated",
         "direct": {
           "pair_key": "pair:[\"e:25:8:26\",\"e:27:227:288\"]",
-          "evidence_ids": [
-            "e:25:8:26",
-            "e:27:227:288"
-          ],
+          "evidence_ids": ["e:25:8:26", "e:27:227:288"],
           "relation": "unrelated",
           "question_version": "symmetric-four-way-v2",
           "probabilities": {
@@ -993,10 +939,7 @@
           "provider_diagnostics": {
             "model": "clef",
             "question_id": "q3",
-            "evidence_ids": [
-              "e:25:8:26",
-              "e:27:227:288"
-            ],
+            "evidence_ids": ["e:25:8:26", "e:27:227:288"],
             "confidence": 0.0743,
             "truncated": null,
             "usage": {
@@ -1010,23 +953,13 @@
       },
       {
         "pair_key": "pair:[\"e:25:8:26\",\"e:27:288:332\"]",
-        "evidence_ids": [
-          "e:25:8:26",
-          "e:27:288:332"
-        ],
-        "path": [
-          "e:25:8:26",
-          "e:26:21:55",
-          "e:27:288:332"
-        ],
+        "evidence_ids": ["e:25:8:26", "e:27:288:332"],
+        "path": ["e:25:8:26", "e:26:21:55", "e:27:288:332"],
         "status": "unrelated",
         "exclusion_reason": "direct_unrelated",
         "direct": {
           "pair_key": "pair:[\"e:25:8:26\",\"e:27:288:332\"]",
-          "evidence_ids": [
-            "e:25:8:26",
-            "e:27:288:332"
-          ],
+          "evidence_ids": ["e:25:8:26", "e:27:288:332"],
           "relation": "unrelated",
           "question_version": "symmetric-four-way-v2",
           "probabilities": {
@@ -1038,10 +971,7 @@
           "provider_diagnostics": {
             "model": "clef",
             "question_id": "q4",
-            "evidence_ids": [
-              "e:25:8:26",
-              "e:27:288:332"
-            ],
+            "evidence_ids": ["e:25:8:26", "e:27:288:332"],
             "confidence": 0.1154,
             "truncated": null,
             "usage": {
@@ -1055,23 +985,13 @@
       },
       {
         "pair_key": "pair:[\"e:25:8:26\",\"e:27:337:357\"]",
-        "evidence_ids": [
-          "e:25:8:26",
-          "e:27:337:357"
-        ],
-        "path": [
-          "e:25:8:26",
-          "e:26:3:20",
-          "e:27:337:357"
-        ],
+        "evidence_ids": ["e:25:8:26", "e:27:337:357"],
+        "path": ["e:25:8:26", "e:26:3:20", "e:27:337:357"],
         "status": "unrelated",
         "exclusion_reason": "direct_unrelated",
         "direct": {
           "pair_key": "pair:[\"e:25:8:26\",\"e:27:337:357\"]",
-          "evidence_ids": [
-            "e:25:8:26",
-            "e:27:337:357"
-          ],
+          "evidence_ids": ["e:25:8:26", "e:27:337:357"],
           "relation": "unrelated",
           "question_version": "symmetric-four-way-v2",
           "probabilities": {
@@ -1083,10 +1003,7 @@
           "provider_diagnostics": {
             "model": "clef",
             "question_id": "q0",
-            "evidence_ids": [
-              "e:25:8:26",
-              "e:27:337:357"
-            ],
+            "evidence_ids": ["e:25:8:26", "e:27:337:357"],
             "confidence": 0.1259,
             "truncated": null,
             "usage": {
@@ -1100,24 +1017,13 @@
       },
       {
         "pair_key": "pair:[\"e:25:8:26\",\"e:27:358:387\"]",
-        "evidence_ids": [
-          "e:25:8:26",
-          "e:27:358:387"
-        ],
-        "path": [
-          "e:25:8:26",
-          "e:27:568:643",
-          "e:25:27:103",
-          "e:27:358:387"
-        ],
+        "evidence_ids": ["e:25:8:26", "e:27:358:387"],
+        "path": ["e:25:8:26", "e:27:568:643", "e:25:27:103", "e:27:358:387"],
         "status": "unrelated",
         "exclusion_reason": "direct_unrelated",
         "direct": {
           "pair_key": "pair:[\"e:25:8:26\",\"e:27:358:387\"]",
-          "evidence_ids": [
-            "e:25:8:26",
-            "e:27:358:387"
-          ],
+          "evidence_ids": ["e:25:8:26", "e:27:358:387"],
           "relation": "unrelated",
           "question_version": "symmetric-four-way-v2",
           "probabilities": {
@@ -1129,10 +1035,7 @@
           "provider_diagnostics": {
             "model": "clef",
             "question_id": "q1",
-            "evidence_ids": [
-              "e:25:8:26",
-              "e:27:358:387"
-            ],
+            "evidence_ids": ["e:25:8:26", "e:27:358:387"],
             "confidence": 0.1356,
             "truncated": null,
             "usage": {
@@ -1146,24 +1049,13 @@
       },
       {
         "pair_key": "pair:[\"e:25:8:26\",\"e:27:648:666\"]",
-        "evidence_ids": [
-          "e:25:8:26",
-          "e:27:648:666"
-        ],
-        "path": [
-          "e:25:8:26",
-          "e:27:568:643",
-          "e:25:27:103",
-          "e:27:648:666"
-        ],
+        "evidence_ids": ["e:25:8:26", "e:27:648:666"],
+        "path": ["e:25:8:26", "e:27:568:643", "e:25:27:103", "e:27:648:666"],
         "status": "unrelated",
         "exclusion_reason": "direct_unrelated",
         "direct": {
           "pair_key": "pair:[\"e:25:8:26\",\"e:27:648:666\"]",
-          "evidence_ids": [
-            "e:25:8:26",
-            "e:27:648:666"
-          ],
+          "evidence_ids": ["e:25:8:26", "e:27:648:666"],
           "relation": "unrelated",
           "question_version": "symmetric-four-way-v2",
           "probabilities": {
@@ -1175,10 +1067,7 @@
           "provider_diagnostics": {
             "model": "clef",
             "question_id": "q1",
-            "evidence_ids": [
-              "e:25:8:26",
-              "e:27:648:666"
-            ],
+            "evidence_ids": ["e:25:8:26", "e:27:648:666"],
             "confidence": 0.2856,
             "truncated": null,
             "usage": {
@@ -1192,24 +1081,13 @@
       },
       {
         "pair_key": "pair:[\"e:26:21:55\",\"e:27:227:288\"]",
-        "evidence_ids": [
-          "e:26:21:55",
-          "e:27:227:288"
-        ],
-        "path": [
-          "e:26:21:55",
-          "e:27:130:191",
-          "e:25:27:103",
-          "e:27:227:288"
-        ],
+        "evidence_ids": ["e:26:21:55", "e:27:227:288"],
+        "path": ["e:26:21:55", "e:27:130:191", "e:25:27:103", "e:27:227:288"],
         "status": "unrelated",
         "exclusion_reason": "direct_unrelated",
         "direct": {
           "pair_key": "pair:[\"e:26:21:55\",\"e:27:227:288\"]",
-          "evidence_ids": [
-            "e:26:21:55",
-            "e:27:227:288"
-          ],
+          "evidence_ids": ["e:26:21:55", "e:27:227:288"],
           "relation": "unrelated",
           "question_version": "symmetric-four-way-v2",
           "probabilities": {
@@ -1221,10 +1099,7 @@
           "provider_diagnostics": {
             "model": "clef",
             "question_id": "q3",
-            "evidence_ids": [
-              "e:26:21:55",
-              "e:27:227:288"
-            ],
+            "evidence_ids": ["e:26:21:55", "e:27:227:288"],
             "confidence": 0.1491,
             "truncated": null,
             "usage": {
@@ -1238,24 +1113,13 @@
       },
       {
         "pair_key": "pair:[\"e:26:21:55\",\"e:27:337:357\"]",
-        "evidence_ids": [
-          "e:26:21:55",
-          "e:27:337:357"
-        ],
-        "path": [
-          "e:26:21:55",
-          "e:25:8:26",
-          "e:26:3:20",
-          "e:27:337:357"
-        ],
+        "evidence_ids": ["e:26:21:55", "e:27:337:357"],
+        "path": ["e:26:21:55", "e:25:8:26", "e:26:3:20", "e:27:337:357"],
         "status": "unrelated",
         "exclusion_reason": "direct_unrelated",
         "direct": {
           "pair_key": "pair:[\"e:26:21:55\",\"e:27:337:357\"]",
-          "evidence_ids": [
-            "e:26:21:55",
-            "e:27:337:357"
-          ],
+          "evidence_ids": ["e:26:21:55", "e:27:337:357"],
           "relation": "unrelated",
           "question_version": "symmetric-four-way-v2",
           "probabilities": {
@@ -1267,10 +1131,7 @@
           "provider_diagnostics": {
             "model": "clef",
             "question_id": "q0",
-            "evidence_ids": [
-              "e:26:21:55",
-              "e:27:337:357"
-            ],
+            "evidence_ids": ["e:26:21:55", "e:27:337:357"],
             "confidence": 0.2026,
             "truncated": null,
             "usage": {
@@ -1284,24 +1145,13 @@
       },
       {
         "pair_key": "pair:[\"e:26:21:55\",\"e:27:358:387\"]",
-        "evidence_ids": [
-          "e:26:21:55",
-          "e:27:358:387"
-        ],
-        "path": [
-          "e:26:21:55",
-          "e:27:130:191",
-          "e:25:27:103",
-          "e:27:358:387"
-        ],
+        "evidence_ids": ["e:26:21:55", "e:27:358:387"],
+        "path": ["e:26:21:55", "e:27:130:191", "e:25:27:103", "e:27:358:387"],
         "status": "unrelated",
         "exclusion_reason": "direct_unrelated",
         "direct": {
           "pair_key": "pair:[\"e:26:21:55\",\"e:27:358:387\"]",
-          "evidence_ids": [
-            "e:26:21:55",
-            "e:27:358:387"
-          ],
+          "evidence_ids": ["e:26:21:55", "e:27:358:387"],
           "relation": "unrelated",
           "question_version": "symmetric-four-way-v2",
           "probabilities": {
@@ -1313,10 +1163,7 @@
           "provider_diagnostics": {
             "model": "clef",
             "question_id": "q1",
-            "evidence_ids": [
-              "e:26:21:55",
-              "e:27:358:387"
-            ],
+            "evidence_ids": ["e:26:21:55", "e:27:358:387"],
             "confidence": 0.2558,
             "truncated": null,
             "usage": {
@@ -1330,23 +1177,13 @@
       },
       {
         "pair_key": "pair:[\"e:26:21:55\",\"e:27:568:643\"]",
-        "evidence_ids": [
-          "e:26:21:55",
-          "e:27:568:643"
-        ],
-        "path": [
-          "e:26:21:55",
-          "e:25:8:26",
-          "e:27:568:643"
-        ],
+        "evidence_ids": ["e:26:21:55", "e:27:568:643"],
+        "path": ["e:26:21:55", "e:25:8:26", "e:27:568:643"],
         "status": "unrelated",
         "exclusion_reason": "direct_unrelated",
         "direct": {
           "pair_key": "pair:[\"e:26:21:55\",\"e:27:568:643\"]",
-          "evidence_ids": [
-            "e:26:21:55",
-            "e:27:568:643"
-          ],
+          "evidence_ids": ["e:26:21:55", "e:27:568:643"],
           "relation": "unrelated",
           "question_version": "symmetric-four-way-v2",
           "probabilities": {
@@ -1358,10 +1195,7 @@
           "provider_diagnostics": {
             "model": "clef",
             "question_id": "q0",
-            "evidence_ids": [
-              "e:26:21:55",
-              "e:27:568:643"
-            ],
+            "evidence_ids": ["e:26:21:55", "e:27:568:643"],
             "confidence": 0.2596,
             "truncated": null,
             "usage": {
@@ -1375,24 +1209,13 @@
       },
       {
         "pair_key": "pair:[\"e:26:21:55\",\"e:27:648:666\"]",
-        "evidence_ids": [
-          "e:26:21:55",
-          "e:27:648:666"
-        ],
-        "path": [
-          "e:26:21:55",
-          "e:27:130:191",
-          "e:25:27:103",
-          "e:27:648:666"
-        ],
+        "evidence_ids": ["e:26:21:55", "e:27:648:666"],
+        "path": ["e:26:21:55", "e:27:130:191", "e:25:27:103", "e:27:648:666"],
         "status": "unrelated",
         "exclusion_reason": "direct_unrelated",
         "direct": {
           "pair_key": "pair:[\"e:26:21:55\",\"e:27:648:666\"]",
-          "evidence_ids": [
-            "e:26:21:55",
-            "e:27:648:666"
-          ],
+          "evidence_ids": ["e:26:21:55", "e:27:648:666"],
           "relation": "unrelated",
           "question_version": "symmetric-four-way-v2",
           "probabilities": {
@@ -1404,10 +1227,7 @@
           "provider_diagnostics": {
             "model": "clef",
             "question_id": "q1",
-            "evidence_ids": [
-              "e:26:21:55",
-              "e:27:648:666"
-            ],
+            "evidence_ids": ["e:26:21:55", "e:27:648:666"],
             "confidence": 0.4925,
             "truncated": null,
             "usage": {
@@ -1421,23 +1241,13 @@
       },
       {
         "pair_key": "pair:[\"e:26:21:55\",\"e:27:667:707\"]",
-        "evidence_ids": [
-          "e:26:21:55",
-          "e:27:667:707"
-        ],
-        "path": [
-          "e:26:21:55",
-          "e:25:8:26",
-          "e:27:667:707"
-        ],
+        "evidence_ids": ["e:26:21:55", "e:27:667:707"],
+        "path": ["e:26:21:55", "e:25:8:26", "e:27:667:707"],
         "status": "unrelated",
         "exclusion_reason": "direct_unrelated",
         "direct": {
           "pair_key": "pair:[\"e:26:21:55\",\"e:27:667:707\"]",
-          "evidence_ids": [
-            "e:26:21:55",
-            "e:27:667:707"
-          ],
+          "evidence_ids": ["e:26:21:55", "e:27:667:707"],
           "relation": "unrelated",
           "question_version": "symmetric-four-way-v2",
           "probabilities": {
@@ -1449,10 +1259,7 @@
           "provider_diagnostics": {
             "model": "clef",
             "question_id": "q2",
-            "evidence_ids": [
-              "e:26:21:55",
-              "e:27:667:707"
-            ],
+            "evidence_ids": ["e:26:21:55", "e:27:667:707"],
             "confidence": 0.1931,
             "truncated": null,
             "usage": {
@@ -1466,24 +1273,13 @@
       },
       {
         "pair_key": "pair:[\"e:26:3:20\",\"e:27:130:191\"]",
-        "evidence_ids": [
-          "e:26:3:20",
-          "e:27:130:191"
-        ],
-        "path": [
-          "e:26:3:20",
-          "e:25:8:26",
-          "e:26:21:55",
-          "e:27:130:191"
-        ],
+        "evidence_ids": ["e:26:3:20", "e:27:130:191"],
+        "path": ["e:26:3:20", "e:25:8:26", "e:26:21:55", "e:27:130:191"],
         "status": "unrelated",
         "exclusion_reason": "direct_unrelated",
         "direct": {
           "pair_key": "pair:[\"e:26:3:20\",\"e:27:130:191\"]",
-          "evidence_ids": [
-            "e:26:3:20",
-            "e:27:130:191"
-          ],
+          "evidence_ids": ["e:26:3:20", "e:27:130:191"],
           "relation": "unrelated",
           "question_version": "symmetric-four-way-v2",
           "probabilities": {
@@ -1495,10 +1291,7 @@
           "provider_diagnostics": {
             "model": "clef",
             "question_id": "q1",
-            "evidence_ids": [
-              "e:26:3:20",
-              "e:27:130:191"
-            ],
+            "evidence_ids": ["e:26:3:20", "e:27:130:191"],
             "confidence": 0.252,
             "truncated": null,
             "usage": {
@@ -1512,24 +1305,13 @@
       },
       {
         "pair_key": "pair:[\"e:26:3:20\",\"e:27:227:288\"]",
-        "evidence_ids": [
-          "e:26:3:20",
-          "e:27:227:288"
-        ],
-        "path": [
-          "e:26:3:20",
-          "e:27:288:332",
-          "e:25:27:103",
-          "e:27:227:288"
-        ],
+        "evidence_ids": ["e:26:3:20", "e:27:227:288"],
+        "path": ["e:26:3:20", "e:27:288:332", "e:25:27:103", "e:27:227:288"],
         "status": "unrelated",
         "exclusion_reason": "direct_unrelated",
         "direct": {
           "pair_key": "pair:[\"e:26:3:20\",\"e:27:227:288\"]",
-          "evidence_ids": [
-            "e:26:3:20",
-            "e:27:227:288"
-          ],
+          "evidence_ids": ["e:26:3:20", "e:27:227:288"],
           "relation": "unrelated",
           "question_version": "symmetric-four-way-v2",
           "probabilities": {
@@ -1541,10 +1323,7 @@
           "provider_diagnostics": {
             "model": "clef",
             "question_id": "q3",
-            "evidence_ids": [
-              "e:26:3:20",
-              "e:27:227:288"
-            ],
+            "evidence_ids": ["e:26:3:20", "e:27:227:288"],
             "confidence": 0.3391,
             "truncated": null,
             "usage": {
@@ -1558,24 +1337,13 @@
       },
       {
         "pair_key": "pair:[\"e:26:3:20\",\"e:27:358:387\"]",
-        "evidence_ids": [
-          "e:26:3:20",
-          "e:27:358:387"
-        ],
-        "path": [
-          "e:26:3:20",
-          "e:27:288:332",
-          "e:25:27:103",
-          "e:27:358:387"
-        ],
+        "evidence_ids": ["e:26:3:20", "e:27:358:387"],
+        "path": ["e:26:3:20", "e:27:288:332", "e:25:27:103", "e:27:358:387"],
         "status": "unrelated",
         "exclusion_reason": "direct_unrelated",
         "direct": {
           "pair_key": "pair:[\"e:26:3:20\",\"e:27:358:387\"]",
-          "evidence_ids": [
-            "e:26:3:20",
-            "e:27:358:387"
-          ],
+          "evidence_ids": ["e:26:3:20", "e:27:358:387"],
           "relation": "unrelated",
           "question_version": "symmetric-four-way-v2",
           "probabilities": {
@@ -1587,10 +1355,7 @@
           "provider_diagnostics": {
             "model": "clef",
             "question_id": "q1",
-            "evidence_ids": [
-              "e:26:3:20",
-              "e:27:358:387"
-            ],
+            "evidence_ids": ["e:26:3:20", "e:27:358:387"],
             "confidence": 0.2434,
             "truncated": null,
             "usage": {
@@ -1604,23 +1369,13 @@
       },
       {
         "pair_key": "pair:[\"e:26:3:20\",\"e:27:568:643\"]",
-        "evidence_ids": [
-          "e:26:3:20",
-          "e:27:568:643"
-        ],
-        "path": [
-          "e:26:3:20",
-          "e:25:8:26",
-          "e:27:568:643"
-        ],
+        "evidence_ids": ["e:26:3:20", "e:27:568:643"],
+        "path": ["e:26:3:20", "e:25:8:26", "e:27:568:643"],
         "status": "unrelated",
         "exclusion_reason": "direct_unrelated",
         "direct": {
           "pair_key": "pair:[\"e:26:3:20\",\"e:27:568:643\"]",
-          "evidence_ids": [
-            "e:26:3:20",
-            "e:27:568:643"
-          ],
+          "evidence_ids": ["e:26:3:20", "e:27:568:643"],
           "relation": "unrelated",
           "question_version": "symmetric-four-way-v2",
           "probabilities": {
@@ -1632,10 +1387,7 @@
           "provider_diagnostics": {
             "model": "clef",
             "question_id": "q0",
-            "evidence_ids": [
-              "e:26:3:20",
-              "e:27:568:643"
-            ],
+            "evidence_ids": ["e:26:3:20", "e:27:568:643"],
             "confidence": 0.2104,
             "truncated": null,
             "usage": {
@@ -1649,24 +1401,13 @@
       },
       {
         "pair_key": "pair:[\"e:26:3:20\",\"e:27:648:666\"]",
-        "evidence_ids": [
-          "e:26:3:20",
-          "e:27:648:666"
-        ],
-        "path": [
-          "e:26:3:20",
-          "e:27:288:332",
-          "e:25:27:103",
-          "e:27:648:666"
-        ],
+        "evidence_ids": ["e:26:3:20", "e:27:648:666"],
+        "path": ["e:26:3:20", "e:27:288:332", "e:25:27:103", "e:27:648:666"],
         "status": "unrelated",
         "exclusion_reason": "direct_unrelated",
         "direct": {
           "pair_key": "pair:[\"e:26:3:20\",\"e:27:648:666\"]",
-          "evidence_ids": [
-            "e:26:3:20",
-            "e:27:648:666"
-          ],
+          "evidence_ids": ["e:26:3:20", "e:27:648:666"],
           "relation": "unrelated",
           "question_version": "symmetric-four-way-v2",
           "probabilities": {
@@ -1678,10 +1419,7 @@
           "provider_diagnostics": {
             "model": "clef",
             "question_id": "q1",
-            "evidence_ids": [
-              "e:26:3:20",
-              "e:27:648:666"
-            ],
+            "evidence_ids": ["e:26:3:20", "e:27:648:666"],
             "confidence": 0.4012,
             "truncated": null,
             "usage": {
@@ -1695,23 +1433,13 @@
       },
       {
         "pair_key": "pair:[\"e:26:3:20\",\"e:27:667:707\"]",
-        "evidence_ids": [
-          "e:26:3:20",
-          "e:27:667:707"
-        ],
-        "path": [
-          "e:26:3:20",
-          "e:25:8:26",
-          "e:27:667:707"
-        ],
+        "evidence_ids": ["e:26:3:20", "e:27:667:707"],
+        "path": ["e:26:3:20", "e:25:8:26", "e:27:667:707"],
         "status": "unrelated",
         "exclusion_reason": "direct_unrelated",
         "direct": {
           "pair_key": "pair:[\"e:26:3:20\",\"e:27:667:707\"]",
-          "evidence_ids": [
-            "e:26:3:20",
-            "e:27:667:707"
-          ],
+          "evidence_ids": ["e:26:3:20", "e:27:667:707"],
           "relation": "unrelated",
           "question_version": "symmetric-four-way-v2",
           "probabilities": {
@@ -1723,10 +1451,7 @@
           "provider_diagnostics": {
             "model": "clef",
             "question_id": "q2",
-            "evidence_ids": [
-              "e:26:3:20",
-              "e:27:667:707"
-            ],
+            "evidence_ids": ["e:26:3:20", "e:27:667:707"],
             "confidence": 0.1887,
             "truncated": null,
             "usage": {
@@ -1740,16 +1465,7 @@
       }
     ],
     "incomplete_pairs": [],
-    "unclassified_evidence_ids": [
-      "e:26:96:163",
-      "e:27:212:226",
-      "e:27:476:497",
-      "e:27:498:514",
-      "e:27:530:568",
-      "e:27:805:822",
-      "e:27:923:954",
-      "e:27:955:1022"
-    ]
+    "unclassified_evidence_ids": ["e:26:96:163", "e:27:212:226", "e:27:476:497", "e:27:498:514", "e:27:530:568", "e:27:805:822", "e:27:923:954", "e:27:955:1022"]
   },
   "cost_summary": {
     "attempts": 23,

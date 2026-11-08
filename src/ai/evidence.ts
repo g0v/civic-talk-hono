@@ -29,7 +29,21 @@ export interface Evidence {
 
 export interface EvidenceRejection {
   index: number | null
-  reason: 'invalid_input' | 'invalid_state_mapping' | 'invalid_unicode' | 'invalid_response' | 'truncated' | 'state_text_mismatch' | 'invalid_answer' | 'invalid_spans' | 'invalid_value' | 'not_found' | 'ambiguous_value' | 'span_value_conflict' | 'ambiguous_span' | 'outside_source'
+  reason:
+    | 'invalid_input'
+    | 'invalid_state_mapping'
+    | 'invalid_unicode'
+    | 'invalid_response'
+    | 'truncated'
+    | 'state_text_mismatch'
+    | 'invalid_answer'
+    | 'invalid_spans'
+    | 'invalid_value'
+    | 'not_found'
+    | 'ambiguous_value'
+    | 'span_value_conflict'
+    | 'ambiguous_span'
+    | 'outside_source'
 }
 
 export interface EvidenceStateMapping {
@@ -87,7 +101,8 @@ function toUtf16(text: string, map: CoordinateMap, offset: number, unit: OffsetU
   if (unit === 'utf8') return map.utf8.get(offset) ?? null
   if (offset > text.length) return null
   // UTF-16 座標仍須落在完整字元邊界。
-  if (offset > 0 && offset < text.length && text.charCodeAt(offset - 1) >= 0xd800 && text.charCodeAt(offset - 1) <= 0xdbff && text.charCodeAt(offset) >= 0xdc00 && text.charCodeAt(offset) <= 0xdfff) return null
+  if (offset > 0 && offset < text.length && text.charCodeAt(offset - 1) >= 0xd800 && text.charCodeAt(offset - 1) <= 0xdbff && text.charCodeAt(offset) >= 0xdc00 && text.charCodeAt(offset) <= 0xdfff)
+    return null
   return offset
 }
 
@@ -197,26 +212,50 @@ export function extractClairicEvidence(input: ClairicEvidenceInput): EvidenceExt
     if (!spans || spans[index] === null) {
       // 缺 span 時也要檢查整個實送 state，包裝中重複相同文字不能冒充素材引文。
       const first = state.indexOf(value)
-      if (first < 0) { reject(index, 'not_found'); continue }
-      if (state.indexOf(value, first + 1) >= 0) { reject(index, 'ambiguous_value'); continue }
-      if (first < sourceStart || first + value.length > sourceEnd) { reject(index, 'outside_source'); continue }
+      if (first < 0) {
+        reject(index, 'not_found')
+        continue
+      }
+      if (state.indexOf(value, first + 1) >= 0) {
+        reject(index, 'ambiguous_value')
+        continue
+      }
+      if (first < sourceStart || first + value.length > sourceEnd) {
+        reject(index, 'outside_source')
+        continue
+      }
       rawStart = first - sourceStart
       rawEnd = rawStart + value.length
       // 字串搜尋一樣不得切斷 surrogate。
-      if (toUtf16(state, map, sourceStart + rawStart, 'utf16') === null || toUtf16(state, map, sourceStart + rawEnd, 'utf16') === null) { reject(index, 'invalid_value'); continue }
+      if (toUtf16(state, map, sourceStart + rawStart, 'utf16') === null || toUtf16(state, map, sourceStart + rawEnd, 'utf16') === null) {
+        reject(index, 'invalid_value')
+        continue
+      }
     } else {
       const span: unknown = spans[index]
-      if (!Array.isArray(span) || span.length !== 2 || !Number.isSafeInteger(span[0]) || !Number.isSafeInteger(span[1]) || span[0] < 0 || span[1] <= span[0]) { reject(index, 'invalid_spans'); continue }
+      if (!Array.isArray(span) || span.length !== 2 || !Number.isSafeInteger(span[0]) || !Number.isSafeInteger(span[1]) || span[0] < 0 || span[1] <= span[0]) {
+        reject(index, 'invalid_spans')
+        continue
+      }
       const matches: Array<{ unit: OffsetUnit; start: number; end: number }> = []
       for (const unit of units) {
         const start = toUtf16(state, map, span[0], unit)
         const end = toUtf16(state, map, span[1], unit)
         if (start !== null && end !== null && end > start && state.slice(start, end) === value) matches.push({ unit, start, end })
       }
-      if (!matches.length) { reject(index, 'span_value_conflict'); continue }
+      if (!matches.length) {
+        reject(index, 'span_value_conflict')
+        continue
+      }
       const first = matches[0]
-      if (matches.some(match => match.start !== first.start || match.end !== first.end)) { reject(index, 'ambiguous_span'); continue }
-      if (first.start < sourceStart || first.end > sourceEnd) { reject(index, 'outside_source'); continue }
+      if (matches.some(match => match.start !== first.start || match.end !== first.end)) {
+        reject(index, 'ambiguous_span')
+        continue
+      }
+      if (first.start < sourceStart || first.end > sourceEnd) {
+        reject(index, 'outside_source')
+        continue
+      }
       rawStart = first.start - sourceStart
       rawEnd = first.end - sourceStart
       // 無法區別的單位不冒充 provider 單位；原文範圍改以已知 UTF-16 表示。
@@ -225,7 +264,10 @@ export function extractClairicEvidence(input: ClairicEvidenceInput): EvidenceExt
     }
     const expanded = expandSentence(content, rawStart, rawEnd)
     const id = `e:${material_id}:${expanded.start}:${expanded.end}`
-    if (seen.has(id)) { duplicates++; continue }
+    if (seen.has(id)) {
+      duplicates++
+      continue
+    }
     seen.add(id)
     evidence.push({
       id,
