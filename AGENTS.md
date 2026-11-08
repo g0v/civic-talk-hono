@@ -24,7 +24,7 @@
 
 1. **所有資料表一律 `ct_` 前綴。** 遠端 D1 `vtaiwan-civic-talks` 位於 vTaiwan 命名空間、可能與其他專案共用，未加前綴的 `issues`／`materials`／`briefings`／`opinions` 會撞名並造成不可逆的資料破壞。所有 DDL、SQL、型別一律只碰 `ct_*`；migration 套用後查 `sqlite_master` 確認只新增 `ct_` 開頭的業務表。
 2. **內容生成與投稿安全審查分開。** 素材彙整／說明頁等**內容生成**仍由志願者使用自己的 AI token 完成，平台只產出 prompt 並收回結果；伺服器端不得代為呼叫生成模型。**例外（issue #29，使用者明確授權）**：四個投稿入口可在 Worker 內呼叫 OpenRouter 的 `openai/gpt-oss-safeguard-20b` 做投稿安全審查。審查採 **fail-open**：OpenRouter 缺 key、逾時或 5xx 等基礎設施故障時記錄結構化錯誤並放行投稿，不把故障誤判成濫用，也不因外部服務故障擋住全站投稿。
-   - **例外（Issue #183，使用者明確授權）**：固定 Clairic／Clef／Gemma 4 26B A4B 的證據管線為未停權登入者產生私有草稿，每個新工作須明確同意，只有 owner／管理員可讀；不得自動投稿、發布、修改 briefing 或議題狀態。正式 Worker 只有 `EVIDENCE_API_ENABLED` 明確為 `1` 才開啟，未設定或其他值均關閉，缺必要 binding 要 fail closed。本機設定已準備為 `1`，正式已部署版本仍為 `0`；本輪授權本機修改、驗證與提交，不含推送、部署或付費。隔離實驗／審查兩種模式、費用及權限見[手冊](./docs/evidence-api-review.md)。UI 及後續發布仍須另經授權；既有 BYO token／prompt 不變。
+   - **例外（Issue #183，使用者明確授權）**：固定 Clairic／Clef／Gemma 4 26B A4B 的證據管線為未停權登入者產生私有草稿，每個新工作須明確同意，只有 owner／管理員可讀；不得自動投稿、發布、修改 briefing 或議題狀態。只有 `EVIDENCE_API_ENABLED=1` 才開啟，缺必要 binding 要 fail closed。正式已部署 source `73800643596b7114efd0c7623ea436023cd244b9`、旗標 `1`。2026-11-08 本輪授權提前清理、本機驗證與 commit，不含 push、deploy、付費或遠端寫入。專用實驗／審閱入口已移除；六 API、費用與權限見[手冊](./docs/evidence-api-review.md)。UI／一般 API 與維護實測分別移交 #166／#201，不因清理宣稱已驗收；既有 BYO token／prompt 不變。
    - **素材事實查核不是內容生成。** `POST /api/fact-check` 經登入／停權守門後，以 `FACT_CHECK_CORE` Service Binding 串流轉送到沒有公開 route 的 `fact-check-core`。Service Binding 已是核心 Worker 的 capability；不要再加入前端 API key、HMAC token 或把 session cookie 轉送給核心。
 3. **SSR 路徑絕不碰瀏覽器 API。** 任何在 SSR 期間執行的程式碼（元件 `setup`、模組頂層、共用工廠）不得使用 `window`／`document`／`localStorage`／`navigator`——需要時用 `typeof window === 'undefined'` 守衛或放到 `onMounted`。每請求新建獨立的 app 實例，嚴禁跨請求共享可變狀態。
 4. **舊網址永不失效。** 下列舊路徑必須以 301／302 導向新的乾淨路由，且此對應表只能新增、不能刪除：
@@ -83,7 +83,7 @@ Civic Talk 已以 **每頁 `renderPage` + 單一 client bundle hydration** 跑�
   - Markdown 預覽先對字串套用與素材、意見、彙整／綜整送出流程相同的 `trim()`，再呼叫 `renderSafeMarkdown()`，避免首行四個空白在預覽中變成 code block、送出後卻成為段落。只正規化預覽，不改寫草稿或字數計數；內文縮排仍保留。純文字模式維持原字串，不套用 `trim()`。回歸需確認首行縮排的預覽與送出文字渲染一致，以及純文字的首尾空白與換行未被刪除。
 - `src/l10n/` — 自製 i18n composable（`zh-TW`／`en`／`ja` 三檔 key 與插值欄位同步）；桌機標頭與手機選單共用 `LanguageSwitcher.vue`，以原生 select 直接選擇語言。SSR 固定 `zh-TW`，`localStorage.civic_lang` 只在 hydration 後讀寫；保留舊版 `zh`，日語使用與 vTaiwan 主站相同的 `ja`。日期及 `OPINION.md` 跟隨介面語言，投稿內容不自動翻譯。
 - `src/styles/app.css` — Tailwind v4 `@theme static`（vTaiwan 色彩、字型、字級、間距、圓角、陰影與動效 token）；`vp run css` 產出 `public/styles.css`（**生成物，勿手改**）。
-- `wrangler.jsonc` — `ASSETS`、業務 `DB`、認證 `DB_AUTH`、`FACT_CHECK_CORE`、Workers `AI` 與 `EVIDENCE_WORKFLOW`；本機 `EVIDENCE_API_ENABLED=1` 尚未發布，正式已部署版本仍為 `0`。D1／service 的 `remote: true` 只影響本機開發連線；正式部署及遠端 migration 仍需各別授權。`compatibility_flags: ["nodejs_compat"]`；**不寫 `account_id`**，由 Wrangler 登入帳號決定。
+- `wrangler.jsonc` — `ASSETS`、業務 `DB`、認證 `DB_AUTH`、`FACT_CHECK_CORE`、Workers `AI` 與 `EVIDENCE_WORKFLOW`；本機與使用者已部署的 source `73800643596b7114efd0c7623ea436023cd244b9` 均為 `EVIDENCE_API_ENABLED=1`。D1／service 的 `remote: true` 只影響本機開發連線；正式部署及遠端 migration 仍需各別授權。`compatibility_flags: ["nodejs_compat"]`；**不寫 `account_id`**，由 Wrangler 登入帳號決定。
 - `src/auth/` — `createAuth.ts`（Better Auth 實例：Google／GitHub provider、同 email accountLinking、啟用 admin plugin 供 server 端 moderation ban/unban，並以 `additionalFields` 唯讀取角色與停權欄位）與 `authorization.ts`（`AppRole`／`resolveRole`／`isAdminRole`／`getAuthContext`／`tryGetAuthContext`）。
 - `src/api/auth.ts` — `/api/auth/*` 轉交 `auth.handler()`、`/api/me` 回登入者；`/api/auth/admin/*` 一律 404。
 - `src/api/types.ts` — `AppBindings`／`App` 型別（原本在 `routes.ts`，抽出來避免 auth 與 routes 互相 import）。
@@ -549,12 +549,12 @@ D1 migration 目錄包含已套遠端的 `0017`，原 SQL／ledger 不改。隔�
 
 > 後續可選：切換到 `vue-router` 全站 hydration、擴充真實瀏覽器 E2E 與部署後 smoke automation——動工前先與使用者確認。
 
-### 進行中：#183 證據管線 API（PR #191）
+### #183 證據管線 API 交付與專用環境退場（PR #191）
 
-- API-only；正式已部署的 `EVIDENCE_API_ENABLED=0` 版本六端點同源請求回 404，跨站簡單寫入由全域 CSRF 先回 403，均不觸及 Auth／DB／AI。本機設定已準備為 `1`，必要 binding 不全回 503，完整時匿名回 401；不含發布或付費授權。正式 `SOURCE_DB` 省略時用 `DB`，不以 fake provider／auth fallback 替代。
-- 實驗 `CIVIC_AI_EXPERIMENT=1 vp run dev:remote` 保留原本 `.wrangler/ai-experiment`、本機工作庫及僅 SELECT 的遠端來源；review `CIVIC_AI_REVIEW=1 vp run dev:remote` 使用獨立 `.wrangler/evidence-review`、虛構的本機來源和本機工作庫。兩旗標不可同時使用；兩者皆用既有遠端 Better Auth 與真實 Workers AI。
-- `0017` 正式保留但 SQL 不變；審查時 migration 僅限本機，`DB_AUTH` 不做 DDL／migration 或直接 SQL 寫入。遠端 migration 須在 main merge 確認後另行授權。保留 quota、未知費用與 tombstone，不重建狀態繞過。
-- 原有 BYO token、synthesis prompt API、briefing 與 issue status 不變；`Issues.md` 只記錄兩項未實作未來工作。PR #191 已合併、原始 0017 及正式關閉版已由使用者完成；本輪僅授權本機開關 `1` 的修改與驗證。清理順序見 [`TODO_AFTER_MERGE.md`](./TODO_AFTER_MERGE.md)，不提前刪除設定或資料。
+- API-only；使用者已部署 source `73800643596b7114efd0c7623ea436023cd244b9`、`EVIDENCE_API_ENABLED=1`，既有確認為六匿名 401、跨站簡單 POST 403、`/api/me` 200／super-admin／banned:false。不重跑或冒充完整驗收；必要 binding 不全回 503，不以 fake provider／auth fallback 替代，來源為業務 `DB`。
+- 2026-11-08 使用者核准提前移除實驗／審閱 profiles、入口、CLI 與 fixtures；一般 `vp run dev` 仍停用 Auth，`vp run dev:remote` 仍有既有遠端 Auth／DB／AI 語意，不作未授權試跑。
+- `0017` 原始 SQL、已套 ledger、公開結果／費用報告、Insight 歷史及全部私有 `.wrangler` 資料保留；不重建 quota、unknown 或 tombstone 繞過狀態。`DB_AUTH` 不做 DDL／migration 或直接 SQL 寫入。
+- 原有 BYO token、synthesis prompt API、briefing 與 issue status 不變。本輪僅清理、本機驗證及 commit，不 push／deploy、不付費或遠端寫入。關閉 #183 只表示 API 交付與專用環境退場；UI／一般 API 驗收見 [#166](https://github.com/g0v/civic-talk-hono/issues/166)，reconcile／erase 維護驗收見 [#201](https://github.com/g0v/civic-talk-hono/issues/201)，進度見 [`TODO_AFTER_MERGE.md`](./TODO_AFTER_MERGE.md)。
 - 使用者已確認真實品質實驗成功，已核准公開的 [結果](./results/ai-experiment_result.json) 與 [費用](./results/ai-experiment_cost.json) 可直接審閱；非獨立 gold labels，也不是新執行的證據。完整六 API 操作、來源清除限制及程式閱讀地圖見[檢閱手冊](./docs/evidence-api-review.md)。
 - 管線依序執行固定 `@cf/google/gemma-4-26b-a4b-it` 的共識／爭點／立場地圖三個專項，使用同一份已驗證證據與必要比較資料，不串接摘要。primary／單輪補完使用原生 Chat Completions：`messages` 為 system prompt 與 JSON 字串 user payload、`max_completion_tokens:8192`、`temperature:0.2`、`chat_template_kwargs:{enable_thinking:false}`、`stream:false`、`response_format:{type:"json_schema",json_schema:{name,strict:true,schema}}`；不送 `uniqueItems`，程式仍拒絕重複 ID。prompt／schema／input 版本為 `specialized-evidence-v7`／`specialized-cited-v4`／`section-values-v6-gemma-chat`，補完為 `missing-fields-only-v3`／`cited-field-patches-v1`，回應政策為 `gemma-chat-stop-json-v3`。[Gemma 官方模型頁](https://developers.cloudflare.com/workers-ai/models/gemma-4-26b-a4b-it/)列出 `response_format`；本機 Cloudflare Workers AI 型別的 Gemma 輸入繼承 `ChatCompletionsInput`、`ResponseFormatJSONSchema` 使用具名 wrapper，但這不保證 runtime schema 或語義品質。
 - 僅接受 `model` 為字串、恰一個 `index:0`、`finish_reason:"stop"` 的 choice，message 須為 assistant 且 content 為字串，完整解析 JSON；既有完整單一 plain／json fence 例外不變。忽略 `reasoning`／`reasoning_content`，缺完成原因／不完整、refusal、工具及非字串內容均拒收；不得切取思考文字、修補、退回 Responses／其他模型或自動重試。Gemma 每百萬 input／output tokens US$0.10／0.30；以 `prompt_tokens`／`completion_tokens` 為主，別名與 total 若回報須有效一致，reasoning 已含 completion，缺失或異常保持未知，不退款未知預留。
@@ -563,7 +563,7 @@ D1 migration 目錄包含已套遠端的 `0017`，原 SQL／ledger 不改。隔�
 - 各項獨立記帳、驗證與保存；`diagnostics.generation.sections` 區分 completed／no_findings／failed／not_started，進行中另看 `generation_progress`。partial 不代表失敗空段沒有爭點；來源 fence、停權、去重及禁止自動重試仍適用。
 - 最終三段 Overview 與每組 Core_concern 均須非空；Core_concern 可依明示主張有據綜整，不推測動機。三項後僅在有內容的必填仍為 null 時，最多一輪 Gemma 白名單補完，不能改已有值、來源、順序或舊引用。共識 Overview 補完仍須保留三型的差別、條件與來源範圍，不將共享挑戰或事實升格成共同解法。空／失敗／未啟動分區的 Overview 由程式以三語狀態文字明示，不偽造來源結論或 citation。
 - 補完獨立預留／結算且仍屬同一工作，進度可為 completion；無缺值不付費，必要補完失敗不交付缺值草稿。原始分項、舊結果、unknown 費用與 tombstone 不覆寫；不新增第五輪、自動重試或格式修復。模型更換時的 `evidence-processing-2026-11-04-v4` 為歷史告知；`evidence-processing-2026-11-07-v5` 已隨 `e11d6b9` 公開並部署，不回寫舊同意或 raw。每個建立請求須 `consent:true`，伺服器存版本／時間；同帳號命中既有 job 不新增同意事件，不代表取得正文所有人的同意。
-- 初版正式 flag `0` 通過 52 項匿名 smoke；`e11d6b9` 的 v5 告知發布後另通過 20 項匿名檢查，正式仍為 `0`。本機設定準備為 `1`，本輪提交已獲授權，尚未發布；啟用後六 API、真人 OAuth、登入後寫入及付費驗收仍未完成。推送／部署、付費及清理須另獲授權，保留 review／experiment profiles、CLI、fixtures。
+- 初版正式 flag `0` 的 52 項匿名 smoke 及 `e11d6b9` v5 發布後的 20 項檢查是歷史結果，不能冒充現行版本或完整六 API 驗收。正式已啟用 `1`；`consent:false` 拒絕、登入後建立／快取／輪詢／修訂／衝突、一般使用者與 non-owner／non-admin、有效 reconcile／erase 仍未實測。本輪提前清理不改變這些未驗狀態；後續真人、付費及維護操作須各別授權。
 - 沿用每帳號每 UTC 日最多 20 個新付費工作、議題五分鐘、環境模型 US$5／日估算準入，非整 job 報價或全帳單硬上限，不含 Workers／Workflows／D1；unknown 跨日不自動退，不保證次日恢復。Clairic input／Clef 每百萬 tokens US$0.10／0.24，Gemma input／output US$0.10／0.30。
 - 無自動 TTL／固定刪除時限；hidden／changed 只撤下且保留 payload。查核／對帳發現 deleted 或管理員按來源 erase 才清跨依賴工作／申請者的 execution 私有 payload／diff，非單 job 自助刪除；保留帳號 ID、hash、同意版本／時間、usage、unknown 與永久 tombstone，來源 ID 不可重新入場。人工權利請求寄 `info@vtaiwan.tw`；不保證即時發現刪除，不能撤回在途模型請求。
 - 正式資料存業務 `DB`（非 `DB_AUTH`），含原始快照、完整模型 request／response、引用、來源紀錄、人改／diff；owner／admin 讀、owner 改，不自動發布。模型不收作者快照欄，但正文、名稱／網址仍可能含個資，未匿名化。D1 Time Travel 依方案 7／30 天，erase 不保證即時清備份；Workers AI 一般推論零留存／不訓練有營運 metadata、安全及法律例外，不代表 D1 零留存。完整政策及官方連結見[手冊](./docs/evidence-api-review.md#3-模式前置與保護範圍)。

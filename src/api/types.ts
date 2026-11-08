@@ -25,18 +25,17 @@ export type AppBindings = {
   FACT_CHECK_CORE: Fetcher
   /** 證據 API 預設關閉；只有明確設為 "1" 才可使用。 */
   EVIDENCE_API_ENABLED?: string
-  /** 審閱模式使用獨立的本機來源；未指定時讀取 DB。 */
+  /** 可選的獨立來源；未指定時讀取 DB，來源 repository 僅提供讀取。 */
   SOURCE_DB?: D1Database
   AI?: Ai
   EVIDENCE_WORKFLOW?: Workflow<{ jobId: string }>
-  CIVIC_AI_REVIEW?: string
   /** 用於執行時讀取 public/rules/community-guidelines.md */
   ASSETS?: {
     fetch: (request: RequestInfo | URL, init?: RequestInit) => Promise<Response>
   }
 }
 
-/** 僅 Better Auth 所需的綁定；實驗入口不需要其他業務服務。 */
+/** 認證與證據管線共用的最小 Better Auth 綁定。 */
 export type AuthBindings = Pick<
   AppBindings,
   'DB_AUTH' | 'BETTER_AUTH_URL' | 'BETTER_AUTH_SECRET' | 'GOOGLE_CLIENT_ID' | 'GOOGLE_CLIENT_SECRET' | 'GITHUB_CLIENT_ID' | 'GITHUB_CLIENT_SECRET'

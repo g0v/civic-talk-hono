@@ -150,14 +150,6 @@ describe('正式 Worker 的證據 API 邊界', () => {
     expect(authorization.tryGetAuthContext).not.toHaveBeenCalled()
   })
 
-  it.each(['CIVIC_AI_EXPERIMENT', 'CIVIC_AI_REVIEW'])('%s 模式缺少獨立來源時不退回 DB', async profile => {
-    const env = { ...bindings(), [profile]: '1' }
-    const response = await send('POST', '/api/issues/7/evidence-jobs', env, { consent: true })
-    expect(response.status).toBe(503)
-    await expect(response.json()).resolves.toEqual({ error: 'service_unavailable' })
-    expect(authorization.tryGetAuthContext).not.toHaveBeenCalled()
-  })
-
   it('啟用且服務齊備後，六個操作共用真實路由的登入守衛', async () => {
     const prepare = vi.fn()
     const env = bindings({ prepare })
@@ -202,7 +194,6 @@ describe('正式 Worker 的證據 API 邊界', () => {
       const existing = await send('GET', '/api/issues/7', env)
       expect(existing.status).toBe(500)
       expect(await existing.text()).not.toContain('internal database detail')
-      expect(existing.headers.get('X-Civic-Evidence-Review')).toBeNull()
     } finally {
       consoleError.mockRestore()
     }
@@ -227,21 +218,5 @@ describe('正式 Worker 的證據 API 邊界', () => {
       local.sqlite.close()
       override.sqlite.close()
     }
-  })
-
-  it('只有審閱設定為證據路由標記識別 header，既有 API 不受影響', async () => {
-    const base = bindings()
-    const env = { ...base, SOURCE_DB: base.DB, CIVIC_AI_REVIEW: '1' }
-    const disabled = await send('GET', `/api/evidence-jobs/${jobId}`, { ...env, EVIDENCE_API_ENABLED: '0' })
-    expect(disabled.status).toBe(404)
-    expect(disabled.headers.get('X-Civic-Evidence-Review')).toBe('1')
-    const anonymous = await send('GET', `/api/evidence-jobs/${jobId}`, env)
-    expect(anonymous.status).toBe(401)
-    expect(anonymous.headers.get('X-Civic-Evidence-Review')).toBe('1')
-    const normal = await send('GET', '/api/issues/not-an-id', env)
-    expect(normal.status).toBe(400)
-    expect(normal.headers.get('X-Civic-Evidence-Review')).toBeNull()
-    const formal = await send('GET', `/api/evidence-jobs/${jobId}`, bindings())
-    expect(formal.headers.get('X-Civic-Evidence-Review')).toBeNull()
   })
 })

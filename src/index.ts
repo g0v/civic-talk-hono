@@ -59,8 +59,6 @@ for (const [method, path] of evidenceEndpoints) {
     c.header('Cache-Control', 'private, no-store')
     c.header('X-Content-Type-Options', 'nosniff')
     c.header('Vary', 'Cookie', { append: true })
-    // 僅審閱設定會提供此可信的 Worker 變數，供 CLI 確認未對錯誤環境送出操作。
-    if (c.env.CIVIC_AI_REVIEW === '1') c.header('X-Civic-Evidence-Review', '1')
     if (c.env.EVIDENCE_API_ENABLED !== '1') return c.json({ error: 'Not found' }, 404)
     await next()
   })

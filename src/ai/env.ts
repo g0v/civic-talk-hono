@@ -7,11 +7,9 @@ export type EvidenceBindings = AuthBindings & {
   AI: Ai
   EVIDENCE_WORKFLOW: Workflow<{ jobId: string }>
   EVIDENCE_API_ENABLED?: string
-  CIVIC_AI_EXPERIMENT?: string
-  CIVIC_AI_REVIEW?: string
 }
 
-/** Worker 入口可能省略 SOURCE_DB；正式站以業務 DB 作來源，審閱可另行指定。 */
+/** Worker 入口可省略 SOURCE_DB；未指定時以業務 DB 作來源。 */
 export type EvidenceRuntimeBindings = Omit<EvidenceBindings, 'SOURCE_DB'> & {
   SOURCE_DB?: D1Database
 }
@@ -21,8 +19,7 @@ export function hasEvidenceBindings(env: Partial<EvidenceRuntimeBindings>): bool
   return Boolean(
     env.DB && env.DB_AUTH && env.AI && env.EVIDENCE_WORKFLOW &&
     env.BETTER_AUTH_URL && env.BETTER_AUTH_SECRET &&
-    env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET && env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET &&
-    ((env.CIVIC_AI_EXPERIMENT !== '1' && env.CIVIC_AI_REVIEW !== '1') || env.SOURCE_DB)
+    env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET && env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET
   )
 }
 

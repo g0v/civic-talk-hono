@@ -4,7 +4,7 @@ civic-talk-hono 的部署與環境設定參考。日常開發看 [`README.md`](.
 
 > 狀態：**已部署**於 <https://civic.vtaiwan.tw>（Worker 名稱 `civic-talk`，首次部署 2026-08-05）。第 1 節現在是**環境設定的參考**（換環境、換金鑰、新維護者接手時要看），不再是首次部署的待辦清單。
 
-> **#183 rollout：** PR #191 與遠端原始 0017 已完成，v5 告知已隨 `e11d6b9` 由使用者手動推送／部署，20 項匿名發布／關閉檢查通過，正式仍為 `EVIDENCE_API_ENABLED=0`。本機設定已準備為 `1`，本輪授權修改、驗證及提交，不含推送、部署、付費或清理。SQL byte-for-byte 保留，不對 `DB_AUTH` 執行 DDL／migration；[本機手冊](./docs/evidence-api-review.md)與 [`TODO_AFTER_MERGE.md`](./TODO_AFTER_MERGE.md) 的 profiles／CLI／fixtures 暫留。
+> **#183 現況（2026-11-08）：** PR #191 與遠端原始 0017 已完成。使用者已部署 source `73800643596b7114efd0c7623ea436023cd244b9`、`EVIDENCE_API_ENABLED=1`，既有確認為六匿名 401、CSRF 403、`/api/me` 200／super-admin／banned:false，不是完整六 API 驗收。本輪授權提前清理專用 profiles／CLI／fixtures、本機驗證及 commit，不 push／deploy、不付費或遠端寫入。原始 SQL、歷史報告及全部私人狀態保留；契約見 [API 手冊](./docs/evidence-api-review.md)。UI／一般 API 驗收見 [#166](https://github.com/g0v/civic-talk-hono/issues/166)，維護驗收見 [#201](https://github.com/g0v/civic-talk-hono/issues/201)，進度見 [`TODO_AFTER_MERGE.md`](./TODO_AFTER_MERGE.md)。
 
 ---
 
@@ -50,7 +50,7 @@ https://civic.vtaiwan.tw/api/auth/callback/google
 https://civic.vtaiwan.tw/api/auth/callback/github
 ```
 
-本機 #183 審查只使用 Google 的 `http://localhost:5173/api/auth/callback/google`，須由維護者確認 Google app 已允許；GitHub 目前只允許 `vtaiwan.tw` 子網域，不能用 localhost GitHub 登入。一般 `vp run dev` 刻意停用 Auth，審查使用專用 remote-dev profile。
+一般 `vp run dev` 刻意停用 Auth；`vp run dev:remote` 保留既有遠端 Auth／DB／AI 語意，登入或有效證據請求可能遠端寫入及付費，須另獲各別授權。專用 #183 remote-dev profiles 已移除。未來另獲本機真人登入授權時，須由維護者確認 Google app 允許 `http://localhost:5173/api/auth/callback/google`；GitHub 目前只允許 `vtaiwan.tw` 子網域，不能用 localhost GitHub 登入。本輪不安排登入測試。
 
 - callback 清單只能在 Google Cloud Console／GitHub Developer settings 手動設定；缺少時會回 `redirect_uri_mismatch`。
 - 共用應用程式的 vTaiwan 既有 callback 不得移除；更換正式網域時應同步核對。
@@ -82,7 +82,7 @@ npx wrangler secret put OPEN_ROUTER_API_KEY
 **`BETTER_AUTH_URL` 不是機密**，可以改放進 `wrangler.jsonc` 的 `vars`（進版控、部署時自動帶上、不會有人忘了設）：
 
 ```jsonc
-"vars": { "BETTER_AUTH_URL": "https://civic.vtaiwan.tw" }
+"vars": { "EVIDENCE_API_ENABLED": "1", "BETTER_AUTH_URL": "https://civic.vtaiwan.tw" }
 ```
 
 正式站的 `BETTER_AUTH_URL` 必須是本站 origin；`src/auth/createAuth.ts` 直接把它當 `baseURL`，值不對會在登入時導到錯的網域。設定位置與下列 `keep_vars` 規則須一併核對；本機 `.dev.vars` 仍可能覆蓋設定。
@@ -164,13 +164,13 @@ vp run deploy    # = build + 建置產物／公開原始碼檢查 + wrangler dep
 - #95 的 `0015_issue_tags.sql` 為 `ct_issues` 新增 `tags TEXT NOT NULL DEFAULT '[]'`。2026-10-20 經使用者授權，確認 Cloudflare 帳號為 vTaiwan.tw，且檔案與已合併的 `main` 一致後，執行 `npx wrangler d1 migrations apply vtaiwan-civic-talks --remote --config wrangler.jsonc`；套用前 pending 僅 0015，套用後清單為空。已核對 `sqlite_master` 資料表清單未變、欄位型別／NOT NULL／預設值正確，既有議題仍為 16 筆，tags 全為 `[]` 且無 NULL／無效 JSON；未操作 `vtaiwan-auth`，未部署 Worker。
 - `0016_issue_closure.sql` 已有遠端 ledger，`applied_at=2026-10-23 21:26:16`；早期「僅套本機」不是現況。
 - **0017 已完成：** 使用者手動套遠端原始 SQL，ledger id 18、`applied_at=2026-11-06 19:29:04`，八張 `ct_ai_*` 表／七個顯式索引已核對。原 SQL byte-for-byte 與 ledger 保留，不重跑、DROP 或改 ledger；`remote:false` 不是 CLI `--remote` 安全鎖。
-- **正式關閉版已完成：** source commit `a2ff8ae526aee59a37234562bad1001c65e8c8b5`、Worker version `e398bed0-1a14-46d2-8f73-5222fd05b71d`、`EVIDENCE_API_ENABLED=0`，52 項匿名 smoke 通過。這不是啟用後六 API、真人 OAuth、登入後寫入或付費推論驗收。
-- **正式 v5 告知已發布：** 使用者手動推送並部署 source `e11d6b912d5a3e60c47a074e95b7a09b33df9f11`，正式仍為 `0`。20 項匿名檢查確認 v5、來源 metadata、JS／notices 原件一致性、六端點關閉、CSRF 及基本既有 API；沒有建立 AI 工作或執行維護處置。此輪未取得新的 Worker version ID，不沿用上列舊值。
+- **歷史正式關閉版：** source commit `a2ff8ae526aee59a37234562bad1001c65e8c8b5`、Worker version `e398bed0-1a14-46d2-8f73-5222fd05b71d`、`EVIDENCE_API_ENABLED=0`，當時 52 項匿名 smoke 通過；不是現行版本或啟用後六 API 驗收。
+- **歷史 v5 告知發布：** 使用者手動推送並部署 source `e11d6b912d5a3e60c47a074e95b7a09b33df9f11`，當時旗標 `0`。20 項匿名檢查確認 v5、來源 metadata、JS／notices 原件一致性、六端點關閉、CSRF 及基本既有 API；沒有建立 AI 工作或執行維護處置。
 
-  **後續 rollout，非本輪操作授權：**
-  1. `evidence-processing-2026-11-07-v5` 已隨 `e11d6b9` 發布；歷史 v4、舊同意、raw／results／Insight 不回寫。正式關閉版已完成，勿重套 migration 或為確認品質重跑模型。
-  2. 本輪準備本機 `EVIDENCE_API_ENABLED=1`、驗證並提交；推送及正式部署仍須另獲授權。發布前核對 AI／Workflow／DB／Auth bindings 與已接受的費用／留存政策。啟用後未停權登入者可逐工作同意使用；匿名預期 401，缺必要 binding 回 503，不提供 fallback。
-  3. 按另外授權的帳號、資料與費用範圍驗收六 API，erase 須額外確認跨來源依賴範圍。之後仍需清理授權，不能先刪 profiles／CLI／fixtures 或私人資料。
+  **現行啟用與後續驗收：**
+  1. 使用者已部署 source `73800643596b7114efd0c7623ea436023cd244b9`、旗標 `1`，確認六匿名 401、CSRF 403、`/api/me` 200／super-admin／banned:false；現行 Worker version ID 未知，不沿用歷史值。v5 告知仍生效；舊同意、raw／results／Insight 不回寫。
+  2. 2026-11-08 使用者核准提前清理專用設定與操作鏈，不以完整六 API 正式實測為前置。本輪只做本機驗證與 commit，不 push／deploy、不付費或遠端寫入；原始 0017、正式 AI／Workflow／開關 `1`、私有 `.wrangler` 與帳本保留。
+  3. 關閉 #183 表示 API 交付與專用環境退場，不代表 UI 或 live 驗收完成。UI／一般 API 移交 [#166](https://github.com/g0v/civic-talk-hono/issues/166)，reconcile／erase 移交 [#201](https://github.com/g0v/civic-talk-hono/issues/201)。所有正式登入後／付費／維護實測延後，仍須各別授權帳號、來源、費用與不可逆處置範圍。
 
   **政策核對：** 每帳號每 UTC 日最多 20 個新付費工作、議題五分鐘、環境模型 US$5／日估算準入；Clairic input／Clef 每百萬 tokens US$0.10／0.24、Gemma input／output US$0.10／0.30。非整 job 報價或全帳單硬上限，不含 Workers／Workflows／D1；unknown 跨日不自動退，不保證次日恢復。每個建立請求須 `consent:true`，伺服器存版本／時間，同帳號命中既有 job 不新增事件，也不代表正文所有人已同意。
 
@@ -270,7 +270,7 @@ cp wrangler.jsonc wrangler.personal.jsonc
 
 > ⚠️ `wrangler d1 create` 完成後會問 **“Would you like Wrangler to add it on your behalf?”**。一律回答 **no**——回答 yes 會把綁定寫進 tracked 的 `wrangler.jsonc`，正是本節要避免的事。請自行把 `database_id` 填進 `wrangler.personal.jsonc`。
 
-編輯 `wrangler.personal.jsonc`，**五處都要改**：
+編輯 `wrangler.personal.jsonc`，**六處都要改**：
 
 | 欄位                    | 改成什麼                                                                |
 | ----------------------- | ----------------------------------------------------------------------- |
@@ -278,7 +278,8 @@ cp wrangler.jsonc wrangler.personal.jsonc
 | `d1_databases[DB]`      | 步驟 1 建立的業務庫名稱與 `database_id`                                 |
 | `d1_databases[DB_AUTH]` | 步驟 1 建立的認證庫名稱與 `database_id`                                 |
 | `services`              | **整段刪除**——`fact-check-core` 只存在於 vTaiwan 帳號，帶著它會部署失敗 |
-| `workflows[].name`       | 改為自己專用的 Workflow 名稱；不得沿用 `civic-talk-evidence`，避免與同帳號的其他 Worker 共用資源名稱。保留 `EVIDENCE_API_ENABLED=0`，正式開放前另外確認 migration、認證及費用／留存設定。 |
+| `workflows[].name`       | 改為自己專用的 Workflow 名稱；不得沿用 `civic-talk-evidence`，避免與同帳號的其他 Worker 共用資源名稱。 |
+| `vars.EVIDENCE_API_ENABLED` | 從複製的 `1` 改為 `0`；這只關閉個人環境，不能修改一般 `wrangler.jsonc` 的正式啟用值。開放前另外確認 migration、認證及費用／留存設定。 |
 
 ### 6.3 套用 migration
 

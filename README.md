@@ -4,7 +4,7 @@
 
 本站受[ronnywang](https://www.github.com/ronnywang)提出的[原始構想](https://ronnywang.github.io/civic-notes/civic-talk/)的啟發。
 
-一般內容生成仍由志願者使用自己的 AI token 完成。Issue #183 提供須明確啟用的證據管線 API：每個工作須明確同意，選定素材送交 Cloudflare Workers AI，費用由平台帳號承擔；草稿只供申請者與管理員讀取，不會改寫 briefing、改變議題狀態或自動發布。本機設定已準備為 `EVIDENCE_API_ENABLED=1`，尚未發布；正式已部署版本仍為 `0`。審查可用隔離本機模式，詳見 [#183 檢閱手冊](./docs/evidence-api-review.md)。投稿安全審查仍使用 OpenRouter；素材事實查核仍呼叫不公開的 `fact-check-core` Worker。
+一般內容生成仍由志願者使用自己的 AI token 完成。Issue #183 提供證據管線 API：每個工作須明確同意，選定素材送交 Cloudflare Workers AI，費用由平台帳號承擔；草稿只供申請者與管理員讀取，不會改寫 briefing、改變議題狀態或自動發布。使用者已部署 source `73800643596b7114efd0c7623ea436023cd244b9`、`EVIDENCE_API_ENABLED=1`，實質契約見 [#183 API 手冊](./docs/evidence-api-review.md)。投稿安全審查仍使用 OpenRouter；素材事實查核仍呼叫不公開的 `fact-check-core` Worker。
 
 ## 軟體授權
 
@@ -175,7 +175,7 @@ vp run dev
 
 本次交付為 **API-only**，操作介面另案。Clairic 逐素材抽取、Clef 比較、Gemma 4 26B A4B 生成共識／爭點／立場地圖，必要時最多一次只補缺值。使用者已確認品質實驗成功；核准公開的歷史 [結果](./results/ai-experiment_result.json) 與 [費用報告](./results/ai-experiment_cost.json) 可供檢視，不是獨立 gold labels，也不能代替新一輪執行的紀錄。實驗的歷史失敗與限制留在 [`Insight.md`](./Insight.md)。
 
-使用者已手動推送並部署 source `e11d6b912d5a3e60c47a074e95b7a09b33df9f11`，v5 告知已在正式站生效；本次 20 項匿名發布／關閉檢查通過，六條證據 API 仍回 404，跨站簡單寫入回 403。這不是啟用後六 API、真人 OAuth、登入後寫入或付費推論驗收。本輪已獲授權把本機設定準備為 `EVIDENCE_API_ENABLED=1`、驗證並提交，不包含推送、部署、付費試跑或清除。開關非 `1` 時不進入 Auth／DB／AI；明確為 `1` 但缺必要綁定回 503，綁定完整時匿名回 401。正常 BYO token、synthesis prompt、briefing 與議題狀態不變；實驗設定暫留，發布與清理仍須另獲授權。
+使用者已確認啟用版六條證據 API 匿名回 401、跨站簡單 POST 回 403，及 `/api/me` 200／super-admin／banned:false；不重跑，也不視為登入後寫入、付費或完整六 API 驗收。開關非 `1` 時不進入 Auth／DB／AI；明確為 `1` 但缺必要綁定回 503。正常 BYO token、synthesis prompt、briefing 與議題狀態不變。
 
 本輪處理告知為 `evidence-processing-2026-11-07-v5`（v4 為歷史告知，不回寫舊紀錄）。每個建立請求均須 `consent:true`，伺服器保存版本與時間；同帳號命中既有 job 不新增同意事件，也不代表取得正文所有人的同意。模型不收作者快照欄位，但正文、名稱／網址仍可能含個資，並未匿名化。正式私有資料存業務 `DB` 而非 `DB_AUTH`，包括原始快照、完整模型 request／response、引用、來源紀錄、人改與 diff；owner／admin 可讀，只有 owner 可新增人工修訂，AI 原稿不覆寫，不自動發布。
 
@@ -183,9 +183,9 @@ vp run dev
 
 **沒有自動 TTL 或固定刪除期限。** 來源隱藏／變更只撤下交付，仍保留 payload；對帳／查核發現來源 deleted，或管理員按來源 erase，才清除依賴該來源的所有相關 execution 私有 payload／diff，跨工作及申請者，不是單 job 自助刪除。帳號 ID、hash、同意時間／版本、usage、unknown 與永久 tombstone 保留，來源 ID 不可重新入場。不保證即時發現刪除，也不能撤回已送模型請求；人工權利請求請寄 `info@vtaiwan.tw`。D1 Time Travel 依方案留存 7／30 天，不保證 erase 即時清除備份；Workers AI 一般推論零資料留存／不訓練仍有營運 metadata、安全及法律例外，不能套稱 D1 零留存。官方說明見 [Workers AI](https://developers.cloudflare.com/workers-ai/platform/data-usage/)、[D1](https://developers.cloudflare.com/d1/reference/time-travel/)、[Workflows 費用](https://developers.cloudflare.com/workflows/reference/pricing/)。
 
-完整的[檢閱手冊](./docs/evidence-api-review.md)依序說明三個目標：閱讀已授權的真實實驗與費用、由程式碼掌握資料與安全邊界、在**不執行遠端 migration**的條件下操作全部六條 API。`CIVIC_AI_REVIEW=1` 使用合成的本機來源及獨立資料庫；原有 `CIVIC_AI_EXPERIMENT=1` 仍可在取得授權後唯讀真實遠端來源。兩者都使用真實 Google 認證與 Workers AI，建立新工作可能收費。
+完整的 [API 手冊](./docs/evidence-api-review.md)保留歷史實驗與費用入口、六 API 契約、安全／隱私、來源清除及競態說明。實驗／審閱專用 profiles、CLI 與 fixtures 已退場；一般 `vp run dev` 仍停用 Auth，`vp run dev:remote` 保留遠端 Auth／DB／AI 語意，不能當作未授權試跑環境。
 
-政策修訂發布、正式啟用及授權驗收完成後，仍須另獲清理授權才處理實驗／審閱專用設定；目前 profile、CLI、fixtures 與本機指令保留。步驟及保留資料限制見 [`TODO_AFTER_MERGE.md`](./TODO_AFTER_MERGE.md)。
+2026-11-08 使用者核准提前清理與本機驗證／commit，不含 push、deploy、付費或遠端寫入。清理不等於六 API 驗收；關閉 #183 只代表 API 交付與專用環境退場。UI／一般 API 驗收移交 [#166](https://github.com/g0v/civic-talk-hono/issues/166)，reconcile／erase 維護驗收見 [#201](https://github.com/g0v/civic-talk-hono/issues/201)，進度見 [`TODO_AFTER_MERGE.md`](./TODO_AFTER_MERGE.md)。全部私人 `.wrangler` 資料及帳本保留，後續真人、付費與維護操作須各別授權。
 
 ## 部署
 
