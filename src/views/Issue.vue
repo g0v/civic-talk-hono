@@ -1304,6 +1304,10 @@ async function submitOpinion() {
                     {{ t('op_download_csv_btn') }}
                   </a>
                   <span v-else-if="authState === 'anonymous'" class="text-sm text-muted">{{ t('op_csv_login_required') }}</span>
+                  <a href="https://make.vtaiwan.tw" class="btn btn-secondary btn-sm" target="_blank" rel="noopener noreferrer">
+                    <span aria-hidden="true">💭</span>
+                    {{ t('op_opinion_synthesizer_btn') }}
+                  </a>
                   <span v-if="opinionsLoading" class="text-sm text-muted">{{ t('loading') }}</span>
                 </div>
               </div>
