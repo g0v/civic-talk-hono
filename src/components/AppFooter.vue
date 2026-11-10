@@ -50,7 +50,7 @@ function closeOnBackdropClick(event: MouseEvent) {
         </div>
         <template v-if="!compact">
           <a href="https://www.vtaiwan.tw" target="_blank" rel="noopener noreferrer">vtaiwan.tw</a>
-          <a href="https://make.vtaiwan.tw" target="_blank" rel="noopener noreferrer">make.vtaiwan.tw</a>
+          <a href="https://make.vtaiwan.tw" target="_blank" rel="noopener noreferrer">{{ t('footer_sensemaker') }}</a>
           <a href="/about">{{ t('nav_about') }}</a>
           <a href="/terms">{{ t('footer_terms') }}</a>
           <a href="/privacy">{{ t('footer_privacy') }}</a>

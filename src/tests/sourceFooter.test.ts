@@ -21,6 +21,11 @@ const archiveUrl = `${repositoryUrl}/archive/${revision}.tar.gz`
 const sourceLicenseUrl = `${repositoryUrl}/blob/${revision}/LICENSE`
 const fallbackLicenseUrl = 'https://www.gnu.org/licenses/agpl-3.0.html'
 const originalMetadata = { ...sourceMetadata }
+const sensemakerLabels = {
+  'zh-TW': '意見綜整器',
+  en: 'Sensemaker Opinion Integration Tool',
+  ja: 'Sensemaker意見統合ツール',
+} as const
 const sourceCases = [
   {
     name: 'clean',
@@ -89,6 +94,7 @@ describe.each([false, true])('footer source and license notices (compact: %s)', 
         }
       } else {
         expect(html).toContain('src="/vtaiwan-logo.svg"')
+        expect(html).toContain(`href="https://make.vtaiwan.tw" target="_blank" rel="noopener noreferrer">${sensemakerLabels[locale]}</a>`)
         expect(html).toContain('href="/about"')
         expect(html).toContain('href="/terms"')
         expect(html).toContain('href="/privacy"')

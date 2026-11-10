@@ -486,6 +486,7 @@ export const messages = {
     'vTaiwan と同じアカウントを使用します。同じ email であれば、どの方法でログインしても同じアカウントになります。責任を明確にするため、提出した資料には現在設定している公開表示名が付記されます。',
   contrib_signed_in_as: '{name} として提出',
   footer_desc: '公共政策のための開かれた審議プラットフォーム。誰もが台湾の未来に参加できます。',
+  footer_sensemaker: 'Sensemaker意見統合ツール',
   footer_copy: 'Copyright (c) 2026 Bestian Tang。その他の貢献者および第三者の著作物に関する各権利は影響を受けません。',
   footer_content_license: '市民の意見要約：CC-BY-SA 4.0。資料には各出典のライセンスが適用されます。',
   footer_software: 'ソフトウェア：AGPL-3.0-only。ソフトウェアにはいかなる保証もありません。このライセンスに従って再配布できます。',
