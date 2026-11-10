@@ -486,7 +486,7 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     const paused = new Promise<void>(resolve => {
       reached = resolve
     })
-    const realGetSnapshot = EvidenceStore.prototype.getSnapshot
+    const realGetSnapshot = Reflect.get(EvidenceStore.prototype, 'getSnapshot') as EvidenceStore['getSnapshot']
     let reads = 0
     let capturedSnapshot = false
     const barrier = vi.spyOn(EvidenceStore.prototype, 'getSnapshot').mockImplementation(async function (this: EvidenceStore, executionId: string) {
@@ -712,7 +712,7 @@ describe('evidence API 與實際 SQLite 工作流', () => {
   })
 
   it('失敗清理遇暫時儲存故障會重試，再將工作收斂為失敗而不重打模型', async () => {
-    const originalMark = EvidenceStore.prototype.markAttemptsUnknown
+    const originalMark = Reflect.get(EvidenceStore.prototype, 'markAttemptsUnknown') as EvidenceStore['markAttemptsUnknown']
     let markCalls = 0
     const mark = vi.spyOn(EvidenceStore.prototype, 'markAttemptsUnknown').mockImplementation(function (this: EvidenceStore, executionId, now) {
       markCalls++
@@ -1257,6 +1257,7 @@ describe('evidence API 與實際 SQLite 工作流', () => {
       const inputBound = new TextEncoder().encode(JSON.stringify(request)).byteLength * 4 + 4096
       const expectedMicroUsd = Math.ceil((inputBound * 10 + request.max_completion_tokens * 30) / 100)
       const { section } = generationPayload(GENERATION_MODEL, request)!
+      if (typeof section !== 'string') throw new Error('missing generation section')
       const attempt = local.sqlite.prepare('SELECT estimate_micro_usd, state FROM ct_ai_usage WHERE step_key = ?').get(`generate:${section}`)
       expect(attempt).toMatchObject({ estimate_micro_usd: expectedMicroUsd, state: 'settled' })
     }
@@ -1318,7 +1319,7 @@ describe('evidence API 與實際 SQLite 工作流', () => {
   })
 
   it('診斷儲存失敗仍保留 provider_error 與未知費用，不輸出例外內容', async () => {
-    const originalSave = EvidenceStore.prototype.saveArtifact
+    const originalSave = Reflect.get(EvidenceStore.prototype, 'saveArtifact') as EvidenceStore['saveArtifact']
     const save = vi.spyOn(EvidenceStore.prototype, 'saveArtifact').mockImplementation(function (this: EvidenceStore, input) {
       if (input.kind === 'diagnostics' && object(input.payload).stage === 'provider') throw new Error('private-storage-detail')
       return originalSave.call(this, input)
@@ -1360,7 +1361,7 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     expect(await runEvidenceWorkflow(env, created.job_id, testStep())).toEqual({ status: 'ai_draft' })
     const audit = (await (await send('GET', `/api/evidence-jobs/${created.job_id}`)).json()) as { provenance: { artifacts: ArtifactSummary[] }; usage: { uncertain: number; reservedMicroUsd: number } }
     const clairic = audit.provenance.artifacts.filter(item => item.kind === 'raw' && item.model?.selector === '@cf/cloudflare/clairic')
-    expect(clairic.map(item => item.model?.usage_status).sort()).toEqual(['malformed', 'missing'])
+    expect(clairic.map(item => item.model?.usage_status).sort((a, b) => (a ?? '').localeCompare(b ?? ''))).toEqual(['malformed', 'missing'])
     for (const summary of clairic) {
       expect(summary.attempt).toMatchObject({ state: 'unknown', actual_micro_usd: null })
       expect(summary.attempt!.estimated_micro_usd).toBeGreaterThan(0)
@@ -1533,7 +1534,7 @@ describe('evidence API 與實際 SQLite 工作流', () => {
   ] as const)('$label 時失敗，不啟動立場且保留已驗證工件與已結算費用', async ({ stepName, fault }) => {
     let validated = false
     let injections = 0
-    const originalSave = EvidenceStore.prototype.saveArtifact
+    const originalSave = Reflect.get(EvidenceStore.prototype, 'saveArtifact') as EvidenceStore['saveArtifact']
     const save = vi.spyOn(EvidenceStore.prototype, 'saveArtifact').mockImplementation(function (this: EvidenceStore, input) {
       if (fault !== 'timeout' && input.kind === 'diagnostics') {
         const event = object(input.payload)
@@ -1612,7 +1613,7 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     { label: '寫入前的暫時儲存故障', lostAfterWrite: false },
     { label: '診斷已寫入但回應遺失', lostAfterWrite: true },
   ])('$label 可由銜接 step 重試恢復，不重付或重複完成事件', async ({ lostAfterWrite }) => {
-    const originalSave = EvidenceStore.prototype.saveArtifact
+    const originalSave = Reflect.get(EvidenceStore.prototype, 'saveArtifact') as EvidenceStore['saveArtifact']
     let injected = false
     let targetSaveCalls = 0
     const save = vi.spyOn(EvidenceStore.prototype, 'saveArtifact').mockImplementation(async function (this: EvidenceStore, input) {

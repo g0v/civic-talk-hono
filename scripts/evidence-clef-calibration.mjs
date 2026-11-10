@@ -41,7 +41,12 @@ function hasKeys(value, keys) {
 }
 
 function validId(value) {
-  return typeof value === 'string' && value.length > 0 && value.length <= 512 && value.trim() === value && !/[\u0000-\u001f\u007f]/u.test(value)
+  if (typeof value !== 'string' || value.length === 0 || value.length > 512 || value.trim() !== value) return false
+  for (const char of value) {
+    const code = char.charCodeAt(0)
+    if (code <= 31 || code === 127) return false
+  }
+  return true
 }
 
 function validRelation(value) {
