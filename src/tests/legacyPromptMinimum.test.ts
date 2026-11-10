@@ -72,9 +72,7 @@ function sqliteD1(): D1Database {
 }
 
 function seedIssue(title = '測試議題'): number {
-  const result = sqlite
-    .prepare('INSERT INTO ct_issues (title, description, status, last_activity_at) VALUES (?, ?, ?, ?)')
-    .run(title, '議題說明', 'summarizing', '2001-01-01 00:00:00')
+  const result = sqlite.prepare('INSERT INTO ct_issues (title, description, status, last_activity_at) VALUES (?, ?, ?, ?)').run(title, '議題說明', 'summarizing', '2001-01-01 00:00:00')
   return Number(result.lastInsertRowid)
 }
 
@@ -220,23 +218,20 @@ describe('舊版 Prompt 的素材門檻', () => {
 describe('舊版 briefing 投稿的素材門檻', () => {
   for (const hasBriefing of [false, true]) {
     for (const count of [0, 1]) {
-      it.each(['consensus', 'disputes', 'positions'] as const)(
-        `${hasBriefing ? '再彙整' : '初次彙整'} %s 在 ${count} 份素材時不能藉由附帶說明頁繞過門檻`,
-        async field => {
-          if (hasBriefing) seedBriefing(issueId)
-          if (count === 1) seedMaterial(issueId, 'private-material-body')
-          const before = state(issueId)
-          const response = await send('POST', `/api/issues/${issueId}/briefing`, { [field]: '更新彙整', narrative: '附帶說明頁', opinion_prompt: '附帶引導' })
+      it.each(['consensus', 'disputes', 'positions'] as const)(`${hasBriefing ? '再彙整' : '初次彙整'} %s 在 ${count} 份素材時不能藉由附帶說明頁繞過門檻`, async field => {
+        if (hasBriefing) seedBriefing(issueId)
+        if (count === 1) seedMaterial(issueId, 'private-material-body')
+        const before = state(issueId)
+        const response = await send('POST', `/api/issues/${issueId}/briefing`, { [field]: '更新彙整', narrative: '附帶說明頁', opinion_prompt: '附帶引導' })
 
-          expect(response.status).toBe(422)
-          expect(await response.json()).toEqual({ error: 'insufficient_materials', minimum: 2, count })
-          expect(moderation.moderateSubmission).not.toHaveBeenCalled()
-          expect(state(issueId)).toEqual(before)
-          expect(JSON.stringify(readResults)).not.toContain('private-material-body')
-          expect(JSON.stringify(readResults)).not.toContain('private-material-author')
-          expect(JSON.stringify(readResults)).not.toContain('private-material@example.test')
-        }
-      )
+        expect(response.status).toBe(422)
+        expect(await response.json()).toEqual({ error: 'insufficient_materials', minimum: 2, count })
+        expect(moderation.moderateSubmission).not.toHaveBeenCalled()
+        expect(state(issueId)).toEqual(before)
+        expect(JSON.stringify(readResults)).not.toContain('private-material-body')
+        expect(JSON.stringify(readResults)).not.toContain('private-material-author')
+        expect(JSON.stringify(readResults)).not.toContain('private-material@example.test')
+      })
     }
   }
 

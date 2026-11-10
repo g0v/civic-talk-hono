@@ -183,7 +183,8 @@ export const messages = {
   vol_step3: 'Paste results back',
   vol_s1_title: 'Step 1 — Summarize materials → Generate consensus / disputes / position map',
   vol_s1_desc: 'Click "Generate Prompt", copy it, then paste into your AI chatbot.',
-  vol_min_materials: 'At least 2 eligible materials are required to summarize or re-synthesize (currently {count}). Add materials first; materials under review or hidden do not count. Your draft will be kept.',
+  vol_min_materials:
+    'At least 2 eligible materials are required to summarize or re-synthesize (currently {count}). Add materials first; materials under review or hidden do not count. Your draft will be kept.',
   vol_gen_summarize: 'Generate Summarize Prompt',
   vol_copy: '📋 Copy Prompt',
   vol_paste_title: 'Paste the AI output here:',

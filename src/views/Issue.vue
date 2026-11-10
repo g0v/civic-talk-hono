@@ -491,7 +491,10 @@ function requireSummaryMaterials(): boolean {
 
 async function handleMaterialMinimum(res: Response, notify = true): Promise<boolean> {
   if (res.status !== 422) return false
-  const data = (await res.clone().json().catch(() => null)) as { error?: string; count?: number } | null
+  const data = (await res
+    .clone()
+    .json()
+    .catch(() => null)) as { error?: string; count?: number } | null
   if (data?.error !== 'insufficient_materials') return false
   if (notify) toast.value?.show(t('vol_min_materials', { count: data.count ?? eligibleMaterialCount.value }))
   return true
@@ -1066,7 +1069,13 @@ async function submitOpinion() {
                 <p class="mb-3 text-sm text-muted">{{ t('vol_s1_desc') }}</p>
                 <p v-if="!canSummarize" id="summary-material-minimum" class="alert alert-warn mb-3 text-sm" role="status">{{ t('vol_min_materials', { count: eligibleMaterialCount }) }}</p>
                 <div class="mb-3 flex flex-wrap gap-2">
-                  <button type="button" class="btn btn-primary btn-sm" :disabled="!canSummarize" :aria-describedby="!canSummarize ? 'summary-material-minimum' : undefined" @click="loadPrompt('summarize')">
+                  <button
+                    type="button"
+                    class="btn btn-primary btn-sm"
+                    :disabled="!canSummarize"
+                    :aria-describedby="!canSummarize ? 'summary-material-minimum' : undefined"
+                    @click="loadPrompt('summarize')"
+                  >
                     {{ t('vol_gen_summarize') }}
                   </button>
                   <button v-if="promptVisible.summarize" type="button" class="btn btn-secondary btn-sm" :disabled="!canSummarize" @click="copyPrompt('summarize')">
@@ -1089,10 +1098,22 @@ async function submitOpinion() {
                   <MarkdownEditor id="briefing-positions" v-model="positions" :label="t('vol_label_positions')" :rows="4" :placeholder="t('vol_ph_positions')" />
                 </div>
                 <div class="flex flex-col gap-3 sm:flex-row sm:flex-wrap" :aria-busy="summarySubmitting">
-                  <button type="button" class="btn btn-primary" :disabled="summarySubmitting || !canSummarize" :aria-describedby="!canSummarize ? 'summary-material-minimum' : undefined" @click="submitSummarize()">
+                  <button
+                    type="button"
+                    class="btn btn-primary"
+                    :disabled="summarySubmitting || !canSummarize"
+                    :aria-describedby="!canSummarize ? 'summary-material-minimum' : undefined"
+                    @click="submitSummarize()"
+                  >
                     {{ summarySubmitting ? t('submitting_pending') : t('vol_submit_summarize') }}
                   </button>
-                  <button type="button" class="btn btn-wheat-yellow whitespace-normal text-vt-black" :disabled="summarySubmitting || !canSummarize" :aria-describedby="!canSummarize ? 'summary-material-minimum' : undefined" @click="submitSummarize(true)">
+                  <button
+                    type="button"
+                    class="btn btn-wheat-yellow whitespace-normal text-vt-black"
+                    :disabled="summarySubmitting || !canSummarize"
+                    :aria-describedby="!canSummarize ? 'summary-material-minimum' : undefined"
+                    @click="submitSummarize(true)"
+                  >
                     {{ summarySubmitting ? t('submitting_pending') : t('vol_submit_summarize_copy') }}
                   </button>
                 </div>
@@ -1124,7 +1145,13 @@ async function submitOpinion() {
                 <p class="mb-3 text-sm text-muted">{{ t('vol_s3_desc') }}</p>
                 <p v-if="!canSummarize" id="synthesis-material-minimum" class="alert alert-warn mb-3 text-sm" role="status">{{ t('vol_min_materials', { count: eligibleMaterialCount }) }}</p>
                 <div class="mb-3 flex flex-wrap gap-2">
-                  <button type="button" class="btn btn-primary btn-sm" :disabled="!canSummarize" :aria-describedby="!canSummarize ? 'synthesis-material-minimum' : undefined" @click="loadPrompt('synthesis')">
+                  <button
+                    type="button"
+                    class="btn btn-primary btn-sm"
+                    :disabled="!canSummarize"
+                    :aria-describedby="!canSummarize ? 'synthesis-material-minimum' : undefined"
+                    @click="loadPrompt('synthesis')"
+                  >
                     {{ t('vol_gen_synthesis') }}
                   </button>
                   <button v-if="promptVisible.synthesis" type="button" class="btn btn-secondary btn-sm" :disabled="!canSummarize" @click="copyPrompt('synthesis')">
