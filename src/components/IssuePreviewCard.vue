@@ -23,7 +23,7 @@ const activityDate = computed(() => formatDate(props.issue.last_activity_at ?? p
     </div>
 
     <h2 class="mt-0 mb-3 font-serif text-2xl font-bold text-ink">{{ issue.title }}</h2>
-    <p v-if="issue.description" class="mt-0 mb-4 whitespace-pre-line leading-relaxed text-vt-fg-2 h-full max-h-64 overflow-auto text-ellipsis sm:max-w-prose">
+    <p v-if="issue.description" class="mt-0 sm:ml-2 mb-4 whitespace-pre-line leading-relaxed text-vt-fg-2 h-full max-h-64 overflow-auto text-ellipsis sm:max-w-prose">
       {{ issue.description }}
     </p>
 
