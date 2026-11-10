@@ -250,6 +250,7 @@ export const messages = {
   op_download_btn: '⬇️ 下載 OPINION.md',
   op_copy_btn: '📋 複製 OPINION.md 到剪貼簿',
   op_download_csv_btn: '⬇️ 下載 comments.csv',
+  op_opinion_synthesizer_btn: '前往意見綜整器',
   op_csv_login_required: '登入後可下載 comments.csv',
   op_sort_label: '排序',
   op_sort_recent: '最新',

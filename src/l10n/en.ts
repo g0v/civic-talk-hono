@@ -253,6 +253,7 @@ export const messages = {
   op_download_btn: '⬇️ Download OPINION.md',
   op_copy_btn: '📋 Copy OPINION.md to clipboard',
   op_download_csv_btn: '⬇️ Download comments.csv',
+  op_opinion_synthesizer_btn: 'Go to Opinion Synthesizer',
   op_csv_login_required: 'Sign in to download comments.csv',
   op_sort_label: 'Sort',
   op_sort_recent: 'Newest',

@@ -254,6 +254,7 @@ export const messages = {
   op_download_btn: '⬇️ OPINION.md をダウンロード',
   op_copy_btn: '📋 OPINION.md をクリップボードにコピー',
   op_download_csv_btn: '⬇️ comments.csv をダウンロード',
+  op_opinion_synthesizer_btn: '意見集約ツールへ',
   op_csv_login_required: 'ログインすると comments.csv をダウンロードできます',
   op_sort_label: '並び順',
   op_sort_recent: '新しい順',
