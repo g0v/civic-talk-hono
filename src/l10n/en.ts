@@ -486,6 +486,7 @@ export const messages = {
   contrib_login_hint: 'Accounts are shared with vTaiwan; the same email is the same account whichever provider you use. Your current public display name will be shown on submitted materials.',
   contrib_signed_in_as: 'Submitting as {name}',
   footer_desc: "An open deliberation platform for public policy — everyone can shape Taiwan's future.",
+  footer_sensemaker: 'Sensemaker Opinion Integration Tool',
   footer_copy: 'Copyright (c) 2026 Bestian Tang. Other contributors and third-party works retain their respective rights.',
   footer_content_license: 'Civic opinion summaries: CC-BY-SA 4.0; materials follow their source licenses.',
   footer_software: 'Software: AGPL-3.0-only. Provided without warranty; you may redistribute it under this license.',

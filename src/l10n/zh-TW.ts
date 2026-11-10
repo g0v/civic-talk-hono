@@ -477,6 +477,7 @@ export const messages = {
   contrib_login_hint: '與 vTaiwan 共用同一組帳號；同一個 email 用哪種方式登入都是同一個帳號。提交後，你目前設定的公開顯示名稱將附在素材上，以示負責。',
   contrib_signed_in_as: '以 {name} 的身分提交',
   footer_desc: '公共政策的開放審議平台，讓每個人都能參與台灣的未來。',
+  footer_sensemaker: '意見綜整器',
   footer_copy: 'Copyright (c) 2026 Bestian Tang；其他貢獻者與第三方作品各自權利不受影響。',
   footer_content_license: '公民意見摘要：CC-BY-SA 4.0；素材依各自來源授權。',
   footer_software: '軟體：AGPL-3.0-only。軟體不提供任何擔保；您可依此授權再散布。',
