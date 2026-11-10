@@ -28,33 +28,35 @@ class SQLiteD1 {
   }
 
   prepare(sql: string) {
-    const database = this
     class Statement {
-      constructor(readonly values: SQLInputValue[] = []) {}
+      constructor(
+        private readonly database: SQLiteD1,
+        readonly values: SQLInputValue[] = []
+      ) {}
       bind(...values: SQLInputValue[]) {
-        return new Statement(values)
+        return new Statement(this.database, values)
       }
       execute() {
-        const result = database.sqlite.prepare(sql).run(...this.values)
+        const result = this.database.sqlite.prepare(sql).run(...this.values)
         return { success: true, results: [], meta: { changes: Number(result.changes), last_row_id: Number(result.lastInsertRowid) } }
       }
       async run() {
-        const gate = database.gate
+        const gate = this.database.gate
         if (gate && sql.includes(gate.fragment)) {
-          database.gate = null
+          this.database.gate = null
           gate.reached()
           await gate.wait
         }
         return this.execute()
       }
       async first<T>() {
-        return (database.sqlite.prepare(sql).get(...this.values) ?? null) as T | null
+        return (this.database.sqlite.prepare(sql).get(...this.values) ?? null) as T | null
       }
       async all<T>() {
-        return { success: true, results: database.sqlite.prepare(sql).all(...this.values) as T[] }
+        return { success: true, results: this.database.sqlite.prepare(sql).all(...this.values) as T[] }
       }
     }
-    return new Statement()
+    return new Statement(this)
   }
 
   async batch(statements: Array<{ execute(): unknown }>) {
