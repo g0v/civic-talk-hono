@@ -11,6 +11,7 @@ import StatusBadge from '../components/StatusBadge.vue'
 import Toast from '../components/Toast.vue'
 import ModerationAppealNotice from '../components/ModerationAppealNotice.vue'
 import MarkdownEditor from '../components/MarkdownEditor.vue'
+import EvidenceSummary from '../components/EvidenceSummary.vue'
 import { postSubmissionWithDuplicateNameCheck } from '../client/submission'
 import { briefingMarkdown, copyTextWhenReady, type BriefingMarkdownField } from '../client/clipboard'
 import { useAuth } from '../composables/useAuth'
@@ -1078,6 +1079,17 @@ async function submitOpinion() {
                   >
                     {{ t('vol_gen_summarize') }}
                   </button>
+                  <EvidenceSummary
+                    :key="session?.user.id"
+                    :issue-id="issueId"
+                    :active="activeStep === 'volunteer'"
+                    :can-summarize="canSummarize"
+                    :banned="session?.banned === true"
+                    :session-expired="volunteerSessionExpired"
+                    @notify="toast?.show($event)"
+                    @session-expired="volunteerSessionExpired = true"
+                    @banned="volunteerModerationNotice = { appealType: 'account_ban' }"
+                  />
                   <button v-if="promptVisible.summarize" type="button" class="btn btn-secondary btn-sm" :disabled="!canSummarize" @click="copyPrompt('summarize')">
                     {{ t('vol_copy') }}
                   </button>

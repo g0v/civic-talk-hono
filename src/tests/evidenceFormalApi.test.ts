@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite'
 import { beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import * as authorization from '../auth/authorization'
@@ -21,6 +21,8 @@ vi.mock('../auth/authorization', async () => {
 const jobId = '00000000-0000-0000-0000-000000000001'
 const endpoints = [
   ['POST', '/api/issues/7/evidence-jobs'],
+  ['GET', '/api/issues/7/evidence-summary?language=zh-TW'],
+  ['POST', '/api/issues/7/evidence-summary'],
   ['GET', `/api/evidence-jobs/${jobId}`],
   ['GET', `/api/evidence-jobs/${jobId}/revisions`],
   ['POST', `/api/evidence-jobs/${jobId}/revisions`],
@@ -94,7 +96,7 @@ beforeEach(() => {
 })
 
 describe('正式 Worker 的證據 API 邊界', () => {
-  it.each([undefined, '0', 'true', '01'])('未明確啟用（%s）時六個操作都是 404，不碰認證或服務', async flag => {
+  it.each([undefined, '0', 'true', '01'])('未明確啟用（%s）時所有操作都是 404，不碰認證或服務', async flag => {
     const touched: string[] = []
     const env = new Proxy(
       { EVIDENCE_API_ENABLED: flag },
@@ -163,7 +165,7 @@ describe('正式 Worker 的證據 API 邊界', () => {
     expect(unknownIssue.headers.get('Access-Control-Allow-Origin')).toBe('*')
   })
 
-  it('缺少任一必要服務或認證設定時六個操作均 fail closed，且不查使用者', async () => {
+  it('缺少任一必要服務或認證設定時所有操作均 fail closed，且不查使用者', async () => {
     for (const key of ['DB', 'DB_AUTH', 'AI', 'EVIDENCE_WORKFLOW', 'BETTER_AUTH_URL', 'BETTER_AUTH_SECRET', 'GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'GITHUB_CLIENT_ID', 'GITHUB_CLIENT_SECRET']) {
       const env: Record<string, unknown> = bindings()
       delete env[key]
@@ -176,7 +178,7 @@ describe('正式 Worker 的證據 API 邊界', () => {
     expect(authorization.tryGetAuthContext).not.toHaveBeenCalled()
   })
 
-  it('啟用且服務齊備後，六個操作共用真實路由的登入守衛', async () => {
+  it('啟用且服務齊備後，所有操作共用真實路由的登入守衛', async () => {
     const prepare = vi.fn()
     const env = bindings({ prepare })
     for (const [method, path] of endpoints) {
@@ -188,7 +190,7 @@ describe('正式 Worker 的證據 API 邊界', () => {
       expect(response.headers.get('Access-Control-Allow-Origin')).toBeNull()
       await expect(response.json()).resolves.toEqual({ error: 'Unauthorized' })
     }
-    expect(authorization.tryGetAuthContext).toHaveBeenCalledTimes(6)
+    expect(authorization.tryGetAuthContext).toHaveBeenCalledTimes(endpoints.length)
     expect(prepare).not.toHaveBeenCalled()
   })
 
@@ -196,20 +198,19 @@ describe('正式 Worker 的證據 API 邊界', () => {
     const prepare = vi.fn()
     const env = bindings({ prepare })
     auth.current = { user: { id: 'banned', name: 'Banned', email: 'banned@example.test', image: null }, role: 'user', banned: true, nameChangeCooldownDays: null }
-    const crossSite = await app.request(
-      'http://localhost/api/issues/7/evidence-jobs',
-      {
+    for (const path of ['/api/issues/7/evidence-jobs', '/api/issues/7/evidence-summary']) {
+      const crossSite = await app.request(`http://localhost${path}`, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain', Origin: 'https://other.example' },
         body: '{}',
-      },
-      env as never
-    )
-    expect(crossSite.status).toBe(403)
-    expect(authorization.tryGetAuthContext).not.toHaveBeenCalled()
-    const banned = await send('POST', '/api/issues/7/evidence-jobs', env, { consent: true })
-    expect(banned.status).toBe(403)
-    await expect(banned.json()).resolves.toEqual({ error: 'Forbidden: account is banned' })
+      }, env as never)
+      expect(crossSite.status).toBe(403)
+      expect(authorization.tryGetAuthContext).not.toHaveBeenCalled()
+      const banned = await send('POST', path, env, { consent: true, language: 'zh-TW', expected_version: 0 })
+      expect(banned.status).toBe(403)
+      await expect(banned.json()).resolves.toEqual({ error: 'Forbidden: account is banned' })
+      vi.mocked(authorization.tryGetAuthContext).mockClear()
+    }
     expect(prepare).not.toHaveBeenCalled()
   })
 
@@ -251,6 +252,36 @@ describe('正式 Worker 的證據 API 邊界', () => {
     } finally {
       local.sqlite.close()
       override.sqlite.close()
+    }
+  })
+  it('匿名、摘要擁有者、其他使用者及管理員的公開 API 與 SSR 都不帶私有摘要欄位', async () => {
+    const migrations = readdirSync(new URL('../../migrations/', import.meta.url))
+      .filter(name => name.endsWith('.sql'))
+      .sort()
+      .map(name => readFileSync(new URL(`../../migrations/${name}`, import.meta.url), 'utf8'))
+      .join('\n')
+    const local = new TestD1(migrations)
+    const secret = 'private-summary-only-210'
+    local.sqlite.prepare('UPDATE ct_issues SET ai_summaries = ? WHERE id = 1').run(JSON.stringify({ 'zh-TW': { data: { secret }, owner_id: 'owner' } }))
+    try {
+      const env = bindings(local)
+      for (const current of [
+        null,
+        { user: { id: 'owner', name: 'Owner', email: 'owner@example.test', image: null }, role: 'user' as const, banned: false, nameChangeCooldownDays: null },
+        { user: { id: 'other', name: 'Other', email: 'other@example.test', image: null }, role: 'user' as const, banned: false, nameChangeCooldownDays: null },
+        { user: { id: 'admin', name: 'Admin', email: 'admin@example.test', image: null }, role: 'admin' as const, banned: false, nameChangeCooldownDays: null },
+      ]) {
+        auth.current = current
+        for (const path of ['/api/issues', '/api/issues/1', '/issues/1', '/']) {
+          const response = await app.request(`http://localhost${path}`, {}, env as never)
+          expect(response.status, path).toBe(200)
+          const text = await response.text()
+          expect(text, path).not.toContain('ai_summaries')
+          expect(text, path).not.toContain(secret)
+        }
+      }
+    } finally {
+      local.sqlite.close()
     }
   })
 })

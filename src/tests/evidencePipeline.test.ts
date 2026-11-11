@@ -287,7 +287,12 @@ beforeEach(() => {
   workflowCreates = 0
   workflowProbeFailure = null
   aiRun = model
-  local = new SQLiteD1(readFileSync(new URL('../../migrations/0017_evidence_pipeline.sql', import.meta.url), 'utf8'))
+  const migration17 = readFileSync(new URL('../../migrations/0017_evidence_pipeline.sql', import.meta.url), 'utf8')
+  const migration18 = readFileSync(new URL('../../migrations/0018_evidence_summaries.sql', import.meta.url), 'utf8')
+  local = new SQLiteD1(`CREATE TABLE ct_issues (id INTEGER PRIMARY KEY);
+    INSERT INTO ct_issues (id) VALUES (7), (8);
+    ${migration17}
+    ${migration18}`)
   source = new SQLiteD1(`
     CREATE TABLE ct_issues (id INTEGER PRIMARY KEY, title TEXT, description TEXT, abuse_flagged INTEGER, author_id TEXT, author_email TEXT);
     CREATE TABLE ct_materials (id INTEGER PRIMARY KEY, issue_id INTEGER, source_name TEXT, source_url TEXT, content TEXT, abuse_flagged INTEGER, author_id TEXT, author_email TEXT);
@@ -2636,5 +2641,426 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     expect(detail.data).toBeUndefined()
     expect(recordedRequests).toHaveLength(suspendedAfter === 'plan-completion' ? 6 : 7)
     expect(local.sqlite.prepare("SELECT COUNT(*) AS n FROM ct_ai_usage WHERE step_key = 'complete:draft'").get()).toMatchObject({ n: suspendedAfter === 'plan-completion' ? 0 : 1 })
+  })
+})
+
+type SummaryResponse = {
+  version: number
+  has_summary: boolean
+  job: { job_id: string; status: string } | null
+  summary: { job_id: string; data: unknown; citation_map: unknown; verification: string; updated_at: string } | null
+}
+
+async function summaryState(language = 'zh-TW'): Promise<SummaryResponse> {
+  const response = await send('GET', `/api/issues/7/evidence-summary?language=${language}`)
+  expect(response.status).toBe(200)
+  return await response.json() as SummaryResponse
+}
+
+function requestSummary(expectedVersion: number, language = 'zh-TW') {
+  return send('POST', '/api/issues/7/evidence-summary', { consent: true, language, expected_version: expectedVersion })
+}
+
+async function createSummary(expectedVersion: number, language = 'zh-TW') {
+  const response = await requestSummary(expectedVersion, language)
+  expect([200, 202]).toContain(response.status)
+  return await response.json() as { job_id: string; status: string; cache: string; version: number; input_coverage: unknown }
+}
+
+function clearIssueCooldown() {
+  local.sqlite.prepare('UPDATE ct_ai_issue_cooldowns SET claimed_at = ? WHERE issue_id = 7').run('2000-01-01T00:00:00.000Z')
+}
+
+describe('私人議題摘要與持久化工作流（#210）', () => {
+  it('輸入只接受明確同意、支援語言與整數版本，不讀取來源或接受指定工作、素材及結果', async () => {
+    auth.current = user('owner')
+    const readSource = vi.fn(() => { throw new Error('不得讀取來源') })
+    env.SOURCE_DB = { prepare: readSource } as unknown as D1Database
+    for (const body of [
+      {},
+      { consent: false, language: 'zh-TW', expected_version: 0 },
+      { consent: 'true', language: 'zh-TW', expected_version: 0 },
+      { consent: true, language: 'fr', expected_version: 0 },
+      { consent: true, language: 'zh-TW', expected_version: -1 },
+      { consent: true, language: 'zh-TW', expected_version: 0.5 },
+      { consent: true, language: 'zh-TW', expected_version: '0' },
+      { consent: true, language: 'zh-TW', expected_version: 0, material_ids: [2, 4] },
+      { consent: true, language: 'zh-TW', expected_version: 0, job_id: 'other-job' },
+      { consent: true, language: 'zh-TW', expected_version: 0, data: { injected: true } },
+      { consent: true, language: 'zh-TW', expected_version: 0, issue_id: 8 },
+    ]) {
+      const response = await send('POST', '/api/issues/7/evidence-summary', body)
+      expect(response.status).toBe(400)
+      expect(await response.json()).toEqual({ error: 'invalid_request' })
+    }
+    for (const query of ['', '?language=fr', '?language=en&language=ja', '?language=en&job_id=x']) {
+      const response = await send('GET', `/api/issues/7/evidence-summary${query}`)
+      expect(response.status).toBe(400)
+      expect(await response.json()).toEqual({ error: 'invalid_request' })
+    }
+    expect(readSource).not.toHaveBeenCalled()
+    expect(local.sqlite.prepare('SELECT COUNT(*) AS n FROM ct_ai_jobs').get()).toEqual({ n: 0 })
+    expect(workflowCreates).toBe(0)
+  })
+
+  it.each(['empty', 'one', 'hidden'])('素材 %s 時拒絕並且不建立工作、額度預留或冷卻', async scenario => {
+    auth.current = user('owner')
+    if (scenario === 'empty') source.sqlite.exec('DELETE FROM ct_materials')
+    if (scenario === 'one') source.sqlite.exec('DELETE FROM ct_materials WHERE id = 4')
+    if (scenario === 'hidden') source.sqlite.exec('UPDATE ct_materials SET abuse_flagged = 3 WHERE id = 4')
+    const response = await requestSummary(0)
+    expect(response.status).toBe(422)
+    expect(await response.json()).toMatchObject({ error: scenario === 'empty' ? 'no_available_materials' : 'insufficient_materials' })
+    for (const table of ['ct_ai_jobs', 'ct_ai_executions', 'ct_ai_usage', 'ct_ai_issue_cooldowns', 'ct_ai_summary_slots']) {
+      expect(local.sqlite.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get()).toEqual({ n: 0 })
+    }
+    expect(workflowCreates).toBe(0)
+    expect(recordedRequests).toEqual([])
+  })
+
+  it('只處理全部可用素材並列出隱藏排除項', async () => {
+    auth.current = user('owner')
+    addThirdMaterial()
+    source.sqlite.exec('UPDATE ct_materials SET abuse_flagged = 3 WHERE id = 6')
+    const created = await createSummary(0)
+    expect(created.input_coverage).toEqual({ selection: 'all_eligible', material_ids: [2, 4], exclusions: [{ id: 6, reason: 'hidden' }] })
+    const job = await new EvidenceStore(local.asD1()).getJob(created.job_id, 'owner')
+    const snapshot = await new EvidenceStore(local.asD1()).getSnapshot(job!.executionId)
+    expect(snapshot?.sources.filter(item => item.kind === 'material').map(item => item.id)).toEqual([2, 4])
+  })
+
+  it('本機沒有對應議題時不建立工作，也不讀取其他來源議題', async () => {
+    auth.current = user('owner')
+    const readSource = vi.fn(() => { throw new Error('不得讀取來源') })
+    env.SOURCE_DB = { prepare: readSource } as unknown as D1Database
+    const response = await send('POST', '/api/issues/999/evidence-summary', { consent: true, language: 'zh-TW', expected_version: 0 })
+    expect(response.status).toBe(404)
+    expect(readSource).not.toHaveBeenCalled()
+    expect(local.sqlite.prepare('SELECT COUNT(*) AS n FROM ct_ai_jobs').get()).toEqual({ n: 0 })
+  })
+
+  it('完整工作無需瀏覽器維持連線，原子存入議題，且只有工作擁有者與管理員可讀', async () => {
+    auth.current = user('owner')
+    expect(await summaryState()).toEqual({ version: 0, has_summary: false, job: null, summary: null })
+    const created = await createSummary(0)
+    expect(created).toMatchObject({ status: 'queued', cache: 'miss', input_coverage: { selection: 'all_eligible', material_ids: [2, 4], exclusions: [] } })
+    expect(created.version).toBeGreaterThan(0)
+    expect((await summaryState()).job).toEqual({ job_id: created.job_id, status: 'queued' })
+    auth.current = user('other')
+    expect(await summaryState()).toMatchObject({ has_summary: false, job: null, summary: null })
+
+    expect(await runEvidenceWorkflow(env, created.job_id, testStep())).toEqual({ status: 'ai_draft' })
+    const stored = local.sqlite.prepare('SELECT ai_summaries FROM ct_issues WHERE id = 7').get() as { ai_summaries: string }
+    const entry = JSON.parse(stored.ai_summaries)['zh-TW'] as Record<string, unknown>
+    expect(entry).toMatchObject({ job_id: created.job_id, owner_id: 'owner', verification: 'ai_unverified' })
+    expect(entry.data).toBeTypeOf('object')
+    expect(entry.citation_map).toBeInstanceOf(Array)
+    expect(entry).not.toHaveProperty('evidence')
+    expect(entry.artifact_id).toBeTypeOf('string')
+    expect(entry.execution_id).toBeTypeOf('string')
+    const privateToOther = await summaryState()
+    expect(privateToOther).toMatchObject({ has_summary: true, job: null, summary: null })
+    expect(JSON.stringify(privateToOther)).not.toContain(created.job_id)
+
+    auth.current = user('owner')
+    const owner = await summaryState()
+    expect(owner.version).toBeGreaterThan(created.version)
+    expect(owner).toMatchObject({ has_summary: true, job: { job_id: created.job_id, status: 'ai_draft' }, summary: {
+      job_id: created.job_id, data: entry.data, citation_map: entry.citation_map, verification: 'ai_unverified', updated_at: entry.updated_at,
+    } })
+    auth.current = user('admin', 'admin')
+    expect((await summaryState()).summary).toEqual(owner.summary)
+    auth.current = user('banned', 'user', true)
+    expect((await requestSummary(owner.version)).status).toBe(403)
+    expect((await send('GET', '/api/issues/7/evidence-summary?language=zh-TW')).status).toBe(403)
+    auth.current = null
+    expect((await requestSummary(owner.version)).status).toBe(401)
+    expect((await send('GET', '/api/issues/7/evidence-summary?language=zh-TW')).status).toBe(401)
+  })
+
+  it('一般工作不會自動保存；摘要請求接上已完成快取時立即由伺服器保存', async () => {
+    auth.current = user('owner')
+    const ordinary = (await (await send('POST', '/api/issues/7/evidence-jobs', { consent: true })).json()) as { job_id: string }
+    expect(await runEvidenceWorkflow(env, ordinary.job_id, testStep())).toEqual({ status: 'ai_draft' })
+    expect(await summaryState()).toEqual({ version: 0, has_summary: false, job: null, summary: null })
+    expect(local.sqlite.prepare('SELECT ai_summaries FROM ct_issues WHERE id = 7').get()).toEqual({ ai_summaries: '{}' })
+    const count = recordedRequests.length
+    const attached = await createSummary(0)
+    expect(attached).toMatchObject({ job_id: ordinary.job_id, cache: 'hit', status: 'ai_draft' })
+    expect(recordedRequests).toHaveLength(count)
+    expect((await summaryState()).summary).toMatchObject({ job_id: ordinary.job_id, verification: 'ai_unverified' })
+  })
+
+  it('接上進行中的普通工作後，其完成也會持久保存', async () => {
+    auth.current = user('owner')
+    const ordinary = (await (await send('POST', '/api/issues/7/evidence-jobs', { consent: true })).json()) as { job_id: string }
+    const attached = await createSummary(0)
+    expect(attached).toMatchObject({ job_id: ordinary.job_id, cache: 'joined' })
+    expect(await runEvidenceWorkflow(env, ordinary.job_id, testStep())).toEqual({ status: 'ai_draft' })
+    expect((await summaryState()).summary).toMatchObject({ job_id: ordinary.job_id })
+  })
+
+  it('工作流啟動前已註冊摘要，即使同步完成也不會漏存', async () => {
+    auth.current = user('owner')
+    const workflow = env.EVIDENCE_WORKFLOW
+    env.EVIDENCE_WORKFLOW = {
+      get: workflow.get.bind(workflow),
+      async create({ id, params }: { id: string; params: { jobId: string } }) {
+        const slot = local.sqlite.prepare("SELECT job_id, version FROM ct_ai_summary_slots WHERE issue_id = 7 AND language = 'zh-TW'").get()
+        expect(slot).toMatchObject({ job_id: params.jobId, version: 1 })
+        expect(await runEvidenceWorkflow(env, params.jobId, testStep())).toEqual({ status: 'ai_draft' })
+        instances.set(id, 'complete')
+        return { id }
+      },
+    } as unknown as typeof env.EVIDENCE_WORKFLOW
+    const created = await createSummary(0)
+    expect((await summaryState()).summary).toMatchObject({ job_id: created.job_id, verification: 'ai_unverified' })
+  })
+
+  it('工作流確定中斷後讀取摘要會顯示失敗，不能重打或重啟', async () => {
+    auth.current = user('owner')
+    const created = await createSummary(0)
+    const job = await new EvidenceStore(local.asD1()).getJob(created.job_id, 'owner')
+    instances.set(job!.executionId, 'errored')
+    expect(await summaryState()).toMatchObject({ job: { job_id: created.job_id, status: 'failed' }, summary: null })
+    expect(workflowCreates).toBe(1)
+    expect(restarts).toBe(0)
+    expect(recordedRequests).toEqual([])
+  })
+
+  it('版本在完成後也更新；過期或同時送出者不能建立另一項付費工作', async () => {
+    auth.current = user('owner')
+    const { promise: ready, resolve: bothRead } = Promise.withResolvers<void>()
+    const { promise: waiting, resolve: release } = Promise.withResolvers<void>()
+    const original = Reflect.get(EvidenceStore.prototype, 'getSummaryState') as EvidenceStore['getSummaryState']
+    let initialReads = 0
+    const barrier = vi.spyOn(EvidenceStore.prototype, 'getSummaryState').mockImplementation(async function (this: EvidenceStore, ...args) {
+      const state = await original.call(this, ...args)
+      if (++initialReads <= 2) {
+        expect(state?.version).toBe(0)
+        if (initialReads === 2) bothRead()
+        await waiting
+      }
+      return state
+    })
+    const requests = [requestSummary(0), requestSummary(0)]
+    await ready
+    release()
+    const [a, b] = await Promise.all(requests)
+    barrier.mockRestore()
+    expect([a.status, b.status].sort()).toEqual([202, 409])
+    const conflict = a.status === 409 ? a : b
+    expect(await conflict.json()).toEqual({ error: 'summary_conflict' })
+    const winner = (await (a.status === 202 ? a : b).json()) as { job_id: string; version: number }
+    expect(local.sqlite.prepare('SELECT COUNT(*) AS n FROM ct_ai_executions').get()).toEqual({ n: 1 })
+    expect(workflowCreates).toBe(1)
+    expect(await runEvidenceWorkflow(env, winner.job_id, testStep())).toEqual({ status: 'ai_draft' })
+    const reads = vi.fn(() => { throw new Error('過期版本不得讀來源') })
+    env.SOURCE_DB = { prepare: reads } as unknown as D1Database
+    const stale = await requestSummary(winner.version)
+    expect(stale.status).toBe(409)
+    expect(await stale.json()).toEqual({ error: 'summary_conflict' })
+    expect(reads).not.toHaveBeenCalled()
+    expect(local.sqlite.prepare('SELECT COUNT(*) AS n FROM ct_ai_executions').get()).toEqual({ n: 1 })
+  })
+
+  it('三種語言各自保存、獨立計算版本與取得最新工作', async () => {
+    auth.current = user('owner')
+    const jobs = new Map<string, string>()
+    for (const language of ['zh-TW', 'en', 'ja']) {
+      clearIssueCooldown()
+      expect((await summaryState(language)).version).toBe(0)
+      const created = await createSummary(0, language)
+      jobs.set(language, created.job_id)
+      expect(await runEvidenceWorkflow(env, created.job_id, testStep())).toEqual({ status: 'ai_draft' })
+    }
+    expect(new Set(jobs.values()).size).toBe(3)
+    const versions = new Map<string, number>()
+    for (const [language, jobId] of jobs) {
+      const state = await summaryState(language)
+      expect(state.version).toBeGreaterThan(0)
+      versions.set(language, state.version)
+      expect(state.summary).toMatchObject({ job_id: jobId })
+      expect(state.job).toEqual({ job_id: jobId, status: 'ai_draft' })
+    }
+    const stored = local.sqlite.prepare('SELECT ai_summaries FROM ct_issues WHERE id = 7').get() as { ai_summaries: string }
+    expect(Object.keys(JSON.parse(stored.ai_summaries)).sort()).toEqual(['en', 'ja', 'zh-TW'])
+    await new EvidenceStore(local.asD1()).eraseSource({ namespace: SOURCE_NAMESPACE, kind: 'material', id: 2, reason: 'request' })
+    expect(local.sqlite.prepare('SELECT ai_summaries FROM ct_issues WHERE id = 7').get()).toEqual({ ai_summaries: '{}' })
+    for (const language of jobs.keys()) {
+      const state = await summaryState(language)
+      expect(state).toMatchObject({ has_summary: false, summary: null, job: { status: 'erased' } })
+      expect(state.version).toBeGreaterThan(versions.get(language)!)
+    }
+  })
+
+  it('較晚提出的工作先完成時，舊工作遲到不能覆蓋；最新工作與舊摘要分別授權', async () => {
+    auth.current = user('first')
+    const first = await createSummary(0)
+    addThirdMaterial()
+    clearIssueCooldown()
+    auth.current = user('second')
+    const second = await createSummary(first.version)
+    expect(second.job_id).not.toBe(first.job_id)
+    expect(await runEvidenceWorkflow(env, second.job_id, testStep())).toEqual({ status: 'ai_draft' })
+    const saved = await summaryState()
+    expect(saved.summary).toMatchObject({ job_id: second.job_id })
+    expect(await runEvidenceWorkflow(env, first.job_id, testStep())).toEqual({ status: 'ai_draft' })
+    expect((await summaryState()).summary).toEqual(saved.summary)
+    auth.current = user('first')
+    expect(await summaryState()).toMatchObject({ has_summary: true, job: null, summary: null })
+    auth.current = user('admin', 'admin')
+    expect((await summaryState()).summary).toEqual(saved.summary)
+  })
+
+  it('新的部分結果及失敗不會覆蓋既有完整摘要', async () => {
+    auth.current = user('first')
+    const first = await createSummary(0)
+    expect(await runEvidenceWorkflow(env, first.job_id, testStep())).toEqual({ status: 'ai_draft' })
+    const original = await summaryState()
+    addThirdMaterial()
+    clearIssueCooldown()
+    auth.current = user('second')
+    const partial = await createSummary(original.version)
+    auth.current = user('first')
+    expect(await summaryState()).toMatchObject({ has_summary: true, job: null, summary: original.summary })
+    auth.current = user('second')
+    expect(await summaryState()).toMatchObject({ has_summary: true, job: { job_id: partial.job_id }, summary: null })
+    let failedCalls = 0
+    aiRun = async (modelName, input) => {
+      if (generationPayload(modelName, input)?.section === 'disputes') {
+        failedCalls++
+        throw new Error('synthetic provider failure')
+      }
+      return model(modelName, input)
+    }
+    expect(await runEvidenceWorkflow(env, partial.job_id, testStep())).toEqual({ status: 'partial_draft' })
+    expect(failedCalls).toBe(1)
+    expect(await runEvidenceWorkflow(env, partial.job_id, testStep())).toEqual({ status: 'partial_draft' })
+    expect(failedCalls).toBe(1)
+    const partialState = await summaryState()
+    const cachedPartial = await createSummary(partialState.version)
+    expect(cachedPartial).toMatchObject({ job_id: partial.job_id, status: 'partial_draft', cache: 'hit' })
+    expect(failedCalls).toBe(1)
+    auth.current = user('first')
+    const afterPartial = await summaryState()
+    expect(afterPartial.summary).toEqual(original.summary)
+    source.sqlite.exec("INSERT INTO ct_materials VALUES (8, 7, '丁', NULL, '更多能源意見。', 0, 'private-author', 'private@example.test')")
+    clearIssueCooldown()
+    auth.current = user('second')
+    const failed = await createSummary(afterPartial.version)
+    aiRun = async () => { throw new Error('synthetic provider failure') }
+    expect(await runEvidenceWorkflow(env, failed.job_id, testStep())).toEqual({ status: 'failed' })
+    auth.current = user('first')
+    expect((await summaryState()).summary).toEqual(original.summary)
+    auth.current = user('second')
+    expect(await summaryState()).toMatchObject({ job: { job_id: failed.job_id, status: 'failed' }, summary: null })
+  })
+
+  it.each(['hidden', 'changed', 'deleted'])('來源 %s 後不再交付並移除摘要複本', async disposition => {
+    auth.current = user('owner')
+    const created = await createSummary(0)
+    expect(await runEvidenceWorkflow(env, created.job_id, testStep())).toEqual({ status: 'ai_draft' })
+    const before = await summaryState()
+    expect(before.has_summary).toBe(true)
+    if (disposition === 'hidden') source.sqlite.exec('UPDATE ct_materials SET abuse_flagged = 3 WHERE id = 2')
+    if (disposition === 'changed') source.sqlite.exec("UPDATE ct_materials SET content = '變更後的內容。' WHERE id = 2")
+    if (disposition === 'deleted') source.sqlite.exec('DELETE FROM ct_materials WHERE id = 2')
+    const after = await summaryState()
+    expect(after).toMatchObject({ has_summary: false, summary: null, job: { status: disposition === 'deleted' ? 'erased' : 'withdrawn' } })
+    expect(after.version).toBeGreaterThan(before.version)
+    expect(local.sqlite.prepare('SELECT ai_summaries FROM ct_issues WHERE id = 7').get()).toEqual({ ai_summaries: '{}' })
+    if (disposition === 'deleted') expect(local.sqlite.prepare('SELECT COUNT(*) AS n FROM ct_ai_artifacts WHERE payload IS NOT NULL').get()).toEqual({ n: 0 })
+  })
+
+  it('再次申請前發現先前摘要的來源已清除，先清除副本並要求重新確認版本', async () => {
+    auth.current = user('owner')
+    const created = await createSummary(0)
+    expect(await runEvidenceWorkflow(env, created.job_id, testStep())).toEqual({ status: 'ai_draft' })
+    const before = await summaryState()
+    source.sqlite.exec('DELETE FROM ct_materials WHERE id = 2')
+    const response = await requestSummary(before.version)
+    expect(response.status).toBe(409)
+    expect(await response.json()).toEqual({ error: 'summary_conflict' })
+    expect(local.sqlite.prepare('SELECT ai_summaries FROM ct_issues WHERE id = 7').get()).toEqual({ ai_summaries: '{}' })
+    expect(local.sqlite.prepare('SELECT COUNT(*) AS n FROM ct_ai_executions').get()).toEqual({ n: 1 })
+    expect(workflowCreates).toBe(1)
+  })
+
+  it('來源查核失聯時 fail closed，不交付或刪除既有摘要', async () => {
+    auth.current = user('owner')
+    const created = await createSummary(0)
+    expect(await runEvidenceWorkflow(env, created.job_id, testStep())).toEqual({ status: 'ai_draft' })
+    const before = await summaryState()
+    const savedSource = env.SOURCE_DB
+    env.SOURCE_DB = { prepare() { throw new Error('private source detail') } } as unknown as D1Database
+    const response = await send('GET', '/api/issues/7/evidence-summary?language=zh-TW')
+    expect(response.status).toBe(503)
+    expect(await response.json()).toEqual({ error: 'service_unavailable' })
+    env.SOURCE_DB = savedSource
+    expect((await summaryState()).summary).toEqual(before.summary)
+  })
+
+  it('來源清除與 GET 競態時，已讀取的舊摘要不會送出', async () => {
+    auth.current = user('owner')
+    const created = await createSummary(0)
+    expect(await runEvidenceWorkflow(env, created.job_id, testStep())).toEqual({ status: 'ai_draft' })
+    const { promise: paused, resolve: reached } = Promise.withResolvers<void>()
+    const { promise: waiting, resolve: release } = Promise.withResolvers<void>()
+    const original = Reflect.get(EvidenceStore.prototype, 'getSummaryState') as EvidenceStore['getSummaryState']
+    let reads = 0
+    const spy = vi.spyOn(EvidenceStore.prototype, 'getSummaryState').mockImplementation(async function (this: EvidenceStore, ...args) {
+      const state = await original.call(this, ...args)
+      if (++reads === 1) {
+        reached()
+        await waiting
+      }
+      return state
+    })
+    const pending = Promise.resolve(send('GET', '/api/issues/7/evidence-summary?language=zh-TW'))
+    try {
+      await paused
+      await new EvidenceStore(local.asD1()).eraseSource({ namespace: SOURCE_NAMESPACE, kind: 'material', id: 2, reason: 'request' })
+      release()
+      const response = await pending
+      expect(response.status).toBe(200)
+      expect(await response.json()).toMatchObject({ has_summary: false, summary: null, job: { status: 'erased' } })
+    } finally {
+      release()
+      await pending.catch(() => undefined)
+      spy.mockRestore()
+    }
+  })
+
+  it('付費工作等待期間清除來源會抹去既有摘要，遲到結果不能復活', async () => {
+    auth.current = user('owner')
+    const first = await createSummary(0)
+    expect(await runEvidenceWorkflow(env, first.job_id, testStep())).toEqual({ status: 'ai_draft' })
+    const initial = await summaryState()
+    addThirdMaterial()
+    clearIssueCooldown()
+    const second = await createSummary(initial.version)
+    const { promise: called, resolve: started } = Promise.withResolvers<void>()
+    const { promise: waiting, resolve: release } = Promise.withResolvers<void>()
+    let delayed = false
+    aiRun = async (modelName, input) => {
+      if (!delayed && modelName === '@cf/cloudflare/clairic') {
+        delayed = true
+        started()
+        await waiting
+      }
+      return model(modelName, input)
+    }
+    const running = runEvidenceWorkflow(env, second.job_id, testStep())
+    await called
+    try {
+      await new EvidenceStore(local.asD1()).eraseSource({ namespace: SOURCE_NAMESPACE, kind: 'material', id: 2, reason: 'request' })
+    } finally {
+      release()
+      expect(await running).toEqual({ status: 'failed' })
+    }
+    expect(await summaryState()).toMatchObject({ has_summary: false, summary: null, job: { status: 'erased' } })
+    expect(local.sqlite.prepare('SELECT ai_summaries FROM ct_issues WHERE id = 7').get()).toEqual({ ai_summaries: '{}' })
+    expect(local.sqlite.prepare('SELECT COUNT(*) AS n FROM ct_ai_artifacts WHERE payload IS NOT NULL').get()).toEqual({ n: 0 })
   })
 })

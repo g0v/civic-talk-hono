@@ -121,9 +121,9 @@ Civic Talk 使用 Hono、Vue 3 SSR/hydration、Tailwind 與 Cloudflare Workers�
 - `abuse_flagged=1` 展開內容後才提供控制，2/3 不可投。CSV 只匯公開意見／匿名作者序號，不輸出 Better Auth id、email、voter identity。
 - 舊 polis.tw embed／後台開關已移除；保留 `polis_id` 舊值／API、本站投票與 CSV，不擅串 Pocket Polis。本站投票分群／跨群共識尚非既有功能；證據管線依素材抽取觀點產生立場分組，**不是公民意見投票的分群成果**。
 
-## 6. 一鍵彙整：六 API 與品質／生命週期守門
+## 6. 一鍵彙整：八 API 與品質／生命週期守門
 
-API-only 私有草稿，來源為 `SOURCE_DB ?? DB`，保存到業務 DB，非 DB_AUTH。正式設定保留 AI、EVIDENCE_WORKFLOW、`EVIDENCE_API_ENABLED=1`；只有明確 1 開啟，其他值／缺省 404（全域 CSRF 可能先回 403），缺必要 binding 503，匿名 401、停權 403。專用實驗／審閱 profiles、CLI、cookie 匯出工具與 fixtures 已退場，不提供舊命令。
+私有草稿，來源為 `SOURCE_DB ?? DB`，保存到業務 DB，非 DB_AUTH。#210 在志願者工具提供麥穗黃一鍵彙整按鈕、處理同意與進度／結果提示；新版報告排版仍屬 #166，不自動發布或改 briefing／status，舊 BYO 流程保留。正式設定保留 AI、EVIDENCE_WORKFLOW、`EVIDENCE_API_ENABLED=1`；只有明確 1 開啟，其他值／缺省 404（全域 CSRF 可能先回 403），缺必要 binding 503，匿名 401、停權 403。專用實驗／審閱 profiles、CLI、cookie 匯出工具與 fixtures 已退場，不提供舊命令。
 
 **有效建立／GET／修訂可能啟動來源對帳、恢復 queued Workflow，對帳發現 deleted 會清 payload；不是純唯讀試打。** 正式登入後呼叫、新付費、queued 恢復及有效 maintenance 需核對來源、帳號／角色與個別授權，不因 API 已啟用或範例存在而執行。
 
@@ -135,6 +135,8 @@ API-only 私有草稿，來源為 `SOURCE_DB ?? DB`，保存到業務 DB，非 D
 | POST `/api/evidence-jobs/:jobId/revisions` | **僅 owner**，管理員也不能代改他人工作（404）；JSON 精確 `{parent_revision_id:string,data}`；成功 201 `{revision_id,parent_revision_id,verification:'human_unverified'}`，舊 parent 409/revision_conflict                                                                           |
 | POST `/api/evidence-maintenance/reconcile` | 管理；JSON 精確 `{}`，回 `{ok,checked,withdrawn,erased}`；對帳並可能恢復 queued                                                                                                                                                                                                     |
 | POST `/api/evidence-maintenance/erase`     | 管理；JSON 精確 `{kind:'issue'\|'material',id:正安全整數}`，回 `{ok:true}`；按來源清跨依賴 execution／申請者私有內容，不刪業務來源                                                                                                                                                  |
+| GET `/api/issues/:id/evidence-summary?language=zh-TW` | 語言必填，可 zh-TW／en／ja；登入者讀 `{version,has_summary,job,summary}`，job／summary 各限該次 owner／管理員，其他登入者回 null，不進公開 API／SSR |
+| POST `/api/issues/:id/evidence-summary` | 登入者；精確 `{consent:true,language,expected_version}`，全選合格素材並沿用建立工作守門／回應，增加 version；舊版本回 409/summary_conflict，不自動重送 |
 
 ### 建立、輪詢與修訂
 
@@ -142,6 +144,7 @@ API-only 私有草稿，來源為 `SOURCE_DB ?? DB`，保存到業務 DB，非 D
 2. 省略 material_ids 代表所有合格素材並回排除清單；指定時須非空、同議題、可見、不重複的正安全整數 ID。**實際選入至少兩份合格素材才可開始彙整**，隱藏素材不計入；單份在 claim／費用預留前回 422/insufficient_materials（minimum:2、count:1、exclusions），零份維持 no_available_materials，明選空陣列仍為 400/invalid_material_ids。既有工作 GET／修訂與來源生命週期不套用此門檻。
 3. 用 job_id 輪詢；`queued/extracting/comparing/generating` 是進行中，`ai_draft/partial_draft/failed/withdrawn/erased` 停止。partial 非完整報告，failed／no_findings 不混同；看分區 diagnostics 與 progress，不憑 HTTP 200 判斷。
 4. 人改先 GET revisions；無人改時 parent=`'ai'`，否則用最新 revision.id。從 ai_base.data 或最新 revision.payload 複製**完整** data 再改，不只送片段；須有完整 consensus／disputes／positions、三段 Overview 與群 Core_concern，Sources 保持真實來源。revision 欄位用 `id/parentId/payload/diff`，不猜 snake_case。保留 AI 原稿／diff；human_unverified 不冒稱已驗證。
+5. #210 議題摘要按語言分開保存，`0018_evidence_summaries.sql` 新增 `ct_issues.ai_summaries`／`ct_ai_summary_slots`；只有完整 `ai_draft` 可寫入。已有結果先確認替換，partial／failed 不覆蓋，舊工作晚完成不蓋新結果。伺服器完成時保存，不依賴前端輪詢；來源撤下時移除議題快取副本，原工作 payload 依既有政策保留，erase 清相依內容，副本不得繞過 fence。只有完整成功並確認已保存時，依 #210 在操作者瀏覽器暫用 `console.log` 輸出 data，不送伺服器 log／公開驗收紀錄。新 migration 尚須另獲遠端授權，不能宣稱已部署。
 
 ### 模型與引用保護
 

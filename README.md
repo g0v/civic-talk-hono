@@ -5,7 +5,7 @@
 ## 用途與現況
 
 - 公民建立議題、提供素材、發表意見並投票；志願者使用自己的 AI 工具與 token 彙整素材、製作議題說明。
-- 平台另提供「一鍵彙整」證據 API：Workers AI 產生共識／爭點／立場地圖草稿，平台支付費用。**只產生私有草稿，不自動發布、不改 briefing 或議題 status**；目前 API-only，UI 與一般 API 驗收見 [#166](https://github.com/g0v/civic-talk-hono/issues/166)，維護驗收見 [#201](https://github.com/g0v/civic-talk-hono/issues/201)。
+- 平台另提供「一鍵彙整」：志願者工具的麥穗黃按鈕使用 Workers AI 產生共識／爭點／立場地圖草稿，平台支付費用。**只保存私有、AI 未驗證結果，不自動發布、不改 briefing 或議題 status**；目前提供操作與結果提示，完整排版及後續驗收仍見 [#166](https://github.com/g0v/civic-talk-hono/issues/166)，維護驗收見 [#201](https://github.com/g0v/civic-talk-hono/issues/201)。
 - 正式站 Google／GitHub 登入、投稿與管理角色已驗；**同 email 帳號整合成功**，見 [#5 確認](https://github.com/g0v/civic-talk-hono/issues/5#issuecomment-6225088110)。這不代表跨網域 SSO；四種寫入與管理端的完整作者快照仍未逐項正式驗證。
 - 證據 API 已有品質實驗及正式匿名 401／跨站 403、管理員身分確認；登入後建立、快取、修訂、權限、費用與有效維護操作尚未完整正式驗收，`consent:false` 拒絕測試也未執行。進度以 [`TODO_AFTER_MERGE.md`](./TODO_AFTER_MERGE.md) 為準，不把本機通過視為正式全驗。
 - 一般設定保留 `EVIDENCE_API_ENABLED=1`；上輪清理已由使用者 push，未回報部署。原始碼推送不等於正式站更新；專用實驗／審閱 profiles、CLI 與 fixtures 已移除。
@@ -22,7 +22,7 @@
 | `migrations/`、`wrangler.jsonc`                            | 業務 D1 schema 與 Workers bindings                                                                    |
 | `scripts/`、`src/tests/`                                   | 建置、來源／授權產物檢查與自動化測試                                                                  |
 
-業務庫為 `vtaiwan-civic-talks`（`DB`，表名 `ct_` 前綴）；證據來源預設讀 `SOURCE_DB ?? DB`。共享認證庫 `vtaiwan-auth`（`DB_AUTH`）由 [`../vTaiwan-hono`](../vTaiwan-hono) 維護，本站只讀角色，**不可對它套本站 migration、修改 schema 或直接 SQL 寫入**；正常 Auth 登入／session 生命週期是既有寫入例外。原始 `0017_evidence_pipeline.sql` 已套業務庫，保留原 SQL 與 ledger，不重跑或改寫；遠端操作須另獲授權，見[部署紀錄](./deploy_notes.md)。
+業務庫為 `vtaiwan-civic-talks`（`DB`，表名 `ct_` 前綴）；證據來源預設讀 `SOURCE_DB ?? DB`。共享認證庫 `vtaiwan-auth`（`DB_AUTH`）由 [`../vTaiwan-hono`](../vTaiwan-hono) 維護，本站只讀角色，**不可對它套本站 migration、修改 schema 或直接 SQL 寫入**；正常 Auth 登入／session 生命週期是既有寫入例外。原始 `0017_evidence_pipeline.sql` 已套業務庫，保留原 SQL 與 ledger，不重跑或改寫；#210 新增 `0018_evidence_summaries.sql`（`ct_issues.ai_summaries` 與 `ct_ai_summary_slots`），遠端套用須另獲授權，見[部署紀錄](./deploy_notes.md)。
 
 ## npm + vp 開發
 
@@ -75,7 +75,7 @@ vp run dev
 - `POST /api/fact-check`：登入後素材查核，不向瀏覽器提供服務 token。
 - `POST /api/feedback`：免登入，送 `{ "category": "bug", "description": "問題說明", "page_path": "/about" }`，分類可為 `bug|usability|suggestion`。只保存內容／頁面路徑／時間，不收回報者帳號或額外 IP／瀏覽器資料；`GET /api/admin/feedback` 僅管理員可讀，沒有公開查詢端點。
 
-## 一鍵彙整：六個證據端點
+## 一鍵彙整：八個證據端點
 
 Clairic 逐素材抽取 → Clef 比較 → Gemma 生成草稿；歷史[品質結果](./results/ai-experiment_result.json)與[費用報告](./results/ai-experiment_cost.json)不是本次範例的執行結果或獨立 gold labels。完整契約見 [API 手冊](./docs/evidence-api-review.md)。
 
@@ -89,6 +89,20 @@ Clairic 逐素材抽取 → Clef 比較 → Gemma 生成草稿；歷史[品質�
 | `POST /api/evidence-jobs/:jobId/revisions` | **僅 owner** 修訂；`{parent_revision_id, data}`，管理員不可代改他人工作           |
 | `POST /api/evidence-maintenance/reconcile` | 管理員對帳；精確 JSON `{}`，回 `{ok,checked,withdrawn,erased}`，也可能恢復 queued |
 | `POST /api/evidence-maintenance/erase`     | 管理員按來源清除；`{kind:"issue"或"material",id:正安全整數}`，回 `{ok:true}`      |
+| `GET /api/issues/:id/evidence-summary?language=zh-TW` | 登入者讀指定語言的版本／有無結果；工作與結果正文僅各自 owner／管理員可讀 |
+| `POST /api/issues/:id/evidence-summary` | 登入者一鍵彙整所有合格素材；精確 JSON `{consent:true,language,expected_version}` |
+
+### 志願者工具的一鍵彙整（#210）
+
+在「生成彙整 Prompt」旁按「一鍵彙整」，閱讀處理、平台費用與留存告知後明確同意；已有該語言結果時，另須確認替換。語言跟隨操作時介面，繁中／英文／日文分開保存。舊 Prompt／手動貼回流程保留。
+
+新端點以 `version`／`expected_version` 防止未確認的併發替換，衝突回 `409 summary_conflict`，須重新讀取並確認，不自動重送。只有完整 `ai_draft` 才寫入議題新欄位；部分完成、失敗或較舊工作晚完成都不覆蓋較新的結果。工作即使在離開頁面後完成，也由伺服器保存；舊工作仍保留原紀錄。來源失效時停止交付，來源清除時也清除議題欄位中的相依資料。
+
+完成保存本身也會遞增 `version`；前端以最新工作與已保存結果的工作身分判斷成功，不把同一工作正常保存造成的版本增加誤判為被取代。
+
+本階段只顯示進度及成功／部分完成／失敗提示，尚不排版報告；完整成功且確認保存後，會在操作者瀏覽器 `console.log` 暫用輸出 `data`。這是私有內容，不應將 Console 截圖或紀錄公開；伺服器不記錄正文。新欄位不加入公開 API／SSR，讀取仍受 owner／管理員限制，並不因位於議題上就成為共享或公開內容。
+
+需先在業務 DB 套用 `0018_evidence_summaries.sql` 才能使用；本機驗證與 UI 瀏覽不代表已套正式 migration、部署或完成正式付費驗收。
 
 ### 建立與取結果
 

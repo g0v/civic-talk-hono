@@ -1,4 +1,4 @@
-import type { Hono } from 'hono'
+import type { Context, Hono } from 'hono'
 import { isAdminRole } from '../auth/authorization'
 import { requireUser } from '../api/requireUser'
 import type { EvidenceBindings } from './env'
@@ -8,7 +8,7 @@ import { validateHumanData } from './human'
 import { checkedSnapshot, reconcileSources, SourceUnavailable } from './lifecycle'
 import { estimateCall } from './pricing'
 import { readMaterialStatuses, readSourceInput, sha256, SOURCE_NAMESPACE, SourceInputError } from './source'
-import { EvidenceStore, type ExecutionStatus, type InputManifest } from './store'
+import { EvidenceStore, type ExecutionStatus, type InputManifest, type SummaryLanguage } from './store'
 
 export type EvidenceApp = Hono<{ Bindings: EvidenceBindings }>
 const CONSENT_VERSION = 'evidence-processing-2026-11-07-v5'
@@ -67,6 +67,10 @@ function issueId(value: string): number | null {
 function validJobId(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
 }
+function summaryLanguage(value: unknown): value is SummaryLanguage {
+  return value === 'zh-TW' || value === 'en' || value === 'ja'
+}
+
 
 async function failStoppedWorkflow(env: EvidenceBindings, job: { executionId: string; status: ExecutionStatus }): Promise<void> {
   const store = new EvidenceStore(env.DB)
@@ -236,18 +240,32 @@ export function registerEvidenceRoutes(app: EvidenceApp): void {
     return c.json({ ok: true })
   })
 
-  app.post('/api/issues/:id/evidence-jobs', async c => {
-    const auth = await requireUser(c)
-    if ('denied' in auth) return auth.denied
-    const id = issueId(c.req.param('id'))
-    if (id === null) return c.json({ error: 'invalid_issue_id' }, 400)
-    const body = await jsonBody(c.req.raw)
-    if (!object(body) || Object.keys(body).some(key => !['material_ids', 'language', 'consent'].includes(key)) || body.consent !== true) return c.json({ error: 'invalid_request' }, 400)
-    const language = body.language === undefined ? 'zh-TW' : body.language
-    if (language !== 'zh-TW' && language !== 'en' && language !== 'ja') return c.json({ error: 'invalid_language' }, 400)
-    if (body.material_ids !== undefined && !Array.isArray(body.material_ids)) return c.json({ error: 'invalid_material_ids' }, 400)
+  async function submitEvidenceJob(
+    c: Context<{ Bindings: EvidenceBindings }>,
+    ownerId: string,
+    id: number,
+    language: SummaryLanguage,
+    materialIds?: number[],
+    summaryExpectedVersion?: number
+  ) {
+    const store = new EvidenceStore(c.env.DB)
+    if (summaryExpectedVersion !== undefined) {
+      const state = await store.getSummaryState(id, language)
+      if (!state) return c.json({ error: 'Not found' }, 404)
+      if (state.version !== summaryExpectedVersion) return c.json({ error: 'summary_conflict' }, 409)
+      if (state.saved) {
+        try {
+          await checkedSnapshot(c.env, state.saved.executionId)
+        } catch (error) {
+          if (!(error instanceof SourceUnavailable) || (error.code !== 'source_withdrawn' && error.code !== 'source_erased')) throw error
+        }
+        const rechecked = await store.getSummaryState(id, language)
+        if (!rechecked) return c.json({ error: 'Not found' }, 404)
+        if (rechecked.version !== summaryExpectedVersion) return c.json({ error: 'summary_conflict' }, 409)
+      }
+    }
     await ensureStartup(c.env)
-    const input = await readSourceInput(c.env.SOURCE_DB, id, body.material_ids as number[] | undefined)
+    const input = await readSourceInput(c.env.SOURCE_DB, id, materialIds)
     const issue = input.sources[0]
     const manifest: InputManifest = {
       namespace: SOURCE_NAMESPACE,
@@ -262,9 +280,8 @@ export function registerEvidenceRoutes(app: EvidenceApp): void {
     }
     const inputKey = await sha256(JSON.stringify(manifest))
     const first = buildClairicRequest(input.materials[0].content)
-    const store = new EvidenceStore(c.env.DB)
     const claim = await store.claimJob({
-      ownerId: auth.context.user.id,
+      ownerId,
       issueId: id,
       inputKey,
       manifest,
@@ -272,11 +289,13 @@ export function registerEvidenceRoutes(app: EvidenceApp): void {
       consentVersion: CONSENT_VERSION,
       consentAt: new Date().toISOString(),
       initialEstimateMicroUsd: estimateCall(MODEL_SELECTORS.clairic, first.input),
+      ...(summaryExpectedVersion === undefined ? {} : { summaryExpectedVersion }),
     })
     if (claim.outcome === 'quota') return c.json({ error: 'account_daily_quota', reset_at: claim.resetAt }, 429)
     if (claim.outcome === 'cooldown') return c.json({ error: 'issue_cooldown', retry_at: claim.retryAt }, 429)
     if (claim.outcome === 'budget') return c.json({ error: 'daily_budget_exhausted', reset_at: claim.resetAt }, 503)
     if (claim.outcome === 'erased' || claim.outcome === 'withdrawn') return c.json({ error: `source_${claim.outcome}` }, 422)
+    if (claim.outcome === 'summary_conflict') return c.json({ error: 'summary_conflict' }, 409)
     if (claim.outcome === 'conflict') return c.json({ error: 'input_conflict' }, 409)
     if (!('jobId' in claim)) return c.json({ error: 'service_unavailable' }, 503)
     if (claim.outcome === 'created') {
@@ -301,12 +320,84 @@ export function registerEvidenceRoutes(app: EvidenceApp): void {
       status: claim.status,
       cache,
       input_coverage: {
-        selection: body.material_ids === undefined ? 'all_eligible' : 'selected',
+        selection: materialIds === undefined ? 'all_eligible' : 'selected',
         material_ids: input.materials.map(material => material.id),
-        exclusions: body.material_ids === undefined ? input.exclusions : [],
+        exclusions: materialIds === undefined ? input.exclusions : [],
       },
     }
+    if (summaryExpectedVersion !== undefined) {
+      const state = await store.getSummaryState(id, language)
+      if (!state) return c.json({ error: 'service_unavailable' }, 503)
+      return claim.outcome === 'cached' || claim.status === 'failed' ? c.json({ ...result, version: state.version }, 200) : c.json({ ...result, version: state.version }, 202)
+    }
     return claim.outcome === 'cached' || claim.status === 'failed' ? c.json(result, 200) : c.json(result, 202)
+  }
+
+  app.post('/api/issues/:id/evidence-jobs', async c => {
+    const auth = await requireUser(c)
+    if ('denied' in auth) return auth.denied
+    const id = issueId(c.req.param('id'))
+    if (id === null) return c.json({ error: 'invalid_issue_id' }, 400)
+    const body = await jsonBody(c.req.raw)
+    if (!object(body) || Object.keys(body).some(key => !['material_ids', 'language', 'consent'].includes(key)) || body.consent !== true) return c.json({ error: 'invalid_request' }, 400)
+    const language = body.language === undefined ? 'zh-TW' : body.language
+    if (!summaryLanguage(language)) return c.json({ error: 'invalid_language' }, 400)
+    if (body.material_ids !== undefined && !Array.isArray(body.material_ids)) return c.json({ error: 'invalid_material_ids' }, 400)
+    return submitEvidenceJob(c, auth.context.user.id, id, language, body.material_ids as number[] | undefined)
+  })
+
+  app.post('/api/issues/:id/evidence-summary', async c => {
+    const auth = await requireUser(c)
+    if ('denied' in auth) return auth.denied
+    const id = issueId(c.req.param('id'))
+    if (id === null) return c.json({ error: 'invalid_issue_id' }, 400)
+    const body = await jsonBody(c.req.raw)
+    if (
+      !object(body) || Object.keys(body).length !== 3 || !Object.hasOwn(body, 'consent') || !Object.hasOwn(body, 'language') || !Object.hasOwn(body, 'expected_version') ||
+      body.consent !== true || !summaryLanguage(body.language) || typeof body.expected_version !== 'number' || !Number.isSafeInteger(body.expected_version) || body.expected_version < 0
+    ) return c.json({ error: 'invalid_request' }, 400)
+    return submitEvidenceJob(c, auth.context.user.id, id, body.language, undefined, body.expected_version)
+  })
+
+  app.get('/api/issues/:id/evidence-summary', async c => {
+    const auth = await requireUser(c)
+    if ('denied' in auth) return auth.denied
+    const id = issueId(c.req.param('id'))
+    if (id === null) return c.json({ error: 'invalid_issue_id' }, 400)
+    const params = new URL(c.req.url).searchParams
+    const language = params.get('language')
+    let parameterCount = 0
+    params.forEach(() => parameterCount++)
+    if (parameterCount !== 1 || !summaryLanguage(language)) return c.json({ error: 'invalid_request' }, 400)
+    const store = new EvidenceStore(c.env.DB)
+    await ensureStartup(c.env)
+    const before = await store.getSummaryState(id, language)
+    if (!before) return c.json({ error: 'Not found' }, 404)
+    const admin = isAdminRole(auth.context.role)
+    const viewerId = auth.context.user.id
+    if (before.latest && (admin || before.latest.ownerId === viewerId) && ['queued', 'extracting', 'comparing', 'generating'].includes(before.latest.status)) {
+      await ensureWorkflow(c.env, { id: before.latest.jobId, executionId: before.latest.executionId, status: before.latest.status }, { observeOnly: true })
+    }
+    const executions = new Set<string>()
+    if (before.saved) executions.add(before.saved.executionId)
+    if (before.latest && !['withdrawn', 'erased'].includes(before.latest.status)) executions.add(before.latest.executionId)
+    for (const executionId of executions) {
+      try {
+        await checkedSnapshot(c.env, executionId)
+      } catch (error) {
+        if (!(error instanceof SourceUnavailable) || (error.code !== 'source_withdrawn' && error.code !== 'source_erased')) throw error
+      }
+    }
+    if (before.latest?.status === 'withdrawn') await reconcileSources(c.env, before.latest.executionId)
+    const state = await store.getSummaryState(id, language)
+    if (!state) return c.json({ error: 'Not found' }, 404)
+    // 重新讀取若遇到另一筆剛完成的結果，不能交付未經來源查核的內容。
+    if (state.saved && (!before.saved || state.saved.jobId !== before.saved.jobId || state.saved.artifactId !== before.saved.artifactId)) return c.json({ error: 'service_unavailable' }, 503)
+    const job = state.latest && (admin || state.latest.ownerId === viewerId) ? { job_id: state.latest.jobId, status: state.latest.status } : null
+    const saved = state.saved && (admin || state.saved.ownerId === viewerId)
+      ? { job_id: state.saved.jobId, data: state.saved.data, citation_map: state.saved.citationMap, verification: 'ai_unverified' as const, updated_at: state.saved.updatedAt }
+      : null
+    return c.json({ version: state.version, has_summary: state.saved !== null, job, summary: saved })
   })
 
   app.get('/api/evidence-jobs/:jobId', async c => {
