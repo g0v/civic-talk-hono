@@ -264,12 +264,25 @@ describe('Clairic 證據來源定位', () => {
     expect(extract('😀A。', ['\ud83d']).rejected[0].reason).toBe('invalid_value')
   })
 
-  it('依素材與擴展後相同範圍去重，無效片段不影響其他有效片段的 partial 診斷', () => {
-    const result = extract('此主張需要支持。另一句。', ['主張', '支持', '不存在'])
+  it('完整選取的歸屬、反對理由與跨句條件不被展句換成前後其他人的主張', () => {
+    const selected = '乙方反對增班，擔心人力不足。若無合格司機，排班將難以維持。'
+    const content = `甲方要求增加班次。${selected}丙方建議先調降票價。`
+    const result = extract(content, [selected])
+    expect(result.status).toBe('complete')
+    expect(result.evidence[0].raw_quote).toBe(selected)
+    expect(result.evidence[0].quote).toBe(selected)
+    expect(sliceEvidenceSpan(content, result.evidence[0].raw_span)).toBe(selected)
+    expect(sliceEvidenceSpan(content, result.evidence[0].expanded_span)).toBe(selected)
+  })
+
+  it('只合併相同素材的相同原始範圍，不合併同句不同主張，無效片段仍保留 partial 診斷', () => {
+    const result = extract('此主張需要支持。另一句。', ['主張', '支持', '主張', '不存在'])
     expect(result.status).toBe('partial')
-    expect(result.evidence).toHaveLength(1)
+    expect(result.evidence.map(item => item.raw_quote)).toEqual(['主張', '支持'])
+    expect(result.evidence.map(item => item.quote)).toEqual(['此主張需要支持。', '此主張需要支持。'])
+    expect(result.evidence[0].id).not.toBe(result.evidence[1].id)
     expect(result.duplicates).toBe(1)
-    expect(result.rejected).toEqual([{ index: 2, reason: 'not_found' }])
+    expect(result.rejected).toEqual([{ index: 3, reason: 'not_found' }])
     const other = extractClairicEvidence({ material_id: 2, content: '此主張需要支持。', state: '此主張需要支持。', response: clairic(['主張']) })
     expect(other.evidence[0].id).not.toBe(result.evidence[0].id)
   })
@@ -295,11 +308,11 @@ describe('Clef 無向配對與支持群', () => {
   })
 
   it('保留完整引文、出處、平手機率與 provider 低信心，不因任意門檻改寫選項', () => {
-    const left = { ...a, quote: '甲說：「逐字😀。\r\n不可忽略條件。」' }
-    const right = { ...b, quote: '乙提出另一個主張。' }
+    const left = { ...a, quote: '甲說：「逐字😀。\r\n不可忽略條件。」', raw_quote: '逐字😀。\r\n不可忽略條件。' }
+    const right = { ...b, quote: '乙提出另一個主張。', raw_quote: '乙提出另一個主張。' }
     const batch = buildClefBatches([right, left], createEvidencePairs([left, right]))[0]
     expect(batch.input.state.evidence).toEqual([
-      { id: 'A', material_id: 1, quote: left.quote },
+      { id: 'A', material_id: 1, quote: left.quote, raw_quote: left.raw_quote },
       { id: 'B', material_id: 2, quote: right.quote },
     ])
     const probabilities = { agree: 0.25, disagree: 0.25, unrelated: 0.25, uncertain: 0.25 }

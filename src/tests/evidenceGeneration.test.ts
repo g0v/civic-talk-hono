@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vite-plus/test'
 import { analyzeComparisons, createEvidencePairs, pairKey, type DirectComparison, type EvidencePair, type Relation } from '../ai/comparison'
-import type { Evidence } from '../ai/evidence'
+import { extractClairicEvidence, type Evidence } from '../ai/evidence'
 import type { MaterialPayload } from '../ai/store'
 import { buildClairicRequest, buildClefBatches, CLEF_MAX_QUESTIONS, CLEF_MAX_REQUEST_BYTES, ModelContextLimitError, modelUsageStatus, parseClairicResponse, parseClefResponse } from '../ai/models'
 import {
@@ -281,6 +281,46 @@ describe('Clef 對稱比較批次', () => {
 })
 
 describe('生成模型專項輸出與出處', () => {
+  it('混合多方主張的同一句保留各自焦點，Clef 與三項生成不只收到展句背景', () => {
+    const selected = ['甲方要求增加班次', '乙方反對增班，擔心人力不足']
+    const content = `${selected[0]}；${selected[1]}。`
+    const extracted = extractClairicEvidence({
+      material_id: 25,
+      content,
+      state: content,
+      response: { truncated: false, answers: { claims: { type: 'list', value: selected } } },
+    })
+    expect(extracted.status).toBe('complete')
+    expect(extracted.evidence.map(item => item.raw_quote)).toEqual(selected)
+    expect(extracted.evidence[0].id).not.toBe(extracted.evidence[1].id)
+    expect(extracted.evidence.map(item => item.quote)).toEqual([content, content])
+    const other = material(26, '丙方要求延長營運時間。')
+    const allEvidence = [...extracted.evidence, anchored('other', other.id, other.content, other.content)]
+    const batches = buildClefBatches(allEvidence, createEvidencePairs(allEvidence))
+    for (const focal of extracted.evidence) {
+      const projected = batches.flatMap(batch => batch.input.state.evidence).find(item => item.id === focal.id)
+      expect(projected).toEqual({ id: focal.id, material_id: 25, quote: content, raw_quote: focal.raw_quote })
+    }
+    const groupedInput: GenerationInput = {
+      evidence: allEvidence,
+      comparison: analyzeComparisons(allEvidence, []),
+      language: 'zh-TW',
+      sources: [material(25, content), other],
+    }
+    for (const section of ['consensus', 'disputes', 'positions'] as const) {
+      const payload = JSON.parse(buildGenerationRequest(section, groupedInput).input.messages[1].content)
+      for (const focal of extracted.evidence) {
+        expect(payload.evidence.find((item: { id: string }) => item.id === focal.id)).toEqual({
+          id: focal.id,
+          material_id: 25,
+          quote: content,
+          raw_quote: focal.raw_quote,
+        })
+      }
+      expect(payload.evidence.find((item: { id: string }) => item.id === 'other')).toEqual({ id: 'other', material_id: 26, quote: other.content })
+    }
+  })
+
   it('各專項僅接收完整引文與其職責所需的關係，不洩漏額外來源或比較 metadata', async () => {
     const extraSources = [material(28, '第四份原文中的條件。'), material(29, '第五份原文中的觀察。')]
     const extraEvidence = extraSources.map(source => anchored(`e${source.id - 24}`, source.id, source.content, source.content))
@@ -298,7 +338,13 @@ describe('生成模型專項輸出與出處', () => {
       const payload = JSON.parse(request.input.messages[1].content)
       expect(payload.section).toBe(section)
       expect(payload.language).toBe('zh-TW')
-      expect(payload.evidence).toEqual([...mixedEvidence].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)).map(({ id, material_id, quote }) => ({ id, material_id, quote })))
+      expect(payload.evidence).toEqual([
+        { id: 'e1', material_id: 25, quote: evidence[0].quote, raw_quote: evidence[0].raw_quote },
+        { id: 'e2', material_id: 26, quote: evidence[1].quote, raw_quote: evidence[1].raw_quote },
+        { id: 'e3', material_id: 27, quote: evidence[2].quote, raw_quote: evidence[2].raw_quote },
+        { id: 'e4', material_id: 28, quote: extraSources[0].content },
+        { id: 'e5', material_id: 29, quote: extraSources[1].content },
+      ])
       expect(payload.comparison.direct_comparisons).toEqual(analysis.direct_comparisons.map(({ evidence_ids, relation }) => ({ evidence_ids, relation })))
       expect(payload.comparison.reverse_diagnostics).toEqual([{ evidence_ids: ['e2', 'e1'], relation: 'disagree' }])
       expect(payload.comparison.incomplete_pairs).toEqual(analysis.incomplete_pairs.map(({ evidence_ids, status }) => ({ evidence_ids, status })))
@@ -323,7 +369,6 @@ describe('生成模型專項輸出與出處', () => {
         '不能送出的其他原文',
         '其他秘密',
         'https://example.org/a',
-        '"raw_quote"',
         '"pair_key"',
         '"question_version"',
         '"probabilities"',
@@ -342,7 +387,7 @@ describe('生成模型專項輸出與出處', () => {
       expect(request.input.messages[0].content.length).toBeGreaterThan(0)
       expect(request.input).toMatchObject({
         max_completion_tokens: 8192,
-        temperature: 0.2,
+        temperature: section === 'positions' ? 0.2 : 0,
         chat_template_kwargs: { enable_thinking: false },
         stream: false,
         response_format: {
@@ -401,7 +446,7 @@ describe('生成模型專項輸出與出處', () => {
       const request = buildGenerationRequest(section, { evidence: denseEvidence, comparison: analysis, language: 'zh-TW', sources: denseSources })
       expect(request.request_bytes).toBeLessThanOrEqual(GENERATION_MAX_REQUEST_BYTES)
       const payload = JSON.parse(request.input.messages[1].content)
-      expect(payload.evidence).toEqual([...denseEvidence].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)).map(({ id, material_id, quote }) => ({ id, material_id, quote })))
+      expect(new Set(payload.evidence.map((item: { id: string }) => item.id))).toEqual(new Set(denseEvidence.map(item => item.id)))
       expect(payload.comparison.direct_comparisons).toEqual(analysis.direct_comparisons.map(({ evidence_ids, relation }) => ({ evidence_ids, relation })))
       expect(
         new Set([
