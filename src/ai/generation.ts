@@ -256,11 +256,11 @@ const positionItemSchema = {
   additionalProperties: false,
   properties: {
     group_id: nonemptyString,
+    opinions: { type: 'array', minItems: 1, items: opinionSchema },
     name: sentencesSchema,
     Core_concern: optionalSentencesSchema,
-    opinions: { type: 'array', minItems: 1, items: opinionSchema },
   },
-  required: ['group_id', 'name', 'Core_concern', 'opinions'],
+  required: ['group_id', 'opinions', 'name', 'Core_concern'],
 } as const
 
 export const GENERATION_OUTPUT_SCHEMAS = {
@@ -350,9 +350,12 @@ const GENERATION_EXAMPLES = {
     items: [
       {
         group_id: 'G1',
-        name: [exampleSentence('A stated concern', 'E1', 'E2')],
+        opinions: [
+          { Title: [exampleSentence('An explicit concern', 'E1')], description: [exampleSentence('The first stated claim and its conditions.', 'E1')] },
+          { Title: [exampleSentence('A related explicit concern', 'E2')], description: [exampleSentence('The second stated claim and its conditions.', 'E2')] },
+        ],
+        name: [exampleSentence('A stated concern', 'E1')],
         Core_concern: [exampleSentence('The stated claims concern the proposal.', 'E1', 'E2')],
-        opinions: [{ Title: [exampleSentence('Related claims', 'E1', 'E2')], description: [exampleSentence('The related claims and conditions.', 'E1', 'E2')] }],
       },
     ],
     exclusions: [{ evidence_id: 'E3', reason: 'Not enough context to group this evidence.' }],
@@ -375,7 +378,10 @@ const SECTION_INSTRUCTIONS = {
   disputes:
     '先檢視所有已驗證證據與關係，而非只看分歧種子；依可獨立回答的爭議問題分組，每個問題只產生一項。對同一問題的多組統計數據與證據配對應彙整在該項，保留所有相關側、各自主張及可比較的人群、時間和條件，不得每個配對另列一項；不同問題則不可合併。同一證據可以支持不同問題。逐一檢視所有獨立問題，零、一、二或更多項均可，不為湊數拆分、重複或虛構爭議。question 是逐句附引用的陣列，具體寫出單一可回答的問題及其範圍，引用必須屬於該項的 sides。不同條件下的主張可能並存：整體增長與特定群體的風險未必矛盾。contradiction 是可比條件下不相容的事實結論；opposition 是相反的明示立場或建議；tension 是可能並存的策略、優先順序或價值張力。不可憑語氣虛構矛盾，或把張力當作正式 disagree；agree 配對不可說成矛盾或對立。每側 claim 必須引用該側全部證據，description 必須引用每側；comparison_conditions 和 side claim 均為逐句附引用的陣列。不得提供 origin 或 formal relation，程式會依直接比較推導。',
   positions:
-    'Independently group explicit concerns, claims, or approaches from all evidence; preserve independent concerns, minority views, and conditions without requiring one group per material or a fixed number of groups. One material may occur in multiple groups and one group may include multiple materials. Do not mix opposite claims or infer hidden motives. Supply a unique group_id for each group. Group membership is derived from evidence IDs actually cited in the Title or description of that group’s opinions; do not declare group evidence_ids. Opinions must contain real, substantive cited narrative sentences, not dummy text or decorative lists of IDs; use multiple opinions when needed to represent the evidence. The group name and non-null Core_concern may cite only evidence used by those opinions. Actively provide a concise Core_concern supported by the group: it may synthesize explicitly stated claims, but never invent a hidden motive or personality. Use null only if no supported synthesis is possible. List each evidence ID not cited by any opinion exactly once in exclusions with a reason; do not exclude evidence adopted by an opinion. Overlap is allowed and will be calculated by the program.',
+    'Independently group explicit concerns, claims, or approaches from all evidence; preserve independent concerns, minority views, and conditions without requiring one group per material or a fixed number of groups. One material may occur in multiple groups and one group may include multiple materials. Do not mix opposite claims or infer hidden motives. Supply a unique group_id for each group.\n' +
+    'Build each group in dependency order within this single response: output group_id, then finish opinions, then write name and Core_concern. Opinions must contain real, substantive cited Title and description sentences, not dummy text or decorative lists of IDs; use multiple opinions when needed to represent the evidence. Group membership is exactly the union of evidence IDs actually cited by those completed opinions. Do not declare group evidence_ids. Being from the same material or discussing the same topic does not make another evidence ID a member.\n' +
+    'For each name and non-null Core_concern sentence, cite only the relevant supporting subset of that group membership; it need not cite every member. Do not bulk-copy input or material ID lists as a shortcut. An ID used by another group is allowed here only when this group’s own opinions also cite it; excluded evidence is never allowed. Actively provide a concise Core_concern supported by the group: it may synthesize explicitly stated claims, but never invent a hidden motive or personality. Use null only if no supported synthesis is possible.\n' +
+    'Before returning JSON, audit every name and Core_concern citation against the exact union of its own opinions’ Title and description citations. If an ID is outside that union, narrow the claim and its citations to supported members, or include a substantive supported opinion only if that evidence genuinely belongs in the group. Never add dummy opinions or decorative citations merely to satisfy membership. Audit coverage separately: each evidence ID not cited by any opinion must occur exactly once in exclusions with a reason; name, Core_concern, and Overview citations do not establish membership or coverage. Do not exclude evidence adopted by an opinion. Overlap is allowed and will be calculated by the program. Do not output the audit or any additional fields.',
 } as const
 
 // 原生結構化輸出仍逐段嚴格驗證，提示中的範例只說明格式。

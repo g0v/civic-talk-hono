@@ -339,7 +339,6 @@ describe('生成模型專項輸出與出處', () => {
         { role: 'system', content: expect.any(String) },
         { role: 'user', content: expect.any(String) },
       ])
-      expect(request.input.messages[0].content.length).toBeGreaterThan(0)
       expect(request.input).toMatchObject({
         max_completion_tokens: 8192,
         temperature: 0.2,
@@ -788,6 +787,34 @@ describe('生成模型專項輸出與出處', () => {
     const doubleClaim = structuredClone(output)
     doubleClaim.exclusions.push({ evidence_id: 'e1', reason: '已分群仍排除' })
     await expect(parseGenerationResponse('positions', completion(doubleClaim), extendedInput)).rejects.toThrow('generation_incomplete_coverage')
+  })
+
+  it('立場請求先提供意見再命名；同素材的未採用證據不能支撐群名', async () => {
+    const exampleEvidence = [
+      { ...evidence[0], id: 'E1' },
+      { ...evidence[1], id: 'E2' },
+      anchored('E3', 25, sources[0].content, '其他秘密。'),
+    ]
+    const exampleInput: GenerationInput = { ...input, evidence: exampleEvidence, comparison: analyzeComparisons(exampleEvidence, []) }
+    const request = buildGenerationRequest('positions', exampleInput)
+    const schema = request.input.response_format.json_schema.schema as typeof GENERATION_OUTPUT_SCHEMAS.positions
+    // 這是送給模型的依賴順序，不限制其他欄位順序或英文提示措辭。
+    expect(Object.keys(schema.properties.items.items.properties).filter(key => key === 'opinions' || key === 'name')).toEqual(['opinions', 'name'])
+    const example = JSON.parse(request.input.messages[0].content.split('\nExample:\n')[1].split('\nJSON Schema:\n')[0])
+    expect(Object.keys(example.items[0]).filter(key => key === 'opinions' || key === 'name')).toEqual(['opinions', 'name'])
+    const accepted = await parseGenerationResponse('positions', completion(example), exampleInput)
+    expect(accepted.diagnostics).toMatchObject({
+      groups: [{ group_id: 'G1', evidence_ids: ['E1', 'E2'] }],
+      coverage: [
+        { evidence_id: 'E1', status: 'grouped' },
+        { evidence_id: 'E2', status: 'grouped' },
+        { evidence_id: 'E3', group_ids: [], status: 'excluded' },
+      ],
+    })
+    expect(accepted.citation_map.some(entry => entry.evidence_ids.includes('E3'))).toBe(false)
+    const crossed = structuredClone(example)
+    crossed.items[0].name[0].evidence_ids.push('E3')
+    await expect(parseGenerationResponse('positions', completion(crossed), exampleInput)).rejects.toThrow('generation_cross_candidate_citation')
   })
 
   it('拒絕未知、跨群、相反及舊格式引用，也不得由模型自行提供 Sources', async () => {

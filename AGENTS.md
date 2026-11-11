@@ -154,7 +154,7 @@ Civic Talk 使用 Hono、Vue 3 SSR/hydration、Tailwind 與 Cloudflare Workers�
 - Gemma 原生 Chat Completions 僅接受字串 model、唯一 index 0／finish_reason stop 的 assistant 字串內容，完整 JSON（保留既有完整單一 plain/json fence 例外）；拒絕缺完成原因、截斷、refusal、tool、非字串等。忽略 reasoning，不切取思考文字或猜測修補。schema 支援不代表語義品質。
 - 共識不設筆數目標：`shared_fact`／`shared_position` 需參與來源明示支持同一事實／立場；只有 `shared_challenge` 可依正面相關證據跨措辭或觀點綜整較窄具體共同挑戰。不能從沉默／共同話題推論，風險與建議須確實回應同一挑戰；保留條件／轉述歸屬，不能升格成共同贊同解法。
 - 共識限跨素材 direct-agree 候選及有效子集、至少兩素材；每個候選完整交代採用或拒絕，每參與來源都有正文引用。canonical ID／candidate_map、動態 enum、空候選兩清單皆空；未知／舊 ID、漏交代、重複拒絕、同時採用拒絕皆拒收。不同命題可共用證據，但完全重複項目拒收。
-- 爭點按問題整合佐證；question 引用留診斷，正規化後同問題拒收，不模糊刪除／自動合併。立場成員／Sources 只從 opinions 的 Title／description 引用推導，群名／Core_concern 引用必屬該群，保留 direct-disagree 互斥、完整覆蓋／排除守門，不推測動機。背景引用越界與語義近似重複仍需人工驗收，不能默許放寬。
+- 爭點按問題整合佐證；question 引用留診斷，正規化後同問題拒收，不模糊刪除／自動合併。立場在同一輪中先生成 opinions，再根據其 Title／description 引用的精確聯集撰寫群名／Core_concern，輸出前自查引用子集；schema／範例採相同引導順序，不新增呼叫或自動修補。成員／Sources 仍只從 opinions 引用推導，同素材／同主題不能代替成員資格；保留 direct-disagree 互斥、完整覆蓋／排除守門，不推測動機。背景引用越界與語義近似重複仍需人工驗收，不能默許放寬。
 - 三項後只有有內容必填仍 null 才最多一輪 Gemma **白名單補完**；不改已有值、來源、順序或舊引用，不新增第五輪。補完獨立預留／結算，無缺值不付費，必要補完失敗不交付缺值草稿。空／失敗／未啟動分區用三語狀態文字，不偽造來源結論或 citation；**空段不代表沒有爭點**。
 - 來源 fence、停權、去重、最後快照／狀態再查不可移除；不覆寫歷史 raw、分項結果、unknown 或 tombstone。Clef 校準只對照已核可資料，不證明 labels／hash 來源，真實實驗不是獨立 gold labels。
 
