@@ -1,6 +1,6 @@
 # #183 證據管線：API 與安全邊界手冊
 
-#183 交付的六端點維持既有契約；#210 另在志願者工具新增一鍵彙整按鈕與兩個私有議題摘要端點，只有操作／進度／結果提示，完整排版與一般 API 正式驗收仍由 [#166](https://github.com/g0v/civic-talk-hono/issues/166) 承接；reconcile／erase 維護驗收見 [#201](https://github.com/g0v/civic-talk-hono/issues/201)，既有交接見 [`TODO_AFTER_MERGE.md`](../TODO_AFTER_MERGE.md)。使用者曾部署 source `73800643596b7114efd0c7623ea436023cd244b9`、`EVIDENCE_API_ENABLED=1`，並確認原六端點匿名 401、跨站簡單 POST 403、`/api/me` 200／super-admin／banned:false。這些既有結果不是完整 API 驗收，也不是 #210 已部署的證據。2026-11-08 使用者核准提前移除實驗／審閱專用 profiles、CLI 與 fixtures。#210 本輪完成本機實作／驗證，並依授權 commit、push、建立 PR；維護者註記可直接 merge 後套遠端 migration 再實測，但流程尚未完整，先不 deploy。本輪不代為 merge、套用遠端 migration 或執行正式付費工作。
+#183 交付的六端點維持既有契約；#210 新增兩個私有議題摘要端點及建構中的一鍵彙整元件，完整排版與一般 API 正式驗收仍由 [#166](https://github.com/g0v/civic-talk-hono/issues/166) 承接；reconcile／erase 維護驗收見 [#201](https://github.com/g0v/civic-talk-hono/issues/201)，既有交接見 [`TODO_AFTER_MERGE.md`](../TODO_AFTER_MERGE.md)。使用者曾部署 source `73800643596b7114efd0c7623ea436023cd244b9`、`EVIDENCE_API_ENABLED=1`，並確認原六端點匿名 401、跨站簡單 POST 403、`/api/me` 200／super-admin／banned:false；不是完整 API 驗收，也不是 #210 已部署的證據。2026-11-08 使用者核准提前移除實驗／審閱專用 profiles、CLI 與 fixtures。#210 最新決策將整個新 UI 限制在 dev 掛載，production 不呈現亦不由此啟動查詢／輪詢；後端 API 開關維持原契約。本機驗證、原始碼提交／推送與 PR 不能視為已執行合併、遠端 migration、正式付費或 deploy；發布與實測仍依當次授權執行。
 
 ## 1. 先看已完成的實驗
 
@@ -56,7 +56,7 @@ Clairic 逐素材、Clef 配對、Gemma 共識／爭點／立場三項，必要�
 
 ### #210：私有議題摘要與操作入口
 
-志願者工具的麥穗黃「一鍵彙整」按鈕在既有生成 Prompt 旁；不移除 BYO 流程、不修改舊 briefing／議題 status，也不提供新版報告排版。操作前需明確同意現行處理告知，含來源正文可能有個資、Workers AI／平台費用、留存與清除限制；已有該語言結果時另需確認替換。開始後不自動重送 POST 或重試模型；網路／輪詢錯誤只提供明確恢復查詢。
+志願者工具的麥穗黃「一鍵彙整」按鈕在既有生成 Prompt 旁，**暫僅於 `import.meta.env.DEV` 掛載**（含 dev:remote）；production 即使 mode 名稱為 development，也不掛載新按鈕／同意視窗／狀態提示，不觸發其查詢、輪詢或 debug log。此限制只隔離建構中的 UI，後端 API 與守門維持原契約；不移除 BYO 流程、不修改舊 briefing／議題 status，也不提供新版報告排版。dev 操作前需明確同意現行處理告知，含來源正文可能有個資、Workers AI／平台費用、留存與清除限制；已有該語言結果時另需確認替換。開始後不自動重送 POST 或重試模型；網路／輪詢錯誤只提供明確恢復查詢。
 
 - `GET /api/issues/:id/evidence-summary?language=zh-TW|en|ja`：語言必填；回 `{version,has_summary,job,summary}`。未停權登入者可見指定語言的版本與有無結果，只有該 job 的 owner／管理員可取得其 job ID／狀態或摘要正文；其他登入者相應欄位為 null。新欄位不進公開列表、詳情或 SSR。
 - `POST /api/issues/:id/evidence-summary`：精確 JSON `{consent:true,language,expected_version}`；全選至少兩份合格素材，沿用來源、停權、同意紀錄、admission、cache、quota、冷卻與費用守門。成功沿用建立 job 的 JSON，另有 `version`。版本不符回 `409 summary_conflict`，不能跳過重新讀取與替換確認。

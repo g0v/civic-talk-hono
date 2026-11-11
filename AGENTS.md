@@ -123,7 +123,7 @@ Civic Talk 使用 Hono、Vue 3 SSR/hydration、Tailwind 與 Cloudflare Workers�
 
 ## 6. 一鍵彙整：八 API 與品質／生命週期守門
 
-私有草稿，來源為 `SOURCE_DB ?? DB`，保存到業務 DB，非 DB_AUTH。#210 在志願者工具提供麥穗黃一鍵彙整按鈕、處理同意與進度／結果提示；新版報告排版仍屬 #166，不自動發布或改 briefing／status，舊 BYO 流程保留。正式設定保留 AI、EVIDENCE_WORKFLOW、`EVIDENCE_API_ENABLED=1`；只有明確 1 開啟，其他值／缺省 404（全域 CSRF 可能先回 403），缺必要 binding 503，匿名 401、停權 403。專用實驗／審閱 profiles、CLI、cookie 匯出工具與 fixtures 已退場，不提供舊命令。
+私有草稿，來源為 `SOURCE_DB ?? DB`，保存到業務 DB，非 DB_AUTH。#210 的麥穗黃一鍵彙整按鈕、處理同意與進度／結果提示暫僅在 `import.meta.env.DEV` 掛載（含 dev:remote）；production 不掛載整個新元件，亦不啟動其狀態查詢／輪詢或 debug log。不得只用 CSS 隱藏，也不以 MODE 名稱判斷；此 UI 閘門不改後端 API 開關。新版報告排版仍屬 #166，不自動發布或改 briefing／status，舊 BYO 流程保留。正式設定保留 AI、EVIDENCE_WORKFLOW、`EVIDENCE_API_ENABLED=1`；只有明確 1 開啟，其他值／缺省 404（全域 CSRF 可能先回 403），缺必要 binding 503，匿名 401、停權 403。專用實驗／審閱 profiles、CLI、cookie 匯出工具與 fixtures 已退場，不提供舊命令。
 
 **有效建立／GET／修訂可能啟動來源對帳、恢復 queued Workflow，對帳發現 deleted 會清 payload；不是純唯讀試打。** 正式登入後呼叫、新付費、queued 恢復及有效 maintenance 需核對來源、帳號／角色與個別授權，不因 API 已啟用或範例存在而執行。
 

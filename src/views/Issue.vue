@@ -48,6 +48,7 @@ const props = defineProps<{
   initialCommentSearch?: string
 }>()
 
+const showEvidenceSummary = import.meta.env.DEV
 const { t, locale } = useI18n()
 const isJapanese = computed(() => locale.value === 'ja')
 const { viewerRole } = useViewerRole()
@@ -1080,6 +1081,7 @@ async function submitOpinion() {
                     {{ t('vol_gen_summarize') }}
                   </button>
                   <EvidenceSummary
+                    v-if="showEvidenceSummary"
                     :key="session?.user.id"
                     :issue-id="issueId"
                     :active="activeStep === 'volunteer'"

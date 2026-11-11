@@ -6,7 +6,7 @@ civic-talk-hono 的部署與環境設定參考。日常開發看 [`README.md`](.
 
 > **#183 現況（2026-11-08）：** PR #191 與遠端原始 0017 已完成。使用者已部署 source `73800643596b7114efd0c7623ea436023cd244b9`、`EVIDENCE_API_ENABLED=1`，既有確認為六匿名 401、CSRF 403、`/api/me` 200／super-admin／banned:false，不是完整六 API 驗收。本輪授權提前清理專用 profiles／CLI／fixtures、本機驗證及 commit，不 push／deploy、不付費或遠端寫入。原始 SQL、歷史報告及全部私人狀態保留；契約見 [API 手冊](./docs/evidence-api-review.md)。UI／一般 API 驗收見 [#166](https://github.com/g0v/civic-talk-hono/issues/166)，維護驗收見 [#201](https://github.com/g0v/civic-talk-hono/issues/201)，進度見 [`TODO_AFTER_MERGE.md`](./TODO_AFTER_MERGE.md)。
 
-> **#210 發布前置：** 一鍵彙整按鈕與私有議題摘要端點需要 `0018_evidence_summaries.sql`（新增 `ct_issues.ai_summaries`／`ct_ai_summary_slots` 與同步 triggers）。維護者註記：**本 PR 可直接 merge 後套遠端 migration 後再實測，但流程尚未完整，先不 deploy。** migration 僅對 `vtaiwan-civic-talks`，依下述授權／ledger 流程執行；不改原始 0017、不操作 `vtaiwan-auth`。本機通過不代表遠端已套用；本輪僅 commit、push 與建立 PR，不代為 merge、套用遠端 migration、付費或部署。
+> **#210 發布前置與 dev-only UI：** 一鍵彙整按鈕暫以 `import.meta.env.DEV` 限制掛載；production 不呈現新按鈕／對話框／狀態提示，也不由新元件查詢或輪詢，因此後續合併、套 migration 與部署不會把施工中的操作入口帶到主站。**這不會關閉原證據 API，也不表示 #166 整套流程已完成。** `0018_evidence_summaries.sql`（`ct_issues.ai_summaries`／`ct_ai_summary_slots` 與同步 triggers）仍須在依賴它的 Worker 發布前套用，僅對 `vtaiwan-civic-talks`，依下述授權／ledger 流程執行；不改原始 0017、不操作 `vtaiwan-auth`。提交、推送、合併、遠端 migration、付費與 deploy 均依當次授權執行；dev-only UI 不代表已授權發布或完成正式驗收。
 
 ---
 
