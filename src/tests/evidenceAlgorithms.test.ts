@@ -174,6 +174,88 @@ describe('Clairic 證據來源定位', () => {
     expect(extract(content, ['甲'], [[999, 1000]]).rejected[0].reason).toBe('span_value_conflict')
   })
 
+  it.each(['utf16', 'unicode', 'utf8'] as const)('數量不一致時以精確 %s 座標保留同片語的不同位置', unit => {
+    const content = '前😀。重複。中😀。不同。再重複。'
+    const spans = [
+      offsets(content, '重複', unit),
+      offsets(content, '不同', unit),
+      offsets(content, '重複', unit, content.lastIndexOf('重複')),
+    ]
+    const result = extract(content, ['重複', '不同'], spans)
+    expect(result.status).toBe('complete')
+    expect(result.rejected).toEqual([])
+    expect(result.evidence.map(item => item.quote)).toEqual(['重複。', '不同。', '再重複。'])
+    expect(result.evidence.map(item => item.raw_span)).toEqual([
+      { start: spans[0][0], end: spans[0][1], unit },
+      { start: spans[1][0], end: spans[1][1], unit },
+      { start: spans[2][0], end: spans[2][1], unit },
+    ])
+    expect(result.evidence.map(item => sliceEvidenceSpan(content, item.raw_span))).toEqual(['重複', '不同', '重複'])
+    expect(result.evidence.map(item => item.provider_span?.unit)).toEqual([unit, unit, unit])
+  })
+
+  it('重複的 value 可由較少但完整的精確座標覆蓋，不要求重複引文', () => {
+    const result = extract('甲。', ['甲', '甲'], [[0, 1]])
+    expect(result.status).toBe('complete')
+    expect(result.evidence.map(item => item.raw_quote)).toEqual(['甲'])
+    expect(result.evidence[0].raw_span).toEqual({ start: 0, end: 1, unit: 'utf16' })
+    expect(result.evidence[0].provider_span?.possible_units).toEqual(['utf16', 'unicode'])
+  })
+
+  it.each([
+    { name: '缺少某個 value', spans: [[0, 1], [4, 5], [0, 1]], reason: 'invalid_spans' },
+    { name: '座標未匹配任何 value', spans: [[0, 1], [2, 3], [1, 2]], reason: 'span_value_conflict' },
+    { name: '座標超出原文', spans: [[0, 1], [2, 3], [999, 1000]], reason: 'span_value_conflict' },
+    { name: 'null 座標', spans: [[0, 1], [2, 3], null], reason: 'invalid_spans' },
+    { name: '格式錯誤座標', spans: [[0, 1], [2, 3], [4]], reason: 'invalid_spans' },
+    { name: '完全沒有座標', spans: [], reason: 'invalid_spans' },
+  ])('數量不一致且$name時整份拒收，不交付先前已配對的證據', ({ spans, reason }) => {
+    const result = extract('甲。乙。甲。', ['甲', '乙'], spans)
+    expect(result.status).toBe('failed')
+    expect(result.evidence).toEqual([])
+    expect(result.rejected).toEqual(expect.arrayContaining([expect.objectContaining({ reason })]))
+  })
+
+  it.each([
+    { content: '😀AA。', values: ['A'], spans: [[3, 4], [2, 3]] },
+    { content: '😀AB。', values: ['A', 'B'], spans: [[2, 3]] },
+  ])('數量不一致且不同座標單位指向不同位置時拒收，無論是否為相同文字', ({ content, values, spans }) => {
+    const result = extract(content, values, spans)
+    expect(result.status).toBe('failed')
+    expect(result.evidence).toEqual([])
+    expect(result.rejected).toContainEqual(expect.objectContaining({ reason: 'ambiguous_span' }))
+  })
+
+  it('數量不一致時不接受素材外的相同文字，也不丟掉壞座標繼續交付', () => {
+    const content = '甲。'
+    const state = `甲\n${content}`
+    const result = extractClairicEvidence({
+      material_id: 1,
+      content,
+      state,
+      source_start: 2,
+      response: clairic(['甲'], [[2, 3], [0, 1]], state),
+    })
+    expect(result.status).toBe('failed')
+    expect(result.evidence).toEqual([])
+    expect(result.rejected).toEqual([{ index: 1, reason: 'outside_source' }])
+    expect(result.state_mapping?.provider_state_text).toBe(state)
+  })
+
+  it('數量不一致仍拒絕空字串 value，不能只保留有效片段', () => {
+    const result = extract('甲。', ['甲', ''], [[0, 1]])
+    expect(result.status).toBe('failed')
+    expect(result.evidence).toEqual([])
+    expect(result.rejected).toEqual([{ index: null, reason: 'invalid_value' }])
+  })
+
+  it('數量一致的錯位座標仍依原索引拒收，不進入重新配對', () => {
+    const result = extract('甲。乙。', ['甲', '乙'], [[2, 3], [0, 1]])
+    expect(result.status).toBe('failed')
+    expect(result.evidence).toEqual([])
+    expect(result.rejected).toEqual([{ index: 0, reason: 'span_value_conflict' }, { index: 1, reason: 'span_value_conflict' }])
+  })
+
   it('拒絕缺漏或格式錯誤的 spans，不將壞 span 降級為字串搜尋', () => {
     expect(extract('第一第二。', ['第一', '第二'], [[0, 2]]).rejected[0].reason).toBe('invalid_spans')
     expect(extract('第一。', ['第一'], [[0]]).rejected[0].reason).toBe('invalid_spans')

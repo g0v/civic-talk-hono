@@ -21,7 +21,11 @@
 
 正式來源為業務 `DB`；既有 BYO token、`GET /api/issues/:id/prompt?type=synthesis`、briefing 與議題狀態不變。AI／人工草稿分別是 `ai_unverified`／`human_unverified`，不是可公開的 briefing。
 
-立場生成提示 `specialized-evidence-v8` 明訂送出前檢查每群所有 opinions 的 `Title`／`description` 引用聯集：不得同時包含任何 `comparison.direct_comparisons` 中 `relation="disagree"` 配對的兩端，即使分散在不同意見也一樣。共同主題、群名、關注或中介證據不能豁免；衝突證據須拆至各自相容的群，未被任何群採用者須在 exclusions 恰好列出一次並說明原因，已採用者不得同時排除。現有 `generation_contradictory_group`、引用與覆蓋驗證維持不變，不新增模型重試或自動修復。Prompt 與設定指紋會更新；第 1 節既有成功報告使用 v7，不代表 v8 已完成付費品質驗收。
+立場生成提示 `specialized-evidence-v9` 將既有規則重整為三步構造順序，而非另外堆疊自查段落：先完成各群 opinions 的實質 `Title`／`description` 並計算引用聯集；再寫 name／Core_concern，引用僅能來自該群聯集，且不以這兩欄的引用增加成員或補裝飾性 opinion 引用；最後逐一核對全部輸入證據，必須被 opinion 採用或在 exclusions 恰好列出一次並說明原因，不得遺漏或同時採用與排除。每群聯集仍不得包含任何 `comparison.direct_comparisons` 中 `relation="disagree"` 配對的兩端，即使分散在不同 opinions 也一樣；共同主題、群名、關注或中介證據不能豁免。保留相容群之間的重疊、少數觀點、引用與覆蓋驗證，不新增模型重試、自動修復或自查輸出欄位。Prompt 與設定指紋會更新；既有成功報告與 v8 的實測不代表 v9 品質已驗收。
+
+Clairic 抽取 `evidence-2` 僅在 `value`／`spans` 數量不一致時啟用嚴格相容路徑：每組座標須在素材原文內、逐字匹配已回傳片段，所有片段均須被覆蓋，且不同座標單位不得指向不同原文範圍。相同文字的多處有效座標全數處理，再沿用既有展句範圍去重；重複 value 可由同一有效座標覆蓋。任一座標無效、未匹配、越界、範圍歧義或片段缺漏，整份抽取仍拒收，不退回字串搜尋或丟棄壞座標後交付 partial。數量一致時維持原索引配對及既有驗證。演算法版本參與設定指紋，不改模型請求、原始工件或歷史工作狀態；離線抽取成功不代表舊 partial 報告已納入該素材，也不會自動重跑比較／生成。
+
+實驗來源追溯：`dev:remote` 的 `sourceDefines()` metadata 在 Vite 啟動時固定，HMR 不會更新；修改或提交後，下次實驗前須由操作者重新啟動服務，避免記錄舊 commit／dirty 狀態。Prompt／演算法版本與設定指紋仍應一併核對，不以來源 SHA 單獨推定實際模型請求。
 
 ## 3. 模式、前置與保護範圍
 
