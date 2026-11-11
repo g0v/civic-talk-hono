@@ -27,7 +27,7 @@ type Dependencies = {
   onOutcome?: (phase: SummaryPhase, error: string | null) => void
   onSessionExpired?: () => void
   onBanned?: () => void
-  onSaved?: (data: unknown) => void
+  onResult?: (data: unknown) => void
   pollInterval?: number
 }
 
@@ -164,7 +164,7 @@ export function createEvidenceSummary(issueId: number, dependencies: Dependencie
         const key = `${language}:${jobId}:${context.version}`
         if (!announced.has(key)) {
           announced.add(key)
-          dependencies.onSaved?.(context.summary.data)
+          dependencies.onResult?.(context.summary.data)
         }
       } else if (context.version !== jobVersion) {
         outcome('superseded')
@@ -173,8 +173,14 @@ export function createEvidenceSummary(issueId: number, dependencies: Dependencie
       }
       return
     }
-    if (body.status === 'partial_draft') outcome('partial')
-    else if (body.status === 'failed') outcome('failed')
+    if (body.status === 'partial_draft') {
+      outcome('partial')
+      const key = `${language}:${jobId}:${jobVersion}`
+      if (isObject(body.data) && !announced.has(key)) {
+        announced.add(key)
+        dependencies.onResult?.(body.data)
+      }
+    } else if (body.status === 'failed') outcome('failed')
     else if (body.status === 'withdrawn') outcome('withdrawn')
     else if (body.status === 'erased') outcome('erased')
     else outcome('unknown', null, true)

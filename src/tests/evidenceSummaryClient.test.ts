@@ -18,11 +18,11 @@ function fixture(handler: (url: string, init: RequestInit | undefined) => Respon
     calls.push({ url, method: init?.method ?? 'GET', body: typeof init?.body === 'string' ? init.body : null })
     return handler(url, init)
   }
-  const onSaved = vi.fn()
+  const onResult = vi.fn()
   const onSessionExpired = vi.fn()
   const onBanned = vi.fn()
-  const controller = createEvidenceSummary(7, { fetch: fetcher, onSaved, onSessionExpired, onBanned, pollInterval: 60_000 })
-  return { controller, calls, onSaved, onSessionExpired, onBanned }
+  const controller = createEvidenceSummary(7, { fetch: fetcher, onResult, onSessionExpired, onBanned, pollInterval: 60_000 })
+  return { controller, calls, onResult, onSessionExpired, onBanned }
 }
 
 describe('一鍵彙整前端狀態', () => {
@@ -38,15 +38,16 @@ describe('一鍵彙整前端狀態', () => {
       ['GET', jobPath],
     ])
     expect(f.controller.state).toMatchObject({ language: 'zh-TW', phase: 'progress', jobId: 'job-1', status: 'extracting', version: 3, usage })
-    expect(f.onSaved).not.toHaveBeenCalled()
+    expect(f.onResult).not.toHaveBeenCalled()
     f.controller.dispose()
   })
 
   it('明確開始時傳送捕捉的語言與版本；HTTP 200 的部分結果不是成功', async () => {
+    const data = { consensus: { Overview: '部分草稿', items: [] }, disputes: { Overview: '尚未完成', items: [] }, positions: { Overview: '尚未完成', items: [] } }
     const f = fixture((url, init) => {
       if (url === `${issuePath}?language=en`) return response(context(8, true))
       if (url === issuePath && init?.method === 'POST') return response({ job_id: 'job-1', status: 'partial_draft', cache: 'hit', input_coverage: {}, version: 9 })
-      if (url === jobPath) return response(job('partial_draft'))
+      if (url === jobPath) return response({ ...job('partial_draft'), data })
       throw new Error(`unexpected ${url}`)
     })
     await f.controller.setScope('en')
@@ -56,8 +57,8 @@ describe('一鍵彙整前端狀態', () => {
     const posts = f.calls.filter(call => call.method === 'POST')
     expect(posts).toHaveLength(1)
     expect(JSON.parse(posts[0].body!)).toEqual({ consent: true, language: 'en', expected_version: 8 })
-    expect(f.controller.state).toMatchObject({ phase: 'partial', status: 'partial_draft', usage })
-    expect(f.onSaved).not.toHaveBeenCalled()
+    expect(f.controller.state).toMatchObject({ phase: 'partial', status: 'partial_draft', hasSummary: true, usage })
+    expect(f.onResult).toHaveBeenCalledExactlyOnceWith(data)
     f.controller.dispose()
   })
 
@@ -79,9 +80,9 @@ describe('一鍵彙整前端狀態', () => {
     await f.controller.start()
     expect(f.controller.state.phase).toBe(phase)
     if (logged) {
-      expect(f.onSaved).toHaveBeenCalledOnce()
-      expect(f.onSaved).toHaveBeenCalledWith({ consensus: ['result'] })
-    } else expect(f.onSaved).not.toHaveBeenCalled()
+      expect(f.onResult).toHaveBeenCalledOnce()
+      expect(f.onResult).toHaveBeenCalledWith({ consensus: ['result'] })
+    } else expect(f.onResult).not.toHaveBeenCalled()
     if (phase === 'unsaved') expect(f.controller.state.canResume).toBe(true)
     f.controller.dispose()
   })
@@ -100,15 +101,15 @@ describe('一鍵彙整前端狀態', () => {
     expect(await f.controller.prepare()).toBe(true)
     await f.controller.start()
     expect(f.controller.state).toMatchObject({ phase: 'progress', version: 1, status: 'generating' })
-    expect(f.onSaved).not.toHaveBeenCalled()
+    expect(f.onResult).not.toHaveBeenCalled()
 
     await vi.advanceTimersByTimeAsync(60_000)
     expect(f.controller.state).toMatchObject({ phase: 'saved', version: 2, status: 'ai_draft', jobId: 'job-1', hasSummary: true, canResume: false })
-    expect(f.onSaved).toHaveBeenCalledExactlyOnceWith({ consensus: ['result'] })
+    expect(f.onResult).toHaveBeenCalledExactlyOnceWith({ consensus: ['result'] })
 
     await vi.advanceTimersByTimeAsync(180_000)
     expect(jobChecks).toBe(2)
-    expect(f.onSaved).toHaveBeenCalledOnce()
+    expect(f.onResult).toHaveBeenCalledOnce()
     expect(f.calls.filter(call => call.method === 'POST')).toHaveLength(1)
     f.controller.dispose()
   })
@@ -197,7 +198,7 @@ describe('一鍵彙整前端狀態', () => {
     await oldScope
     expect(f.controller.state).toMatchObject({ language: 'en', phase: 'ready', version: 11, jobId: null })
     expect(f.calls.filter(call => call.url === jobPath)).toHaveLength(0)
-    expect(f.onSaved).not.toHaveBeenCalled()
+    expect(f.onResult).not.toHaveBeenCalled()
     await f.controller.setScope(null)
     expect(f.controller.state).toMatchObject({ language: null, phase: 'idle' })
     f.controller.dispose()
@@ -223,7 +224,7 @@ describe('一鍵彙整前端狀態', () => {
     await first
     expect(f.controller.state).toMatchObject({ language: 'en', phase: 'ready', version: 9, jobId: null })
     expect(f.calls.filter(call => call.url === jobPath)).toHaveLength(0)
-    expect(f.onSaved).not.toHaveBeenCalled()
+    expect(f.onResult).not.toHaveBeenCalled()
     f.controller.dispose()
   })
 
@@ -238,7 +239,45 @@ describe('一鍵彙整前端狀態', () => {
     await loading
     expect(f.controller.state.language).toBeNull()
     expect(f.calls).toHaveLength(1)
-    expect(f.onSaved).not.toHaveBeenCalled()
+    expect(f.onResult).not.toHaveBeenCalled()
+  })
+
+  it('恢復部分草稿只輸出一次，不誤用舊保存結果，也不繼續輪詢或重送', async () => {
+    vi.useFakeTimers()
+    const data = { consensus: { Overview: '本次部分草稿', items: [] } }
+    const f = fixture(url => url === `${issuePath}?language=en`
+      ? response(context(9, true, job('partial_draft'), savedSummary('older')))
+      : response({ ...job('partial_draft'), data }))
+    await f.controller.setScope('en')
+    await f.controller.setScope('en')
+    await vi.advanceTimersByTimeAsync(180_000)
+    expect(f.controller.state).toMatchObject({ phase: 'partial', hasSummary: true, version: 9, canResume: false })
+    expect(f.onResult).toHaveBeenCalledExactlyOnceWith(data)
+    expect(f.calls.map(call => [call.method, call.url])).toEqual([
+      ['GET', `${issuePath}?language=en`], ['GET', jobPath],
+      ['GET', `${issuePath}?language=en`], ['GET', jobPath],
+    ])
+    f.controller.dispose()
+  })
+
+  it.each(['language', 'dispose'])('部分草稿遲到時不洩漏已離開範圍的內容：%s', async action => {
+    let resolveJob!: (response: Response) => void
+    const pending = new Promise<Response>(resolve => { resolveJob = resolve })
+    const f = fixture(url => {
+      if (url === `${issuePath}?language=zh-TW`) return response(context(1, false, job('generating')))
+      if (url === `${issuePath}?language=en`) return response(context(2, false))
+      if (url === jobPath) return pending
+      throw new Error(`unexpected ${url}`)
+    })
+    const loading = f.controller.setScope('zh-TW')
+    await vi.waitFor(() => expect(f.calls.some(call => call.url === jobPath)).toBe(true))
+    if (action === 'language') await f.controller.setScope('en')
+    else f.controller.dispose()
+    resolveJob(response({ ...job('partial_draft'), data: { consensus: '已離開的私人草稿' } }))
+    await loading
+    expect(f.controller.state).toMatchObject({ language: action === 'language' ? 'en' : null })
+    expect(f.onResult).not.toHaveBeenCalled()
+    f.controller.dispose()
   })
 
   it.each([
@@ -246,12 +285,12 @@ describe('一鍵彙整前端狀態', () => {
     { status: 'failed', phase: 'failed' },
     { status: 'withdrawn', phase: 'withdrawn' },
     { status: 'erased', phase: 'erased' },
-  ])('$status 為終態且不輸出成功結果', async ({ status, phase }) => {
+  ])('$status 沒有可交付資料時停止輪詢且不輸出內容', async ({ status, phase }) => {
     const f = fixture(url => url === `${issuePath}?language=en` ? response(context(1, true, job(status))) : response(job(status)))
     await f.controller.setScope('en')
     expect(f.controller.state).toMatchObject({ phase, status, canResume: false })
     expect(f.calls).toHaveLength(2)
-    expect(f.onSaved).not.toHaveBeenCalled()
+    expect(f.onResult).not.toHaveBeenCalled()
     f.controller.dispose()
   })
 
@@ -261,7 +300,7 @@ describe('一鍵彙整前端狀態', () => {
       : response({ ...job('ai_draft'), usage: null }))
     await f.controller.setScope('en')
     expect(f.controller.state).toMatchObject({ phase: 'saved', usage: null })
-    expect(f.onSaved).toHaveBeenCalledWith({ consensus: ['result'] })
+    expect(f.onResult).toHaveBeenCalledWith({ consensus: ['result'] })
     f.controller.dispose()
   })
 
@@ -269,7 +308,7 @@ describe('一鍵彙整前端狀態', () => {
     const f = fixture(url => url === `${issuePath}?language=en` ? response(context(1, false, job('queued'))) : response(job('future_status')))
     await f.controller.setScope('en')
     expect(f.controller.state).toMatchObject({ phase: 'unknown', status: 'future_status', canResume: true })
-    expect(f.onSaved).not.toHaveBeenCalled()
+    expect(f.onResult).not.toHaveBeenCalled()
     f.controller.dispose()
   })
 })
