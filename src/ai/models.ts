@@ -13,7 +13,7 @@ export const MODEL_VERSIONS = {
   clairic_prompt: 'claims-list-v3',
   clef_prompt: 'symmetric-four-way-v2',
   clef_batching: 'canonical-byte-budget-v1',
-  generation_prompt: 'specialized-evidence-v7',
+  generation_prompt: 'specialized-evidence-v8',
   generation_schema: 'specialized-cited-v4',
   generation_input: 'section-values-v6-gemma-chat',
   generation_completion_prompt: 'missing-fields-only-v3',

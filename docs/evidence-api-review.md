@@ -21,6 +21,8 @@
 
 正式來源為業務 `DB`；既有 BYO token、`GET /api/issues/:id/prompt?type=synthesis`、briefing 與議題狀態不變。AI／人工草稿分別是 `ai_unverified`／`human_unverified`，不是可公開的 briefing。
 
+立場生成提示 `specialized-evidence-v8` 明訂送出前檢查每群所有 opinions 的 `Title`／`description` 引用聯集：不得同時包含任何 `comparison.direct_comparisons` 中 `relation="disagree"` 配對的兩端，即使分散在不同意見也一樣。共同主題、群名、關注或中介證據不能豁免；衝突證據須拆至各自相容的群，未被任何群採用者須在 exclusions 恰好列出一次並說明原因，已採用者不得同時排除。現有 `generation_contradictory_group`、引用與覆蓋驗證維持不變，不新增模型重試或自動修復。Prompt 與設定指紋會更新；第 1 節既有成功報告使用 v7，不代表 v8 已完成付費品質驗收。
+
 ## 3. 模式、前置與保護範圍
 
 | 模式                     | 工作 DB／來源                                          | 認證／AI                  | 用途                                                           |
