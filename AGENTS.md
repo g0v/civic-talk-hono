@@ -144,7 +144,7 @@ Civic Talk 使用 Hono、Vue 3 SSR/hydration、Tailwind 與 Cloudflare Workers�
 2. 省略 material_ids 代表所有合格素材並回排除清單；指定時須非空、同議題、可見、不重複的正安全整數 ID。**實際選入至少兩份合格素材才可開始彙整**，隱藏素材不計入；單份在 claim／費用預留前回 422/insufficient_materials（minimum:2、count:1、exclusions），零份維持 no_available_materials，明選空陣列仍為 400/invalid_material_ids。既有工作 GET／修訂與來源生命週期不套用此門檻。
 3. 用 job_id 輪詢；`queued/extracting/comparing/generating` 是進行中，`ai_draft/partial_draft/failed/withdrawn/erased` 停止。partial 非完整報告，failed／no_findings 不混同；看分區 diagnostics 與 progress，不憑 HTTP 200 判斷。
 4. 人改先 GET revisions；無人改時 parent=`'ai'`，否則用最新 revision.id。從 ai_base.data 或最新 revision.payload 複製**完整** data 再改，不只送片段；須有完整 consensus／disputes／positions、三段 Overview 與群 Core_concern，Sources 保持真實來源。revision 欄位用 `id/parentId/payload/diff`，不猜 snake_case。保留 AI 原稿／diff；human_unverified 不冒稱已驗證。
-5. #210 議題摘要按語言分開保存，`0018_evidence_summaries.sql` 新增 `ct_issues.ai_summaries`／`ct_ai_summary_slots`；只有完整 `ai_draft` 可寫入。已有結果先確認替換，partial／failed 不覆蓋，舊工作晚完成不蓋新結果。伺服器完成時保存，不依賴前端輪詢；來源撤下時移除議題快取副本，原工作 payload 依既有政策保留，erase 清相依內容，副本不得繞過 fence。只有完整成功並確認已保存時，依 #210 在操作者瀏覽器暫用 `console.log` 輸出 data，不送伺服器 log／公開驗收紀錄。新 migration 尚須另獲遠端授權，不能宣稱已部署。
+5. #210 議題摘要按語言分開保存，`0018_evidence_summaries.sql` 新增 `ct_issues.ai_summaries`／`ct_ai_summary_slots`；只有完整 `ai_draft` 可寫入。已有結果先確認替換，partial／failed 不覆蓋，舊工作晚完成不蓋新結果。伺服器完成時保存，不依賴前端輪詢；來源撤下時移除議題快取副本，原工作 payload 依既有政策保留，erase 清相依內容，副本不得繞過 fence。完整成功並確認已保存，或 `partial_draft` 回傳可交付 data 時，依 #210 在操作者瀏覽器暫用 `console.log` 輸出 data；部分草稿只供排查，不表示已保存，不送伺服器 log／公開驗收紀錄。新 migration 尚須另獲遠端授權，不能宣稱已部署。
 
 ### 模型與引用保護
 

@@ -62,7 +62,7 @@ Clairic 逐素材、Clef 配對、Gemma 共識／爭點／立場三項，必要�
 - `POST /api/issues/:id/evidence-summary`：精確 JSON `{consent:true,language,expected_version}`；全選至少兩份合格素材，沿用來源、停權、同意紀錄、admission、cache、quota、冷卻與費用守門。成功沿用建立 job 的 JSON，另有 `version`。版本不符回 `409 summary_conflict`，不能跳過重新讀取與替換確認。
 - 繁中／英文／日文各自保存。只有完整 `ai_draft` 才由伺服器保存結構化 `data`／引用及工作關聯到 `ct_issues.ai_summaries`；不依賴瀏覽器留在頁面。`partial_draft`／failed 不覆蓋成功結果；較舊請求晚完成不能覆蓋新結果。原始 job、工件、usage、revision／diff 不因替換被刪除。
 - 議題保存副本仍受來源檢查與 fence：hidden／changed 停止交付，來源 deleted 被對帳發現或按來源 erase 時清除副本，不得繞過原私有工作生命週期。新端點與原六 API 使用相同開關、必要 bindings、CSRF、private/no-store／Vary Cookie／無 CORS 政策。
-- UI 只顯示進度與成功／部分完成／失敗提示。完整成功並確認已保存後，依 #210 暫在操作者瀏覽器 `console.log` 輸出 `data`；不送伺服器 log，不將私人 Console 記錄當成可公開的驗收證據。
+- UI 只顯示進度與成功／部分完成／失敗提示。完整成功並確認已保存後，或 `partial_draft` 回傳可交付 `data` 時，依 #210 暫在操作者瀏覽器 `console.log` 輸出 `data`；部分草稿只供排查，不表示已保存或成功。同一語言／工作／版本在元件生命週期內不重複輸出，重新整理會重新輸出；沒有資料、失敗、撤下／清除或已離開範圍的遲到回應不輸出。不送伺服器 log，不將私人 Console 記錄當成可公開的驗收證據。
 - 重新整理恢復目前獲授權的工作，不自動發起新生成。切換介面語言不把另一語言工作結果寫錯欄位；讀取工作／摘要仍可能核對來源，並非正式站的無副作用 smoke。
 
 ## 5. 權限、CSRF、維護與來源生命週期

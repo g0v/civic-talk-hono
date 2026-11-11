@@ -70,8 +70,8 @@ const controller = createEvidenceSummary(props.issueId, {
     blocked.value = true
     emit('banned')
   },
-  // 使用者要求暫時輸出；只在伺服器確認本工作已存為目前結果時執行。
-  onSaved: data => console.log('一鍵彙整結果（私人、未經人工驗證）', data),
+  // 使用者要求暫時輸出；部分草稿可供排查，但不代表已保存為目前結果。
+  onResult: data => console.log('一鍵彙整結果（私人、未經人工驗證）', data),
 })
 const state = controller.state
 const message = computed(() => messageFor(state.phase, state.error, state.status))
