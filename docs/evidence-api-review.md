@@ -1,6 +1,6 @@
 # #183 證據管線：API 與安全邊界手冊
 
-交付為 API-only，UI 與一般 API 後續驗收移交 [#166](https://github.com/g0v/civic-talk-hono/issues/166)；reconcile／erase 維護驗收見 [#201](https://github.com/g0v/civic-talk-hono/issues/201)，進度見 [`TODO_AFTER_MERGE.md`](../TODO_AFTER_MERGE.md)。使用者已部署 source `73800643596b7114efd0c7623ea436023cd244b9`、`EVIDENCE_API_ENABLED=1`，並確認六端點匿名 401、跨站簡單 POST 403、`/api/me` 200／super-admin／banned:false。這些既有結果不是完整六 API 驗收。2026-11-08 使用者核准提前移除實驗／審閱專用 profiles、CLI 與 fixtures；本輪只授權清理、本機驗證及 commit，不含 push、deploy、付費或遠端寫入。關閉 #183 表示 API 交付與專用環境退場，不表示 UI 或後續 live 驗收完成。
+#183 交付的六端點維持既有契約；#210 新增兩個私有議題摘要端點及建構中的一鍵彙整元件，完整排版與一般 API 正式驗收仍由 [#166](https://github.com/g0v/civic-talk-hono/issues/166) 承接；reconcile／erase 維護驗收見 [#201](https://github.com/g0v/civic-talk-hono/issues/201)，既有交接見 [`TODO_AFTER_MERGE.md`](../TODO_AFTER_MERGE.md)。使用者曾部署 source `73800643596b7114efd0c7623ea436023cd244b9`、`EVIDENCE_API_ENABLED=1`，並確認原六端點匿名 401、跨站簡單 POST 403、`/api/me` 200／super-admin／banned:false；不是完整 API 驗收，也不是 #210 已部署的證據。2026-11-08 使用者核准提前移除實驗／審閱專用 profiles、CLI 與 fixtures。#210 最新決策將整個新 UI 限制在 dev 掛載，production 不呈現亦不由此啟動查詢／輪詢；後端 API 開關維持原契約。本機驗證、原始碼提交／推送與 PR 不能視為已執行合併、遠端 migration、正式付費或 deploy；發布與實測仍依當次授權執行。
 
 ## 1. 先看已完成的實驗
 
@@ -38,6 +38,8 @@ Clairic 逐素材、Clef 配對、Gemma 共識／爭點／立場三項，必要�
 
 `0017_evidence_pipeline.sql` 是正式保留的八張 `ct_ai_*` 表 migration；使用者已手動套用遠端原始 SQL，ledger id 18、`applied_at=2026-11-06 19:29:04`，八張表與七個顯式索引已核對。**SQL 必須 byte-for-byte 不變，不重跑或修改 ledger。** 不對 `DB_AUTH` 跑 DDL／migration 或直接 SQL 寫入；正常 Better Auth OAuth／session 生命週期仍可能寫入遠端認證庫。後續遠端操作須另獲授權，唯讀核對方式見[部署須知](../deploy_notes.md)。
 
+`0018_evidence_summaries.sql` 新增 `ct_issues.ai_summaries` JSON（按語言保存完整結構化資料、引用與工作關聯）及 `ct_ai_summary_slots`（各語言的最新申請／CAS 版本）。完成、快取附掛與來源失效以同交易 trigger 更新；只複製完整且通過來源 fence 的原始工件，不接受 client 自填正文。來源撤下時移除議題快取副本，但原私有工作 payload 仍依既有政策保留；erase 才清原工作相依內容。此新增 migration 本輪僅本機驗證，不能當作正式已套用。
+
 ## 4. 建立、輪詢、快取與修訂契約
 
 本輪正式登入後、付費與維護實測全部延後，不安排真人登入或提供立即執行的範例。後續若另獲指定帳號、來源與費用授權，手動操作應在已確認的同源瀏覽器 Console 使用自包含程式，不匯出 Cookie、不依賴跨貼上變數；每次建立、快取重送、輪詢與維護處置均先說明副作用及取得各別授權。
@@ -52,6 +54,17 @@ Clairic 逐素材、Clef 配對、Gemma 共識／爭點／立場三項，必要�
 
 只有 owner 能新增人工 revision；先讀最新 history，有修訂時以最新 ID／payload 作 parent 與基底，沒有時才用 `ai`。三類 `Overview`、每組 `Core_concern` 須非空，來源不可偽造。成功為 `201`／`human_unverified`，過時 parent 為 `409 revision_conflict`；AI 基底不覆寫，diff 對應修改，人改文字不能沿用舊 citation 宣稱已驗證。
 
+### #210：私有議題摘要與操作入口
+
+志願者工具的麥穗黃「一鍵彙整」按鈕在既有生成 Prompt 旁，**暫僅於 `import.meta.env.DEV` 掛載**（含 dev:remote）；production 即使 mode 名稱為 development，也不掛載新按鈕／同意視窗／狀態提示，不觸發其查詢、輪詢或 debug log。此限制只隔離建構中的 UI，後端 API 與守門維持原契約；不移除 BYO 流程、不修改舊 briefing／議題 status，也不提供新版報告排版。dev 操作前需明確同意現行處理告知，含來源正文可能有個資、Workers AI／平台費用、留存與清除限制；已有該語言結果時另需確認替換。開始後不自動重送 POST 或重試模型；網路／輪詢錯誤只提供明確恢復查詢。
+
+- `GET /api/issues/:id/evidence-summary?language=zh-TW|en|ja`：語言必填；回 `{version,has_summary,job,summary}`。未停權登入者可見指定語言的版本與有無結果，只有該 job 的 owner／管理員可取得其 job ID／狀態或摘要正文；其他登入者相應欄位為 null。新欄位不進公開列表、詳情或 SSR。
+- `POST /api/issues/:id/evidence-summary`：精確 JSON `{consent:true,language,expected_version}`；全選至少兩份合格素材，沿用來源、停權、同意紀錄、admission、cache、quota、冷卻與費用守門。成功沿用建立 job 的 JSON，另有 `version`。版本不符回 `409 summary_conflict`，不能跳過重新讀取與替換確認。
+- 繁中／英文／日文各自保存。只有完整 `ai_draft` 才由伺服器保存結構化 `data`／引用及工作關聯到 `ct_issues.ai_summaries`；不依賴瀏覽器留在頁面。`partial_draft`／failed 不覆蓋成功結果；較舊請求晚完成不能覆蓋新結果。原始 job、工件、usage、revision／diff 不因替換被刪除。
+- 議題保存副本仍受來源檢查與 fence：hidden／changed 停止交付，來源 deleted 被對帳發現或按來源 erase 時清除副本，不得繞過原私有工作生命週期。新端點與原六 API 使用相同開關、必要 bindings、CSRF、private/no-store／Vary Cookie／無 CORS 政策。
+- UI 只顯示進度與成功／部分完成／失敗提示。完整成功並確認已保存後，依 #210 暫在操作者瀏覽器 `console.log` 輸出 `data`；不送伺服器 log，不將私人 Console 記錄當成可公開的驗收證據。
+- 重新整理恢復目前獲授權的工作，不自動發起新生成。切換介面語言不把另一語言工作結果寫錯欄位；讀取工作／摘要仍可能核對來源，並非正式站的無副作用 smoke。
+
 ## 5. 權限、CSRF、維護與來源生命週期
 
 ### API 與權限矩陣
@@ -64,8 +77,10 @@ Clairic 逐素材、Clef 配對、Gemma 共識／爭點／立場三項，必要�
 | `POST /api/evidence-jobs/:jobId/revisions` | 只有 owner；`{parent_revision_id,data}`，成功 `201`，過時 parent `409`；即使 admin 也不能替別人的 job 造修訂。                                                                       |
 | `POST /api/evidence-maintenance/reconcile` | admin／super-admin；body 精確 `{}`，回 `{ok,checked,withdrawn,erased}`，並觀察活動工作流的已知終態。可能發現來源刪除並清除 payload。                                                 |
 | `POST /api/evidence-maintenance/erase`     | admin／super-admin；body 精確包含 `kind`（`issue` 或 `material`）與正安全整數 `id`，清除目前工作 DB 的相關 payload 並留下永久 tombstone；不改來源 DB。                               |
+| `GET /api/issues/:id/evidence-summary?language=zh-TW` | 登入者讀版本／有無結果；job 與 summary 正文各限該 owner／管理員，否則 null。 |
+| `POST /api/issues/:id/evidence-summary` | 登入者；精確 `{consent:true,language,expected_version}`，沿用建立工作回應並增加 version；併發衝突 409／summary_conflict。 |
 
-開關非 `1` 時六端點的同源請求回 `404`；跨站簡單寫入先經全域 CSRF 回 `403`，兩者都不進行 Auth／DB／AI 操作。已開啟但必要 binding 缺失回 `503`。啟用且同源請求時，未登入 `401`、停權 `403`；非 owner 非 admin 查 job／revisions 回 `404`，非 owner 的 revision POST 回 `404`，maintenance 非 admin 回 `403`。同源寫入送 `Origin: http://localhost:5173` 和 JSON content type；跨來源 JSON 依不提供 CORS 放行而無法通過瀏覽器 preflight。不要把 CORS 當作唯一寫入保護。
+開關非 `1` 時八端點的同源請求回 `404`；跨站簡單寫入先經全域 CSRF 回 `403`，兩者都不進行 Auth／DB／AI 操作。已開啟但必要 binding 缺失回 `503`。啟用且同源請求時，未登入 `401`、停權 `403`；非 owner 非 admin 查 job／revisions 回 `404`，非 owner 的 revision POST 回 `404`，maintenance 非 admin 回 `403`。同源寫入送 `Origin: http://localhost:5173` 和 JSON content type；跨來源 JSON 依不提供 CORS 放行而無法通過瀏覽器 preflight。不要把 CORS 當作唯一寫入保護。
 
 其他常見狀態：`400` 無效 JSON／欄位／語言或未同意、`413` body 過大、`422` 來源不合格／空正文／無可用 draft 或來源已撤下／清除、`409` 輸入或 revision 衝突、`429` 帳號日限或議題冷卻（看 `reset_at`／`retry_at`）、`503` 日預算／來源或服務不可用。單次最多 64 份素材、單份 48 KiB、總正文 512 KiB；抽取後超過 64 段以 job `failed`／`too_many_evidence` 顯示，不截斷冒充成功。這不是全站素材投稿上限。
 
@@ -79,4 +94,4 @@ reconcile 可能清除已刪來源的私有工件，也會觀察活動工作流�
 
 ## 6. 交付與後續驗收
 
-2026-11-08 提前清理不以前述六 API 完整正式實測為前置，也不把未執行的 `consent:false` 拒絕、建立／快取／輪詢／修訂／衝突、一般使用者與 non-owner／non-admin、有效 reconcile／erase 標為通過。UI／一般 API 驗收見 [#166](https://github.com/g0v/civic-talk-hono/issues/166)；維護驗收見 [#201](https://github.com/g0v/civic-talk-hono/issues/201)，進度見 [`TODO_AFTER_MERGE.md`](../TODO_AFTER_MERGE.md)。本輪不 push／deploy、不付費、不遠端寫入，保留公開歷史報告、原始 0017、`Insight.md` 與全部私有狀態。
+2026-11-08 提前清理不以前述六 API 完整正式實測為前置，也不把未執行的 `consent:false` 拒絕、建立／快取／輪詢／修訂／衝突、一般使用者與 non-owner／non-admin、有效 reconcile／erase 標為通過。UI／一般 API 驗收見 [#166](https://github.com/g0v/civic-talk-hono/issues/166)；維護驗收見 [#201](https://github.com/g0v/civic-talk-hono/issues/201)，進度見 [`TODO_AFTER_MERGE.md`](../TODO_AFTER_MERGE.md)。該清理輪次未 push／deploy、付費或遠端寫入；#210 本輪發布授權見本文開頭，公開歷史報告、原始 0017、`Insight.md` 與全部私有狀態仍保留。

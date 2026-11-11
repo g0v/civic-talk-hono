@@ -41,13 +41,14 @@ export interface ClaimInput {
   initialEstimateMicroUsd: number
   consentVersion: string
   consentAt: string
+  summaryExpectedVersion?: number
   now?: string
 }
 export type ClaimResult =
   | { outcome: 'created' | 'joined' | 'cached'; jobId: string; executionId: string; status: ExecutionStatus }
   | { outcome: 'quota' | 'budget'; resetAt: string }
   | { outcome: 'cooldown'; retryAt: string }
-  | { outcome: 'erased' | 'withdrawn' | 'conflict' }
+  | { outcome: 'erased' | 'withdrawn' | 'conflict' | 'summary_conflict' }
 export interface Snapshot {
   executionId: string
   manifest: InputManifest
@@ -67,6 +68,12 @@ export interface JobInfo {
   updatedAt: string
   sourceCheckedAt: string | null
   usage: { attempts: number; reservedMicroUsd: number; actualMicroUsd: number; uncertain: number }
+}
+export type SummaryLanguage = 'zh-TW' | 'en' | 'ja'
+export interface SummaryState {
+  version: number
+  latest: { jobId: string; ownerId: string; executionId: string; status: ExecutionStatus } | null
+  saved: { jobId: string; ownerId: string; executionId: string; artifactId: string; data: unknown; citationMap: unknown; updatedAt: string } | null
 }
 export interface Artifact {
   id: string
@@ -244,6 +251,8 @@ function positiveMicro(value: number): boolean {
 async function validateClaim(input: ClaimInput): Promise<{ manifest: string; sources: string }> {
   if (!input.ownerId || !input.consentVersion || !Number.isSafeInteger(input.issueId) || input.issueId <= 0 || !HASH.test(input.inputKey) || !positiveMicro(input.initialEstimateMicroUsd))
     return invalid()
+  if (input.summaryExpectedVersion !== undefined && (!Number.isSafeInteger(input.summaryExpectedVersion) || input.summaryExpectedVersion < 0 || !['zh-TW', 'en', 'ja'].includes(input.manifest?.language ?? '')))
+    return invalid()
   const manifest = input.manifest
   if (
     !manifest ||
@@ -320,6 +329,56 @@ export class EvidenceStore {
     this.db = db
   }
 
+  /** 取得內部狀態；呼叫端仍須重新查核來源並依工作與摘要各自的擁有者過濾。 */
+  async getSummaryState(issueId: number, language: SummaryLanguage): Promise<SummaryState | null> {
+    return safe(async () => {
+      if (!Number.isSafeInteger(issueId) || issueId <= 0 || !['zh-TW', 'en', 'ja'].includes(language)) return invalid()
+      const path = `$."${language}"`
+      const row = await this.db
+        .prepare(`SELECT i.ai_summaries, COALESCE(r.version, 0) AS version,
+          j.id AS latest_job_id, j.owner_id AS latest_owner_id, e.id AS latest_execution_id, e.status AS latest_status,
+          CASE WHEN se.status = 'ai_draft' AND se.issue_id = i.id AND se.language = ?
+            AND sj.owner_id = json_extract(i.ai_summaries, '${path}.owner_id')
+            AND sa.kind = 'generation' AND sa.payload IS NOT NULL AND ${fence('se')}
+            THEN 1 ELSE 0 END AS saved_valid
+        FROM ct_issues i
+        LEFT JOIN ct_ai_summary_slots r ON r.issue_id = i.id AND r.language = ?
+        LEFT JOIN ct_ai_jobs j ON j.id = r.job_id
+        LEFT JOIN ct_ai_executions e ON e.id = j.execution_id
+        LEFT JOIN ct_ai_jobs sj ON sj.id = json_extract(i.ai_summaries, '${path}.job_id')
+        LEFT JOIN ct_ai_executions se ON se.id = sj.execution_id AND se.id = json_extract(i.ai_summaries, '${path}.execution_id')
+        LEFT JOIN ct_ai_artifacts sa ON sa.id = se.artifact_id AND sa.execution_id = se.id AND sa.id = json_extract(i.ai_summaries, '${path}.artifact_id')
+        WHERE i.id = ?`)
+        .bind(language, language, issueId)
+        .first<{
+          ai_summaries: string
+          version: number
+          latest_job_id: string | null
+          latest_owner_id: string | null
+          latest_execution_id: string | null
+          latest_status: ExecutionStatus | null
+          saved_valid: number
+        }>()
+      if (!row) return null
+      const savedValue: unknown = (JSON.parse(row.ai_summaries) as Record<string, unknown>)[language]
+      let saved: SummaryState['saved'] = null
+      if (row.saved_valid && savedValue && typeof savedValue === 'object' && !Array.isArray(savedValue)) {
+        const value = savedValue as Record<string, unknown>
+        if (
+          typeof value.job_id === 'string' && typeof value.owner_id === 'string' && typeof value.execution_id === 'string' && typeof value.artifact_id === 'string' &&
+          value.data !== null && typeof value.data === 'object' && !Array.isArray(value.data) && Array.isArray(value.citation_map) &&
+          value.verification === 'ai_unverified' && typeof value.updated_at === 'string'
+        ) {
+          saved = { jobId: value.job_id, ownerId: value.owner_id, executionId: value.execution_id, artifactId: value.artifact_id, data: value.data, citationMap: value.citation_map, updatedAt: value.updated_at }
+        }
+      }
+      const latest = row.latest_job_id && row.latest_owner_id && row.latest_execution_id && row.latest_status
+        ? { jobId: row.latest_job_id, ownerId: row.latest_owner_id, executionId: row.latest_execution_id, status: row.latest_status }
+        : null
+      return { version: row.version, latest, saved }
+    })
+  }
+
   async claimJob(input: ClaimInput): Promise<ClaimResult> {
     return safe(async () => {
       const checked = await validateClaim(input)
@@ -330,7 +389,18 @@ export class EvidenceStore {
       const jobId = id()
       const reservationId = id()
       const namespace = input.manifest.namespace
+      const summary = input.summaryExpectedVersion !== undefined
+      const summaryGuard = summary ? 'AND EXISTS (SELECT 1 FROM ct_ai_summary_slots r WHERE r.issue_id = ? AND r.language = ? AND r.version = ?)' : ''
+      const summaryArgs = summary ? [input.issueId, input.manifest.language, input.summaryExpectedVersion!] : []
+      const matchingJob = `SELECT j.id FROM ct_ai_jobs j JOIN ct_ai_executions e ON e.id = j.execution_id
+        WHERE j.owner_id = ? AND e.input_key = ? AND e.manifest = ? AND e.issue_id = r.issue_id AND e.language = r.language
+        AND e.status IN (${READABLE}) AND ${fence('e')}`
+      const jobArgs = [input.ownerId, input.inputKey, checked.manifest]
       const results = await this.db.batch([
+        ...(summary
+          ? [this.db.prepare(`INSERT OR IGNORE INTO ct_ai_summary_slots (issue_id, language)
+            SELECT id, ? FROM ct_issues WHERE id = ?`).bind(input.manifest.language, input.issueId)]
+          : []),
         this.db
           .prepare(`INSERT OR IGNORE INTO ct_ai_source_fences (namespace, kind, source_id, generation)
         SELECT ?, json_extract(value, '$.kind'), json_extract(value, '$.id'), 0 FROM json_each(?)`)
@@ -343,7 +413,7 @@ export class EvidenceStore {
           ON f.namespace = ? AND f.kind = json_extract(j.value, '$.kind') AND f.source_id = json_extract(j.value, '$.id') WHERE f.erased_at IS NOT NULL)
         AND ${quotaSql} < ?
         AND NOT EXISTS (SELECT 1 FROM ct_ai_issue_cooldowns WHERE namespace = ? AND issue_id = ? AND claimed_at > ?)
-        AND ${budgetSql} + ? <= ?`)
+        AND ${budgetSql} + ? <= ? ${summaryGuard}`)
           .bind(
             executionId,
             input.inputKey,
@@ -365,7 +435,8 @@ export class EvidenceStore {
             cutoff,
             day,
             input.initialEstimateMicroUsd,
-            DAILY_BUDGET
+            DAILY_BUDGET,
+            ...summaryArgs
           ),
         this.db
           .prepare(`INSERT INTO ct_ai_sources (execution_id, namespace, kind, source_id, source_hash, generation, payload, checked_at)
@@ -381,14 +452,26 @@ export class EvidenceStore {
         this.db
           .prepare(`INSERT OR IGNORE INTO ct_ai_jobs (id, execution_id, owner_id, consent_version, consent_at, created_at)
         SELECT ?, e.id, ?, ?, ?, ? FROM ct_ai_executions e WHERE e.input_key = ? AND e.manifest = ?
-        AND e.status IN (${READABLE}) AND ${fence('e')}`)
-          .bind(jobId, input.ownerId, input.consentVersion, time(input.consentAt), now, input.inputKey, checked.manifest),
+        AND e.status IN (${READABLE}) AND ${fence('e')} ${summaryGuard}`)
+          .bind(jobId, input.ownerId, input.consentVersion, time(input.consentAt), now, input.inputKey, checked.manifest, ...summaryArgs),
         this.db
           .prepare(`INSERT INTO ct_ai_issue_cooldowns (namespace, issue_id, claimed_at)
         SELECT ?, ?, ? WHERE EXISTS (SELECT 1 FROM ct_ai_executions WHERE id = ?)
         ON CONFLICT(namespace, issue_id) DO UPDATE SET claimed_at = excluded.claimed_at`)
           .bind(namespace, input.issueId, now, executionId),
+        ...(summary
+          ? [
+              this.db
+                .prepare(`UPDATE ct_ai_summary_slots AS r SET version = version + 1, job_id = (${matchingJob})
+                  WHERE r.issue_id = ? AND r.language = ? AND r.version = ? AND EXISTS (${matchingJob})`)
+                .bind(...jobArgs, ...summaryArgs, ...jobArgs),
+            ]
+          : []),
       ])
+      if (summary && (results[results.length - 1].meta.changes ?? 0) === 0) {
+        const slot = await this.db.prepare('SELECT version FROM ct_ai_summary_slots WHERE issue_id = ? AND language = ?').bind(input.issueId, input.manifest.language).first<{ version: number }>()
+        if (!slot || slot.version !== input.summaryExpectedVersion) return { outcome: 'summary_conflict' }
+      }
       const row = await this.db
         .prepare(`SELECT e.id AS execution_id, e.status, e.manifest, j.id AS job_id
       FROM ct_ai_executions e LEFT JOIN ct_ai_jobs j ON j.execution_id = e.id AND j.owner_id = ? WHERE e.input_key = ?`)
@@ -399,7 +482,7 @@ export class EvidenceStore {
         if (row.status === 'withdrawn') return { outcome: 'withdrawn' }
         if (row.manifest !== checked.manifest || !row.job_id) return { outcome: 'conflict' }
         return {
-          outcome: (results[1].meta.changes ?? 0) > 0 ? 'created' : row.status === 'ai_draft' || row.status === 'partial_draft' ? 'cached' : 'joined',
+          outcome: (results[summary ? 2 : 1].meta.changes ?? 0) > 0 ? 'created' : row.status === 'ai_draft' || row.status === 'partial_draft' ? 'cached' : 'joined',
           jobId: row.job_id,
           executionId: row.execution_id,
           status: row.status,
