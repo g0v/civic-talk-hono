@@ -475,6 +475,12 @@ export const messages = {
   contrib_alert:
     'まず出典のライセンスや利用条件を確認し、そのうえで全文の貼り付け、適正な範囲での部分引用、または要約の提出を選んでください。全文を転載できるか不明な場合は、著作権侵害のリスクを減らすため、要約に出典のリンクを添えて提出することをおすすめします。',
   contrib_alert_strong: '提出の原則：',
+  contrib_reference_links: '関連リンクを参照',
+  contrib_reference_close: '関連リンクを閉じる',
+  contrib_reference_laws: '全国法規データベース',
+  contrib_reference_legislature: '立法院の会議録',
+  contrib_reference_councils: '地方議会のオープンデータ',
+  contrib_reference_openfun: 'OpenFun データベース',
   contrib_label_source: '出典名',
   contrib_hint_source: 'メディア、機関、またはアカウントの名称',
   contrib_ph_source: '例：聯合報、台湾電力公式、グリーンピース台湾',

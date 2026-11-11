@@ -1136,6 +1136,9 @@
   .pb-6 {
     padding-bottom: calc(var(--spacing) * 6);
   }
+  .pl-5 {
+    padding-left: calc(var(--spacing) * 5);
+  }
   .pl-6 {
     padding-left: calc(var(--spacing) * 6);
   }
@@ -1304,6 +1307,9 @@
   .underline {
     text-decoration-line: underline;
   }
+  .underline-offset-4 {
+    text-underline-offset: 4px;
+  }
   .opacity-60 {
     opacity: 60%;
   }
@@ -1419,6 +1425,9 @@
     }
     .hover\:underline:hover {
       text-decoration-line: underline;
+    }
+    .hover\:decoration-2:hover {
+      text-decoration-thickness: 2px;
     }
     .hover\:opacity-80:hover {
       opacity: 80%;
