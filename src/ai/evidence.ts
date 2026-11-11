@@ -1,4 +1,4 @@
-export const EVIDENCE_ALGORITHM_VERSION = 'evidence-3' as const
+export const EVIDENCE_ALGORITHM_VERSION = 'evidence-4-complete-units' as const
 export const MAX_EVIDENCE = 64
 
 export type OffsetUnit = 'utf16' | 'unicode' | 'utf8'
@@ -19,7 +19,7 @@ export interface ProviderSpan {
 export interface Evidence {
   id: string
   material_id: number
-  // 展句只作背景；主張焦點及其歸屬以 raw_quote／raw_span 為準。
+  // quote 是按原文句界展開的判讀單位；raw_quote／raw_span 只保留 provider 定位錨點。
   quote: string
   raw_quote: string
   raw_span: Span
@@ -131,7 +131,7 @@ function isTerminal(text: string, index: number): boolean {
 
 const closing = '”’」』）】》〉〕)]}"\''
 
-/** 展開可回查的句子背景，不把背景中的其他主張視為原始選取內容。 */
+/** 將已驗證錨點展開至完整原文句界，跨句選取保留原範圍，不拼接或改寫。 */
 export function expandSentence(content: string, rawStart: number, rawEnd: number): Span<'utf16'> {
   let start = rawStart
   while (start > 0 && !isTerminal(content, start - 1)) start--
@@ -282,8 +282,8 @@ export function extractClairicEvidence(input: ClairicEvidenceInput): EvidenceExt
       providerSpan = { start: span[0], end: span[1], unit: matches.length === 1 ? first.unit : null, possible_units: matches.map(match => match.unit) }
     }
     const expanded = expandSentence(content, rawStart, rawEnd)
-    // 同一展句可能有多方主張；只對相同原始範圍去重，不合併不同論述。
-    const id = `e:${material_id}:${rawStart}:${rawEnd}`
+    // 多個詞級錨點落在同一完整單位時，只交付一筆，不把碎片放大成多個主張。
+    const id = `e:${material_id}:${expanded.start}:${expanded.end}`
     if (seen.has(id)) {
       duplicates++
       continue

@@ -275,13 +275,12 @@ describe('Clairic 證據來源定位', () => {
     expect(sliceEvidenceSpan(content, result.evidence[0].expanded_span)).toBe(selected)
   })
 
-  it('只合併相同素材的相同原始範圍，不合併同句不同主張，無效片段仍保留 partial 診斷', () => {
+  it('同一完整原文單位的詞級錨點去重，不放大成多個主張，無效定位仍保留 partial 診斷', () => {
     const result = extract('此主張需要支持。另一句。', ['主張', '支持', '主張', '不存在'])
     expect(result.status).toBe('partial')
-    expect(result.evidence.map(item => item.raw_quote)).toEqual(['主張', '支持'])
-    expect(result.evidence.map(item => item.quote)).toEqual(['此主張需要支持。', '此主張需要支持。'])
-    expect(result.evidence[0].id).not.toBe(result.evidence[1].id)
-    expect(result.duplicates).toBe(1)
+    expect(result.evidence.map(item => item.raw_quote)).toEqual(['主張'])
+    expect(result.evidence.map(item => item.quote)).toEqual(['此主張需要支持。'])
+    expect(result.duplicates).toBe(2)
     expect(result.rejected).toEqual([{ index: 3, reason: 'not_found' }])
     const other = extractClairicEvidence({ material_id: 2, content: '此主張需要支持。', state: '此主張需要支持。', response: clairic(['主張']) })
     expect(other.evidence[0].id).not.toBe(result.evidence[0].id)
@@ -312,7 +311,7 @@ describe('Clef 無向配對與支持群', () => {
     const right = { ...b, quote: '乙提出另一個主張。', raw_quote: '乙提出另一個主張。' }
     const batch = buildClefBatches([right, left], createEvidencePairs([left, right]))[0]
     expect(batch.input.state.evidence).toEqual([
-      { id: 'A', material_id: 1, quote: left.quote, raw_quote: left.raw_quote },
+      { id: 'A', material_id: 1, quote: left.quote },
       { id: 'B', material_id: 2, quote: right.quote },
     ])
     const probabilities = { agree: 0.25, disagree: 0.25, unrelated: 0.25, uncertain: 0.25 }

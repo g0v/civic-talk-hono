@@ -281,25 +281,26 @@ describe('Clef 對稱比較批次', () => {
 })
 
 describe('生成模型專項輸出與出處', () => {
-  it('混合多方主張的同一句保留各自焦點，Clef 與三項生成不只收到展句背景', () => {
-    const selected = ['甲方要求增加班次', '乙方反對增班，擔心人力不足']
-    const content = `${selected[0]}；${selected[1]}。`
+  it('詞級錨點只作定位，Clef 與三項生成收到完整單位而非單字主張', () => {
+    const units = ['甲方要求增加班次，前提是先補足司機。', '乙方反對立即增班，擔心排班負擔。']
+    const content = units.join('')
     const extracted = extractClairicEvidence({
       material_id: 25,
       content,
       state: content,
-      response: { truncated: false, answers: { claims: { type: 'list', value: selected } } },
+      response: { truncated: false, answers: { claims: { type: 'list', value: ['甲', '司機', '乙'] } } },
     })
     expect(extracted.status).toBe('complete')
-    expect(extracted.evidence.map(item => item.raw_quote)).toEqual(selected)
+    expect(extracted.evidence.map(item => item.raw_quote)).toEqual(['甲', '乙'])
+    expect(extracted.evidence.map(item => item.quote)).toEqual(units)
+    expect(extracted.duplicates).toBe(1)
     expect(extracted.evidence[0].id).not.toBe(extracted.evidence[1].id)
-    expect(extracted.evidence.map(item => item.quote)).toEqual([content, content])
     const other = material(26, '丙方要求延長營運時間。')
     const allEvidence = [...extracted.evidence, anchored('other', other.id, other.content, other.content)]
     const batches = buildClefBatches(allEvidence, createEvidencePairs(allEvidence))
-    for (const focal of extracted.evidence) {
-      const projected = batches.flatMap(batch => batch.input.state.evidence).find(item => item.id === focal.id)
-      expect(projected).toEqual({ id: focal.id, material_id: 25, quote: content, raw_quote: focal.raw_quote })
+    for (const unit of extracted.evidence) {
+      const projected = batches.flatMap(batch => batch.input.state.evidence).find(item => item.id === unit.id)
+      expect(projected).toEqual({ id: unit.id, material_id: 25, quote: unit.quote })
     }
     const groupedInput: GenerationInput = {
       evidence: allEvidence,
@@ -309,13 +310,8 @@ describe('生成模型專項輸出與出處', () => {
     }
     for (const section of ['consensus', 'disputes', 'positions'] as const) {
       const payload = JSON.parse(buildGenerationRequest(section, groupedInput).input.messages[1].content)
-      for (const focal of extracted.evidence) {
-        expect(payload.evidence.find((item: { id: string }) => item.id === focal.id)).toEqual({
-          id: focal.id,
-          material_id: 25,
-          quote: content,
-          raw_quote: focal.raw_quote,
-        })
+      for (const unit of extracted.evidence) {
+        expect(payload.evidence.find((item: { id: string }) => item.id === unit.id)).toEqual({ id: unit.id, material_id: 25, quote: unit.quote })
       }
       expect(payload.evidence.find((item: { id: string }) => item.id === 'other')).toEqual({ id: 'other', material_id: 26, quote: other.content })
     }
@@ -339,9 +335,9 @@ describe('生成模型專項輸出與出處', () => {
       expect(payload.section).toBe(section)
       expect(payload.language).toBe('zh-TW')
       expect(payload.evidence).toEqual([
-        { id: 'e1', material_id: 25, quote: evidence[0].quote, raw_quote: evidence[0].raw_quote },
-        { id: 'e2', material_id: 26, quote: evidence[1].quote, raw_quote: evidence[1].raw_quote },
-        { id: 'e3', material_id: 27, quote: evidence[2].quote, raw_quote: evidence[2].raw_quote },
+        { id: 'e1', material_id: 25, quote: evidence[0].quote },
+        { id: 'e2', material_id: 26, quote: evidence[1].quote },
+        { id: 'e3', material_id: 27, quote: evidence[2].quote },
         { id: 'e4', material_id: 28, quote: extraSources[0].content },
         { id: 'e5', material_id: 29, quote: extraSources[1].content },
       ])
@@ -369,6 +365,7 @@ describe('生成模型專項輸出與出處', () => {
         '不能送出的其他原文',
         '其他秘密',
         'https://example.org/a',
+        '"raw_quote"',
         '"pair_key"',
         '"question_version"',
         '"probabilities"',
@@ -719,6 +716,46 @@ describe('生成模型專項輸出與出處', () => {
     const sideMismatch = disputeOutput()
     sideMismatch.items[0].sides[0].claim[0].evidence_ids = ['e3']
     await expect(parseGenerationResponse('disputes', completion(sideMismatch), input)).rejects.toThrow('generation_cross_candidate_citation')
+  })
+
+  it.each(['contradiction', 'opposition', 'tension'] as const)('同一素材的不同明示論述可構成 %s，但只標為生成提案', async kind => {
+    const statements = ['甲方主張增加班次。', '乙方反對增加班次，要求先補足司機。']
+    const source = material(41, statements.join(''))
+    const localEvidence = statements.map((quote, index) => anchored(`local${index}`, source.id, source.content, quote))
+    const localInput: GenerationInput = { evidence: localEvidence, sources: [source], comparison: analyzeComparisons(localEvidence, []), language: 'zh-TW' }
+    const item = {
+      kind,
+      question: [cited('是否應立即增加班次？', 'local0', 'local1')],
+      sides: [
+        { evidence_ids: ['local0'], claim: [cited(statements[0], 'local0')] },
+        { evidence_ids: ['local1'], claim: [cited(statements[1], 'local1')] },
+      ],
+      comparison_conditions: [cited('同一報導中的不同主張。', 'local0', 'local1')],
+      Title: [cited('增班時機的不同主張', 'local0', 'local1')],
+      description: [cited(statements.join(''), 'local0', 'local1')],
+    }
+    const response = { Overview: [cited('雙方對增班時機有不同主張。', 'local0', 'local1')], items: [item] }
+    const result = await parseGenerationResponse('disputes', completion(response), localInput)
+    expect(result.data.items).toEqual([{ Title: '增班時機的不同主張', description: statements.join('') }])
+    expect(result.diagnostics).toMatchObject({
+      items: [{
+        kind,
+        origin: 'generation_proposal',
+        formal_relation: null,
+        relations: [{ evidence_ids: ['local0', 'local1'], relation: null, pair_key: null, status: 'same_material' }],
+      }],
+    })
+    expect(new Set(result.citation_map.filter(entry => entry.pointer === '/disputes/items/0/description').flatMap(entry => entry.sources.map(citation => citation.material_id)))).toEqual(new Set([41]))
+
+    const reused = structuredClone(response)
+    reused.items[0].sides[1] = { evidence_ids: ['local0'], claim: [cited(statements[1], 'local0')] }
+    await expect(parseGenerationResponse('disputes', completion(reused), localInput)).rejects.toThrow('generation_invalid_dispute_relation')
+    const missingSide = structuredClone(response)
+    missingSide.items[0].description = [cited(statements[0], 'local0')]
+    await expect(parseGenerationResponse('disputes', completion(missingSide), localInput)).rejects.toThrow('generation_insufficient_group_citations')
+    const crossed = structuredClone(response)
+    crossed.items[0].sides[0].claim = [cited(statements[0], 'local1')]
+    await expect(parseGenerationResponse('disputes', completion(crossed), localInput)).rejects.toThrow('generation_cross_candidate_citation')
   })
 
   it('同一爭議問題即使標題、類型和證據不同亦拒收，真正不同問題可共用證據', async () => {
