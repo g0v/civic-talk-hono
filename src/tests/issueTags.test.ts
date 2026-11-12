@@ -10,6 +10,7 @@ import { normalizeIssueTags, parseIssueTagsInput } from '../lib/issueTags'
 import type { IssueListItemWithAuthor } from '../db/queries'
 import { provideI18n } from '../l10n'
 import AdminView from '../views/Admin.vue'
+import { moderateSubmission } from '../moderation/service'
 
 const authState = vi.hoisted(() => ({
   current: null as null | {
@@ -249,5 +250,52 @@ describe('issue tag persistence and API behavior', () => {
     const adminList = await testApp().request('/api/issues', undefined, env())
     const adminIssue = ((await adminList.json()) as { id: number; tags: string[] }[]).find(issue => issue.id === id)
     expect(adminIssue?.tags).toEqual(['Private-Tag'])
+  })
+})
+
+describe('議題簡介 API 字數限制（#218）', () => {
+  it('接受正好 300 個 code points，完整保存 emoji、空白與換行', async () => {
+    authState.current = user
+    const description = ' ' + '😀'.repeat(298) + '\n'
+    const response = await testApp().request('/api/issues', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: issueBody({ description }) }, env())
+
+    expect(response.status).toBe(201)
+    const result = (await response.json()) as { id: number; title: string }
+    expect(result).toEqual({ id: expect.any(Number), title: '公共政策討論' })
+    expect(sqlite.prepare('SELECT description FROM ct_issues WHERE id = ?').get(result.id)).toEqual({ description })
+  })
+
+  it('拒絕 301 個 code points，且不呼叫模型或寫入議題與審查回報', async () => {
+    authState.current = user
+    const description = ' ' + '😀'.repeat(299) + '\n'
+    const issuesBefore = sqlite.prepare('SELECT id, title, description FROM ct_issues ORDER BY id').all()
+    const reportsBefore = sqlite.prepare('SELECT COUNT(*) AS count FROM ct_abuse_reports').get()
+    const response = await testApp().request('/api/issues', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: issueBody({ description }) }, env())
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toEqual({ error: 'description must be at most 300 code points' })
+    expect(moderateSubmission).not.toHaveBeenCalled()
+    expect(sqlite.prepare('SELECT id, title, description FROM ct_issues ORDER BY id').all()).toEqual(issuesBefore)
+    expect(sqlite.prepare('SELECT COUNT(*) AS count FROM ct_abuse_reports').get()).toEqual(reportsBefore)
+  })
+
+  it('省略選填簡介仍可正常建立議題', async () => {
+    authState.current = user
+    const response = await testApp().request('/api/issues', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: issueBody({ description: undefined }) }, env())
+
+    expect(response.status).toBe(201)
+    const { id } = (await response.json()) as { id: number }
+    expect(sqlite.prepare('SELECT description FROM ct_issues WHERE id = ?').get(id)).toEqual({ description: '' })
+  })
+
+  it('拒絕非字串簡介，不讓錯誤型別繞過字數檢查', async () => {
+    authState.current = user
+    const issuesBefore = sqlite.prepare('SELECT id, title, description FROM ct_issues ORDER BY id').all()
+    const response = await testApp().request('/api/issues', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: issueBody({ description: ['議'.repeat(301)] }) }, env())
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toEqual({ error: 'description must be a string' })
+    expect(moderateSubmission).not.toHaveBeenCalled()
+    expect(sqlite.prepare('SELECT id, title, description FROM ct_issues ORDER BY id').all()).toEqual(issuesBefore)
   })
 })

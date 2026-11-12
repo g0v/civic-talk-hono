@@ -51,6 +51,7 @@ vp run dev
 ## 主要流程
 
 1. **投稿**：建立議題、素材、意見、說明頁與志願者 prompt 需未停權的登入者。素材先呼叫同源 `/api/fact-check`，由 Service Binding 轉送非公開 `fact-check-core`；投稿仍須通過條款與 OpenRouter 安全審查。
+   議題簡介最多 300 字（Unicode code points）；超過時停用送出按鈕，縮短至 300 字內即恢復。編輯器保留全文、不截斷；`POST /api/issues` 同樣在模型審查與寫入前攔截超長簡介，回 `400 {error:"description must be at most 300 code points"}`，省略或空白簡介仍可建立。
 2. **志願者彙整**：取 prompt → 自己的 AI 工具生成 → 送回彙整／說明頁。彙整與再彙整至少須有兩份同議題、`abuse_flagged=0` 的可用素材；不足時 UI 停用生成／複製／送出並提示數量，仍保留可編輯草稿。`GET /api/issues/:id/prompt?type=summarize|synthesis` 與含非空共識／爭點／立場欄位的 `POST /api/issues/:id/briefing` 都會在審查與寫入前回 `422 {error:"insufficient_materials",minimum:2,count}`。待審、隱藏及其他議題素材不計入；單獨更新說明頁與管理員編輯既有內容不新增此限制。公民意見引導不得把未獲認可的 AI 建議當成參與者立場，也不強造共識。
 3. **身分與隱私**：四種內容保存投稿當下作者快照，前台顯示姓名，email 僅於該筆明確同意公開時顯示；三類具名投稿保存條款版本與時間。完整快照不能直接投影到公開 API。
 4. **討論與管理**：意見提供同意／不同意／略過與登入後 CSV 匯出；不再載入 polis.tw。管理員可審查內容、編輯議題、附公開理由結案／重開；結案獨立於 status，不停止投稿、投票或匯出。
