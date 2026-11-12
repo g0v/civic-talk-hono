@@ -1,4 +1,4 @@
-export const EVIDENCE_ALGORITHM_VERSION = 'evidence-4-complete-units' as const
+export const EVIDENCE_ALGORITHM_VERSION = 'evidence-2' as const
 export const MAX_EVIDENCE = 64
 
 export type OffsetUnit = 'utf16' | 'unicode' | 'utf8'
