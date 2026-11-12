@@ -86,7 +86,7 @@ Civic Talk 使用 Hono、Vue 3 SSR/hydration、Tailwind 與 Cloudflare Workers�
 - Tailwind token 來源 `src/styles/app.css`，設計參考 `../vtaiwan-design-system/project/colors_and_type.css`。新樣式優先 `vt-*`／既有 utilities，不硬寫顏色字級間距；新 token 先定義，不順手重畫未受影響畫面。
 - **SFC CSS 目前未被正式 HTML 載入**，dev 有效不代表 production 有效。維持無 `<style>` 區塊，使用 utilities 或 `app.css` 的共用 layer；接入抽出 CSS 是另需確認的結構改動。
 - `LongTextContent` 超過門檻時完全不輸出原文，只顯示字數／展開鈕；**不得截短預覽或摘要 CC BY-NC-ND 素材**。素材詳情與管理審閱維持全文。
-- `MarkdownEditor` 沿用 `renderSafeMarkdown()`，不另開 parser、raw HTML 或圖片；議題簡介純文字／換行，字數軟提示非 maxlength 或 API 限長。事實查核中／完成後保持 readonly。
+- `MarkdownEditor` 沿用 `renderSafeMarkdown()`，不另開 parser、raw HTML 或圖片；議題簡介純文字／換行，最多 300 個 Unicode code points，超過時 UI 停用送出按鈕，縮短後恢復；保留全文、不設 maxlength。`POST /api/issues` 共用相同字數規則，在模型審查與寫入前以 400 拒絕超長簡介，選填語意不變（#218 使用者裁示）。事實查核中／完成後保持 readonly。
 - textarea 維持 writable computed 的原生 `v-model`，不用裸 `:value/@input` 破壞 IME；組字期間只留 textarea 暫存，不更新投稿 model／計數／預覽，compositionend 才提交。Markdown 預覽先 trim 再 render，與送出一致，但**不改草稿／計數／內文縮排**；純文字預覽不 trim。保留編輯／預覽切換、focus 與延後 aria-live 播報。
 
 內容路由：`/`、`/issues/:id`、`/issues/:id/source/:materialId`、`/issues/:id/comment/:opinionId`、`/contribute/:id`、`/about`、`/profile`、`/appeals`、`/privacy`、`/terms`、`/admin`、`/rss.xml`。獨立素材／意見 URL 所屬議題不符回 404。
