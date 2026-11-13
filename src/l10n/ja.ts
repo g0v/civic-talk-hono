@@ -297,6 +297,7 @@ export const messages = {
   op_sort_label: '並び順',
   op_sort_recent: '新しい順',
   op_sort_responses: '反応の多い順',
+  op_response_count_label: '反応数：{count}（投稿者の同意票を含みます。閲覧数ではありません）',
   op_login_desc: '意見の投稿にはログインが必要です。意見の品質を確保し、不正利用があった際に追跡できるようにするためです。投稿後は、あなたの表示名が意見に添えて公開されます。',
   op_label_summary: 'AI がまとめた意見の要約をここに貼り付けてください',
   op_hint_summary: '100~500 文字をおすすめします',

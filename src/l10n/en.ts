@@ -296,6 +296,7 @@ export const messages = {
   op_sort_label: 'Sort',
   op_sort_recent: 'Newest',
   op_sort_responses: 'Most responses',
+  op_response_count_label: 'Responses: {count} (includes the author’s implicit agreement; not page views)',
   op_login_desc: 'Submitting an opinion requires signing in, to keep the quality up and make abuse traceable. Your display name will be publicly shown on submitted opinions.',
   op_label_summary: 'Paste your AI-generated opinion summary here',
   op_hint_summary: '100–500 words recommended',

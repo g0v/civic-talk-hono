@@ -152,6 +152,8 @@ export interface Opinion {
 export type OpinionVoteValue = -1 | 0 | 1
 
 export interface OpinionVoteState {
+  /** 公開總回應數，包含作者預設同意票；隱藏意見為 null。 */
+  response_count: number | null
   vote_agree: number | null
   vote_disagree: number | null
   vote_pass: number | null
@@ -640,6 +642,7 @@ interface OpinionVoteRow {
   show_email?: AuthorVisibility
   terms_version?: string | null
   terms_accepted_at?: string | null
+  response_count: number | null
   vote_agree: number | null
   vote_disagree: number | null
   vote_pass: number | null
@@ -668,7 +671,10 @@ function opinionVoteCte(voteScope: 'issue' | 'opinion'): string {
   )`
 }
 
+const OPINION_RESPONSE_COUNT = 'COALESCE(vc.agree_count, 0) + COALESCE(vc.disagree_count, 0) + COALESCE(vc.pass_count, 0) + CASE WHEN o.author_id IS NOT NULL THEN 1 ELSE 0 END'
+
 const OPINION_VOTE_FIELDS = `
+  CASE WHEN o.abuse_flagged IN (0, 1) THEN ${OPINION_RESPONSE_COUNT} ELSE NULL END AS response_count,
   CASE WHEN params.viewer_id IS NOT NULL AND o.abuse_flagged IN (0, 1)
       AND (o.author_id = params.viewer_id OR vv.opinion_id IS NOT NULL)
     THEN COALESCE(vc.agree_count, 0) + CASE WHEN o.author_id IS NOT NULL THEN 1 ELSE 0 END ELSE NULL END AS vote_agree,
@@ -687,6 +693,7 @@ const OPINION_VOTE_FIELDS = `
 
 function normalizeOpinionVoteState(row: OpinionVoteRow): OpinionVoteState {
   return {
+    response_count: typeof row.response_count === 'number' ? row.response_count : null,
     vote_agree: typeof row.vote_agree === 'number' ? row.vote_agree : null,
     vote_disagree: typeof row.vote_disagree === 'number' ? row.vote_disagree : null,
     vote_pass: typeof row.vote_pass === 'number' ? row.vote_pass : null,
@@ -722,7 +729,7 @@ function normalizeOpinionAuthorVote(row: OpinionVoteRow): OpinionWithAuthorAndVo
 
 function opinionVoteOrder(sort: 'recent' | 'responses'): string {
   return sort === 'responses'
-    ? 'COALESCE(vc.agree_count, 0) + COALESCE(vc.disagree_count, 0) + COALESCE(vc.pass_count, 0) + CASE WHEN o.author_id IS NOT NULL THEN 1 ELSE 0 END DESC, o.created_at DESC, o.id DESC'
+    ? `${OPINION_RESPONSE_COUNT} DESC, o.created_at DESC, o.id DESC`
     : 'o.created_at DESC, o.id DESC'
 }
 

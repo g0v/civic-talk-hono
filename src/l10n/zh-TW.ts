@@ -293,6 +293,7 @@ export const messages = {
   op_sort_label: '排序',
   op_sort_recent: '最新',
   op_sort_responses: '最多回應',
+  op_response_count_label: '回應數：{count}（含作者預設同意票，非瀏覽次數）',
   op_login_desc: '提交意見需要先登入，以確保意見品質，並在有濫用時可以追溯。提交後，你的顯示名稱將公開附在意見上。',
   op_label_summary: '請把 AI 幫你整理的意見摘要貼在這裡',
   op_hint_summary: '100~500 字為佳',
