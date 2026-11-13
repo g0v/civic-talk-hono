@@ -1,6 +1,6 @@
 # #183 實作洞察與驗收紀錄
 
-更新日期：2026-11-12。此檔保留各時期的正反紀錄；目前管線閱讀基準與品質界線見「2026-11-12：提取、比對、綜整三階段研究」，歷史章節依當時日期與模型／契約判讀，不將舊驗收或部署回報當成本輪現況。**2026-11-08 起，下方歷史所載的 experiment／review profiles、專用 CLI／setup／fixture 及 Cookie helper 入口均已移除；命令僅為歷史執行證據，不可作現行操作指引或本機檔案入口。** 私有 `.wrangler` 資料與帳本保留。
+更新日期：2026-11-14。此檔保留各時期的正反紀錄；目前管線閱讀基準與品質界線見「2026-11-12：提取、比對、綜整三階段研究」，首個基準觀測 checkpoint 的實作與手動回報見下節。歷史章節依當時日期與模型／契約判讀，不將舊驗收或部署回報當成本輪現況。**2026-11-08 起，下方歷史所載的 experiment／review profiles、專用 CLI／setup／fixture 及 Cookie helper 入口均已移除；命令僅為歷史執行證據，不可作現行操作指引或本機檔案入口。** 私有 `.wrangler` 資料與帳本保留。
 
 ## 現況與使用者確認
 
@@ -9,6 +9,20 @@
 - 使用者已確認真實三模型品質實驗成功，並同意公開 [結果](./results/ai-experiment_result.json) 與 [費用報告](./results/ai-experiment_cost.json)。報告為 `ai_draft`，共識 2、爭點 1、立場 3，三項 completed、補完 not_needed；該工作 ledger 記錄 23 attempts、13,362 microUSD、unknown／reserved 為零。這不是 Cloudflare 帳單核對，也不是獨立人工 gold labels。報告 source metadata `e668fa2ea9c70fd3bdbcfd06ebb554b5e3a4747d` 為 dirty，不能聲稱與目前 HEAD 相同或重跑逐字相同。不要另付費重跑以確認使用者的成功回報。
 - 正式已由使用者部署 source `73800643596b7114efd0c7623ea436023cd244b9`、`EVIDENCE_API_ENABLED=1`；既有確認為六匿名 401、CSRF 403、`/api/me` 200／super-admin／banned:false，不重跑，也不代表完整六 API 驗收。缺必要綁定 fail closed；現行六 API 與程式閱讀地圖見 [`docs/evidence-api-review.md`](./docs/evidence-api-review.md)。
 - 2026-11-08 使用者核准提前清理專用環境、本機驗證及 commit，不 push／deploy、不付費或遠端寫入。PR #191 與遠端原始 0017 已完成，SQL／ledger 不改，`DB_AUTH` 不做 DDL／migration。關閉 #183 是 API 交付與專用環境退場，不表示 UI 或 live 驗收完成；UI／一般 API 移交 [#166](https://github.com/g0v/civic-talk-hono/issues/166)，維護 reconcile／erase 驗收見 [#201](https://github.com/g0v/civic-talk-hono/issues/201)，進度見 [`TODO_AFTER_MERGE.md`](./TODO_AFTER_MERGE.md)。所有私人狀態、歷史結果與 unknown／tombstone 保留。
+
+## 2026-11-14：checkpoint A 使用者手動回報
+
+- 使用者回報「實測 log 有出來」，並授權提交／推送 A，再推進至下一個檢查點；下一個檢查點驗收前不提交。此回報視為 A 的觀測接線手驗，不重跑確認，也不宣稱新的模型內容、原子化或語義品質已通過。
+- 下一步依計畫為 B／P0＋E1：固定既有 P0 raw，只評估 claim／context 的展句與去重；Clairic 提示及 Clef／Gemma 不動。新付費呼叫、遠端資料／maintenance 與部署均不在本次授權內。
+
+## 2026-11-13：checkpoint A 基準提取觀測
+
+- 依 `plan.md` 第 6 節第 1 步先補可觀測性，沒有調整 `claims-list-v3`、`evidence-2`、Clairic／Clef／Gemma 的模型請求或設定指紋。P1／E1、原子 claim／context 與下游雙層輸入仍未實作；不是第一階段語義品質已驗收。
+- dev-only、owner／admin 且精確 opt-in 的 job GET 新增 `extraction_debug` 白名單；讀既有 raw／extraction／diagnostics，不重算、不回填或新增付費呼叫。以 usage 的 `extract:<materialId>` 對應 raw，避免同正文素材誤歸屬；完整 request／state_text、作者快照與其他模型 raw 不進新投影，來源撤下／清除／失聯及最後查核競態不交付內容。production 及未 opt-in 的回應不新增欄位、不讀提取 raw。
+- 前端沿用既有輪詢，獨立於最終草稿輸出 raw、已保存的 legacy 展句及安全提取診斷；全部生成失敗仍可看上游資料。`claim／context` 明示尚未建立，每個工作／工件去重，過期 scope 回應不印；原始 value／spans 不強行 zip，也不將 legacy quote 改名成原子命題。
+- 型別檢查通過 167 files，完整測試通過 58 files／714 tests；包含 opt-in／production、401／403／404、相同正文素材歸屬、零證據／拒收／provider 無回應、清除競態與前端 pending→可讀／去重／scope 隔離。測試使用既有隔離 SQLite 與合成 provider，不是真實模型品質或真人 Auth 驗收。
+- 真實 Chrome 以實際元件 SSR／hydration 與隔離合成 HTTP 回應，檢查三語、1280／390px、淺／深色共 12 組；原始抽取與 legacy 完整文字可在 console 目視，三個語言工作各兩份素材只各輸出一次，GET 為精確 opt-in，沒有 POST、hydration 警告或水平溢出。另確認 hover、dialog、關閉後 focus、disabled，目視四張代表畫面。這不是正式站、真人 session 或付費流程驗收。
+- 暫時 HTML／SSR 驗證器與獨立瀏覽器 profile 已移除，自有前端驗證服務已停止；沒有使用真人 Cookie、遠端 D1、模型呼叫、migration、commit／push 或部署。A 的真實來源手動驗收待操作者進行；操作、副作用與費用界線見[API 手冊](./docs/evidence-api-review.md#checkpoint-a-提取觀測dev-only)。
 
 ## 2026-11-12：提取、比對、綜整三階段研究
 

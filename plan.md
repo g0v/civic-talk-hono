@@ -1,6 +1,6 @@
 # PR #215：原子命題、claim／context 分離與分階段驗證計畫
 
-更新日期：2026-11-13。**狀態：待實作、待驗收；本次只撰寫計畫，未修改模型、前端或 API，未執行新的模型實驗。**
+更新日期：2026-11-14。**使用者已回報 checkpoint A 的實測 log 有出來，本次先提交並推送已驗收的 A 基準觀測。** A 只驗證觀測接線，不代表原子化或語義品質改善；P1／E1、B／C／D 及第 2、3 階段仍待實作與各別驗收。
 
 本輪依據：
 
@@ -161,18 +161,21 @@ Gemma 可用 context 解讀 claim，但不能從 context 偷渡另一個未提�
 沿用既有 raw／extraction／diagnostics 工件及 generation fence，不新增公開 artifact 下載 API、不另建資料庫或 migration。
 
 - 在提取驗證時保存可追溯的三層診斷對應，包含拒收與去重；零證據／超限／解析失敗也要能區分「有 raw 但無有效 claim」與「provider 根本沒有回應」。失敗不偽造 claim 或 context。
-- 建議在既有 `GET /api/evidence-jobs/:jobId` 增加明確 opt-in `?include_extraction=1` 與可選 `extraction_debug` 欄位。這是**待實作的相容擴充**，目前不存在；只在伺服器 `import.meta.env.DEV` 且 owner／admin 授權通過時組裝，production 即使手送 query 也不回傳。不是只在前端隱藏。
+- **checkpoint A 已提供**既有 `GET /api/evidence-jobs/:jobId?include_extraction=1` 的可選 `extraction_debug` 欄位，版本為 `extraction-observation-v1`。只有伺服器 `import.meta.env.DEV`、精確 opt-in 與 owner／admin 授權通過才組裝；production 即使手送 query 也不回傳、不讀取提取 raw。未 opt-in 的既有 JSON 不新增此欄位。手動操作見[API 手冊](./docs/evidence-api-review.md#checkpoint-a-提取觀測dev-only)。
 - 僅輸出提取白名單：job／material／內容 hash、raw／trace artifact ID 與 hash、來源程式 commit／dirty、階段／實驗組、Prompt／演算法／設定版本，以及下列三層資料與對應；不直接 spread 完整 provider request／response。
 - **raw 層：** 未改寫的 `answers.claims.value`、`spans`、confidence／p_null（若有）及截斷／解析狀態。保留 null、原始順序與重複；value／spans 數量可能不同，不能假設逐項 zip。
 - **claim 層：** `claim_id／claim.text／claim.span`、最小展句原因、人工審閱狀態（有時）、去重歸屬及關聯 context ID。不是把詞級 raw 改名成原子命題。
 - **context 層：** `context_id／context.text／context.span` 與完整展句原因；共用 context 只輸出一份，列出關聯 claim IDs，不算另一筆主張。
 - **對應與拒收：** 保留原始 value 索引／provider span 索引、驗證後 raw 座標／單位、raw→claim→context、既有 Evidence ID（有時）及拒收原因；一對多／多對一都可追查，不只印最後存活清單。
 - 舊工作缺少新 trace 時，claim／context 明示 `unavailable`；已保存的原始抽取與舊 quote／expanded_span 仍可標為 legacy 展示，不能改名冒充三層結果，也不能用新版 E1 重算後冒稱是當時結果。舊工件、狀態、設定與費用不回填。
+- checkpoint A 僅讀取既有 raw／extraction／diagnostics，不重算或回填歷史結果：目前實際輸出 raw、legacy 展句及安全提取診斷；所有工作（含新工作）的 claim／context 均明示 `unavailable/not_created_at_checkpoint_A`。上列三層 trace 的完整目標仍留待 E1，不將 legacy quote 改名冒充已完成。
 - 維持登入／停權、owner／admin、private/no-store、Vary: Cookie、無 CORS 與交付前最後來源／狀態查核。debug 工件須在最後 fence 檢查前讀取；withdrawn／erased／來源失聯或競態失效時不得回傳片段。
 
 ### 5.2 瀏覽器輸出與生命週期
 
 在現有 dev 一鍵彙整元件／輪詢中加入提取專用 callback，不綁在「成功保存摘要」的 `onResult`：
+
+checkpoint A 目前使用 `[extraction:raw]`、`[extraction:expanded]`（明標 legacy）及 `[extraction:diagnostic]`；只有已保存的新工件才輸出，尚無資料時不先標成已印。下列 `[extraction:claim]／[extraction:context]` 三層輸出是 E1 的後續目標，尚未提供。
 
 1. 提取資料一旦可讀就印；即使工作仍在 comparing／generating，或最後 failed／partial，也能看到已有提取。未完成／沒有回應則明示狀態，不印成空命題結論。
 2. 依 job、素材及 trace artifact hash 分組，清楚區分 `[extraction:raw] 原始抽取`、`[extraction:claim] 抽取＋最小充分展句`、`[extraction:context] 完整相關展句`；用 `console.groupCollapsed` 分素材、`console.table` 作對照索引，並以 `console.log` 輸出可展開的完整文字快照，不能只印字數或截短預覽。共用 context 印一次，讓各 claim 以 ID 對照。

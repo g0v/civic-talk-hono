@@ -11,6 +11,7 @@ import { runEvidenceWorkflow } from '../ai/runner'
 import { statusOverview } from '../ai/overviewStatus'
 import { EvidenceStore, EvidenceStoreError, type ArtifactSummary } from '../ai/store'
 import { sha256, SOURCE_NAMESPACE } from '../ai/source'
+import type { ExtractionDebug } from '../ai/extractionDebug'
 import type { CompletedDraft } from '../ai/generation'
 
 type DraftResponse = CompletedDraft & { diagnostics: { generation: { completion: unknown } } }
@@ -347,6 +348,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  vi.unstubAllEnvs()
   local.sqlite.close()
   source.sqlite.close()
 })
@@ -430,6 +432,128 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     ).toMatchObject({ jobs: 0, executions: 0, reservations: 0 })
   })
 
+  it('dev opt-in 可讀失敗工作的 raw 與 legacy，但不洩漏完整 state、作者或其他模型回應', async () => {
+    source.sqlite.prepare('UPDATE ct_materials SET content = ? WHERE id = 2').run('未選取的私人前文。支持再生能源。未選取的私人後文。')
+    aiRun = async (modelName, input) => {
+      if (modelName === GENERATION_MODEL) throw new Error('private-generation-error')
+      const result = object(await model(modelName, input))
+      if (modelName === '@cf/cloudflare/clairic') {
+        result.private_extra = 'private-provider-extra'
+        const answer = object(object(result.answers).claims)
+        answer.private_extra = 'private-claim-extra'
+        const state = String(object(input).state)
+        if (state.startsWith('未選取')) {
+          const value = '支持再生能源'
+          answer.value = [value, value]
+          answer.spans = [[state.indexOf(value), state.indexOf(value) + value.length]]
+        }
+      }
+      return result
+    }
+    auth.current = user('owner')
+    const created = (await (await send('POST', '/api/issues/7/evidence-jobs', { consent: true })).json()) as { job_id: string }
+    expect(await runEvidenceWorkflow(env, created.job_id, testStep())).toEqual({ status: 'failed' })
+    const callsBefore = recordedRequests.length
+    const response = await send('GET', `/api/evidence-jobs/${created.job_id}?include_extraction=1`)
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as { status: string; data?: unknown; extraction_debug: ExtractionDebug }
+    expect(body.status).toBe('failed')
+    expect(body.data).toBeUndefined()
+    const debug = body.extraction_debug
+    expect(debug.materials).toEqual([{ material_id: 2, raw: 'available', legacy: 'available' }, { material_id: 4, raw: 'available', legacy: 'available' }])
+    const raw = debug.entries.find(entry => entry.kind === 'raw' && entry.material_id === 2)!
+    expect(object(raw.data.claims)).toMatchObject({ value: ['支持再生能源', '支持再生能源'], spans: [[9, 15]] })
+    const legacy = debug.entries.find(entry => entry.kind === 'legacy' && entry.material_id === 2)!
+    expect(legacy.data.evidence).toEqual([expect.objectContaining({ quote: '支持再生能源。', raw_quote: '支持再生能源' })])
+    expect(debug.claim.status).toBe('unavailable')
+    expect(debug.context.status).toBe('unavailable')
+    for (const privateText of ['未選取的私人前文', '未選取的私人後文', 'private-provider-extra', 'private-claim-extra', 'private-generation-error', 'private-author', 'private@example.test', 'state_text', 'state_mapping', 'messages'])
+      expect(JSON.stringify(debug)).not.toContain(privateText)
+    expect(recordedRequests.length).toBe(callsBefore)
+  })
+
+  it('相同正文的兩份素材仍以付費 step key 正確歸屬，且診斷只限 owner／admin', async () => {
+    source.sqlite.prepare('UPDATE ct_materials SET content = ? WHERE id = 4').run('支持再生能源。')
+    auth.current = user('owner')
+    const created = (await (await send('POST', '/api/issues/7/evidence-jobs', { consent: true })).json()) as { job_id: string }
+    await runEvidenceWorkflow(env, created.job_id, testStep())
+    const path = `/api/evidence-jobs/${created.job_id}?include_extraction=1`
+    const body = (await (await send('GET', path)).json()) as { extraction_debug: ExtractionDebug }
+    expect(body.extraction_debug.entries.filter(entry => entry.kind === 'raw').map(entry => entry.material_id)).toEqual([2, 4])
+    for (const entry of body.extraction_debug.entries.filter(entry => entry.kind === 'raw')) {
+      const attempt = local.sqlite.prepare('SELECT u.step_key FROM ct_ai_artifacts a JOIN ct_ai_usage u ON u.id = a.attempt_id WHERE a.id = ?').get(entry.artifact.id)
+      expect(attempt).toEqual({ step_key: `extract:${entry.material_id}` })
+    }
+    auth.current = null
+    expect((await send('GET', path)).status).toBe(401)
+    auth.current = user('owner', 'user', true)
+    expect((await send('GET', path)).status).toBe(403)
+    auth.current = user('other')
+    expect((await send('GET', path)).status).toBe(404)
+    auth.current = user('admin', 'admin')
+    const admin = (await (await send('GET', path)).json()) as { extraction_debug: ExtractionDebug }
+    expect(admin.extraction_debug.entries).toEqual(body.extraction_debug.entries)
+  })
+
+  it.each(['empty', 'invalid'])('提取 %s 而無正常 extraction 工件時仍保留 raw 與拒收診斷，不偽造 claim', async scenario => {
+    aiRun = async (modelName, input) => {
+      const result = object(await model(modelName, input))
+      if (modelName === '@cf/cloudflare/clairic') {
+        const answer = object(object(result.answers).claims)
+        answer.value = scenario === 'empty' ? null : ['不是來源原文']
+        delete answer.spans
+      }
+      return result
+    }
+    auth.current = user('owner')
+    const created = (await (await send('POST', '/api/issues/7/evidence-jobs', { consent: true })).json()) as { job_id: string }
+    expect(await runEvidenceWorkflow(env, created.job_id, testStep())).toEqual({ status: 'failed' })
+    const body = (await (await send('GET', `/api/evidence-jobs/${created.job_id}?include_extraction=1`)).json()) as { extraction_debug: ExtractionDebug }
+    const debug = body.extraction_debug
+    expect(debug.entries.filter(entry => entry.kind === 'raw').map(entry => object(entry.data.claims).value)).toEqual(scenario === 'empty' ? [null, null] : [['不是來源原文'], ['不是來源原文']])
+    expect(debug.entries.some(entry => entry.kind === 'legacy')).toBe(false)
+    expect(debug.entries.filter(entry => entry.kind === 'diagnostic').map(entry => object(entry.data.coverage))).toEqual([
+      expect.objectContaining({ status: scenario === 'empty' ? 'complete' : 'failed', rejected: scenario === 'empty' ? [] : [{ index: 0, reason: 'not_found' }] }),
+      expect.objectContaining({ status: scenario === 'empty' ? 'complete' : 'failed', rejected: scenario === 'empty' ? [] : [{ index: 0, reason: 'not_found' }] }),
+    ])
+    expect(debug.claim.status).toBe('unavailable')
+    expect(debug.context.status).toBe('unavailable')
+  })
+
+  it('provider 未回應時顯示安全提取診斷，不偽造 raw 或輸出私人例外', async () => {
+    aiRun = async () => { throw new Error('private-extraction-failure') }
+    auth.current = user('owner')
+    const created = (await (await send('POST', '/api/issues/7/evidence-jobs', { consent: true })).json()) as { job_id: string }
+    await runEvidenceWorkflow(env, created.job_id, testStep())
+    const body = (await (await send('GET', `/api/evidence-jobs/${created.job_id}?include_extraction=1`)).json()) as { extraction_debug: ExtractionDebug }
+    expect(body.extraction_debug.materials).toEqual([{ material_id: 2, raw: 'unavailable', legacy: 'unavailable' }, { material_id: 4, raw: 'unavailable', legacy: 'unavailable' }])
+    expect(body.extraction_debug.entries.every(entry => entry.kind === 'diagnostic')).toBe(true)
+    for (const material of body.extraction_debug.materials) {
+      expect(body.extraction_debug.entries).toContainEqual(expect.objectContaining({
+        kind: 'diagnostic', material_id: material.material_id, data: expect.objectContaining({ stage: 'provider', code: 'provider_error' }),
+      }))
+    }
+    expect(JSON.stringify(body.extraction_debug)).not.toContain('private-extraction-failure')
+  })
+
+  it('未 opt-in 或 production 不讀取提取 raw，亦不新增診斷回應', async () => {
+    auth.current = user('owner')
+    const created = (await (await send('POST', '/api/issues/7/evidence-jobs', { consent: true })).json()) as { job_id: string }
+    await runEvidenceWorkflow(env, created.job_id, testStep())
+    const read = vi.spyOn(EvidenceStore.prototype, 'listExtractionRawArtifacts')
+    try {
+      for (const { dev, query } of [{ dev: true, query: '' }, { dev: true, query: '?include_extraction=0' }, { dev: false, query: '?include_extraction=1' }]) {
+        vi.stubEnv('DEV', dev)
+        const response = await send('GET', `/api/evidence-jobs/${created.job_id}${query}`)
+        expect(response.status).toBe(200)
+        expect(await response.json()).not.toHaveProperty('extraction_debug')
+      }
+      expect(read).not.toHaveBeenCalled()
+    } finally {
+      read.mockRestore()
+    }
+  })
+
   it('來源查核失聯、隱藏及變更時不得交付任何舊快照', async () => {
     auth.current = user('owner')
     const created = (await (await send('POST', '/api/issues/7/evidence-jobs', { consent: true })).json()) as { job_id: string }
@@ -440,12 +564,12 @@ describe('evidence API 與實際 SQLite 工作流', () => {
         throw new Error('offline')
       },
     } as unknown as D1Database
-    const unavailable = await send('GET', `/api/evidence-jobs/${created.job_id}`)
+    const unavailable = await send('GET', `/api/evidence-jobs/${created.job_id}?include_extraction=1`)
     expect(unavailable.status).toBe(503)
     expect(await unavailable.text()).not.toContain('支持再生能源')
     env.SOURCE_DB = liveSource
     source.sqlite.prepare('UPDATE ct_materials SET abuse_flagged = 3 WHERE id = 2').run()
-    const hidden = await send('GET', `/api/evidence-jobs/${created.job_id}`)
+    const hidden = await send('GET', `/api/evidence-jobs/${created.job_id}?include_extraction=1`)
     const payload = (await hidden.json()) as { status: string; error_code: string }
     expect(payload).toMatchObject({ status: 'withdrawn', error_code: 'source_withdrawn' })
     expect(JSON.stringify(payload)).not.toContain('支持再生能源')
@@ -453,11 +577,11 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     auth.current = user('admin', 'admin')
     expect((await send('POST', '/api/evidence-maintenance/reconcile', {})).status).toBe(200)
     auth.current = user('owner')
-    const stale = (await (await send('GET', `/api/evidence-jobs/${created.job_id}`)).json()) as { status: string; error_code: string }
+    const stale = (await (await send('GET', `/api/evidence-jobs/${created.job_id}?include_extraction=1`)).json()) as { status: string; error_code: string }
     expect(stale).toMatchObject({ status: 'withdrawn', error_code: 'source_stale' })
     expect(JSON.stringify(stale)).not.toContain('支持再生能源')
     source.sqlite.prepare('DELETE FROM ct_materials WHERE id = 2').run()
-    const erased = (await (await send('GET', `/api/evidence-jobs/${created.job_id}`)).json()) as { status: string }
+    const erased = (await (await send('GET', `/api/evidence-jobs/${created.job_id}?include_extraction=1`)).json()) as { status: string }
     expect(erased.status).toBe('erased')
     expect(local.sqlite.prepare('SELECT COUNT(*) AS n FROM ct_ai_artifacts WHERE payload IS NOT NULL').get()).toMatchObject({ n: 0 })
   })
@@ -503,7 +627,7 @@ describe('evidence API 與實際 SQLite 工作流', () => {
       }
       return snapshot
     })
-    const path = `/api/evidence-jobs/${created.job_id}${resource === 'revisions' ? '/revisions' : ''}`
+    const path = `/api/evidence-jobs/${created.job_id}${resource === 'revisions' ? '/revisions' : '?include_extraction=1'}`
     const pending = Promise.resolve(send('GET', path))
     try {
       await paused
@@ -525,7 +649,7 @@ describe('evidence API 與實際 SQLite 工作流', () => {
       } else {
         expect(body).toEqual({ error: 'draft_unavailable' })
       }
-      for (const field of ['data', 'sources', 'evidence', 'citation_map', 'provenance', 'generation_artifact', 'input_manifest', 'diagnostics', 'ai_base', 'revisions'])
+      for (const field of ['data', 'sources', 'evidence', 'citation_map', 'provenance', 'generation_artifact', 'input_manifest', 'diagnostics', 'extraction_debug', 'ai_base', 'revisions'])
         expect(body).not.toHaveProperty(field)
       expect(bodyText).not.toContain(material.payload.content)
       if (disposition === 'erased') {

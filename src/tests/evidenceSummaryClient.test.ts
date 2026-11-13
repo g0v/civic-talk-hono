@@ -1,5 +1,7 @@
+/// <reference lib="es2024.promise" />
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
 import { createEvidenceSummary } from '../client/evidenceSummary'
+import type { ExtractionDebug } from '../ai/extractionDebug'
 
 const issuePath = '/api/issues/7/evidence-summary'
 const jobPath = '/api/evidence-jobs/job-1'
@@ -9,9 +11,27 @@ const context = (version: number, hasSummary: boolean, job: unknown = null, summ
 const job = (status: string) => ({ job_id: 'job-1', status, usage })
 const savedSummary = (jobId = 'job-1') => ({ job_id: jobId, data: { consensus: ['result'] }, citation_map: {}, verification: 'ai_unverified', updated_at: '2026-11-11T00:00:00Z' })
 
-afterEach(() => vi.useRealTimers())
+function extractionDebug(keys: string[]): ExtractionDebug {
+  return {
+    version: 'extraction-observation-v1', job_id: 'job-1', checkpoint: 'A:baseline-observation',
+    source_code: { commit: null, dirty: true },
+    settings: { clairic_prompt: 'saved-prompt', evidence_algorithm: 'saved-algorithm', config_sha256: 'saved-settings' },
+    claim: { status: 'unavailable', reason: 'not_created_at_checkpoint_A' },
+    context: { status: 'unavailable', reason: 'not_created_at_checkpoint_A' },
+    materials: [{ material_id: 2, raw: keys.length ? 'available' : 'unavailable', legacy: keys.some(key => key.startsWith('legacy:')) ? 'available' : 'unavailable' }],
+    entries: keys.map(key => ({
+      key, kind: key.startsWith('raw:') ? 'raw' : 'legacy', material_id: 2, content_hash: 'source-hash',
+      artifact: { id: key, sha256: `hash-${key}` }, data: { saved: key },
+    })),
+  }
+}
 
-function fixture(handler: (url: string, init: RequestInit | undefined) => Response | Promise<Response>) {
+afterEach(() => {
+  vi.useRealTimers()
+  vi.unstubAllEnvs()
+})
+
+function fixture(handler: (url: string, init: RequestInit | undefined) => Response | Promise<Response>, options: { extraction?: boolean } = {}) {
   const calls: Array<{ url: string; method: string; body: string | null }> = []
   const fetcher: typeof fetch = async (input, init) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
@@ -21,8 +41,9 @@ function fixture(handler: (url: string, init: RequestInit | undefined) => Respon
   const onResult = vi.fn()
   const onSessionExpired = vi.fn()
   const onBanned = vi.fn()
-  const controller = createEvidenceSummary(7, { fetch: fetcher, onResult, onSessionExpired, onBanned, pollInterval: 60_000 })
-  return { controller, calls, onResult, onSessionExpired, onBanned }
+  const onExtraction = vi.fn()
+  const controller = createEvidenceSummary(7, { fetch: fetcher, onResult, onSessionExpired, onBanned, onExtraction: options.extraction ? onExtraction : undefined, pollInterval: 60_000 })
+  return { controller, calls, onResult, onSessionExpired, onBanned, onExtraction }
 }
 
 describe('一鍵彙整前端狀態', () => {
@@ -309,6 +330,84 @@ describe('一鍵彙整前端狀態', () => {
     await f.controller.setScope('en')
     expect(f.controller.state).toMatchObject({ phase: 'unknown', status: 'future_status', canResume: true })
     expect(f.onResult).not.toHaveBeenCalled()
+    f.controller.dispose()
+  })
+
+  it('提取尚無資料不先去重；後續原始抽取及 legacy 各輸出一次，生成失敗仍可排查', async () => {
+    vi.useFakeTimers()
+    let checks = 0
+    const f = fixture(url => {
+      if (url === `${issuePath}?language=zh-TW`) return response(context(1, false, job('queued')))
+      if (url !== `${jobPath}?include_extraction=1`) throw new Error(`unexpected ${url}`)
+      const index = checks++
+      return response({
+        ...job(['extracting', 'comparing', 'generating', 'failed'][Math.min(index, 3)]),
+        extraction_debug: extractionDebug(index === 0 ? [] : index === 1 ? ['raw:one'] : ['raw:one', 'legacy:one']),
+      })
+    }, { extraction: true })
+    await f.controller.setScope('zh-TW')
+    expect(f.onExtraction).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(180_000)
+    expect(f.onExtraction.mock.calls.map(([debug]) => (debug as ExtractionDebug).entries.map(entry => entry.key))).toEqual([['raw:one'], ['legacy:one']])
+    expect(f.controller.state.phase).toBe('failed')
+    expect(f.onResult).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(180_000)
+    expect(checks).toBe(4)
+    expect(f.calls.every(call => call.method === 'GET')).toBe(true)
+    f.controller.dispose()
+  })
+
+  it.each(['language', 'inactive', 'dispose'] as const)('在途提取回應於 %s 後不洩漏舊範圍內容', async action => {
+    const { promise: pending, resolve: resolveJob } = Promise.withResolvers<Response>()
+    const { promise: fetching, resolve: reached } = Promise.withResolvers<void>()
+    const f = fixture(url => {
+      if (url === `${issuePath}?language=zh-TW`) return response(context(1, false, job('queued')))
+      if (url === `${issuePath}?language=en`) return response(context(2, false))
+      reached()
+      return pending
+    }, { extraction: true })
+    const old = f.controller.setScope('zh-TW')
+    await fetching
+    if (action === 'dispose') f.controller.dispose()
+    else await f.controller.setScope(action === 'language' ? 'en' : null)
+    resolveJob(response({ ...job('failed'), extraction_debug: extractionDebug(['raw:one']) }))
+    await old
+    expect(f.onExtraction).not.toHaveBeenCalled()
+    expect(f.onResult).not.toHaveBeenCalled()
+    expect(f.calls.every(call => call.method === 'GET')).toBe(true)
+    f.controller.dispose()
+  })
+
+  it.each(['withdrawn', 'erased', 'unknown'])('%s 即使錯帶提取資料也不輸出', async status => {
+    const f = fixture(url => url.startsWith(issuePath)
+      ? response(context(1, false, job(status)))
+      : response({ ...job(status), extraction_debug: extractionDebug(['raw:one']) }), { extraction: true })
+    await f.controller.setScope('zh-TW')
+    expect(f.onExtraction).not.toHaveBeenCalled()
+    f.controller.dispose()
+  })
+
+  it('production 不要求或輸出提取，即使呼叫端與回應都有診斷', async () => {
+    vi.stubEnv('DEV', false)
+    const f = fixture(url => {
+      if (url.startsWith(issuePath)) return response(context(1, false, job('failed')))
+      if (url !== jobPath) throw new Error(`unexpected ${url}`)
+      return response({ ...job('failed'), extraction_debug: extractionDebug(['raw:one']) })
+    }, { extraction: true })
+    await f.controller.setScope('zh-TW')
+    expect(f.calls.map(call => call.url)).toEqual([`${issuePath}?language=zh-TW`, jobPath])
+    expect(f.onExtraction).not.toHaveBeenCalled()
+    expect(f.controller.state.phase).toBe('failed')
+    f.controller.dispose()
+  })
+
+  it('其他工作 ID 的提取診斷不跟著目前工作輸出', async () => {
+    const f = fixture(url => url.startsWith(issuePath)
+      ? response(context(1, false, job('failed')))
+      : response({ ...job('failed'), extraction_debug: { ...extractionDebug(['raw:one']), job_id: 'other-job' } }), { extraction: true })
+    await f.controller.setScope('zh-TW')
+    expect(f.controller.state.phase).toBe('failed')
+    expect(f.onExtraction).not.toHaveBeenCalled()
     f.controller.dispose()
   })
 })

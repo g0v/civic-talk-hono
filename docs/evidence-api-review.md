@@ -83,6 +83,44 @@ Clairic 逐素材、Clef 配對、Gemma 共識／爭點／立場三項，必要�
 - UI 只顯示進度與成功／部分完成／失敗提示。完整成功並確認已保存後，或 `partial_draft` 回傳可交付 `data` 時，依 #210 暫在操作者瀏覽器 `console.log` 輸出 `data`；部分草稿只供排查，不表示已保存或成功。同一語言／工作／版本在元件生命週期內不重複輸出，重新整理會重新輸出；沒有資料、失敗、撤下／清除或已離開範圍的遲到回應不輸出。不送伺服器 log，不將私人 Console 記錄當成可公開的驗收證據。
 - 重新整理恢復目前獲授權的工作，不自動發起新生成。切換介面語言不把另一語言工作結果寫錯欄位；讀取工作／摘要仍可能核對來源，並非正式站的無副作用 smoke。
 
+### Checkpoint A 提取觀測（dev-only）
+
+2026-11-14 使用者回報實測 log 已出現，作為 checkpoint A 觀測接線的手動驗收；不把此回報擴張成原子化、語義品質或後續實驗已通過。
+
+依 [`plan.md`](../plan.md) 第 6 節第 1 步，先提供 A／P0＋E0 的可觀測性：**Clairic 提示、展句／去重、Clef／Gemma 請求與生成流程均未改動**；原子 claim／context、E1 與後續對照尚未實作。這不是新的提取品質驗收。
+
+- dev 的工作 GET 可精確加上 `?include_extraction=1`，取得 `extraction_debug`（`version: extraction-observation-v1`）；未 opt-in 不新增欄位。production 即使手送 query，也不讀取提取 raw、不回傳診斷欄位。既有登入／停權、owner／admin、private/no-store、來源查核及最後 fence 維持。
+- 回傳與 console 只投影已保存的提取資料：`[extraction:raw]` 保留原始 `value／spans`（可能不等長）、confidence／p_null；`[extraction:expanded]` 顯示 legacy quote／原始及展句座標、拒收與去重；無正常 extraction 工件時仍可讀已保存的 raw／`[extraction:diagnostic]`，不偽造展句。
+- `claim／context` 目前一律明示 `unavailable/not_created_at_checkpoint_A`；三層完整提取留待 E1。metadata 使用該工作的保存設定、來源 commit／dirty、素材 content hash 與工件 ID／hash；若保存版本不是 P0／E0，只能當歷史資料檢視，不能冒稱這一組基準。
+- 以付費 `extract:<materialId>` step key 辨識 raw 歸屬，不用正文比對猜測素材；同文字不同素材仍可區分。不輸出完整 request、state_text、coverage.state_mapping、作者快照或其他模型的 raw，不把私人內容送到伺服器 log。
+- dev 一鍵彙整的既有輪詢會自動 opt-in；提取資料一旦可讀就輸出，最後 failed／partial 不影響上游診斷。每個工作／工件 ID／hash 只印一次；離開頁面、切換語言／帳號或卸載後不印遲到資料。重新整理會重新印。
+
+手動實測：
+
+1. 使用 npm 12 與專案 Vite+；由操作者重啟 `vp run dev:remote`，更新啟動時固定的 commit／dirty metadata。一般 `vp run dev` 停用 Auth，不能作真人登入的提取驗收。本輪程式未提交，預期 metadata 顯示 dirty；不停止他人的既有服務。
+2. 先開 DevTools Console，再以有權限的帳號進入既有議題的志願者工具、選對介面語言。若該語言已有目前獲授權的工作，還原／輪詢時便會出現分素材的原始抽取、legacy 展句及設定；**不必為看 log 再按一次生成**。GET／頁面還原仍可能觸發來源對帳或 queued 恢復，非無副作用試打。
+3. 若要檢視未附掛目前摘要的舊 job，先確認該 job 與操作範圍已獲授權，再於同源 dev Console 執行下方自包含程式。只要求現有工作，不輸出整份 API body 或 Cookie；owner／admin 以外仍回 404。
+4. 觀察否定／條件／歸屬是否已在 raw 中、legacy 展句是否混入其他立場，以及原始 value／spans、拒收／去重與 content／設定 hash；不要將 legacy 筆數當作原子命題數。缺 raw 是未取得保存結果，不等於沒有主張。
+5. 本 checkpoint 不建立 extraction-only 流程。按「同意並開始彙整」仍會走既有完整付費工作，可能呼叫 Clef、Gemma 與必要補完並更新私人摘要；只有操作者另行同意該來源、帳號、費用與寫入範圍後才做，不為確認歷史成功而重跑。
+
+```js
+;(async () => {
+  const jobId = window.prompt('已獲准檢視的既有工作 ID')
+  if (!jobId) return
+  const response = await fetch(`/api/evidence-jobs/${encodeURIComponent(jobId)}?include_extraction=1`, { credentials: 'same-origin' })
+  const body = await response.json()
+  if (!response.ok || !body.extraction_debug) {
+    console.log({ http_status: response.status, job_status: body.status, error: body.error, extraction_debug: 'unavailable' })
+    return
+  }
+  const { logExtractionDebug } = await import('/src/client/extractionDebug.ts')
+  logExtractionDebug(body.extraction_debug)
+})()
+```
+
+手動貼上的程式每次都會輸出；元件自動輪詢才有生命週期內的工件去重。Console 內文仍可能含個資，不能公開貼到 PR；來源 erase 不能追回瀏覽器已顯示的副本。投影與輸出入口為 `src/ai/extractionDebug.ts`、`src/client/extractionDebug.ts`。
+
+
 ## 5. 權限、CSRF、維護與來源生命週期
 
 ### API 與權限矩陣

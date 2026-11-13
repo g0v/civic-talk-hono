@@ -1,5 +1,6 @@
 import { reactive } from 'vue'
 import type { Locale } from '../l10n'
+import type { ExtractionDebug } from '../ai/extractionDebug'
 
 export type SummaryPhase = 'idle' | 'loading' | 'ready' | 'submitting' | 'progress' | 'saved' | 'superseded' | 'unsaved' | 'partial' | 'failed' | 'withdrawn' | 'erased' | 'unknown' | 'error'
 export type SummaryUsage = { attempts: number; reservedMicroUsd: number; actualMicroUsd: number; uncertain: number }
@@ -28,6 +29,7 @@ type Dependencies = {
   onSessionExpired?: () => void
   onBanned?: () => void
   onResult?: (data: unknown) => void
+  onExtraction?: (data: ExtractionDebug) => void
   pollInterval?: number
 }
 
@@ -44,6 +46,17 @@ function contextFrom(value: unknown): SummaryContext | null {
   return value as SummaryContext
 }
 
+function extractionFrom(value: unknown, jobId: string): ExtractionDebug | null {
+  if (
+    !isObject(value) || value.version !== 'extraction-observation-v1' || value.job_id !== jobId || value.checkpoint !== 'A:baseline-observation' ||
+    !isObject(value.source_code) || !isObject(value.settings) || !isObject(value.claim) || !isObject(value.context) ||
+    !Array.isArray(value.materials) || !Array.isArray(value.entries) ||
+    value.entries.some(entry => !isObject(entry) || typeof entry.key !== 'string' || !entry.key || !['raw', 'legacy', 'diagnostic'].includes(String(entry.kind)) ||
+      !Number.isSafeInteger(entry.material_id) || !isObject(entry.data) || !isObject(entry.artifact))
+  ) return null
+  return value as unknown as ExtractionDebug
+}
+
 function usageFrom(value: unknown): SummaryUsage | null {
   if (!isObject(value)) return null
   const fields = ['attempts', 'reservedMicroUsd', 'actualMicroUsd', 'uncertain'] as const
@@ -56,6 +69,7 @@ export function createEvidenceSummary(issueId: number, dependencies: Dependencie
   const state = reactive<SummaryState>({ language: null, phase: 'idle', version: null, hasSummary: false, jobId: null, status: null, usage: null, error: null, canResume: false })
   const request = dependencies.fetch ?? ((input, init) => fetch(input, init))
   const announced = new Set<string>()
+  const announcedExtractions = new Set<string>()
   let generation = 0
   let abort: AbortController | null = null
   let timer: ReturnType<typeof setTimeout> | null = null
@@ -134,7 +148,8 @@ export function createEvidenceSummary(issueId: number, dependencies: Dependencie
     const jobId = state.jobId
     const language = state.language
     if (!jobId || !language || !current(token)) return
-    const body = await json(`/api/evidence-jobs/${encodeURIComponent(jobId)}`, token)
+    const includeExtraction = import.meta.env.DEV && dependencies.onExtraction ? '?include_extraction=1' : ''
+    const body = await json(`/api/evidence-jobs/${encodeURIComponent(jobId)}${includeExtraction}`, token)
     if (!body || !current(token)) return
     if (!isObject(body) || body.job_id !== jobId || typeof body.status !== 'string') {
       outcome('error', 'invalid_response', true)
@@ -142,6 +157,18 @@ export function createEvidenceSummary(issueId: number, dependencies: Dependencie
     }
     state.status = body.status
     state.usage = usageFrom(body.usage)
+    if (import.meta.env.DEV && dependencies.onExtraction && (Object.hasOwn(activeStatuses, body.status) || ['ai_draft', 'partial_draft', 'failed'].includes(body.status))) {
+      const debug = extractionFrom(body.extraction_debug, jobId)
+      if (debug) {
+        const entries = debug.entries.filter(entry => {
+          const key = `${jobId}:${entry.key}`
+          if (announcedExtractions.has(key)) return false
+          announcedExtractions.add(key)
+          return true
+        })
+        if (entries.length) dependencies.onExtraction({ ...debug, entries })
+      }
+    }
     if (Object.hasOwn(activeStatuses, body.status)) {
       state.phase = 'progress'
       state.error = null

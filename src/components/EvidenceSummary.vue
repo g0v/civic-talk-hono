@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { createEvidenceSummary, type SummaryPhase } from '../client/evidenceSummary'
+import { logExtractionDebug } from '../client/extractionDebug'
 import { useI18n } from '../l10n'
 import type { MessageKey } from '../l10n/zh-TW'
 
@@ -72,6 +73,7 @@ const controller = createEvidenceSummary(props.issueId, {
   },
   // 使用者要求暫時輸出；部分草稿可供排查，但不代表已保存為目前結果。
   onResult: data => console.log('一鍵彙整結果（私人、未經人工驗證）', data),
+  onExtraction: import.meta.env.DEV ? logExtractionDebug : undefined,
 })
 const state = controller.state
 const message = computed(() => messageFor(state.phase, state.error, state.status))
