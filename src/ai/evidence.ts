@@ -1,4 +1,4 @@
-export const EVIDENCE_ALGORITHM_VERSION = 'evidence-1' as const
+export const EVIDENCE_ALGORITHM_VERSION = 'evidence-2' as const
 export const MAX_EVIDENCE = 64
 
 export type OffsetUnit = 'utf16' | 'unicode' | 'utf8'
@@ -19,6 +19,7 @@ export interface ProviderSpan {
 export interface Evidence {
   id: string
   material_id: number
+  // quote 是按原文句界展開的判讀單位；raw_quote／raw_span 只保留 provider 定位錨點。
   quote: string
   raw_quote: string
   raw_span: Span
@@ -130,7 +131,7 @@ function isTerminal(text: string, index: number): boolean {
 
 const closing = '”’」』）】》〉〕)]}"\''
 
-/** 句界規則版本同 EVIDENCE_ALGORITHM_VERSION；切片始終保留未正規化原文。 */
+/** 將已驗證錨點展開至完整原文句界，跨句選取保留原範圍，不拼接或改寫。 */
 export function expandSentence(content: string, rawStart: number, rawEnd: number): Span<'utf16'> {
   let start = rawStart
   while (start > 0 && !isTerminal(content, start - 1)) start--
@@ -190,26 +191,37 @@ export function extractClairicEvidence(input: ClairicEvidenceInput): EvidenceExt
   if (answer.value === null) return { status: 'complete', evidence: [], rejected: [], duplicates: 0, state_mapping: stateMapping }
   if (!Array.isArray(answer.value)) return { ...failed('invalid_answer'), state_mapping: stateMapping }
   const values = answer.value
-  // 提供 spans 時，不能將缺漏、格式錯誤或錯位當成缺 span 退回字串搜尋。
-  if (answer.spans !== undefined && (!Array.isArray(answer.spans) || answer.spans.length !== values.length)) return { ...failed('invalid_spans'), state_mapping: stateMapping }
+  // 不把壞 span 當成缺 span 退回搜尋；數量不一致時僅接受完整、精確且無歧義的重新配對。
+  if (answer.spans !== undefined && !Array.isArray(answer.spans)) return { ...failed('invalid_spans'), state_mapping: stateMapping }
   const spans = answer.spans as unknown[] | undefined
+  const matchedValues = spans && spans.length !== values.length ? new Map<string, boolean>() : null
+  if (matchedValues) {
+    for (const value of values) {
+      if (typeof value !== 'string' || !value.length) return { ...failed('invalid_value'), state_mapping: stateMapping }
+      matchedValues.set(value, false)
+    }
+  }
   const evidence: Evidence[] = []
   const rejected: EvidenceRejection[] = []
   const seen = new Set<string>()
   let duplicates = 0
   const reject = (index: number, reason: EvidenceRejection['reason']) => rejected.push({ index, reason })
 
-  for (let index = 0; index < values.length; index++) {
-    const value: unknown = values[index]
-    if (typeof value !== 'string' || !value.length) {
-      reject(index, 'invalid_value')
-      continue
+  for (let index = 0; index < (matchedValues ? spans!.length : values.length); index++) {
+    let value = ''
+    if (!matchedValues) {
+      const original: unknown = values[index]
+      if (typeof original !== 'string' || !original.length) {
+        reject(index, 'invalid_value')
+        continue
+      }
+      value = original
     }
     let rawStart: number
     let rawEnd: number
     let providerSpan: ProviderSpan | null = null
     let rawUnit: OffsetUnit = 'utf16'
-    if (!spans || spans[index] === null) {
+    if (!spans || (!matchedValues && spans[index] === null)) {
       // 缺 span 時也要檢查整個實送 state，包裝中重複相同文字不能冒充素材引文。
       const first = state.indexOf(value)
       if (first < 0) {
@@ -241,7 +253,10 @@ export function extractClairicEvidence(input: ClairicEvidenceInput): EvidenceExt
       for (const unit of units) {
         const start = toUtf16(state, map, span[0], unit)
         const end = toUtf16(state, map, span[1], unit)
-        if (start !== null && end !== null && end > start && state.slice(start, end) === value) matches.push({ unit, start, end })
+        if (start !== null && end !== null && end > start) {
+          const text = state.slice(start, end)
+          if (matchedValues ? matchedValues.has(text) : text === value) matches.push({ unit, start, end })
+        }
       }
       if (!matches.length) {
         reject(index, 'span_value_conflict')
@@ -256,6 +271,10 @@ export function extractClairicEvidence(input: ClairicEvidenceInput): EvidenceExt
         reject(index, 'outside_source')
         continue
       }
+      if (matchedValues) {
+        value = state.slice(first.start, first.end)
+        matchedValues.set(value, true)
+      }
       rawStart = first.start - sourceStart
       rawEnd = first.end - sourceStart
       // 無法區別的單位不冒充 provider 單位；原文範圍改以已知 UTF-16 表示。
@@ -263,6 +282,7 @@ export function extractClairicEvidence(input: ClairicEvidenceInput): EvidenceExt
       providerSpan = { start: span[0], end: span[1], unit: matches.length === 1 ? first.unit : null, possible_units: matches.map(match => match.unit) }
     }
     const expanded = expandSentence(content, rawStart, rawEnd)
+    // 多個詞級錨點落在同一完整單位時，只交付一筆，不把碎片放大成多個主張。
     const id = `e:${material_id}:${expanded.start}:${expanded.end}`
     if (seen.has(id)) {
       duplicates++
@@ -278,6 +298,13 @@ export function extractClairicEvidence(input: ClairicEvidenceInput): EvidenceExt
       expanded_span: expanded,
       provider_span: providerSpan,
     })
+  }
+  if (matchedValues) {
+    // 此相容路徑必須整份成立，不能悄悄丟掉無效座標或未覆蓋片段後交付 partial。
+    if (rejected.length) return { status: 'failed', evidence: [], rejected, duplicates: 0, state_mapping: stateMapping }
+    for (const matched of matchedValues.values()) {
+      if (!matched) return { ...failed('invalid_spans'), state_mapping: stateMapping }
+    }
   }
   return { status: rejected.length ? (evidence.length ? 'partial' : 'failed') : 'complete', evidence, rejected, duplicates, state_mapping: stateMapping }
 }

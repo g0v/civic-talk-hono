@@ -9,6 +9,7 @@ import { checkedSnapshot, reconcileSources, SourceUnavailable } from './lifecycl
 import { estimateCall } from './pricing'
 import { readMaterialStatuses, readSourceInput, sha256, SOURCE_NAMESPACE, SourceInputError } from './source'
 import { EvidenceStore, type ExecutionStatus, type InputManifest, type SummaryLanguage } from './store'
+import { buildExtractionDebug } from './extractionDebug'
 
 export type EvidenceApp = Hono<{ Bindings: EvidenceBindings }>
 const CONSENT_VERSION = 'evidence-processing-2026-11-07-v5'
@@ -456,6 +457,9 @@ export function registerEvidenceRoutes(app: EvidenceApp): void {
     const diagnostics = await store.listArtifacts(job.executionId, 'diagnostics')
     const artifactSummaries = await store.listArtifactSummaries(job.executionId)
     const artifact = job.artifactId ? await store.getArtifact(job.executionId, job.artifactId) : null
+    const extractionArtifacts = import.meta.env.DEV && c.req.query('include_extraction') === '1'
+      ? await Promise.all([store.listExtractionRawArtifacts(job.executionId), store.listArtifacts(job.executionId, 'extraction')])
+      : null
     // 這是當下議題的隱藏狀態，不是工作原始輸入的一部分，故不影響快取鍵。
     const currentIssueExclusions = (await readMaterialStatuses(c.env.SOURCE_DB, job.issueId)).filter(item => item.abuse_flagged !== 0).map(item => ({ id: item.id, reason: 'hidden' }))
     // 最後再以同一持久 fence 讀取快照，避免已完成清除的競態把記憶體舊內容送出。
@@ -485,6 +489,7 @@ export function registerEvidenceRoutes(app: EvidenceApp): void {
       initial_input_diagnostics: initialInputDiagnostics,
       current_issue_exclusions: currentIssueExclusions,
       diagnostics: payload.diagnostics ?? diagnostics.map(item => item.payload),
+      ...(extractionArtifacts ? { extraction_debug: buildExtractionDebug(jobId, snapshot.manifest, extractionArtifacts[0], extractionArtifacts[1], diagnostics) } : {}),
     })
   })
 

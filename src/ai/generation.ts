@@ -373,9 +373,12 @@ const SECTION_INSTRUCTIONS = {
     'Keep item evidence_ids explicitly declared. Before returning, audit each item against its actual Title and description sentence citations: their union must exactly equal the declared evidence_ids, with no unused declaration, missing declaration, unknown ID or ID outside the selected candidate. Every declared material must appear in description citations; Title-only citations cannot supply a second material. Use a genuine narrower selection and its supporting text, or reject it; do not add decorative citations merely to make the sets match. This audit is your responsibility before emitting JSON, not a request for the program to repair the response.\n' +
     '逐一檢視所有候選及不同面向，輸出所有有獨立支持的共同命題；零、一、二或更多項都可能正確，不為湊數拆分、重複、合併或虛構命題。同一候選和證據可支持不同命題。Overview 只能概述採用項目，保留各項範圍、條件與類型，不得將共同事實或挑戰說成共同方案，亦不得擴大到未參與的素材。沒有任何採用命題的候選必須在 rejected_candidates 說明理由；同一候選不得同時採用和拒絕。',
   disputes:
-    '先檢視所有已驗證證據與關係，而非只看分歧種子；依可獨立回答的爭議問題分組，每個問題只產生一項。對同一問題的多組統計數據與證據配對應彙整在該項，保留所有相關側、各自主張及可比較的人群、時間和條件，不得每個配對另列一項；不同問題則不可合併。同一證據可以支持不同問題。逐一檢視所有獨立問題，零、一、二或更多項均可，不為湊數拆分、重複或虛構爭議。question 是逐句附引用的陣列，具體寫出單一可回答的問題及其範圍，引用必須屬於該項的 sides。不同條件下的主張可能並存：整體增長與特定群體的風險未必矛盾。contradiction 是可比條件下不相容的事實結論；opposition 是相反的明示立場或建議；tension 是可能並存的策略、優先順序或價值張力。不可憑語氣虛構矛盾，或把張力當作正式 disagree；agree 配對不可說成矛盾或對立。每側 claim 必須引用該側全部證據，description 必須引用每側；comparison_conditions 和 side claim 均為逐句附引用的陣列。不得提供 origin 或 formal relation，程式會依直接比較推導。',
+    '先檢視所有已驗證證據與關係，而非只看分歧種子；依可獨立回答的爭議問題分組，每個問題只產生一項。對同一問題的多組統計數據與證據配對應彙整在該項，保留所有相關側、各自主張及可比較的人群、時間和條件，不得每個配對另列一項；不同問題則不可合併。同一證據可以支持不同問題。同一素材可報導不同說話者或對立主張，允許各側來自同一素材，但每側必須以不同 evidence ID 的明示論述支持，不得將同一證據重複放在兩側。單一素材中的兩側不是跨素材佐證，同源關係只能是生成提案，不可冒稱 Clef 正式判斷。逐一檢視所有獨立問題，零、一、二或更多項均可，不為湊數拆分、重複或虛構爭議。question 是逐句附引用的陣列，具體寫出單一可回答的問題及其範圍，引用必須屬於該項的 sides。不同條件下的主張可能並存：整體增長與特定群體的風險未必矛盾。contradiction 是可比條件下不相容的事實結論；opposition 是相反的明示立場或建議；tension 是可能並存的策略、優先順序或價值張力。不可憑語氣虛構矛盾，或把張力當作正式 disagree；agree 配對不可說成矛盾或對立。每側 claim 必須引用該側全部證據，description 必須引用每側；comparison_conditions 和 side claim 均為逐句附引用的陣列。不得提供 origin 或 formal relation，程式會依直接比較推導。',
   positions:
-    'Independently group explicit concerns, claims, or approaches from all evidence; preserve independent concerns, minority views, and conditions without requiring one group per material or a fixed number of groups. One material may occur in multiple groups and one group may include multiple materials. Do not mix opposite claims or infer hidden motives. Supply a unique group_id for each group. Group membership is derived from evidence IDs actually cited in the Title or description of that group’s opinions; do not declare group evidence_ids. Opinions must contain real, substantive cited narrative sentences, not dummy text or decorative lists of IDs; use multiple opinions when needed to represent the evidence. The group name and non-null Core_concern may cite only evidence used by those opinions. Actively provide a concise Core_concern supported by the group: it may synthesize explicitly stated claims, but never invent a hidden motive or personality. Use null only if no supported synthesis is possible. List each evidence ID not cited by any opinion exactly once in exclusions with a reason; do not exclude evidence adopted by an opinion. Overlap is allowed and will be calculated by the program.',
+    'Independently group explicit concerns, claims, or approaches from all evidence; preserve independent concerns, minority views, and conditions without requiring one group per material or a fixed number of groups. One material may occur in multiple groups and one group may include multiple materials. Supply a unique group_id for each group. Construct the result in the following order before emitting the final JSON; do not output working sets or extra fields.\n' +
+    '1. Complete opinions first. Write real, substantive cited Title and description sentences; use multiple opinions when needed, never dummy text or decorative lists of IDs. For each group, compute the union of evidence_ids cited by every sentence in the Title and description of ALL its opinions. This union alone determines group membership; do not declare group evidence_ids. For every pair in comparison.direct_comparisons whose relation is "disagree", the two evidence IDs MUST NOT both occur in the same group union, even in different opinions. A shared topic, group label, common concern, or compatible intermediary does not override this constraint. Split conflicting evidence into separate, internally compatible groups or leave it unused for exclusion in step 3. Overlap between compatible groups is allowed and will be calculated by the program.\n' +
+    '2. Write name and Core_concern only after the opinions and their group union are settled. Every evidence_id cited by name or non-null Core_concern MUST belong to that same group union. Actively provide a concise Core_concern synthesizing the group’s explicitly stated claims, without inferring hidden motives or personality; use null only if no supported synthesis is possible. A name or Core_concern citation never adds group membership. If either field needs other evidence, first write a substantive supported opinion using that evidence and recheck the complete group union for direct-disagree conflicts, or narrow the field to what the existing opinions support. Never append decorative citations to an opinion merely to make a group label or Core_concern pass validation.\n' +
+    '3. Audit ALL input evidence IDs against the union of opinion citations across all groups. Every input ID must be either adopted by at least one opinion or listed exactly once in exclusions with an explicit reason: no missing IDs and no ID both adopted and excluded. Citations appearing only in name or Core_concern do not count as adoption. Write Overview from the adopted groups and their opinion citations. Emit only the final schema-compliant JSON, not the audit or intermediate membership sets.',
 } as const
 
 // 原生結構化輸出仍逐段嚴格驗證，提示中的範例只說明格式。
@@ -403,6 +406,12 @@ export const GENERATION_PARAMETERS = {
   stream: false,
 } as const
 
+const GENERATION_TEMPERATURES = {
+  consensus: 0,
+  disputes: 0,
+  positions: GENERATION_PARAMETERS.temperature,
+} as const
+
 // 256K 是模型宣告的 context；48 KiB 僅為既有請求封裝的位元組守門，不能證明 tokenizer 必然容納。
 // 帳務另以 bytes × 4 加 4096 及最多 8192 輸出估算預留，並非精確 token 數或 context 上限。
 export const GENERATION_MAX_REQUEST_BYTES = 48 * 1024
@@ -410,7 +419,7 @@ export const GENERATION_MAX_REQUEST_BYTES = 48 * 1024
 export interface GenerationModelInput {
   messages: ({ role: 'system'; content: string } | { role: 'user'; content: string })[]
   max_completion_tokens: 8192
-  temperature: 0.2
+  temperature: 0 | 0.2
   chat_template_kwargs: { enable_thinking: false }
   stream: false
   response_format: { type: 'json_schema'; json_schema: { name: string; strict: true; schema: Record<string, unknown> } }
@@ -703,6 +712,7 @@ export function buildGenerationRequest(section: GenerationSection, input: Genera
       { role: 'user', content: JSON.stringify(payload) },
     ],
     ...GENERATION_PARAMETERS,
+    temperature: GENERATION_TEMPERATURES[section],
     response_format: { type: 'json_schema', json_schema: { name: `evidence_${section}`, strict: true, schema: generationSchema(section, candidates) } },
   }
   const request_bytes = utf8Bytes(JSON.stringify(requestInput))
@@ -911,7 +921,6 @@ function disputesSection(
       if ([...ids].some(id => !cited.has(id))) throw new Error('generation_insufficient_group_citations')
       return { evidence_ids: [...ids], claim: side.claim as CitedSentence[] }
     })
-    if (new Set([...allIds].map(id => context.evidence.get(id)!.material_id)).size < 2) throw new Error('generation_insufficient_group_citations')
     const relations = sideRelations(sides, context)
     if (kind !== 'tension' && relations.some(relation => relation.relation === 'agree')) throw new Error('generation_invalid_dispute_relation')
     const origin = kind !== 'tension' && relations.length > 0 && relations.every(relation => relation.relation === 'disagree') ? 'direct_clef' : 'generation_proposal'
@@ -1008,7 +1017,7 @@ function positionsSection(
 
 export const GENERATION_VERSIONS = { prompt: MODEL_VERSIONS.generation_prompt, schema: MODEL_VERSIONS.generation_schema } as const
 export const CITATION_ALGORITHM_VERSION = 'citation-map-v1'
-export const GENERATION_ASSEMBLY_POLICY_VERSION = 'section-opinion-membership-v2'
+export const GENERATION_ASSEMBLY_POLICY_VERSION = 'section-opinion-membership-v3-same-material-disputes'
 const GENERATION_RESPONSE_POLICY_VERSION = 'gemma-chat-stop-json-v3'
 export const GENERATION_COMPLETION_POLICY_VERSION = 'required-fields-exact-cited-patches-v2'
 
@@ -1053,6 +1062,7 @@ function contextFingerprint(input: GenerationInput): string {
     versions: { ...MODEL_VERSIONS, evidence: EVIDENCE_ALGORITHM_VERSION, comparison: COMPARISON_ALGORITHM_VERSION, citation: CITATION_ALGORITHM_VERSION, assembly: GENERATION_ASSEMBLY_POLICY_VERSION },
     selector: MODEL_SELECTORS.generation,
     parameters: GENERATION_PARAMETERS,
+    section_temperatures: GENERATION_TEMPERATURES,
     prompts: GENERATION_SYSTEM_PROMPTS,
     candidate_map: candidates.map(({ candidate_id, canonical_id }) => ({ candidate_id, canonical_id })),
     schemas: Object.fromEntries(GENERATION_SECTIONS.map(section => [section, generationSchema(section, candidates)])),

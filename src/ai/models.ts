@@ -13,7 +13,7 @@ export const MODEL_VERSIONS = {
   clairic_prompt: 'claims-list-v3',
   clef_prompt: 'symmetric-four-way-v2',
   clef_batching: 'canonical-byte-budget-v1',
-  generation_prompt: 'specialized-evidence-v7',
+  generation_prompt: 'specialized-evidence-v12-baseline-v9',
   generation_schema: 'specialized-cited-v4',
   generation_input: 'section-values-v6-gemma-chat',
   generation_completion_prompt: 'missing-fields-only-v3',
@@ -180,6 +180,8 @@ function normalizedPairs(evidence: readonly Evidence[], pairs: readonly Evidence
       item.material_id <= 0 ||
       typeof item.quote !== 'string' ||
       !item.quote ||
+      typeof item.raw_quote !== 'string' ||
+      !item.raw_quote ||
       evidenceById.has(item.id)
     ) {
       throw new Error('clef_invalid_evidence')

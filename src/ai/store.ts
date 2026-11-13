@@ -813,6 +813,38 @@ export class EvidenceStore {
     })
   }
 
+  /** 以付費 step key 識別素材；正文相同的不同素材不能靠 state 字串猜歸屬。 */
+  async listExtractionRawArtifacts(executionId: string): Promise<Array<Artifact & { materialId: number }>> {
+    return safe(async () => {
+      const rows = await this.db
+        .prepare(`SELECT a.id, a.execution_id, a.attempt_id, a.payload, a.payload_hash, a.created_at, u.step_key
+      FROM ct_ai_artifacts a JOIN ct_ai_executions e ON e.id = a.execution_id
+      JOIN ct_ai_usage u ON u.id = a.attempt_id AND u.execution_id = a.execution_id
+      WHERE e.id = ? AND a.kind = 'raw' AND u.step_key LIKE 'extract:%'
+        AND e.status IN (${READABLE}) AND a.payload IS NOT NULL AND ${fence('e')}
+      ORDER BY a.rowid`)
+        .bind(executionId)
+        .all<{ id: string; execution_id: string; attempt_id: string; payload: string; payload_hash: string; created_at: string; step_key: string }>()
+      const artifacts: Array<Artifact & { materialId: number }> = []
+      for (const row of rows.results ?? []) {
+        if (!/^extract:[1-9][0-9]*$/.test(row.step_key)) continue
+        const materialId = Number(row.step_key.slice('extract:'.length))
+        if (!Number.isSafeInteger(materialId)) continue
+        artifacts.push({
+          id: row.id,
+          executionId: row.execution_id,
+          attemptId: row.attempt_id,
+          kind: 'raw',
+          payload: JSON.parse(row.payload),
+          payloadHash: row.payload_hash,
+          createdAt: row.created_at,
+          materialId,
+        })
+      }
+      return artifacts
+    })
+  }
+
   /** 只投影可公開給工作授權者的稽核欄位，不載入完整 prompt／模型回應。 */
   async listArtifactSummaries(executionId: string): Promise<ArtifactSummary[]> {
     return safe(async () => {

@@ -21,6 +21,24 @@
 
 正式來源為業務 `DB`；既有 BYO token、`GET /api/issues/:id/prompt?type=synthesis`、briefing 與議題狀態不變。AI／人工草稿分別是 `ai_unverified`／`human_unverified`，不是可公開的 briefing。
 
+立場生成提示 `specialized-evidence-v12-baseline-v9` 回到 `9ee4bf6c9fd7e70fcb209701b6c04f08d2d1f49b` 的 v9 共用與立場指令，僅保留後來已授權的同素材爭點提示；不再疊加 v10／v11 的焦點或完整單位共用指令。三步構造順序維持：先完成各群 opinions 的實質 `Title`／`description` 並計算引用聯集；再寫 name／Core_concern，引用僅能來自該群聯集，不以這兩欄的引用增加成員或補裝飾性 opinion 引用；最後核對全部輸入證據，必須被 opinion 採用或在 exclusions 恰好列出一次並說明原因，不得遺漏或兩者兼具。每群聯集仍不得包含任何 direct-disagree 配對的兩端；共同主題、群名、關注或中介證據不能豁免。
+
+採樣維持歷史成功工作實際使用的共識／爭點 `temperature=0`、立場與必要欄位補完 `0.2`，模型、schema、token 上限不變。該工作雖記錄來源 commit 為 `9ee4bf6`，同時為 `dirty=true`；此 commit 原檔三項皆為 `0.2`，不能只用 SHA 冒稱已還原成功實測。本輪比對保存的完整請求：Clairic、Clef、共識及立場與該次實測一致；爭點僅多出同素材支援指令。分項 temperature 與實際請求參與工作／context 指紋，不以清快取重跑。
+
+Clairic 回退至 `claims-list-v3`：完整閱讀後優先主要明示論述，「通常一至三項」只是核心選材指引，不是片段數量門檻；仍要求保留重要反例、限制、少數觀點、歸屬及條件，優先正文而非重複標題或統計介紹。它仍可能漏抽或回傳詞級片段；不以 confidence 或字數閾值刪掉難處理的結果，也不宣稱回退已提升完整性。
+
+抽取回到行為相同的 `evidence-2`，保留逐字座標驗證與原文句界展開；證據 ID／去重依展開後的 UTF-16 範圍，provider raw 保留全部回傳片段與座標，不改寫歷史資料。Clef `symmetric-four-way-v2` 與三項生成 `section-values-v6-gemma-chat` 只投影 `id`／`material_id`／`quote`；必要欄位補完恢復 `missing-fields-only-v3`，接收白名單證據的 `id`／`quote`／`raw_quote`，但不附加焦點規則，亦不得改動既有正文、來源或引用。展句與去重沒有新增猜測拆句或補寫；句界完整不等於語義完整，同一單位仍可能含多方主張或不同問題。
+
+數量不一致的嚴格相容路徑仍保留：每組座標須在素材原文內、逐字匹配已回傳片段，所有片段均須被覆蓋，且不同座標單位不得指向不同原文範圍；任一無效、未匹配、越界、範圍歧義或片段缺漏，整份抽取仍拒收。相同文字的各有效位置都先驗證、展句，再按相同完整單位去重，不任選一個位置作字串搜尋補救；重複 value 可由同一有效座標覆蓋。數量一致時維持原索引配對。證據數、byte／Workflow／預算上限不變，不自動截斷或提高上限。
+
+爭點允許同一素材的不同證據支持不同側，適用 contradiction／opposition／tension；同源關係保留 `status='same_material'`，整項標為 `generation_proposal`／`formal_relation=null`，不冒稱跨來源佐證或 Clef 正式判斷。每側仍須有獨立且不重疊的 evidence ID，claim 引用覆蓋該側，description 引用每側，Overview 只引用已採用項目；未知、越界、同一證據分列兩側、側內 direct-disagree 等仍拒收。共識的跨素材至少兩份及建立新工作的至少兩份合格素材門檻不變。
+
+這是受控回退，不是整個分支 reset：保留嚴格座標相容、同素材爭點、既有引用／覆蓋／互斥守門及帳務／來源生命週期。最新失敗與歷史成功使用相同來源 hash 和相同 temperature；最新三項皆正常結束，但共識宣告未使用證據、爭點 opposition 跨側含 Clef agree、立場名稱／核心引用超出該群 opinions 聯集，因而全部拒收。原始回應在原版 9ee4bf6 與回退後驗證器離線重播得到相同結果，不能將失敗歸因於新版驗證器變嚴；也不以刪除壞項目、補裝飾性引用、改成 tension 或放寬守門讓它通過。
+
+本輪僅唯讀診斷與離線重播，沒有新增付費模型呼叫或改寫工作狀態。歷史成功工作的爭點為空，反方素材只選入標題；最新失敗其實已選入反方正文，因此 `ai_draft` 不代表內容完整，回退也可能恢復既有漏抽風險。後續優化應一次只改一個變因，先檢驗抽取論述單位與比較問題的粒度，避免把多命題段落的一個全域 agree／disagree 當成所有問題的關係；需另獲付費實驗授權，不能以此輪離線一致性宣稱生成成功率提升。
+
+實驗來源追溯：`dev:remote` 的 `sourceDefines()` metadata 在 Vite 啟動時固定，HMR 不會更新；修改或提交後，下次實驗前須由操作者重新啟動服務，避免記錄舊 commit／dirty 狀態。Prompt／演算法版本與設定指紋仍應一併核對，不以來源 SHA 單獨推定實際模型請求。
+
 ## 3. 模式、前置與保護範圍
 
 | 模式                     | 工作 DB／來源                                          | 認證／AI                  | 用途                                                           |
@@ -64,6 +82,44 @@ Clairic 逐素材、Clef 配對、Gemma 共識／爭點／立場三項，必要�
 - 議題保存副本仍受來源檢查與 fence：hidden／changed 停止交付，來源 deleted 被對帳發現或按來源 erase 時清除副本，不得繞過原私有工作生命週期。新端點與原六 API 使用相同開關、必要 bindings、CSRF、private/no-store／Vary Cookie／無 CORS 政策。
 - UI 只顯示進度與成功／部分完成／失敗提示。完整成功並確認已保存後，或 `partial_draft` 回傳可交付 `data` 時，依 #210 暫在操作者瀏覽器 `console.log` 輸出 `data`；部分草稿只供排查，不表示已保存或成功。同一語言／工作／版本在元件生命週期內不重複輸出，重新整理會重新輸出；沒有資料、失敗、撤下／清除或已離開範圍的遲到回應不輸出。不送伺服器 log，不將私人 Console 記錄當成可公開的驗收證據。
 - 重新整理恢復目前獲授權的工作，不自動發起新生成。切換介面語言不把另一語言工作結果寫錯欄位；讀取工作／摘要仍可能核對來源，並非正式站的無副作用 smoke。
+
+### Checkpoint A 提取觀測（dev-only）
+
+2026-11-14 使用者回報實測 log 已出現，作為 checkpoint A 觀測接線的手動驗收；不把此回報擴張成原子化、語義品質或後續實驗已通過。
+
+依 [`plan.md`](../plan.md) 第 6 節第 1 步，先提供 A／P0＋E0 的可觀測性：**Clairic 提示、展句／去重、Clef／Gemma 請求與生成流程均未改動**；原子 claim／context、E1 與後續對照尚未實作。這不是新的提取品質驗收。
+
+- dev 的工作 GET 可精確加上 `?include_extraction=1`，取得 `extraction_debug`（`version: extraction-observation-v1`）；未 opt-in 不新增欄位。production 即使手送 query，也不讀取提取 raw、不回傳診斷欄位。既有登入／停權、owner／admin、private/no-store、來源查核及最後 fence 維持。
+- 回傳與 console 只投影已保存的提取資料：`[extraction:raw]` 保留原始 `value／spans`（可能不等長）、confidence／p_null；`[extraction:expanded]` 顯示 legacy quote／原始及展句座標、拒收與去重；無正常 extraction 工件時仍可讀已保存的 raw／`[extraction:diagnostic]`，不偽造展句。
+- `claim／context` 目前一律明示 `unavailable/not_created_at_checkpoint_A`；三層完整提取留待 E1。metadata 使用該工作的保存設定、來源 commit／dirty、素材 content hash 與工件 ID／hash；若保存版本不是 P0／E0，只能當歷史資料檢視，不能冒稱這一組基準。
+- 以付費 `extract:<materialId>` step key 辨識 raw 歸屬，不用正文比對猜測素材；同文字不同素材仍可區分。不輸出完整 request、state_text、coverage.state_mapping、作者快照或其他模型的 raw，不把私人內容送到伺服器 log。
+- dev 一鍵彙整的既有輪詢會自動 opt-in；提取資料一旦可讀就輸出，最後 failed／partial 不影響上游診斷。每個工作／工件 ID／hash 只印一次；離開頁面、切換語言／帳號或卸載後不印遲到資料。重新整理會重新印。
+
+手動實測：
+
+1. 使用 npm 12 與專案 Vite+；由操作者重啟 `vp run dev:remote`，更新啟動時固定的 commit／dirty metadata。一般 `vp run dev` 停用 Auth，不能作真人登入的提取驗收。本輪程式未提交，預期 metadata 顯示 dirty；不停止他人的既有服務。
+2. 先開 DevTools Console，再以有權限的帳號進入既有議題的志願者工具、選對介面語言。若該語言已有目前獲授權的工作，還原／輪詢時便會出現分素材的原始抽取、legacy 展句及設定；**不必為看 log 再按一次生成**。GET／頁面還原仍可能觸發來源對帳或 queued 恢復，非無副作用試打。
+3. 若要檢視未附掛目前摘要的舊 job，先確認該 job 與操作範圍已獲授權，再於同源 dev Console 執行下方自包含程式。只要求現有工作，不輸出整份 API body 或 Cookie；owner／admin 以外仍回 404。
+4. 觀察否定／條件／歸屬是否已在 raw 中、legacy 展句是否混入其他立場，以及原始 value／spans、拒收／去重與 content／設定 hash；不要將 legacy 筆數當作原子命題數。缺 raw 是未取得保存結果，不等於沒有主張。
+5. 本 checkpoint 不建立 extraction-only 流程。按「同意並開始彙整」仍會走既有完整付費工作，可能呼叫 Clef、Gemma 與必要補完並更新私人摘要；只有操作者另行同意該來源、帳號、費用與寫入範圍後才做，不為確認歷史成功而重跑。
+
+```js
+;(async () => {
+  const jobId = window.prompt('已獲准檢視的既有工作 ID')
+  if (!jobId) return
+  const response = await fetch(`/api/evidence-jobs/${encodeURIComponent(jobId)}?include_extraction=1`, { credentials: 'same-origin' })
+  const body = await response.json()
+  if (!response.ok || !body.extraction_debug) {
+    console.log({ http_status: response.status, job_status: body.status, error: body.error, extraction_debug: 'unavailable' })
+    return
+  }
+  const { logExtractionDebug } = await import('/src/client/extractionDebug.ts')
+  logExtractionDebug(body.extraction_debug)
+})()
+```
+
+手動貼上的程式每次都會輸出；元件自動輪詢才有生命週期內的工件去重。Console 內文仍可能含個資，不能公開貼到 PR；來源 erase 不能追回瀏覽器已顯示的副本。投影與輸出入口為 `src/ai/extractionDebug.ts`、`src/client/extractionDebug.ts`。
+
 
 ## 5. 權限、CSRF、維護與來源生命週期
 
