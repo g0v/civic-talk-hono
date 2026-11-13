@@ -59,7 +59,7 @@ const materials = ref<Material[]>(props.initialDetail?.materials ?? [])
 const eligibleMaterialCount = computed(() => materials.value.reduce((count, material) => count + Number(material.abuse_flagged === 0), 0))
 const canSummarize = computed(() => eligibleMaterialCount.value >= 2)
 const briefing = ref<Briefing | null>(props.initialDetail?.briefing ?? null)
-const opinions = ref<Opinion[]>(props.initialDetail?.opinions ?? [])
+const opinions = ref<Array<Opinion & Partial<OpinionVoteState>>>(props.initialDetail?.opinions ?? [])
 const opinionSort = ref<'recent' | 'responses'>('recent')
 const opinionsLoading = ref(false)
 const loading = ref(!props.initialDetail)
@@ -410,7 +410,7 @@ async function loadIssue() {
   } finally {
     loading.value = false
   }
-  if (authState.value === 'signed-in') await loadOpinions()
+  await loadOpinions()
 }
 
 async function loadOpinions(sort: 'recent' | 'responses' = opinionSort.value) {
@@ -434,7 +434,7 @@ function changeOpinionSort() {
 
 async function refreshViewerOpinions() {
   await ensureAuthSession()
-  if (authState.value === 'signed-in') await loadOpinions()
+  await loadOpinions()
 }
 
 onMounted(() => {
@@ -1395,6 +1395,15 @@ async function submitOpinion() {
                       @update="updateOpinionVote(o.id, $event)"
                       @sign-in-required="rememberOpinionPosition(o.id)"
                     />
+                    <div v-if="typeof o.response_count === 'number'" class="mt-3 flex justify-end">
+                      <span role="img" :aria-label="t('op_response_count_label', { count: o.response_count })" :title="t('op_response_count_label', { count: o.response_count })" class="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-sm text-muted">
+                        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                          <path d="M2.25 12s3.5-6 9.75-6 9.75 6 9.75 6-3.5 6-9.75 6-9.75-6-9.75-6Z" />
+                          <circle cx="12" cy="12" r="2.5" />
+                        </svg>
+                        {{ o.response_count }}
+                      </span>
+                    </div>
                   </template>
                 </div>
               </template>

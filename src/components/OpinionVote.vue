@@ -2,20 +2,8 @@
 import { computed, ref } from 'vue'
 import SignInButtons from './SignInButtons.vue'
 import { useAuth } from '../composables/useAuth'
-import type { Opinion } from '../db/queries'
+import type { Opinion, OpinionVoteState, OpinionVoteValue } from '../db/queries'
 import { useI18n } from '../l10n'
-
-type OpinionVoteValue = -1 | 0 | 1
-
-interface OpinionVoteState {
-  vote_agree: number | null
-  vote_disagree: number | null
-  vote_pass: number | null
-  my_vote: OpinionVoteValue | null
-  can_view_vote_distribution: boolean
-  can_vote: boolean
-  is_author: boolean
-}
 
 type OpinionWithVote = Opinion & Partial<OpinionVoteState>
 

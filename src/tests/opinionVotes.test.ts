@@ -117,6 +117,7 @@ describe('opinion vote queries', () => {
       [
         { author_id: 'author', abuse_flagged: 0 },
         {
+          response_count: 3,
           vote_agree: 2,
           vote_disagree: 1,
           vote_pass: 0,
@@ -129,7 +130,7 @@ describe('opinion vote queries', () => {
       []
     )
     const result = await upsertOpinionVote(db, 4, 'voter', 1)
-    expect(result).toEqual({ state: { vote_agree: 2, vote_disagree: 1, vote_pass: 0, my_vote: 1, can_view_vote_distribution: true, can_vote: true, is_author: false } })
+    expect(result).toEqual({ state: { response_count: 3, vote_agree: 2, vote_disagree: 1, vote_pass: 0, my_vote: 1, can_view_vote_distribution: true, can_vote: true, is_author: false } })
     expect(sql.some(query => query.includes('ON CONFLICT(opinion_id, voter_id) DO UPDATE'))).toBe(true)
     expect(sql[2]).toContain('WHERE opinion_id = ?')
     expect(binds[2]).toEqual(['voter', 4, 4])
