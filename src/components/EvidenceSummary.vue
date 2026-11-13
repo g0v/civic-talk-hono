@@ -75,6 +75,7 @@ const controller = createEvidenceSummary(props.issueId, {
 })
 const state = controller.state
 const message = computed(() => messageFor(state.phase, state.error, state.status))
+const busy = computed(() => ['loading', 'submitting', 'progress'].includes(state.phase))
 const disabled = computed(() => !props.canSummarize || props.banned || blocked.value || props.sessionExpired || ['idle', 'loading', 'submitting', 'progress', 'error', 'unknown', 'unsaved'].includes(state.phase))
 const costMessage = computed(() => {
   if (!state.jobId && state.error !== 'post_unknown') return ''
@@ -148,7 +149,10 @@ function confirm() {
   <div v-if="message || banned || blocked || costMessage" class="basis-full" role="status" aria-live="polite" data-testid="evidence-summary-status">
     <div class="alert mb-0 text-sm" :class="['error', 'failed', 'partial', 'withdrawn', 'erased', 'unknown', 'unsaved', 'superseded'].includes(state.phase) || banned || blocked ? 'alert-warn' : 'alert-info'">
       <p v-if="banned || blocked" class="m-0">{{ t('banned_toast') }}</p>
-      <p v-else-if="message" class="m-0">{{ message }}</p>
+      <p v-else-if="message" class="m-0 flex items-start gap-2">
+        <span v-if="busy" class="mt-0.5 inline-block h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-current border-t-transparent motion-reduce:animate-none" aria-hidden="true" data-testid="evidence-summary-loader" />
+        <span>{{ message }}<span v-if="busy" class="ml-1">{{ t('vol_ai_wait') }}</span></span>
+      </p>
       <p v-if="costMessage" class="mt-2 mb-0">{{ costMessage }}</p>
       <button v-if="state.canResume && !banned && !blocked && !sessionExpired" type="button" class="btn btn-secondary btn-sm mt-3" data-testid="evidence-summary-resume" @click="controller.resume()">
         {{ t('vol_ai_resume') }}
