@@ -195,6 +195,7 @@ export const messages = {
   vol_ai_consent: '我了解以上處理、費用、隱私與保存限制，同意本次處理。',
   vol_ai_replace_consent: '我確認完整結果可取代此語言目前的私人彙整。',
   vol_ai_confirm: '同意並開始彙整',
+  vol_ai_wait: '請耐心等候…',
   vol_ai_loading: '正在確認此語言的彙整狀態…',
   vol_ai_submitting: '正在送出已同意的彙整請求…',
   vol_ai_queued: '工作排隊中，離開頁面後仍會在伺服器執行。',

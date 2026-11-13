@@ -198,6 +198,7 @@ export const messages = {
   vol_ai_consent: 'I understand the processing, cost, privacy, and retention limits above and consent to this request.',
   vol_ai_replace_consent: 'I confirm that a complete result may replace the current private summary for this language.',
   vol_ai_confirm: 'Consent and start summary',
+  vol_ai_wait: 'Please wait…',
   vol_ai_loading: 'Checking the summary status for this language…',
   vol_ai_submitting: 'Submitting your consented summary request…',
   vol_ai_queued: 'The job is queued and will continue on the server if you leave this page.',

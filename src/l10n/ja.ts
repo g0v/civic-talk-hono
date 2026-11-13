@@ -198,6 +198,7 @@ export const messages = {
   vol_ai_consent: '上記の処理・費用・プライバシー・保存の制限を理解し、今回の処理に同意します。',
   vol_ai_replace_consent: '完全な結果によって、この言語の現在の非公開要約が置き換えられることを確認します。',
   vol_ai_confirm: '同意して要約を開始',
+  vol_ai_wait: 'しばらくお待ちください…',
   vol_ai_loading: 'この言語の要約状況を確認しています…',
   vol_ai_submitting: '同意した要約リクエストを送信しています…',
   vol_ai_queued: 'ジョブは待機中です。ページを離れてもサーバーで処理が続きます。',
