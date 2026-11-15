@@ -2,6 +2,8 @@
 
 給 AI coding agent 的操作指引。先讀不變量，再依任務讀相關來源；不要把歷史完成紀錄當成當前部署或驗收證據。
 
+修改 `src/` 前先讀 [程式來源指引](./src/AGENTS.md)；修改 `src/components/` 時另讀 [共用元件指引](./src/components/AGENTS.md)。
+
 ## 1. 專案地圖與權威來源
 
 Civic Talk 使用 Hono、Vue 3 SSR/hydration、Tailwind 與 Cloudflare Workers，正式站為 <https://civic.vtaiwan.tw>，Worker 名稱 `civic-talk`。現況是每頁 `renderPage`、**單一 client entry**，沒有 `vue-router` 或 `vue-i18n`；全站 router 切換是另需確認的結構性改動。
