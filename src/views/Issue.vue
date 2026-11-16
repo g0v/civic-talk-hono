@@ -988,7 +988,7 @@ async function submitOpinion() {
               </template>
             </Carousel>
           </section>
-          <div v-else>
+          <div v-else :class="{ 'issue-browse-back': activeStep === 'comments' && commentAction === 'browse' }">
             <!-- back to issue details -->
             <div class="mb-2 flex items-center gap-3">
               <button type="button" class="btn btn-ghost btn-sm" @click="setIssueStep(null)">

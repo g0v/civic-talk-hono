@@ -2908,6 +2908,9 @@ html.dark .alert-warn {
     display: none;
   }
   @media (min-width: 601px) {
+    .issue-browse-back {
+      display: none;
+    }
     .issue-briefing-tabs {
       display: flex;
       gap: var(--spacing-vt-2);
