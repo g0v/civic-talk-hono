@@ -6,6 +6,7 @@ import AppFooter from '../components/AppFooter.vue'
 import AuthorEmailLink from '../components/AuthorEmailLink.vue'
 import LongTextContent from '../components/LongTextContent.vue'
 import OpinionVote from '../components/OpinionVote.vue'
+import OpinionDeck from '../components/OpinionDeck.vue'
 import SignInButtons from '../components/SignInButtons.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import Toast from '../components/Toast.vue'
@@ -23,14 +24,17 @@ import { renderSafeMarkdown } from '../markdown/renderSafeMarkdown'
 import {
   parseIssueBriefingSlide,
   parseIssueCommentAction,
+  parseIssueCommentView,
   parseIssueOpinionAnchor,
   parseIssueStep,
   writeIssueBriefingSlide,
   writeIssueCommentAction,
   writeIssueCommentSearch,
+  writeIssueCommentView,
   writeIssueOpinionAnchor,
   writeIssueStep,
   type IssueCommentAction,
+  type IssueCommentView,
   type IssueStep,
 } from '../lib/issueNavigation'
 
@@ -45,6 +49,7 @@ const props = defineProps<{
   initialStep?: IssueStep | null
   initialBriefingSlide?: number
   initialCommentAction?: IssueCommentAction
+  initialCommentView?: IssueCommentView
   initialCommentSearch?: string
 }>()
 
@@ -62,9 +67,12 @@ const briefing = ref<Briefing | null>(props.initialDetail?.briefing ?? null)
 const opinions = ref<Array<Opinion & Partial<OpinionVoteState>>>(props.initialDetail?.opinions ?? [])
 const opinionSort = ref<'recent' | 'responses'>('recent')
 const opinionsLoading = ref(false)
+const viewerOpinionsReady = ref(false)
+const opinionsError = ref(false)
 const loading = ref(!props.initialDetail)
 const activeStep = ref<IssueStep | null>(props.initialStep ?? null)
 const commentAction = ref<IssueCommentAction>(props.initialCommentAction ?? 'start')
+const commentView = ref<IssueCommentView>(props.initialCommentView ?? 'card')
 const commentSearch = ref(props.initialCommentSearch ?? '')
 const lastBriefingSlideIndex = 3
 // SSR 固定公民角色；志願者的第五張在 hydration 後才還原。
@@ -308,6 +316,12 @@ function setIssueCommentAction(action: IssueCommentAction, replace = false) {
   updateNavigationUrl(nextUrl, replace)
 }
 
+function setIssueCommentView(view: IssueCommentView) {
+  commentView.value = view
+  if (typeof window === 'undefined') return
+  updateNavigationUrl(writeIssueCommentView(window.location.href, view))
+}
+
 function syncCommentSearch() {
   if (typeof window === 'undefined') return
   const nextUrl = writeIssueCommentSearch(window.location.href, commentSearch.value)
@@ -316,12 +330,13 @@ function syncCommentSearch() {
 
 function rememberOpinionPosition(id: number) {
   if (typeof window === 'undefined') return
-  updateNavigationUrl(writeIssueOpinionAnchor(window.location.href, id), true)
+  updateNavigationUrl(writeIssueOpinionAnchor(writeIssueCommentView(window.location.href, commentView.value), id), true)
 }
 
 async function restoreOpinionPosition() {
   const id = pendingOpinionId.value
-  if (id === null || loading.value || opinionsLoading.value || authState.value === 'loading' || activeStep.value !== 'comments' || commentAction.value !== 'browse') return
+  if (id === null || loading.value || opinionsLoading.value || authState.value === 'loading' || activeStep.value !== 'comments' || commentAction.value !== 'browse' || commentView.value !== 'list')
+    return
   const opinion = opinions.value.find(row => row.id === id)
   if (!opinion) {
     pendingOpinionId.value = null
@@ -345,6 +360,7 @@ const loginCallbackUrl = computed(() => {
   if (props.initialStep === 'comments') {
     callback = writeIssueCommentAction(callback, props.initialCommentAction ?? 'start')
     callback = writeIssueCommentSearch(callback, props.initialCommentSearch ?? '')
+    callback = writeIssueCommentView(callback, props.initialCommentView ?? 'card')
   }
   return callback
 })
@@ -369,8 +385,11 @@ function handlePopState() {
   const nextStep = parseIssueStep(search)
   activeStep.value = nextStep
   commentAction.value = parseIssueCommentAction(search)
+  commentView.value = parseIssueCommentView(search)
   commentSearch.value = new URLSearchParams(search).get('search') ?? ''
   pendingOpinionId.value = nextStep === 'comments' && commentAction.value === 'browse' ? parseIssueOpinionAnchor(window.location.hash) : null
+  // 舊登入 callback 的錨點沒有 view，繼續回到原列表中的同一則。
+  if (pendingOpinionId.value !== null && !new URLSearchParams(search).has('view')) commentView.value = 'list'
   if (!nextStep) dragThresholdReached.value = false
   carouselIndex.value = Math.min(parseIssueBriefingSlide(search), viewerRole.value === 'volunteer' ? 4 : lastBriefingSlideIndex)
 }
@@ -415,10 +434,17 @@ async function loadIssue() {
 
 async function loadOpinions(sort: 'recent' | 'responses' = opinionSort.value) {
   opinionsLoading.value = true
+  opinionsError.value = false
   try {
     const res = await fetch(`/api/issues/${props.issueId}/opinions?sort=${sort}`)
-    if (!res.ok) return
+    if (!res.ok) {
+      opinionsError.value = true
+      return
+    }
     opinions.value = (await res.json()) as Opinion[]
+    viewerOpinionsReady.value = true
+  } catch {
+    opinionsError.value = true
   } finally {
     opinionsLoading.value = false
   }
@@ -459,7 +485,7 @@ watch(commentAction, () => {
 })
 
 watch(
-  () => [pendingOpinionId.value, opinions.value, loading.value, opinionsLoading.value, authState.value, activeStep.value, commentAction.value] as const,
+  () => [pendingOpinionId.value, opinions.value, loading.value, opinionsLoading.value, authState.value, activeStep.value, commentAction.value, commentView.value] as const,
   () => void restoreOpinionPosition(),
   { flush: 'post' }
 )
@@ -1299,113 +1325,153 @@ async function submitOpinion() {
             </template>
 
             <template v-else-if="commentAction === 'browse'">
-              <p class="mt-0 mb-2 text-sm text-muted">{{ issue.abuse_flagged === 3 ? t('moderation_hidden_placeholder') : issue.title }}</p>
-              <h2 class="mt-0 mb-6 font-serif text-xl">{{ t('op_browse_title') }}</h2>
-              <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-                <label class="flex w-full flex-col gap-1 text-sm text-muted sm:max-w-sm">
-                  <span class="sr-only">{{ t('op_search_placeholder') }}</span>
-                  <input v-model="commentSearch" type="search" :placeholder="t('op_search_placeholder')" :aria-label="t('op_search_placeholder')" @input="syncCommentSearch" />
-                </label>
-                <div class="flex flex-wrap items-center gap-3">
-                  <label class="flex items-center gap-2 text-sm text-muted">
-                    <span>{{ t('op_sort_label') }}</span>
-                    <select v-model="opinionSort" class="rounded border border-border bg-transparent px-2 py-1 text-base sm:text-sm" @change="changeOpinionSort">
-                      <option value="recent">{{ t('op_sort_recent') }}</option>
-                      <option value="responses">{{ t('op_sort_responses') }}</option>
-                    </select>
+              <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+                <h2 class="m-0 font-serif text-xl">{{ t('op_start_title') }}</h2>
+                <div class="flex gap-2" role="group" :aria-label="t('op_view_label')">
+                  <button type="button" class="opinion-view-toggle btn btn-secondary btn-sm min-h-11" :aria-pressed="commentView === 'card'" @click="setIssueCommentView('card')">
+                    {{ t('op_card_view') }}
+                  </button>
+                  <button type="button" class="opinion-view-toggle btn btn-secondary btn-sm min-h-11" :aria-pressed="commentView === 'list'" @click="setIssueCommentView('list')">
+                    {{ t('op_list_view') }}
+                  </button>
+                </div>
+              </div>
+              <OpinionDeck
+                v-if="commentView === 'card' && activeStep === 'comments'"
+                :opinions="opinions"
+                :ready="viewerOpinionsReady && !opinionsLoading"
+                :error="opinionsError"
+                :callback-url="writeIssueCommentView(loginCallbackUrl, 'card')"
+                :initial-opinion-id="pendingOpinionId"
+                @update="updateOpinionVote"
+                @compose="setIssueCommentAction('commit')"
+                @retry="loadOpinions()"
+                @sign-in-required="rememberOpinionPosition"
+              />
+              <template v-else-if="commentView === 'list'">
+                <p class="mt-0 mb-2 text-sm text-muted">{{ issue.abuse_flagged === 3 ? t('moderation_hidden_placeholder') : issue.title }}</p>
+                <h3 class="mt-0 mb-6 font-serif text-lg">{{ t('op_browse_title') }}</h3>
+                <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                  <label class="flex w-full flex-col gap-1 text-sm text-muted sm:max-w-sm">
+                    <span class="sr-only">{{ t('op_search_placeholder') }}</span>
+                    <input v-model="commentSearch" type="search" :placeholder="t('op_search_placeholder')" :aria-label="t('op_search_placeholder')" @input="syncCommentSearch" />
                   </label>
-                  <a v-if="authState === 'signed-in'" :href="`/api/issues/${issueId}/opinions/comments.csv`" class="btn btn-secondary btn-sm" download>
-                    {{ t('op_download_csv_btn') }}
-                  </a>
-                  <span v-else-if="authState === 'anonymous'" class="text-sm text-muted">{{ t('op_csv_login_required') }}</span>
-                  <a href="https://make.vtaiwan.tw" class="btn btn-secondary btn-sm" target="_blank" rel="noopener noreferrer">
-                    <span aria-hidden="true">💭</span>
-                    {{ t('op_opinion_synthesizer_btn') }}
-                  </a>
-                  <span v-if="opinionsLoading" class="text-sm text-muted">{{ t('loading') }}</span>
-                </div>
-              </div>
-              <div v-if="!filteredOpinions.length" class="empty">
-                <span v-if="opinionsLoading" class="text-sm text-muted">{{ t('loading') }}</span>
-                <div v-else class="empty-icon">💬</div>
-                {{ t('op_empty') }}
-              </div>
-              <template v-else>
-                <h3 class="mb-4 font-medium">{{ t('op_count_prefix') }}{{ filteredOpinions.length }}{{ t('op_count_suffix') }}</h3>
-                <div v-for="o in filteredOpinions" :id="`opinion-${o.id}`" :key="o.id" class="card mb-4">
-                  <!-- 已確認違規（2）：完全隱藏，無展開選項 -->
-                  <p v-if="o.abuse_flagged === 2" class="m-0 py-1 text-sm text-red">{{ t('flagged_confirmed') }}</p>
-                  <!-- AI 審查違規（3）：只顯示不可展開的佔位，不洩漏內容 -->
-                  <p v-else-if="o.abuse_flagged === 3" class="m-0 py-1 text-sm text-muted">{{ t('moderation_hidden_placeholder') }}</p>
-                  <!-- 待審核（1）：折疊 + 可展開 -->
-                  <div v-else-if="o.abuse_flagged === 1 && !expandedFlagged.has(`opinion-${o.id}`)" class="mb-2">
-                    <div class="alert alert-warn flex items-center justify-between gap-2 py-2">
-                      <span class="text-sm">{{ t('flagged_warning') }}</span>
-                      <button type="button" class="btn btn-ghost btn-sm shrink-0" @click="toggleFlagged('opinion', o.id)">
-                        {{ t('flagged_expand_btn') }}
-                      </button>
-                    </div>
+                  <div class="flex flex-wrap items-center gap-3">
+                    <label class="flex items-center gap-2 text-sm text-muted">
+                      <span>{{ t('op_sort_label') }}</span>
+                      <select v-model="opinionSort" class="rounded border border-border bg-transparent px-2 py-1 text-base sm:text-sm" @change="changeOpinionSort">
+                        <option value="recent">{{ t('op_sort_recent') }}</option>
+                        <option value="responses">{{ t('op_sort_responses') }}</option>
+                      </select>
+                    </label>
+                    <a v-if="authState === 'signed-in'" :href="`/api/issues/${issueId}/opinions/comments.csv`" class="btn btn-secondary btn-sm" download>
+                      {{ t('op_download_csv_btn') }}
+                    </a>
+                    <span v-else-if="authState === 'anonymous'" class="text-sm text-muted">{{ t('op_csv_login_required') }}</span>
+                    <a href="https://make.vtaiwan.tw" class="btn btn-secondary btn-sm" target="_blank" rel="noopener noreferrer">
+                      <span aria-hidden="true">💭</span>
+                      {{ t('op_opinion_synthesizer_btn') }}
+                    </a>
+                    <span v-if="opinionsLoading" class="text-sm text-muted">{{ t('loading') }}</span>
                   </div>
-                  <!-- 正常或待審核已展開：顯示內容 -->
-                  <template v-if="o.abuse_flagged !== 2 && o.abuse_flagged !== 3 && (!o.abuse_flagged || expandedFlagged.has(`opinion-${o.id}`))">
-                    <div v-if="o.abuse_flagged === 1" class="mb-1 flex items-center justify-between gap-2">
-                      <span class="text-xs text-amber-600">{{ t('flagged_warning') }}</span>
-                      <button type="button" class="btn btn-ghost btn-sm shrink-0 text-xs" @click="toggleFlagged('opinion', o.id)">
-                        {{ t('flagged_collapse_btn') }}
-                      </button>
-                    </div>
-                    <p class="mt-0 mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
-                      <span>{{ formatDate(o.created_at, locale) }}</span>
-                      <span>
-                        {{ t('op_author_label') }}：{{ o.author_name || t('author_system') }}
-                        <template v-if="o.author_email">
-                          <AuthorEmailLink :email="o.author_email" :name="o.author_name" />
-                        </template>
-                      </span>
-                      <a :href="`/issues/${issueId}/comment/${o.id}`" class="text-xs text-muted hover:underline"> 🔗 {{ t('card_permalink') }} </a>
-                      <button v-if="authState === 'signed-in' && !o.abuse_flagged" type="button" class="ml-auto text-xs text-muted hover:text-red" @click="openReport('opinion', o.id)">
-                        {{ t('report_btn') }}
-                      </button>
-                    </p>
-                    <button
-                      v-if="isLongOpinion(o.summary) && !expandedOpinions.has(o.id)"
-                      type="button"
-                      class="markdown-content mobile-readable w-full cursor-pointer text-left text-muted hover:text-teal"
-                      aria-expanded="false"
-                      @click="toggleOpinion(o.id)"
-                    >
-                      {{ opinionPreview(o.summary) }}
-                    </button>
-                    <div
-                      v-else-if="isLongOpinion(o.summary)"
-                      class="markdown-content mobile-readable cursor-pointer"
-                      v-html="renderedOpinions.get(o.id) ?? ''"
-                      aria-expanded="true"
-                      role="button"
-                      tabindex="0"
-                      @click="toggleOpinion(o.id)"
-                      @keydown.enter.prevent="toggleOpinion(o.id)"
-                    />
-                    <div v-else class="markdown-content mobile-readable" v-html="renderedOpinions.get(o.id) ?? ''" />
-                    <OpinionVote
-                      v-if="!isLongOpinion(o.summary) || expandedOpinions.has(o.id)"
-                      :opinion="o"
-                      :expanded="(o.abuse_flagged !== 1 || expandedFlagged.has(`opinion-${o.id}`)) && (expandedOpinions.has(o.id) || !isLongOpinion(o.summary))"
-                      :callback-url="writeIssueOpinionAnchor(loginCallbackUrl, o.id)"
-                      @update="updateOpinionVote(o.id, $event)"
-                      @sign-in-required="rememberOpinionPosition(o.id)"
-                    />
-                    <div v-if="typeof o.response_count === 'number'" class="mt-3 flex justify-end">
-                      <span role="img" :aria-label="t('op_response_count_label', { count: o.response_count })" :title="t('op_response_count_label', { count: o.response_count })" class="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-sm text-muted">
-                        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
-                          <path d="M2.25 12s3.5-6 9.75-6 9.75 6 9.75 6-3.5 6-9.75 6-9.75-6-9.75-6Z" />
-                          <circle cx="12" cy="12" r="2.5" />
-                        </svg>
-                        {{ o.response_count }}
-                      </span>
-                    </div>
-                  </template>
                 </div>
+                <div v-if="!filteredOpinions.length" class="empty">
+                  <span v-if="opinionsLoading" class="text-sm text-muted">{{ t('loading') }}</span>
+                  <div v-else class="empty-icon">💬</div>
+                  {{ t('op_empty') }}
+                </div>
+                <template v-else>
+                  <h3 class="mb-4 font-medium">{{ t('op_count_prefix') }}{{ filteredOpinions.length }}{{ t('op_count_suffix') }}</h3>
+                  <div v-for="o in filteredOpinions" :id="`opinion-${o.id}`" :key="o.id" class="card mb-4">
+                    <!-- 已確認違規（2）：完全隱藏，無展開選項 -->
+                    <p v-if="o.abuse_flagged === 2" class="m-0 py-1 text-sm text-red">{{ t('flagged_confirmed') }}</p>
+                    <!-- AI 審查違規（3）：只顯示不可展開的佔位，不洩漏內容 -->
+                    <p v-else-if="o.abuse_flagged === 3" class="m-0 py-1 text-sm text-muted">{{ t('moderation_hidden_placeholder') }}</p>
+                    <!-- 待審核（1）：折疊 + 可展開 -->
+                    <div v-else-if="o.abuse_flagged === 1 && !expandedFlagged.has(`opinion-${o.id}`)" class="mb-2">
+                      <div class="alert alert-warn flex items-center justify-between gap-2 py-2">
+                        <span class="text-sm">{{ t('flagged_warning') }}</span>
+                        <button type="button" class="btn btn-ghost btn-sm shrink-0" @click="toggleFlagged('opinion', o.id)">
+                          {{ t('flagged_expand_btn') }}
+                        </button>
+                      </div>
+                    </div>
+                    <!-- 正常或待審核已展開：顯示內容 -->
+                    <template v-if="o.abuse_flagged !== 2 && o.abuse_flagged !== 3 && (!o.abuse_flagged || expandedFlagged.has(`opinion-${o.id}`))">
+                      <div v-if="o.abuse_flagged === 1" class="mb-1 flex items-center justify-between gap-2">
+                        <span class="text-xs text-amber-600">{{ t('flagged_warning') }}</span>
+                        <button type="button" class="btn btn-ghost btn-sm shrink-0 text-xs" @click="toggleFlagged('opinion', o.id)">
+                          {{ t('flagged_collapse_btn') }}
+                        </button>
+                      </div>
+                      <p class="mt-0 mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
+                        <span>{{ formatDate(o.created_at, locale) }}</span>
+                        <span>
+                          {{ t('op_author_label') }}：{{ o.author_name || t('author_system') }}
+                          <template v-if="o.author_email">
+                            <AuthorEmailLink :email="o.author_email" :name="o.author_name" />
+                          </template>
+                        </span>
+                        <a :href="`/issues/${issueId}/comment/${o.id}`" class="text-xs text-muted hover:underline"> 🔗 {{ t('card_permalink') }} </a>
+                        <button v-if="authState === 'signed-in' && !o.abuse_flagged" type="button" class="ml-auto text-xs text-muted hover:text-red" @click="openReport('opinion', o.id)">
+                          {{ t('report_btn') }}
+                        </button>
+                      </p>
+                      <button
+                        v-if="isLongOpinion(o.summary) && !expandedOpinions.has(o.id)"
+                        type="button"
+                        class="markdown-content mobile-readable w-full cursor-pointer text-left text-muted hover:text-teal"
+                        aria-expanded="false"
+                        @click="toggleOpinion(o.id)"
+                      >
+                        {{ opinionPreview(o.summary) }}
+                      </button>
+                      <div
+                        v-else-if="isLongOpinion(o.summary)"
+                        class="markdown-content mobile-readable cursor-pointer"
+                        v-html="renderedOpinions.get(o.id) ?? ''"
+                        aria-expanded="true"
+                        role="button"
+                        tabindex="0"
+                        @click="toggleOpinion(o.id)"
+                        @keydown.enter.prevent="toggleOpinion(o.id)"
+                      />
+                      <div v-else class="markdown-content mobile-readable" v-html="renderedOpinions.get(o.id) ?? ''" />
+                      <OpinionVote
+                        v-if="!isLongOpinion(o.summary) || expandedOpinions.has(o.id)"
+                        :opinion="o"
+                        :expanded="(o.abuse_flagged !== 1 || expandedFlagged.has(`opinion-${o.id}`)) && (expandedOpinions.has(o.id) || !isLongOpinion(o.summary))"
+                        :callback-url="writeIssueOpinionAnchor(loginCallbackUrl, o.id)"
+                        @update="updateOpinionVote(o.id, $event)"
+                        @sign-in-required="rememberOpinionPosition(o.id)"
+                      />
+                      <div v-if="typeof o.response_count === 'number'" class="mt-3 flex justify-end">
+                        <span
+                          role="img"
+                          :aria-label="t('op_response_count_label', { count: o.response_count })"
+                          :title="t('op_response_count_label', { count: o.response_count })"
+                          class="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-sm text-muted"
+                        >
+                          <svg
+                            class="h-4 w-4"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.5"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            aria-hidden="true"
+                            focusable="false"
+                          >
+                            <path d="M2.25 12s3.5-6 9.75-6 9.75 6 9.75 6-3.5 6-9.75 6-9.75-6-9.75-6Z" />
+                            <circle cx="12" cy="12" r="2.5" />
+                          </svg>
+                          {{ o.response_count }}
+                        </span>
+                      </div>
+                    </template>
+                  </div>
+                </template>
               </template>
               <button type="button" class="btn btn-ghost" @click="setIssueCommentAction('start')">{{ t('op_back_to_start') }}</button>
             </template>

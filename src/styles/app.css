@@ -364,6 +364,29 @@
     background: var(--color-gray-100);
   }
 
+  .opinion-view-toggle[aria-pressed='true'] {
+    background: var(--color-vt-fg-1);
+    color: var(--color-vt-bg-1);
+  }
+
+  .opinion-view-toggle[aria-pressed='true']:hover:not(:disabled) {
+    background: var(--color-vt-fg-2);
+  }
+
+  .opinion-deck .btn-jade-green {
+    background: color-mix(in srgb, var(--color-vt-jade-green), var(--color-vt-black) 10%);
+  }
+
+  .opinion-deck .btn-jade-green:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--color-vt-jade-green), var(--color-vt-black) 20%);
+  }
+
+  .opinion-deck :focus-visible,
+  .opinion-view-toggle:focus-visible {
+    outline: var(--spacing-vt-0_5) solid var(--color-vt-fg-1);
+    outline-offset: var(--spacing-vt-1);
+  }
+
   .btn-ghost {
     background: transparent;
     color: var(--color-vt-fg-1);

@@ -39,7 +39,7 @@ import AppealsView from './views/Appeals.vue'
 import { readHomeLifecycleTab } from './lib/homeLifecycle'
 import { readHomeIssuePreviewId } from './lib/homeIssuePreview'
 import { readHomeSearchQuery } from './lib/homeSearch'
-import { parseIssueBriefingSlide, parseIssueCommentAction, parseIssueStep } from './lib/issueNavigation'
+import { parseIssueBriefingSlide, parseIssueCommentAction, parseIssueCommentView, parseIssueStep } from './lib/issueNavigation'
 
 const app = new Hono<{ Bindings: AppBindings }>()
 
@@ -141,9 +141,10 @@ app.get('/issues/:id', async c => {
   if (!detail) return c.html(await notFoundHtml(origin), 404)
   const initialStep = parseIssueStep(requestUrl.search)
   const initialCommentAction = parseIssueCommentAction(requestUrl.search)
+  const initialCommentView = parseIssueCommentView(requestUrl.search)
   const initialCommentSearch = requestUrl.searchParams.get('search') ?? ''
   const initialBriefingSlide = parseIssueBriefingSlide(requestUrl.search)
-  const issueProps = { issueId: id, initialDetail: detail, initialStep, initialCommentAction, initialCommentSearch, initialBriefingSlide }
+  const issueProps = { issueId: id, initialDetail: detail, initialStep, initialCommentAction, initialCommentView, initialCommentSearch, initialBriefingSlide }
   const html = await renderPage(IssueView, issueProps, headForIssue(detail.issue.title ?? '', detail.issue.description ?? '', id, origin), {
     hydrate: {
       page: 'issue',

@@ -383,6 +383,9 @@
   .z-\[100\] {
     z-index: 100;
   }
+  .col-span-2 {
+    grid-column: span 2 / span 2;
+  }
   .m-0 {
     margin: 0px;
   }
@@ -397,6 +400,9 @@
   }
   .my-1 {
     margin-block: var(--spacing);
+  }
+  .my-3 {
+    margin-block: calc(var(--spacing) * 3);
   }
   .my-auto {
     margin-block: auto;
@@ -485,6 +491,9 @@
   .inline-flex {
     display: inline-flex;
   }
+  .h-2 {
+    height: calc(var(--spacing) * 2);
+  }
   .h-3\.5 {
     height: calc(var(--spacing) * 3.5);
   }
@@ -502,6 +511,9 @@
   }
   .h-9 {
     height: calc(var(--spacing) * 9);
+  }
+  .h-12 {
+    height: calc(var(--spacing) * 12);
   }
   .h-14 {
     height: calc(var(--spacing) * 14);
@@ -539,11 +551,20 @@
   .max-h-\[calc\(100vh-2rem\)\] {
     max-height: calc(100vh - 2rem);
   }
+  .min-h-6 {
+    min-height: calc(var(--spacing) * 6);
+  }
   .min-h-11 {
     min-height: calc(var(--spacing) * 11);
   }
+  .min-h-12 {
+    min-height: calc(var(--spacing) * 12);
+  }
   .min-h-24 {
     min-height: calc(var(--spacing) * 24);
+  }
+  .min-h-48 {
+    min-height: calc(var(--spacing) * 48);
   }
   .w-1\/4 {
     width: calc(1 / 4 * 100%);
@@ -625,6 +646,9 @@
   }
   .max-w-md {
     max-width: var(--container-md);
+  }
+  .max-w-prose {
+    max-width: 65ch;
   }
   .max-w-sm {
     max-width: var(--container-sm);
@@ -763,6 +787,9 @@
   }
   .gap-y-2 {
     row-gap: calc(var(--spacing) * 2);
+  }
+  .justify-self-center {
+    justify-self: center;
   }
   .truncate {
     overflow: hidden;
@@ -916,6 +943,9 @@
     @supports (color: color-mix(in lab, red, red)) {
       background-color: color-mix(in oklab, var(--color-vt-democratic-red) 5%, transparent);
     }
+  }
+  .bg-vt-jade-green {
+    background-color: var(--color-vt-jade-green);
   }
   .fill-amber {
     fill: var(--color-amber);
@@ -1112,6 +1142,9 @@
   .py-10 {
     padding-block: calc(var(--spacing) * 10);
   }
+  .py-12 {
+    padding-block: calc(var(--spacing) * 12);
+  }
   .py-20 {
     padding-block: calc(var(--spacing) * 20);
   }
@@ -1300,6 +1333,10 @@
   }
   .text-white {
     color: var(--color-white);
+  }
+  .tabular-nums {
+    --tw-numeric-spacing: tabular-nums;
+    font-variant-numeric: var(--tw-ordinal,) var(--tw-slashed-zero,) var(--tw-numeric-figure,) var(--tw-numeric-spacing,) var(--tw-numeric-fraction,);
   }
   .no-underline {
     text-decoration-line: none;
@@ -1500,6 +1537,18 @@
     .sm\:left-6 {
       left: calc(var(--spacing) * 6);
     }
+    .sm\:order-1 {
+      order: 1;
+    }
+    .sm\:order-2 {
+      order: 2;
+    }
+    .sm\:order-3 {
+      order: 3;
+    }
+    .sm\:col-span-1 {
+      grid-column: span 1 / span 1;
+    }
     .sm\:mx-auto {
       margin-inline: auto;
     }
@@ -1581,6 +1630,9 @@
     .sm\:grid-cols-2 {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
+    .sm\:grid-cols-3 {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
     .sm\:flex-row {
       flex-direction: row;
     }
@@ -1604,6 +1656,9 @@
     }
     .sm\:gap-4 {
       gap: calc(var(--spacing) * 4);
+    }
+    .sm\:justify-self-stretch {
+      justify-self: stretch;
     }
     .sm\:p-5 {
       padding: calc(var(--spacing) * 5);
@@ -2207,6 +2262,29 @@
   }
   .btn-secondary:hover:not(:disabled) {
     background: var(--color-gray-100);
+  }
+  .opinion-view-toggle[aria-pressed='true'] {
+    background: var(--color-vt-fg-1);
+    color: var(--color-vt-bg-1);
+  }
+  .opinion-view-toggle[aria-pressed='true']:hover:not(:disabled) {
+    background: var(--color-vt-fg-2);
+  }
+  .opinion-deck .btn-jade-green {
+    background: color-mix(in srgb, #008888, #000000 10%);
+    @supports (color: color-mix(in lab, red, red)) {
+      background: color-mix(in srgb, var(--color-vt-jade-green), var(--color-vt-black) 10%);
+    }
+  }
+  .opinion-deck .btn-jade-green:hover:not(:disabled) {
+    background: color-mix(in srgb, #008888, #000000 20%);
+    @supports (color: color-mix(in lab, red, red)) {
+      background: color-mix(in srgb, var(--color-vt-jade-green), var(--color-vt-black) 20%);
+    }
+  }
+  .opinion-deck :focus-visible, .opinion-view-toggle:focus-visible {
+    outline: var(--spacing-vt-0_5) solid var(--color-vt-fg-1);
+    outline-offset: var(--spacing-vt-1);
   }
   .btn-ghost {
     background: transparent;
@@ -2938,6 +3016,26 @@ html.dark .alert-warn {
   syntax: "*";
   inherits: false;
 }
+@property --tw-ordinal {
+  syntax: "*";
+  inherits: false;
+}
+@property --tw-slashed-zero {
+  syntax: "*";
+  inherits: false;
+}
+@property --tw-numeric-figure {
+  syntax: "*";
+  inherits: false;
+}
+@property --tw-numeric-spacing {
+  syntax: "*";
+  inherits: false;
+}
+@property --tw-numeric-fraction {
+  syntax: "*";
+  inherits: false;
+}
 @property --tw-shadow {
   syntax: "*";
   inherits: false;
@@ -3067,6 +3165,11 @@ html.dark .alert-warn {
       --tw-leading: initial;
       --tw-font-weight: initial;
       --tw-tracking: initial;
+      --tw-ordinal: initial;
+      --tw-slashed-zero: initial;
+      --tw-numeric-figure: initial;
+      --tw-numeric-spacing: initial;
+      --tw-numeric-fraction: initial;
       --tw-shadow: 0 0 #0000;
       --tw-shadow-color: initial;
       --tw-shadow-alpha: 100%;

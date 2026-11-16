@@ -2,16 +2,36 @@ import { describe, expect, it } from 'vite-plus/test'
 import {
   parseIssueBriefingSlide,
   parseIssueCommentAction,
+  parseIssueCommentView,
   parseIssueOpinionAnchor,
   parseIssueStep,
   writeIssueBriefingSlide,
   writeIssueCommentAction,
   writeIssueCommentSearch,
+  writeIssueCommentView,
   writeIssueOpinionAnchor,
   writeIssueStep,
 } from '../lib/issueNavigation'
 
 describe('issue step URL navigation', () => {
+  it.each([
+    ['', 'card'],
+    ['?view=unknown', 'card'],
+    ['?view=card', 'card'],
+    ['?view=list', 'list'],
+  ])('restores the opinion view from %s', (search, expected) => {
+    expect(parseIssueCommentView(search)).toBe(expected)
+  })
+
+  it('round-trips opinion views while preserving the action, search and return anchor', () => {
+    const original = '/issues/19?step=comments&action=browse&search=energy#opinion-42'
+    const list = writeIssueCommentView(original, 'list')
+    const card = writeIssueCommentView(list, 'card')
+    expect(list).toBe(`${original.split('#')[0]}&view=list#opinion-42`)
+    expect(card).toBe(`${original.split('#')[0]}&view=card#opinion-42`)
+    expect(parseIssueCommentView(new URL(card, 'https://civic-talk.invalid').search)).toBe('card')
+  })
+
   it('parses only supported direct steps', () => {
     expect(parseIssueStep('?step=comments')).toBe('comments')
     expect(parseIssueStep('?step=materials')).toBe('materials')

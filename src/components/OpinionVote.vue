@@ -12,13 +12,15 @@ const props = withDefaults(
     opinion: OpinionWithVote
     callbackUrl?: string
     expanded?: boolean
+    card?: boolean
   }>(),
-  { callbackUrl: '/', expanded: true }
+  { callbackUrl: '/', expanded: true, card: false }
 )
 
 const emit = defineEmits<{
   update: [state: OpinionVoteState]
   'sign-in-required': []
+  'pass-anonymous': []
 }>()
 
 const { t } = useI18n()
@@ -52,6 +54,10 @@ async function choose(value: OpinionVoteValue) {
   error.value = ''
   if (authState.value === 'loading' || pending.value || !eligible.value) return
   if (authState.value !== 'signed-in') {
+    if (props.card && value === 0) {
+      emit('pass-anonymous')
+      return
+    }
     signInVisible.value = true
     emit('sign-in-required')
     return
@@ -99,52 +105,78 @@ async function choose(value: OpinionVoteValue) {
     </div>
 
     <template v-else>
-      <div v-if="isAuthor" class="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
-        <span>{{ t('vote_author_implicit') }}</span>
-        <template v-if="hasDistribution">
-          <span>{{ voteLabel(1) }} {{ opinion.vote_agree }}</span>
-          <span>{{ voteLabel(-1) }} {{ opinion.vote_disagree }}</span>
-          <span>{{ voteLabel(0) }} {{ opinion.vote_pass }}</span>
-        </template>
-      </div>
-      <div class="flex flex-wrap items-center gap-2">
-        <button
-          v-if="authState === 'anonymous' || canVote"
-          type="button"
-          class="btn btn-secondary btn-sm"
-          :class="{ 'ring-2 ring-green-600': opinion.my_vote === 1 }"
-          :title="voteActionTitle(1)"
-          :disabled="pending"
-          @click="choose(1)"
-        >
-          {{ voteLabel(1) }}<span v-if="hasDistribution" class="ml-1">{{ opinion.vote_agree }}</span>
+      <div v-if="card" class="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <button type="button" class="btn btn-jade-green min-h-12 gap-2 sm:order-1" :title="t('vote_agree')" :disabled="pending || !canVote" @click="choose(1)">
+          <svg class="h-8 w-8 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="m5 12 4 4L19 6" />
+          </svg>
+          <span class="sr-only">{{ t('vote_agree') }}</span>
+        </button>
+        <button type="button" class="btn btn-primary min-h-12 gap-2 sm:order-2" :title="t('vote_disagree')" :disabled="pending || !canVote" @click="choose(-1)">
+          <svg class="h-8 w-8 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6" /></svg>
+          <span class="sr-only">{{ t('vote_disagree') }}</span>
         </button>
         <button
-          v-if="authState === 'anonymous' || canVote"
           type="button"
-          class="btn btn-secondary btn-sm"
-          :class="{ 'ring-2 ring-red-600': opinion.my_vote === -1 }"
-          :title="voteActionTitle(-1)"
-          :disabled="pending"
-          @click="choose(-1)"
-        >
-          {{ voteLabel(-1) }}<span v-if="hasDistribution" class="ml-1">{{ opinion.vote_disagree }}</span>
-        </button>
-        <button
-          v-if="authState === 'anonymous' || canVote"
-          type="button"
-          class="btn btn-secondary btn-sm"
-          :class="{ 'ring-2 ring-amber-600': opinion.my_vote === 0 }"
-          :title="voteActionTitle(0)"
-          :disabled="pending"
+          class="btn btn-secondary col-span-2 min-h-12 gap-2 justify-self-center sm:order-3 sm:col-span-1 sm:justify-self-stretch"
+          :title="t('op_card_pass')"
+          :disabled="pending || !canVote"
           @click="choose(0)"
         >
-          {{ voteLabel(0) }}<span v-if="hasDistribution" class="ml-1">{{ opinion.vote_pass }}</span>
+          <svg class="h-8 w-8 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M4 12h16m-6-6 6 6-6 6" />
+          </svg>
+          <span class="sr-only">{{ t('op_card_pass') }}</span>
         </button>
-        <span v-else-if="!isAuthor" class="text-sm text-muted">{{ t('vote_unavailable') }}</span>
       </div>
-      <p v-if="voted && !isAuthor" class="mt-2 mb-0 text-sm text-muted">{{ t('vote_your_choice', { choice: voteLabel(opinion.my_vote as OpinionVoteValue) }) }}</p>
-      <p v-if="!hasDistribution && voted" class="mt-1 mb-0 text-xs text-muted">{{ t('vote_distribution_visible') }}</p>
+      <template v-else>
+        <div v-if="isAuthor" class="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
+          <span>{{ t('vote_author_implicit') }}</span>
+          <template v-if="hasDistribution">
+            <span>{{ voteLabel(1) }} {{ opinion.vote_agree }}</span>
+            <span>{{ voteLabel(-1) }} {{ opinion.vote_disagree }}</span>
+            <span>{{ voteLabel(0) }} {{ opinion.vote_pass }}</span>
+          </template>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+          <button
+            v-if="authState === 'anonymous' || canVote"
+            type="button"
+            class="btn btn-secondary btn-sm"
+            :class="{ 'ring-2 ring-green-600': opinion.my_vote === 1 }"
+            :title="voteActionTitle(1)"
+            :disabled="pending"
+            @click="choose(1)"
+          >
+            {{ voteLabel(1) }}<span v-if="hasDistribution" class="ml-1">{{ opinion.vote_agree }}</span>
+          </button>
+          <button
+            v-if="authState === 'anonymous' || canVote"
+            type="button"
+            class="btn btn-secondary btn-sm"
+            :class="{ 'ring-2 ring-red-600': opinion.my_vote === -1 }"
+            :title="voteActionTitle(-1)"
+            :disabled="pending"
+            @click="choose(-1)"
+          >
+            {{ voteLabel(-1) }}<span v-if="hasDistribution" class="ml-1">{{ opinion.vote_disagree }}</span>
+          </button>
+          <button
+            v-if="authState === 'anonymous' || canVote"
+            type="button"
+            class="btn btn-secondary btn-sm"
+            :class="{ 'ring-2 ring-amber-600': opinion.my_vote === 0 }"
+            :title="voteActionTitle(0)"
+            :disabled="pending"
+            @click="choose(0)"
+          >
+            {{ voteLabel(0) }}<span v-if="hasDistribution" class="ml-1">{{ opinion.vote_pass }}</span>
+          </button>
+          <span v-else-if="!isAuthor" class="text-sm text-muted">{{ t('vote_unavailable') }}</span>
+        </div>
+        <p v-if="voted && !isAuthor" class="mt-2 mb-0 text-sm text-muted">{{ t('vote_your_choice', { choice: voteLabel(opinion.my_vote as OpinionVoteValue) }) }}</p>
+        <p v-if="!hasDistribution && voted" class="mt-1 mb-0 text-xs text-muted">{{ t('vote_distribution_visible') }}</p>
+      </template>
       <p v-if="error" class="mt-2 mb-0 text-sm text-red" role="alert">{{ error }}</p>
       <div v-if="signInVisible" class="mt-3 rounded border border-border bg-gray-50 p-3 dark:bg-gray-800">
         <p class="mt-0 mb-3 text-sm text-muted">{{ t('vote_login_prompt') }}</p>
