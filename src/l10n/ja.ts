@@ -515,6 +515,7 @@ export const messages = {
   factcheck_verdict_mixed: '支持する証拠と反証の両方がある',
   factcheck_verdict_mostly_refuted: 'この内容はおおむね虚偽であると確信できる',
   factcheck_verdict_refuted: 'この内容は虚偽であると確信できる',
+  factcheck_verdict_common_sense_refuted: 'AIが常識に基づいて、この内容は虚偽であると判断しました',
   factcheck_verdict_insufficient_evidence: '証拠不足のため判定できない',
   factcheck_verdict_unknown: '判定できない',
   contrib_tips_title: '🙋 どのような資料が役立ちますか？',
