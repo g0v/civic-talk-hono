@@ -111,3 +111,23 @@ Zod 升級不會替 Better Auth 未限長的 `scopes` 加上長度限制，不�
 停用 Auth **不是放寬授權**：`getAuthContext()` 明確回匿名，投稿、志願者 prompt、投票、事實查核及管理 API 仍回 401，不提供假的登入者、不允許匿名寫入。`localAuth.test.ts` 的 3 項回歸涵蓋匿名 session、阻止 OAuth／個人資料更新及上述守門；新增前 session／登入請求回 500，套用後通過。
 
 已實際啟動 `vp run dev` 驗證回應及 logs，未再出現 auth 初始化或缺表錯誤。真實 Chromium 在桌機 1440×1000 的首頁登入面板、手機 390×844 的素材登入牆均檢查淺／深色，沒有 auth 讀取失敗提示、JavaScript error 或 hydration mismatch。另實際啟動 `vp run dev:remote` 與 `vp preview --mode remote`（正式 bundle、遠端綁定），兩者的匿名 session 都回 `200/null`，錯誤格式的 social sign-in 回 Better Auth 的 400，而非本機停用的 503。遠端 `sqlite_master` 唯讀複查沒有新增資料表，回報 `rows_written: 0`。
+
+## 2026-11-17：Hono 安全修補
+
+安裝警告來自直接依賴 `hono@4.13.13`；npm audit 合計為 **1 個 moderate 受影響套件**，包含下列 5 份公告，不代表只有一個漏洞。[Hono 4.13.16](https://github.com/honojs/hono/releases/tag/v4.13.16) 已修補全部項目。
+
+| 公告 | 風險與本站使用情況 |
+| --- | --- |
+| [GHSA-46wx-v44x-9hh2](https://github.com/advisories/GHSA-46wx-v44x-9hh2) | Moderate：`csrf()` 未檢查 Chromium hyperlink auditing 的 `text/ping` POST；本站使用此全域防護，同站不同 origin 可能帶 SameSite=Lax cookie，不可只依賴 CORS 或登入守衛。 |
+| [GHSA-h7mg-cq63-vhpq](https://github.com/advisories/GHSA-h7mg-cq63-vhpq) | Moderate：預設 router 的 wildcard middleware 可被部分路由組合或編碼換行繞過；本站使用預設 router 與 `/api/*` CSRF。 |
+| [GHSA-4m76-xfj5-7975](https://github.com/advisories/GHSA-4m76-xfj5-7975) | Moderate：Hono `mount()` 路徑處理可繞過外層子路徑 middleware；本站未使用 Hono mount。 |
+| [GHSA-4h7h-rv7c-7m2v](https://github.com/advisories/GHSA-4h7h-rv7c-7m2v) | Moderate：額外 multipart 參數可使 form validator 漏驗欄位；本站未使用 `hono/validator`。 |
+| [GHSA-3gg2-335m-rxc6](https://github.com/advisories/GHSA-3gg2-335m-rxc6) | Low：`hono/css` 跨插值的 closing tag 可造成 HTML injection；本站未使用此 helper。 |
+
+將 `package.json` 的最低版本提高至 `^4.13.16`，lockfile 固定為 `4.13.16`。只變更 root 的依賴宣告與 Hono entry，不升級其他套件、不加 override、不使用 `audit fix --force`。沿用原有全域 CSRF 註冊順序與 JSON 403 形狀，沒有新增逐端點 workaround。
+
+`src/tests/apiCsrf.test.ts` 新增跨站 `text/ping`（含 charset）、四種編碼換行及同源 ping 的登入守門回歸。舊版有 6 項失敗，其中跨站 ping 已進入核心轉送；修補後完整 **60 檔／706 項**測試通過。這是本機合成認證／核心回應的測試，不是正式登入或核心服務實測。
+
+本輪 `npm audit` 為 **0 vulnerabilities**，168 檔型別檢查與授權盤點一致性通過。隔離冷目錄執行 `CI=true vp install --frozen-lockfile` 後，lockfile bytes 不變。實際本機 Worker 的 20 項無 Cookie HTTP smoke 通過，涵蓋頁面／公開 API／RSS、舊網址、匿名登入守門、跨站 ping、編碼換行及 OPTIONS；未發起有效認證寫入或付費模型呼叫。
+
+授權 TSV 已重產，仍為 356 筆，授權統計不變；Hono MIT LICENSE 全文逐字一致，直接依賴 notices 同步版本，client／Worker notices 由完整 build 重產。未執行 push、deploy、遠端 migration 或遠端資料庫寫入；本機修補不代表正式站已更新。

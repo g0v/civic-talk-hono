@@ -216,7 +216,7 @@ node_modules/fflate	0.8.3	MIT	true	false	false	https://registry.npmjs.org/fflate
 node_modules/flatted	3.4.4	ISC	true	false	false	https://registry.npmjs.org/flatted/-/flatted-3.4.4.tgz
 node_modules/fsevents	2.3.3	MIT	true	false	true	https://registry.npmjs.org/fsevents/-/fsevents-2.3.3.tgz
 node_modules/graceful-fs	4.2.11	ISC	true	false	false	https://registry.npmjs.org/graceful-fs/-/graceful-fs-4.2.11.tgz
-node_modules/hono	4.13.13	MIT	false	false	false	https://registry.npmjs.org/hono/-/hono-4.13.13.tgz
+node_modules/hono	4.13.16	MIT	false	false	false	https://registry.npmjs.org/hono/-/hono-4.13.16.tgz
 node_modules/is-extglob	2.1.1	MIT	true	false	false	https://registry.npmjs.org/is-extglob/-/is-extglob-2.1.1.tgz
 node_modules/is-glob	4.0.3	MIT	true	false	false	https://registry.npmjs.org/is-glob/-/is-glob-4.0.3.tgz
 node_modules/jiti	2.7.0	MIT	true	false	false	https://registry.npmjs.org/jiti/-/jiti-2.7.0.tgz

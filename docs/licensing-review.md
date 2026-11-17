@@ -67,7 +67,7 @@ Git history 另含 Cursor、Codex 與 Claude 的 co-author／session 標記；�
 
 ## npm 依賴
 
-[`licensing-dependencies.tsv`](./licensing-dependencies.tsv) 逐筆記錄 lockfile 的 **356** 個非 root entries（2026-11-04，Better Auth 1.7.15 及其相依升級後同步；移除 `@opentelemetry/semantic-conventions`，較前次少 1 個 Apache-2.0 entry；workerd 的 scoped override 所加入的 6 個 Apache-2.0 entries 維持不變）：路徑、版本、license metadata、dev／devOptional／optional 標記及 resolved URL（lockfile 未提供時記為 `UNSPECIFIED`）。使用 `node scripts/licensing-dependencies.mjs` 重產，`node scripts/licensing-dependencies.mjs --check` 驗證；CI 執行一致性查核。這是 metadata 盤點，**不是逐一檢查完整著作權 notices 或所有發布產物的法律清單**，也不依 flags 就宣稱某個套件不會進入部署。
+[`licensing-dependencies.tsv`](./licensing-dependencies.tsv) 逐筆記錄 lockfile 的 **356** 個非 root entries（2026-11-17，Hono 4.13.16 安全修補後同步；套件數與下表授權統計不變，Hono 的 MIT LICENSE 全文與舊版逐字一致；workerd 的 scoped override 所加入的 6 個 Apache-2.0 entries 維持不變）：路徑、版本、license metadata、dev／devOptional／optional 標記及 resolved URL（lockfile 未提供時記為 `UNSPECIFIED`）。使用 `node scripts/licensing-dependencies.mjs` 重產，`node scripts/licensing-dependencies.mjs --check` 驗證；CI 執行一致性查核。這是 metadata 盤點，**不是逐一檢查完整著作權 notices 或所有發布產物的法律清單**，也不依 flags 就宣稱某個套件不會進入部署。
 
 | License metadata（原樣保留）             | Entries |
 | ---------------------------------------- | ------: |

@@ -115,9 +115,9 @@ ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-### hono 4.13.13
+### hono 4.13.16
 
-來源：安裝套件 `hono@4.13.13` 的 `LICENSE`；npm package [`hono`](https://www.npmjs.com/package/hono/v/4.13.13)。
+來源：安裝套件 `hono@4.13.16` 的 `LICENSE`；npm package [`hono`](https://www.npmjs.com/package/hono/v/4.13.16)。
 
 ```text
 MIT License

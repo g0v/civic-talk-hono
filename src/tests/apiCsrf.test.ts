@@ -68,6 +68,58 @@ describe('/api/* 全域 csrf 防護', () => {
     expect(fetch).not.toHaveBeenCalled()
   })
 
+  it.each(['text/ping', 'text/ping; charset=UTF-8'])('拒絕 sibling origin 的 %s hyperlink auditing POST', async contentType => {
+    authState.current = signedInUser()
+    const fetch = vi.fn(async () => Response.json({ ok: true }))
+    const response = await app.request(
+      'https://civic.vtaiwan.tw/api/fact-check',
+      {
+        method: 'POST',
+        headers: { ...CROSS_SITE, 'Content-Type': contentType },
+        body: 'PING',
+      },
+      testEnv(fetch)
+    )
+
+    expect(response.status).toBe(403)
+    await expect(response.json()).resolves.toEqual({ error: 'Forbidden: cross-site request blocked' })
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it.each(['%0A', '%0D', '%E2%80%A8', '%E2%80%A9'])('編碼換行 %s 不得繞過全域 CSRF', async encoded => {
+    authState.current = signedInUser()
+    const response = await app.request(
+      `https://civic.vtaiwan.tw/api/does-not-exist${encoded}`,
+      {
+        method: 'POST',
+        headers: { ...CROSS_SITE, 'Content-Type': 'text/plain' },
+        body: '{}',
+      },
+      testEnv()
+    )
+
+    expect(response.status).toBe(403)
+    await expect(response.json()).resolves.toEqual({ error: 'Forbidden: cross-site request blocked' })
+  })
+
+  it('同源 text/ping 仍交由真實端點的登入守衛處理', async () => {
+    const response = await app.request(
+      'https://civic.vtaiwan.tw/api/fact-check',
+      {
+        method: 'POST',
+        headers: {
+          Origin: 'https://civic.vtaiwan.tw',
+          'Sec-Fetch-Site': 'same-origin',
+          'Content-Type': 'text/ping',
+        },
+        body: 'PING',
+      },
+      testEnv()
+    )
+
+    expect(response.status).toBe(401)
+  })
+
   it('拒絕 sibling origin 無 Content-Type 的 fact-check，且不呼叫核心 Worker', async () => {
     authState.current = signedInUser()
     const fetch = vi.fn(async () => Response.json({ ok: true }))
