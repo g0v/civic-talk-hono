@@ -516,6 +516,7 @@ export const messages = {
   factcheck_verdict_mixed: 'Mixed evidence',
   factcheck_verdict_mostly_refuted: 'Mostly refuted',
   factcheck_verdict_refuted: 'Refuted',
+  factcheck_verdict_common_sense_refuted: 'AI judges this content to be false based on common sense',
   factcheck_verdict_insufficient_evidence: 'Insufficient evidence',
   factcheck_verdict_unknown: 'Unable to determine',
   contrib_tips_title: '🙋 What materials help most?',

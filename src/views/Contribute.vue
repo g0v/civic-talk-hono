@@ -16,6 +16,7 @@ import {
   factCheckBlockReason,
   factCheckErrorKind,
   factCheckInputKey,
+  factCheckUsesCommonSenseLabel,
   parseFactCheckResult,
   type FactCheckErrorKind,
   type FactCheckResult,
@@ -87,7 +88,9 @@ const backHref = computed(() => `/issues/${props.issueId}`)
 const loginCallbackUrl = computed(() => `/contribute/${props.issueId}`)
 const factCheckKey = computed(() => factCheckInputKey(content.value, sourceUrl.value))
 const factCheckVerdictLabel = computed(() => {
-  switch (factCheckResult.value?.verdict) {
+  const result = factCheckResult.value
+  if (result && factCheckUsesCommonSenseLabel(result)) return t('factcheck_verdict_common_sense_refuted')
+  switch (result?.verdict) {
     case 'supported':
       return t('factcheck_verdict_supported')
     case 'mostly_supported':

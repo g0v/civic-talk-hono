@@ -507,6 +507,7 @@ export const messages = {
   factcheck_verdict_mixed: '證據正反都有',
   factcheck_verdict_mostly_refuted: '大致可確信此內容不實',
   factcheck_verdict_refuted: '可確信此內容不實',
+  factcheck_verdict_common_sense_refuted: 'AI以常識判斷此內容不實',
   factcheck_verdict_insufficient_evidence: '證據不足，無法判定',
   factcheck_verdict_unknown: '無法判定',
   contrib_tips_title: '🙋 什麼素材最有用？',

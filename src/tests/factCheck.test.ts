@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test'
-import { buildFactCheckRequestBody, factCheckAllowsPosting, factCheckBlockReason, factCheckErrorKind, factCheckInputKey, parseFactCheckResult, type FactCheckResult } from '../lib/factCheck'
+import { buildFactCheckRequestBody, factCheckAllowsPosting, factCheckBlockReason, factCheckErrorKind, factCheckInputKey, factCheckUsesCommonSenseLabel, parseFactCheckResult, type FactCheckResult } from '../lib/factCheck'
 
 const allowed: FactCheckResult = {
   status: 'completed',
@@ -24,6 +24,24 @@ describe('事實查核請求 body', () => {
     expect(factCheckInputKey('主張內容', 'https://example.com/a')).not.toBe(factCheckInputKey('主張內容', 'https://example.com/b'))
     expect(factCheckInputKey('主張內容', 'https://example.com/a')).not.toBe(factCheckInputKey('另一個主張', 'https://example.com/a'))
     expect(factCheckInputKey('  主張內容  ', '  https://example.com/a  ')).toBe(factCheckInputKey('主張內容', 'https://example.com/a'))
+  })
+})
+
+describe('事實查核低信心提示（#226）', () => {
+  it.each(['refuted', 'mostly_refuted'] as const)('%s 在低支持度、低信心時改用常識判斷提示，包含零分與信心 0.5', verdict => {
+    for (const factuality of [0, 0.49]) {
+      for (const confidence of [0, 0.49, 0.5]) {
+        expect(factCheckUsesCommonSenseLabel({ ...allowed, verdict, factuality, confidence })).toBe(true)
+      }
+    }
+    expect(factCheckUsesCommonSenseLabel({ ...allowed, verdict, factuality: 0.5, confidence: 0.5 })).toBe(false)
+    expect(factCheckUsesCommonSenseLabel({ ...allowed, verdict, factuality: 0, confidence: 0.51 })).toBe(false)
+    expect(factCheckUsesCommonSenseLabel({ ...allowed, verdict, factuality: null, confidence: 0.5 })).toBe(false)
+    expect(factCheckUsesCommonSenseLabel({ ...allowed, verdict, factuality: 0, confidence: null })).toBe(false)
+  })
+
+  it.each(['supported', 'mostly_supported', 'mixed', 'insufficient_evidence', null] as const)('其他判斷 %s 不改用不實提示', verdict => {
+    expect(factCheckUsesCommonSenseLabel({ ...allowed, verdict, factuality: 0, confidence: 0.5 })).toBe(false)
   })
 })
 
