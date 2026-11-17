@@ -161,6 +161,14 @@ export function expandSentence(content: string, rawStart: number, rawEnd: number
 
 /** 離線句界候選；前置條件與 expandSentence 相同，不接正式提取流程。 */
 export function expandSentenceCandidate(content: string, rawStart: number, rawEnd: number): Span<'utf16'> {
+  return expandEvidenceCandidateRanges(content, rawStart, rawEnd).claim
+}
+
+/** 同次掃描保留必要語境與最小候選；不以舊 E0 展句代替 context。 */
+export function expandEvidenceCandidateRanges(content: string, rawStart: number, rawEnd: number): {
+  readonly claim: Span<'utf16'>
+  readonly context: Span<'utf16'>
+} {
   // 只辨識連續帶點大寫首字母；縮寫恰好位於句尾的語法歧義仍待人工審閱。
   const acronymDots = new Set<number>()
   for (const match of content.matchAll(/\b(?:[A-Z]\.){2,}/g)) {
@@ -296,6 +304,7 @@ export function expandSentenceCandidate(content: string, rawStart: number, rawEn
     if (match && next >= end && next < paragraphEnd) end = endAt(next, next + match[0].length)
     if (start === beforeStart && end === beforeEnd) break
   }
+  const context: Span<'utf16'> = { start, end, unit: 'utf16' }
   // 必要依附已擴張時保留複合原文；不以新切點抵銷先前補回的條件或歸屬。
   if (start === unitStart && end === unitEnd) {
     const reference = /^(?:此|該|這|那|其|它|他|她|前|後|上|下|以|如|所|同|相同|另|原|先)|(?:前者|後者|上述|下述|前述|後述)/u
@@ -328,7 +337,7 @@ export function expandSentenceCandidate(content: string, rawStart: number, rawEn
       }
     }
   }
-  return { start, end, unit: 'utf16' }
+  return { claim: { start, end, unit: 'utf16' }, context }
 }
 
 function failed(reason: EvidenceRejection['reason']): EvidenceExtraction {
