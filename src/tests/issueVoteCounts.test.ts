@@ -13,6 +13,7 @@ function dataset() {
   const sqlite = new DatabaseSync(':memory:')
   databases.push(sqlite)
   sqlite.exec(`
+    CREATE TABLE ct_contributors (user_id TEXT PRIMARY KEY, public_id TEXT UNIQUE);
     CREATE TABLE ct_issues (
       id INTEGER PRIMARY KEY, title TEXT, description TEXT, status TEXT, polis_id TEXT,
       created_at TEXT, tags TEXT, is_closed INTEGER DEFAULT 0, closure_reason TEXT,

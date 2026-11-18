@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test'
+import { DatabaseSync } from 'node:sqlite'
 import { buildAuthorSnapshot, canReadAdminSnapshots, validateSubmissionOptions } from '../api/routes'
 import type { AuthContext } from '../auth/authorization'
 import { getLatestBriefing, getLatestBriefingWithAuthor, listIssuesWithAuthor } from '../db/queries'
@@ -80,14 +81,29 @@ describe('作者資料隱私守護', () => {
     expect(sql[0]).toContain('terms_version, terms_accepted_at')
   })
 
-  it('briefing 公開查詢只投影名稱與 opt-in email，管理端才取得完整快照', async () => {
-    const { db, sql } = recordingDb()
-
-    await getLatestBriefing(db, 1)
-    await getLatestBriefingWithAuthor(db, 1)
-
-    expect(sql[0]).toContain('CASE WHEN show_email = 1 THEN author_email ELSE NULL END AS author_email')
-    expect(sql[0]).not.toContain('author_id')
-    expect(sql[1]).toContain('author_id, author_name, author_email, show_email')
+  it.each([0, 1])('briefing 公開查詢遵循 email opt-in=%s，管理端才取得完整快照', async visibility => {
+    const sqlite = new DatabaseSync(':memory:')
+    try {
+      sqlite.exec(`CREATE TABLE ct_briefings (
+        id INTEGER, issue_id INTEGER, consensus TEXT, disputes TEXT, positions TEXT, narrative TEXT,
+        opinion_prompt TEXT, version INTEGER, created_at TEXT, abuse_flagged INTEGER,
+        author_id TEXT, author_name TEXT, author_email TEXT, show_email INTEGER);
+        CREATE TABLE ct_contributors (user_id TEXT PRIMARY KEY, public_id TEXT UNIQUE);
+        INSERT INTO ct_briefings VALUES (1,1,'共識','','','','',1,'2026-01-01',0,'private-id','作者','private@example.test',0);`)
+      sqlite.prepare('UPDATE ct_briefings SET show_email=?').run(visibility)
+      const db = {
+        prepare(query: string) {
+          return { bind: (id: number) => ({ first: async () => sqlite.prepare(query).get(id) }) }
+        },
+      } as unknown as D1Database
+      const publicBriefing = await getLatestBriefing(db, 1)
+      const adminBriefing = await getLatestBriefingWithAuthor(db, 1)
+      expect(publicBriefing).toMatchObject({ author_name: '作者', author_email: visibility === 1 ? 'private@example.test' : null })
+      expect(publicBriefing).not.toHaveProperty('author_id')
+      expect(publicBriefing).not.toHaveProperty('show_email')
+      expect(adminBriefing).toMatchObject({ author_id: 'private-id', author_name: '作者', author_email: 'private@example.test', show_email: visibility })
+    } finally {
+      sqlite.close()
+    }
   })
 })

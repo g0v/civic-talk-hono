@@ -19,10 +19,39 @@ const displayName = computed(() => session.value?.user.name || session.value?.us
 const avatarImage = computed(() => session.value?.user.image ?? null)
 const avatarInitial = computed(() => displayName.value.charAt(0).toUpperCase())
 const hasChanges = computed(() => !!session.value && draftName.value !== session.value.user.name)
+const isDev = import.meta.env.DEV
+const contributorPublicId = ref<string | null>(null)
+const contributorFailed = ref(false)
+const contributorLoading = ref(false)
 
 onMounted(async () => {
   await ensureAuthSession()
+  if (import.meta.env.DEV && authState.value === 'signed-in') await loadContributor()
 })
+
+async function loadContributor() {
+  if (!import.meta.env.DEV || authState.value !== 'signed-in' || contributorLoading.value) return
+  contributorFailed.value = false
+  contributorLoading.value = true
+  try {
+    const response = await fetch('/api/contributors/me', { headers: { Accept: 'application/json' } })
+    if (!response.ok) {
+      contributorFailed.value = true
+      return
+    }
+    const data: unknown = await response.json()
+    if (typeof data === 'object' && data !== null && 'public_id' in data && typeof data.public_id === 'string' && data.public_id) {
+      contributorPublicId.value = data.public_id
+    } else {
+      contributorFailed.value = true
+    }
+  } catch (error) {
+    if (!(error instanceof Error)) throw error
+    contributorFailed.value = true
+  } finally {
+    contributorLoading.value = false
+  }
+}
 
 function startEditing() {
   draftName.value = session.value?.user.name ?? ''
@@ -126,6 +155,14 @@ async function saveName() {
               <button type="button" class="btn btn-secondary" @click="signOutAndReload">
                 {{ t('logout') }}
               </button>
+            </div>
+            <div v-if="isDev" aria-live="polite">
+              <p v-if="contributorLoading" class="text-muted">{{ t('contributor_profile_loading') }}</p>
+              <a v-else-if="contributorPublicId" :href="`/contributors/${encodeURIComponent(contributorPublicId)}`" class="btn btn-secondary min-h-12">{{ t('contributor_profile_link') }}</a>
+              <div v-else-if="contributorFailed">
+                <p role="alert">{{ t('contributor_profile_error') }}</p>
+                <button type="button" class="btn btn-secondary min-h-12" @click="loadContributor">{{ t('feedback_retry') }}</button>
+              </div>
             </div>
           </div>
 

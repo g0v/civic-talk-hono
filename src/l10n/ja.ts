@@ -1,6 +1,28 @@
 import type { MessageKey } from './zh-TW'
 
 export const messages = {
+  contributor_unnamed: '名前未設定の投稿者',
+  contributor_history: '公開された貢献履歴',
+  contributor_joined: 'vTaiwan 登録日：',
+  contributor_join_event: 'vTaiwan 共通アカウントを登録',
+  contributor_view_label: '貢献履歴の表示方法',
+  contributor_timeline: 'タイムライン',
+  contributor_list: '年別リスト',
+  contributor_kind_issue: '議題の投稿',
+  contributor_kind_material: '素材の投稿',
+  contributor_kind_briefing: '整理・説明の投稿',
+  contributor_kind_opinion: '意見の投稿',
+  contributor_year: '{year} 年',
+  contributor_count: '{count} 件',
+  contributor_untitled: '無題の投稿',
+  contributor_version_title: '{title}（第 {version} 版）',
+  contributor_public_hint: '現在公開できる投稿のみを表示します。日付と年は UTC に基づきます。整理・説明は各バージョンを 1 件として数えます。',
+  contributor_briefing_link_hint: '議題の現在の説明ページに移動します。この旧バージョンの本文が表示されるとは限りません。',
+  contributor_empty: '現在、公開できる投稿履歴はありません。議題一覧から参加できます。',
+  contributor_browse: '議題を見る',
+  contributor_profile_link: '自分の公開貢献履歴を見る',
+  contributor_profile_loading: '公開貢献履歴へのリンクを読み込み中…',
+  contributor_profile_error: '公開貢献履歴へのリンクを読み込めませんでした。再試行してください。プロフィールの編集は引き続き利用できます。',
   site_tagline: '公共議題の審議プラットフォーム',
   back_to_issues: '← すべての議題に戻る',
   loading: '読み込み中…',
@@ -188,10 +210,14 @@ export const messages = {
   vol_gen_summarize: '要約 Prompt を生成',
   vol_ai_button: 'ワンクリック要約',
   vol_ai_dialog_title: 'ワンクリック要約の処理への同意',
-  vol_ai_processing: 'システムは議題のタイトル・説明と、利用可能なすべての資料の本文・出典名・URL を処理し、処理に必要な内容を Cloudflare Workers AI に送信します。非表示の資料は対象外です。投稿者のアカウント項目は送信しませんが、本文や出典に個人情報が含まれる場合があります。あなたの同意は関係者全員の同意を意味しません。',
-  vol_ai_private: '完全な結果は申請者と管理者のみが閲覧でき、「AI による未検証」（ai_unverified）と表示されます。自動公開や既存の説明ページの変更は行いません。部分的な結果や失敗した結果で既存の結果を置き換えることはありません。',
-  vol_ai_cost_notice: 'モデルの費用はプラットフォームが負担し、利用者には請求しません。失敗時にも費用が発生する場合があり、自動再試行は行いません。新規の有料ジョブは各アカウント UTC 日ごとに 20 件まで、議題ごとに 5 分の待機時間があります。プラットフォームのモデル予算 1 日 5 米ドルは開始可否の推定値で、すべての費用の上限ではありません。',
-  vol_ai_retention: '処理データは自動的に期限切れになりません。出典を非表示・変更すると配信は停止しますが、データは保持されます。削除された出典に依存する非公開データは、出典確認で削除を検出するか、管理者が出典単位で消去した後に消去されます。料金記録・消去マーカー・バックアップには別の保存制限があります。',
+  vol_ai_processing:
+    'システムは議題のタイトル・説明と、利用可能なすべての資料の本文・出典名・URL を処理し、処理に必要な内容を Cloudflare Workers AI に送信します。非表示の資料は対象外です。投稿者のアカウント項目は送信しませんが、本文や出典に個人情報が含まれる場合があります。あなたの同意は関係者全員の同意を意味しません。',
+  vol_ai_private:
+    '完全な結果は申請者と管理者のみが閲覧でき、「AI による未検証」（ai_unverified）と表示されます。自動公開や既存の説明ページの変更は行いません。部分的な結果や失敗した結果で既存の結果を置き換えることはありません。',
+  vol_ai_cost_notice:
+    'モデルの費用はプラットフォームが負担し、利用者には請求しません。失敗時にも費用が発生する場合があり、自動再試行は行いません。新規の有料ジョブは各アカウント UTC 日ごとに 20 件まで、議題ごとに 5 分の待機時間があります。プラットフォームのモデル予算 1 日 5 米ドルは開始可否の推定値で、すべての費用の上限ではありません。',
+  vol_ai_retention:
+    '処理データは自動的に期限切れになりません。出典を非表示・変更すると配信は停止しますが、データは保持されます。削除された出典に依存する非公開データは、出典確認で削除を検出するか、管理者が出典単位で消去した後に消去されます。料金記録・消去マーカー・バックアップには別の保存制限があります。',
   vol_ai_privacy_link: 'プライバシーポリシーと消去の制限を読む',
   vol_ai_language: '結果の言語：{language}（確認時の画面言語を使用）',
   vol_ai_replace: 'この言語の非公開要約は既に存在します。完全な新しい結果は、他の人が作成したものも含めて既存の結果を置き換えます。',
