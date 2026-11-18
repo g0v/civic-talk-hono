@@ -48,10 +48,10 @@ function contextFrom(value: unknown): SummaryContext | null {
 
 function extractionFrom(value: unknown, jobId: string): ExtractionDebug | null {
   if (
-    !isObject(value) || value.version !== 'extraction-observation-v1' || value.job_id !== jobId || value.checkpoint !== 'A:baseline-observation' ||
+    !isObject(value) || value.version !== 'extraction-observation-v1' || value.job_id !== jobId || !['A:baseline-observation', 'B:claim-context'].includes(String(value.checkpoint)) ||
     !isObject(value.source_code) || !isObject(value.settings) || !isObject(value.claim) || !isObject(value.context) ||
     !Array.isArray(value.materials) || !Array.isArray(value.entries) ||
-    value.entries.some(entry => !isObject(entry) || typeof entry.key !== 'string' || !entry.key || !['raw', 'legacy', 'diagnostic'].includes(String(entry.kind)) ||
+    value.entries.some(entry => !isObject(entry) || typeof entry.key !== 'string' || !entry.key || !['raw', 'legacy', 'claim', 'context', 'diagnostic'].includes(String(entry.kind)) ||
       !Number.isSafeInteger(entry.material_id) || !isObject(entry.data) || !isObject(entry.artifact))
   ) return null
   return value as unknown as ExtractionDebug

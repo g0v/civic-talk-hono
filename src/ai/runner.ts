@@ -1,7 +1,8 @@
 import type { WorkflowStep } from 'cloudflare:workers'
 import type { EvidenceBindings } from './env'
 import { analyzeComparisons, createEvidencePairs, type ComparisonAnalysis, type ComparisonFailure, type DirectComparison } from './comparison'
-import { extractClairicEvidence, MAX_EVIDENCE, type Evidence, type EvidenceExtraction } from './evidence'
+import { MAX_EVIDENCE, type Evidence, type EvidenceExtraction } from './evidence'
+import { extractEvidenceClaims, type ClaimSnapshot } from './extraction'
 import {
   assembleGeneratedDraft,
   buildCompletionRequest,
@@ -23,7 +24,7 @@ import {
   type SectionStates,
 } from './generation'
 import { checkInitiator, checkedSnapshot, SourceUnavailable } from './lifecycle'
-import { buildClairicRequest, buildClefBatches, modelUsageStatus, ModelContextLimitError, MODEL_SELECTORS, parseClairicResponse, parseClefResponse, type ClefBatch, type ModelRequest } from './models'
+import { buildClairicRequest, buildClefBatches, modelUsageStatus, ModelContextLimitError, MODEL_SELECTORS, parseClefResponse, type ClefBatch, type ModelRequest } from './models'
 import { actualCallCost, estimateCall, requestProvenance, type ModelSelector } from './pricing'
 import { EvidenceStore, EvidenceStoreError, type ErrorCode, type Snapshot } from './store'
 import { WORKFLOW_CONTROL_POLICY } from './workflowPolicy'
@@ -49,7 +50,7 @@ type Coverage = {
   usage_status: 'reported' | 'missing' | 'malformed' | null
 }
 type RawPayload = { selector: ModelSelector; request: unknown; response: unknown; provenance: Record<string, unknown> }
-type ExtractionPayload = { evidence: Evidence[]; coverage: Coverage[]; partial: boolean; raw_artifact_ids: string[] }
+type ExtractionPayload = { evidence: Evidence[]; candidate_snapshots: ClaimSnapshot[]; coverage: Coverage[]; partial: boolean; raw_artifact_ids: string[] }
 type ComparisonPlan = { batches: ClefBatch[] }
 type ComparisonPayload = { analysis: ComparisonAnalysis; partial: boolean; raw_artifact_ids: string[] }
 type GenerationPlan = {
@@ -315,6 +316,7 @@ export async function runEvidenceWorkflow(env: EvidenceBindings, jobId: string, 
       const snapshot = await current(env, jobId)
       const evidence: Evidence[] = []
       const coverage: Coverage[] = []
+      const candidateSnapshots: ClaimSnapshot[] = []
       const rawIds: string[] = []
       for (const { materialId, result } of extractionResults) {
         const material = materials(snapshot).find(candidate => candidate.id === materialId)
@@ -328,8 +330,9 @@ export async function runEvidenceWorkflow(env: EvidenceBindings, jobId: string, 
         const usage = raw.response && typeof raw.response === 'object' && 'usage' in raw.response ? raw.response.usage : undefined
         let extracted: EvidenceExtraction
         try {
-          parseClairicResponse(raw.response, material.content)
-          extracted = extractClairicEvidence({ material_id: material.id, content: material.content, state: material.content, response: raw.response })
+          const claims = await extractEvidenceClaims({ material_id: material.id, content: material.content, state: material.content, response: raw.response })
+          extracted = claims
+          candidateSnapshots.push(claims.candidates)
         } catch {
           coverage.push({
             material_id: materialId,
@@ -363,7 +366,7 @@ export async function runEvidenceWorkflow(env: EvidenceBindings, jobId: string, 
         await finishFailure(env, jobId, code)
         return { status: 'failed', artifactId: null }
       }
-      const payload: ExtractionPayload = { evidence, coverage, partial, raw_artifact_ids: rawIds }
+      const payload: ExtractionPayload = { evidence, candidate_snapshots: candidateSnapshots, coverage, partial, raw_artifact_ids: rawIds }
       const artifactId = await save(env, snapshot, 'extraction', payload)
       await advance(env, jobId, snapshot, 'extracting', 'comparing')
       return { status: 'ok', artifactId }
@@ -736,6 +739,7 @@ export async function runEvidenceWorkflow(env: EvidenceBindings, jobId: string, 
       }
       const payload = {
         ...draft,
+        candidate_snapshots: extraction.candidate_snapshots,
         verification: 'ai_unverified',
         diagnostics: {
           coverage: extraction.coverage,

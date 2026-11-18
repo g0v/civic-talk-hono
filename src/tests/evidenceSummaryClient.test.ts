@@ -11,16 +11,16 @@ const context = (version: number, hasSummary: boolean, job: unknown = null, summ
 const job = (status: string) => ({ job_id: 'job-1', status, usage })
 const savedSummary = (jobId = 'job-1') => ({ job_id: jobId, data: { consensus: ['result'] }, citation_map: {}, verification: 'ai_unverified', updated_at: '2026-11-11T00:00:00Z' })
 
-function extractionDebug(keys: string[]): ExtractionDebug {
+function extractionDebug(keys: string[], checkpoint: ExtractionDebug['checkpoint'] = 'A:baseline-observation'): ExtractionDebug {
   return {
-    version: 'extraction-observation-v1', job_id: 'job-1', checkpoint: 'A:baseline-observation',
+    version: 'extraction-observation-v1', job_id: 'job-1', checkpoint,
     source_code: { commit: null, dirty: true },
     settings: { clairic_prompt: 'saved-prompt', evidence_algorithm: 'saved-algorithm', config_sha256: 'saved-settings' },
     claim: { status: 'unavailable', reason: 'not_created_at_checkpoint_A' },
     context: { status: 'unavailable', reason: 'not_created_at_checkpoint_A' },
     materials: [{ material_id: 2, raw: keys.length ? 'available' : 'unavailable', legacy: keys.some(key => key.startsWith('legacy:')) ? 'available' : 'unavailable' }],
     entries: keys.map(key => ({
-      key, kind: key.startsWith('raw:') ? 'raw' : 'legacy', material_id: 2, content_hash: 'source-hash',
+      key, kind: key.startsWith('raw:') ? 'raw' : key.startsWith('claim:') ? 'claim' : key.startsWith('context:') ? 'context' : 'legacy', material_id: 2, content_hash: 'source-hash',
       artifact: { id: key, sha256: `hash-${key}` }, data: { saved: key },
     })),
   }
@@ -333,7 +333,10 @@ describe('一鍵彙整前端狀態', () => {
     f.controller.dispose()
   })
 
-  it('提取尚無資料不先去重；後續原始抽取及 legacy 各輸出一次，生成失敗仍可排查', async () => {
+  it.each([
+    { checkpoint: 'A:baseline-observation' as const, passages: ['legacy:one'] },
+    { checkpoint: 'B:claim-context' as const, passages: ['claim:one', 'context:one'] },
+  ])('$checkpoint 提取尚無資料不先去重；後續各層各輸出一次，生成失敗仍可排查', async ({ checkpoint, passages }) => {
     vi.useFakeTimers()
     let checks = 0
     const f = fixture(url => {
@@ -342,13 +345,13 @@ describe('一鍵彙整前端狀態', () => {
       const index = checks++
       return response({
         ...job(['extracting', 'comparing', 'generating', 'failed'][Math.min(index, 3)]),
-        extraction_debug: extractionDebug(index === 0 ? [] : index === 1 ? ['raw:one'] : ['raw:one', 'legacy:one']),
+        extraction_debug: extractionDebug(index === 0 ? [] : index === 1 ? ['raw:one'] : ['raw:one', ...passages], checkpoint),
       })
     }, { extraction: true })
     await f.controller.setScope('zh-TW')
     expect(f.onExtraction).not.toHaveBeenCalled()
     await vi.advanceTimersByTimeAsync(180_000)
-    expect(f.onExtraction.mock.calls.map(([debug]) => (debug as ExtractionDebug).entries.map(entry => entry.key))).toEqual([['raw:one'], ['legacy:one']])
+    expect(f.onExtraction.mock.calls.map(([debug]) => (debug as ExtractionDebug).entries.map(entry => entry.key))).toEqual([['raw:one'], passages])
     expect(f.controller.state.phase).toBe('failed')
     expect(f.onResult).not.toHaveBeenCalled()
     await vi.advanceTimersByTimeAsync(180_000)

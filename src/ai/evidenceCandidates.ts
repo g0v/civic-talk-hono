@@ -34,8 +34,8 @@ export interface EvidenceCandidateSnapshot {
 }
 
 /**
- * 離線對應已接受的 raw；素材 ID 為正整數、raw 索引唯一且定位有效的前置條件由上游保證。
- * 不解析 provider response；原 provider spans／拒收診斷仍留上游，也不接正式 Evidence／runner。
+ * 對應已接受的 raw；素材 ID 為正整數、raw 索引唯一且定位有效的前置條件由上游保證。
+ * 不解析 provider response；原 provider spans／拒收診斷由共用驗證器保存。
  */
 export async function buildEvidenceCandidates(material_id: number, content: string, anchors: readonly ValidatedCandidateAnchor[]): Promise<EvidenceCandidateSnapshot> {
   const content_hash = await sha256(content)

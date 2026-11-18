@@ -21,6 +21,26 @@
 
 正式來源為業務 `DB`；既有 BYO token、`GET /api/issues/:id/prompt?type=synthesis`、briefing 與議題狀態不變。AI／人工草稿分別是 `ai_unverified`／`human_unverified`，不是可公開的 briefing。
 
+### 2026-11-18：P1／E1 正式程式接線
+
+目前程式預設使用 `claims-list-p1-v1` 與 `evidence-3-claim-context`。Clairic 的 raw 是不可改寫的定位資料；先沿用相同逐字／座標驗證器，再由 E1 建立主張及必要原文語境，不先經 E0 展句去重。多個 raw 可以指向同一主張，未選到的內容不自行增造主張，已跨多主張的 raw 仍保守保留複合範圍。
+
+新 extraction／最終 job 工件的 `candidate_snapshots` 保留每素材的 content hash、原始錨點及 provider 單位資訊、claim/context ID 和範圍。`anchor_index_kind=value` 表示按 value 索引；不等長陣列通過既有嚴格重配對時為 `span`，不能把兩個原始陣列硬 zip。正式 `evidence.id` 使用 content-hashed claim ID，`quote` 是主張，`context` 是獨立原文語境；引用仍只接受選入的 claim ID，context ID 不能冒作證據。
+
+Clef、三分區及必要補完接收主張與獨立語境，並明示不得把語境中的其他立場當成該主張。context 必須可切回相同素材且包含主張。對應版本為 `symmetric-four-way-v3-claim-context`、`specialized-evidence-v14-two-stage-positions`、`specialized-cited-v5-position-opinions`、`section-values-v7-claim-context`、`missing-fields-only-v5-position-labels`、`cited-field-patches-v2-position-labels`、`citation-map-v2-context`；模型、採樣、token／費用／證據上限及引用守門不變。
+
+立場實際分兩次模型呼叫。第一階段每群只接收 `group_id`／`opinions`，不接受 `name`／`Core_concern`；程式先從實質意見引用決定成員及 Sources，驗完整採用／排除與 direct-disagree 互斥。內部草稿的群名及核心關注由程式設為 null，不能直接交付為完整報告。
+
+第二階段重用既有一次 `complete:draft` 白名單補完：每個非空群必有 `/positions/items/<n>/name` 與 `Core_concern` targets，允許 ID 僅由已確定 opinions 引用重建，與必要的 Overview 缺欄位合併在同一次呼叫。這次生成不能增加成員、改意見、來源、順序、既有引用或排除；所有指定欄位完整通過後才交付非空群名／核心關注。沒有立場群組時不為群名呼叫模型，其他分項若有必填缺值仍沿既有規則補完。
+
+因此有成功立場群組的正常工作會多走先前可能省略的補完，但仍最多三個分項加一次補完，沒有第五輪或重試。補完有獨立預留／結算與 immutable raw，失敗／unknown 不交付缺欄位草稿、不重打、不釋放未知費用。這是程式契約修訂，並不代表真模型品質已重新驗收，也不處理先前共識的供應端 `3045`。
+
+新設定／fixture request 指紋隔離舊快取。已完成的舊工作仍可按既有權限讀取；舊 active 工作若設定不同，沿用 `configuration_changed` 政策在模型呼叫前停止，不把舊 raw 混入新流程，也不釋放 unknown 或重設配額。這輪程式接線不需新 migration，亦未代表已部署或完整真人／付費驗收通過。
+
+### 歷史 P0／E0 受控回退紀錄
+
+以下保留先前回退及離線診斷的原因；版本與請求一致性描述僅針對當時工作，不代表上方新預設。
+
 立場生成提示 `specialized-evidence-v12-baseline-v9` 回到 `9ee4bf6c9fd7e70fcb209701b6c04f08d2d1f49b` 的 v9 共用與立場指令，僅保留後來已授權的同素材爭點提示；不再疊加 v10／v11 的焦點或完整單位共用指令。三步構造順序維持：先完成各群 opinions 的實質 `Title`／`description` 並計算引用聯集；再寫 name／Core_concern，引用僅能來自該群聯集，不以這兩欄的引用增加成員或補裝飾性 opinion 引用；最後核對全部輸入證據，必須被 opinion 採用或在 exclusions 恰好列出一次並說明原因，不得遺漏或兩者兼具。每群聯集仍不得包含任何 direct-disagree 配對的兩端；共同主題、群名、關注或中介證據不能豁免。
 
 採樣維持歷史成功工作實際使用的共識／爭點 `temperature=0`、立場與必要欄位補完 `0.2`，模型、schema、token 上限不變。該工作雖記錄來源 commit 為 `9ee4bf6`，同時為 `dirty=true`；此 commit 原檔三項皆為 `0.2`，不能只用 SHA 冒稱已還原成功實測。本輪比對保存的完整請求：Clairic、Clef、共識及立場與該次實測一致；爭點僅多出同素材支援指令。分項 temperature 與實際請求參與工作／context 指紋，不以清快取重跑。
@@ -83,7 +103,17 @@ Clairic 逐素材、Clef 配對、Gemma 共識／爭點／立場三項，必要�
 - UI 只顯示進度與成功／部分完成／失敗提示。完整成功並確認已保存後，或 `partial_draft` 回傳可交付 `data` 時，依 #210 暫在操作者瀏覽器 `console.log` 輸出 `data`；部分草稿只供排查，不表示已保存或成功。同一語言／工作／版本在元件生命週期內不重複輸出，重新整理會重新輸出；沒有資料、失敗、撤下／清除或已離開範圍的遲到回應不輸出。不送伺服器 log，不將私人 Console 記錄當成可公開的驗收證據。
 - 重新整理恢復目前獲授權的工作，不自動發起新生成。切換介面語言不把另一語言工作結果寫錯欄位；讀取工作／摘要仍可能核對來源，並非正式站的無副作用 smoke。
 
-### Checkpoint A 提取觀測（dev-only）
+### Checkpoint B 主張／語境觀測（dev-only）
+
+新工作仍透過既有 `?include_extraction=1` 與同一私人 DEV console 輸出，checkpoint 為 `B:claim-context`。`[extraction:raw]` 保留模型原值；`[extraction:claim]` 顯示原始錨點、完整主張及對應；`[extraction:context]` 顯示獨立語境。只投影保存結果，不重新提取或修改 raw。沒有保存的主張／語境明示 `unavailable/no_saved_claim_context`，不把空／失敗當作沒有觀點。
+
+下一個人工檢查點是另行核可一次完整一鍵彙整：先確認帳號／角色、議題與至少兩份合格素材、既有配額／unknown、`0018` 前置及實際 API／Workflow 設定版本。獲授權後才重啟 `vp run dev:remote`、開 DevTools，依正常同意及替換確認開始一次工作。此動作可能呼叫逐素材 Clairic、配對 Clef、三分區 Gemma 與必要補完，不能沿用前一次單段 P1 的授權。
+
+檢查 raw 沒被改寫、主張保留各方及必要條件、語境沒有被當成額外支持／反對；全教總警告等被轉述內容應帶原歸屬且不混成自學團體立場。最後逐項看共識／爭點／立場與引用，區分 `ai_draft`、部分完成與失敗；本機合成回歸及既有 raw 離線重播不代替這次語義驗收。這輪不執行上述新付費或遠端操作。
+
+### Checkpoint A 歷史提取觀測（dev-only）
+
+以下描述僅適用舊 A 工作；新 B 工件採上方 claim/context 投影。
 
 2026-11-14 使用者回報實測 log 已出現，作為 checkpoint A 觀測接線的手動驗收；不把此回報擴張成原子化、語義品質或後續實驗已通過。
 
@@ -91,7 +121,7 @@ Clairic 逐素材、Clef 配對、Gemma 共識／爭點／立場三項，必要�
 
 - dev 的工作 GET 可精確加上 `?include_extraction=1`，取得 `extraction_debug`（`version: extraction-observation-v1`）；未 opt-in 不新增欄位。production 即使手送 query，也不讀取提取 raw、不回傳診斷欄位。既有登入／停權、owner／admin、private/no-store、來源查核及最後 fence 維持。
 - 回傳與 console 只投影已保存的提取資料：`[extraction:raw]` 保留原始 `value／spans`（可能不等長）、confidence／p_null；`[extraction:expanded]` 顯示 legacy quote／原始及展句座標、拒收與去重；無正常 extraction 工件時仍可讀已保存的 raw／`[extraction:diagnostic]`，不偽造展句。
-- `claim／context` 目前一律明示 `unavailable/not_created_at_checkpoint_A`；三層完整提取留待 E1。metadata 使用該工作的保存設定、來源 commit／dirty、素材 content hash 與工件 ID／hash；若保存版本不是 P0／E0，只能當歷史資料檢視，不能冒稱這一組基準。
+- A 舊工件的 `claim／context` 明示 `unavailable/not_created_at_checkpoint_A`。metadata 使用該工作的保存設定、來源 commit／dirty、素材 content hash 與工件 ID／hash；歷史 legacy quote 不重新命名為 claim/context。
 - 以付費 `extract:<materialId>` step key 辨識 raw 歸屬，不用正文比對猜測素材；同文字不同素材仍可區分。不輸出完整 request、state_text、coverage.state_mapping、作者快照或其他模型的 raw，不把私人內容送到伺服器 log。
 - dev 一鍵彙整的既有輪詢會自動 opt-in；提取資料一旦可讀就輸出，最後 failed／partial 不影響上游診斷。每個工作／工件 ID／hash 只印一次；離開頁面、切換語言／帳號或卸載後不印遲到資料。重新整理會重新印。
 

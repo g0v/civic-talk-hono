@@ -1,7 +1,7 @@
 import type { Span } from './evidence'
 import { isTerminal, closing } from './evidenceBoundaries'
 
-/** 離線句界候選；前置條件與 expandSentence 相同，不接正式提取流程。 */
+/** E1句界；前置條件與 expandSentence 相同，由共用驗證器先接受錨點。 */
 export function expandSentenceCandidate(content: string, rawStart: number, rawEnd: number): Span<'utf16'> {
   return expandEvidenceCandidateRanges(content, rawStart, rawEnd).claim
 }

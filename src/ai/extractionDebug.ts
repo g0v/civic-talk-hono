@@ -3,7 +3,7 @@ import type { Artifact, InputManifest } from './store'
 
 export interface ExtractionDebugEntry {
   key: string
-  kind: 'raw' | 'legacy' | 'diagnostic'
+  kind: 'raw' | 'legacy' | 'claim' | 'context' | 'diagnostic'
   material_id: number
   content_hash: string
   artifact: { id: string; sha256: string }
@@ -13,14 +13,16 @@ export interface ExtractionDebugEntry {
 export interface ExtractionDebug {
   version: 'extraction-observation-v1'
   job_id: string
-  checkpoint: 'A:baseline-observation'
+  checkpoint: 'A:baseline-observation' | 'B:claim-context'
   source_code: { commit: string | null; dirty: boolean | null }
   settings: { clairic_prompt: string | null; evidence_algorithm: string | null; config_sha256: string | null }
-  claim: { status: 'unavailable'; reason: 'not_created_at_checkpoint_A' }
-  context: { status: 'unavailable'; reason: 'not_created_at_checkpoint_A' }
+  claim: PassageObservation
+  context: PassageObservation
   materials: Array<{ material_id: number; raw: 'available' | 'unavailable'; legacy: 'available' | 'unavailable' }>
   entries: ExtractionDebugEntry[]
 }
+
+type PassageObservation = { status: 'available' } | { status: 'unavailable'; reason: 'not_created_at_checkpoint_A' | 'no_saved_claim_context' }
 
 function object(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -83,13 +85,28 @@ export function buildExtractionDebug(
   }
   const coverageFields = ['status', 'evidence_count', 'rejected', 'duplicates', 'error_code', 'usage_status'] as const
   const legacyMaterials = new Set<number>()
+  const claimMaterials = new Set<number>()
   for (const artifact of extractions) {
     if (!object(artifact.payload)) continue
     const evidence = Array.isArray(artifact.payload.evidence) ? artifact.payload.evidence.filter(object) : []
     const coverage = Array.isArray(artifact.payload.coverage) ? artifact.payload.coverage.filter(object) : []
+    const snapshots = Array.isArray(artifact.payload.candidate_snapshots) ? artifact.payload.candidate_snapshots.filter(object) : []
     for (const material of manifest.materials) {
       const selected = evidence.filter(item => item.material_id === material.id)
       const detail = coverage.find(item => item.material_id === material.id)
+      const snapshot = snapshots.find(item => item.material_id === material.id)
+      if (snapshot && Array.isArray(snapshot.raw) && Array.isArray(snapshot.claims) && Array.isArray(snapshot.contexts)) {
+        claimMaterials.add(material.id)
+        add(artifact, material.id, 'claim', {
+          ...fields(snapshot, ['version', 'verification', 'content_hash', 'anchor_index_kind']),
+          raw: snapshot.raw.filter(object).map(item => fields(item, ['index', 'text', 'span', 'claim_id', 'context_id'])),
+          anchors: Array.isArray(snapshot.anchors) ? snapshot.anchors.filter(object).map(item => fields(item, ['index', 'span', 'raw_span', 'provider_span'])) : [],
+          claims: snapshot.claims.filter(object).map(item => fields(item, ['id', 'text', 'span'])),
+          coverage: detail ? fields(detail, coverageFields) : null,
+        })
+        add(artifact, material.id, 'context', { contexts: snapshot.contexts.filter(object).map(item => fields(item, ['id', 'text', 'span'])) })
+        continue
+      }
       if (!selected.length && !detail) continue
       legacyMaterials.add(material.id)
       add(artifact, material.id, 'legacy', {
@@ -112,14 +129,18 @@ export function buildExtractionDebug(
       }
     }
   }
+  const claimContext = claimMaterials.size > 0 || typeof versions.claim_context === 'string'
+  const passage: PassageObservation = claimMaterials.size > 0 ? { status: 'available' } : {
+    status: 'unavailable', reason: claimContext ? 'no_saved_claim_context' : 'not_created_at_checkpoint_A',
+  }
   return {
     version: 'extraction-observation-v1',
     job_id: jobId,
-    checkpoint: 'A:baseline-observation',
+    checkpoint: claimContext ? 'B:claim-context' : 'A:baseline-observation',
     source_code: { commit: text(source.commit), dirty: typeof source.dirty === 'boolean' ? source.dirty : null },
     settings: { clairic_prompt: text(versions.clairic_prompt), evidence_algorithm: text(versions.evidence_algorithm), config_sha256: text(hashes.config) },
-    claim: { status: 'unavailable', reason: 'not_created_at_checkpoint_A' },
-    context: { status: 'unavailable', reason: 'not_created_at_checkpoint_A' },
+    claim: passage,
+    context: passage,
     materials: manifest.materials.map(material => ({
       material_id: material.id,
       raw: entries.some(entry => entry.material_id === material.id && entry.kind === 'raw') ? 'available' : 'unavailable',
