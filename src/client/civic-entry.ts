@@ -11,6 +11,7 @@ import NotFoundView from '../views/NotFound.vue'
 import TermsView from '../views/Terms.vue'
 import PrivacyView from '../views/Privacy.vue'
 import ProfileView from '../views/Profile.vue'
+import ContributorView from '../views/Contributor.vue'
 import AppealsView from '../views/Appeals.vue'
 import type { PageName } from '../ssr/render'
 
@@ -33,6 +34,7 @@ const pages: Record<PageName, Component> = {
   terms: TermsView,
   privacy: PrivacyView,
   profile: ProfileView,
+  contributor: ContributorView,
   appeals: AppealsView,
 }
 

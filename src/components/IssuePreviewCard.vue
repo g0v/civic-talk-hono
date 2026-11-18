@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import AuthorEmailLink from './AuthorEmailLink.vue'
+import AuthorName from './AuthorName.vue'
 import StatusBadge from './StatusBadge.vue'
 import { formatDate, useI18n } from '../l10n'
 import type { IssueListItem } from '../db/queries'
@@ -29,7 +30,7 @@ const activityDate = computed(() => formatDate(props.issue.last_activity_at ?? p
 
     <p class="mt-0 mb-0 text-sm text-muted">
       {{ issue.material_count }} {{ t('idx_materials_unit') }} · {{ issue.opinion_count }} {{ t('idx_opinions_unit') }} · {{ t('issue_preview_vote_count', { count: issue.vote_count }) }}
-      <span> · {{ t('issue_author_label') }}：{{ issue.author_name || t('author_system') }}</span>
+      <span> · {{ t('issue_author_label') }}：<AuthorName :name="issue.author_name" :public-id="issue.author_public_id" /></span>
       <template v-if="issue.author_email"> · <AuthorEmailLink :email="issue.author_email" :name="issue.author_name" /> </template>
     </p>
 

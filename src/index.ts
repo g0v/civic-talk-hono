@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { registerApiRoutes } from './api/routes'
 import { registerAuthRoutes } from './api/auth'
+import { getContributorHistory, registerContributorRoutes } from './api/contributors'
 import { apiCsrf } from './api/csrf'
 import type { AppBindings } from './api/types'
 import { hasEvidenceBindings, withEvidenceSource } from './ai/env'
@@ -15,6 +16,7 @@ import {
   headForAdmin,
   headForAppeals,
   headForContribute,
+  headForContributor,
   headForHome,
   headForIssue,
   headForMaterial,
@@ -35,11 +37,13 @@ import NotFoundView from './views/NotFound.vue'
 import PrivacyView from './views/Privacy.vue'
 import TermsView from './views/Terms.vue'
 import ProfileView from './views/Profile.vue'
+import ContributorView from './views/Contributor.vue'
 import AppealsView from './views/Appeals.vue'
 import { readHomeLifecycleTab } from './lib/homeLifecycle'
 import { readHomeIssuePreviewId } from './lib/homeIssuePreview'
 import { readHomeSearchQuery } from './lib/homeSearch'
 import { parseIssueBriefingSlide, parseIssueCommentAction, parseIssueStep } from './lib/issueNavigation'
+import { parseContributorNavigation } from './lib/contributorNavigation'
 
 const app = new Hono<{ Bindings: AppBindings }>()
 
@@ -80,6 +84,7 @@ app.route('/', evidenceApp)
 
 // 先掛 auth：/api/auth/* 與 /api/me 要在 registerApiRoutes 的 /api/* 泛用處理之前命中。
 registerAuthRoutes(app)
+registerContributorRoutes(app)
 registerApiRoutes(app)
 
 // ── 舊網址導向（只能新增、不能刪除）──────────────────────────
@@ -215,6 +220,26 @@ app.get('/profile', async c => {
     hydrate: { page: 'profile', state: {} },
   })
   return c.html(html)
+})
+app.get('/contributors/:publicId', async c => {
+  const origin = new URL(c.req.url).origin
+  c.header('Cache-Control', 'private, no-store')
+  c.header('X-Content-Type-Options', 'nosniff')
+  c.header('Vary', 'Cookie')
+  if (!import.meta.env.DEV) return c.html(await notFoundHtml(origin), 404)
+  const history = await getContributorHistory(c.env, c.req.param('publicId'))
+  if (!history) return c.html(await notFoundHtml(origin), 404)
+  const navigation = parseContributorNavigation(new URL(c.req.url).search)
+  const state = {
+    initialHistory: history,
+    initialView: navigation.view,
+    initialExpanded: [...navigation.expanded],
+  }
+  return c.html(
+    await renderPage(ContributorView, state, headForContributor(history.name, history.public_id, origin), {
+      hydrate: { page: 'contributor', state },
+    })
+  )
 })
 app.get('/appeals', async c => {
   const origin = new URL(c.req.url).origin
