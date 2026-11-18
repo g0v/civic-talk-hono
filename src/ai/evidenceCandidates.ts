@@ -1,7 +1,7 @@
 import { expandEvidenceCandidateRanges, type Span } from './evidence'
 import { sha256 } from './source'
 
-export const EVIDENCE_CANDIDATE_VERSION = 'e1-candidates-1' as const
+export const EVIDENCE_CANDIDATE_VERSION = 'e1-candidates-2' as const
 
 export type CandidateId<K extends 'claim' | 'context'> = `${K}:${number}:${string}:${number}:${number}`
 
