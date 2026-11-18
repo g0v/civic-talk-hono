@@ -131,3 +131,27 @@ Zod 升級不會替 Better Auth 未限長的 `scopes` 加上長度限制，不�
 本輪 `npm audit` 為 **0 vulnerabilities**，168 檔型別檢查與授權盤點一致性通過。隔離冷目錄執行 `CI=true vp install --frozen-lockfile` 後，lockfile bytes 不變。實際本機 Worker 的 20 項無 Cookie HTTP smoke 通過，涵蓋頁面／公開 API／RSS、舊網址、匿名登入守門、跨站 ping、編碼換行及 OPTIONS；未發起有效認證寫入或付費模型呼叫。
 
 授權 TSV 已重產，仍為 356 筆，授權統計不變；Hono MIT LICENSE 全文逐字一致，直接依賴 notices 同步版本，client／Worker notices 由完整 build 重產。未執行 push、deploy、遠端 migration 或遠端資料庫寫入；本機修補不代表正式站已更新。
+
+## 2026-11-18：picomatch 未修補風險與暫緩決策
+
+使用者回報 `vp install` 出現 9 項新風險；本輪 `npm audit --json` 列出 **10 個 high 受影響套件**，全部追溯至同一份 [GHSA-fc5q-39xc-vjpf／CVE-2026-112366](https://github.com/advisories/GHSA-fc5q-39xc-vjpf)。audit 數量包含間接影響，不代表 10 個獨立漏洞；前節 2026-11-17 的零告警是當時結果，不是目前狀態。
+
+公告指出 `picomatch <=4.0.7` 的單分支重複 extglob（如 `+(*)`、`+(*a)`）可能產生指數回溯，阻塞 Node.js event loop。截至本輪查核，npm 最新版及上游 master 都仍為 **4.0.7**，公告明列 **尚無修補版本**。公告引用的 [上游 PR #194](https://github.com/micromatch/picomatch/pull/194) 尚未合併，且作者明言未修復 `+(*a)`；不能將該 PR 當成完整安全修補。
+
+目前 lockfile 只有一份 `picomatch@4.0.7`，由下列開發工具依賴鏈共用：
+
+- `@tailwindcss/cli@4.3.3 → @parcel/watcher@2.5.6 → picomatch`。
+- `vite-plus@1.4.0 → vitest@5.0.5 → picomatch`，以及 `vitest → tinyglobby@0.2.17 → picomatch`；`tinyglobby → fdir@6.5.0` 也宣告 picomatch peer dependency。Vitest browser／preview／UI 套件一併被 audit 列為間接受影響。
+
+### 維護者核准的本輪處理
+
+- **保留現有版本與 audit 警告，等待上游正式修補，不宣稱漏洞已修復。** 不加入自維護補丁、不以 fork 或改寫版本號掩蓋告警，也不停用 audit。
+- 不執行 `npm audit fix --force`。本輪自動建議包含將 Vite+ 回退至 `0.1.24`，會跨出目前 `1.4.0` 工具鏈契約，且不能據此證明 picomatch 漏洞已修復。
+- 暫時只執行經審查、可信設定提供的 glob；不要將不可信使用者提供的 glob 直接交給測試、掃描或 watch 工具，外部專案／PR 的工具設定須先審查再執行。這是降低暴露面的操作限制，不是程式強制防護或漏洞修補。
+- 上游發布修補版後，再更新實際受影響的依賴、重產授權盤點，並執行 audit、型別檢查、完整測試及 build；不因本輪暫緩而視為已驗收。
+
+### 本輪證據與界線
+
+`npm ls` 已核對上述安裝版本與依賴鏈；`npm audit --omit=dev --json` 為 **0 vulnerabilities**，表示本輪正式 runtime 依賴盤點未列出已知漏洞，不代表開發工具風險不存在或整個應用沒有漏洞。
+
+本輪在 `fix/dependency-security-2026-11-18` 分支只更新本文件，未改 `package.json`、lockfile、授權清單或程式來源；文件引用、版本及命令已核對，未因文件變更重跑型別檢查或測試。使用者後續另行授權本機文件提交；提交後仍須依來源 metadata 規則重新 build，不能沿用舊產物。未執行 push、deploy、遠端資料庫操作或付費模型呼叫。
