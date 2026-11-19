@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppFooter from '../components/AppFooter.vue'
+import HomeNatureBackdrop from '../components/HomeNatureBackdrop.vue'
 import { useI18n } from '../l10n'
 import type { Contribution, ContributorHistory } from '../lib/contributors'
 import { contributionHref, contributionKinds, parseContributorNavigation, writeContributorNavigation } from '../lib/contributorNavigation'
@@ -108,7 +109,10 @@ onUnmounted(() => {
 <template>
   <div>
     <AppHeader current="other" />
-    <main class="py-10">
+    <main class="relative isolate py-10">
+      <div class="pointer-events-none absolute inset-0 -z-10 overflow-hidden opacity-50" aria-hidden="true">
+        <HomeNatureBackdrop placement="issues" />
+      </div>
       <div class="page-container">
         <div class="mx-auto max-w-prose">
           <header class="mb-8">

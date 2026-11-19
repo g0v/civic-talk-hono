@@ -1367,6 +1367,9 @@
   .underline-offset-4 {
     text-underline-offset: 4px;
   }
+  .opacity-50 {
+    opacity: 50%;
+  }
   .opacity-60 {
     opacity: 60%;
   }

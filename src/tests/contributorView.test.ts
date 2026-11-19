@@ -20,13 +20,13 @@ describe('貢獻者導覽與 SSR', () => {
     expect(reset.search).toBe('?keep=yes')
   })
 
-  it.each([true, false])('作者連結只有 DEV=%s 才存在且保留投稿名稱', async dev => {
+  it.each([true, false])('DEV=%s 時作者連結皆可用且保留投稿名稱', async dev => {
     vi.stubEnv('DEV', dev)
     const app = createSSRApp(AuthorName, { name: '投稿時名字', publicId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' })
     provideI18n(app, 'zh-TW')
     const html = await renderToString(app)
     expect(html).toContain('投稿時名字')
-    expect(html.includes('href="/contributors/')).toBe(dev)
+    expect(html).toContain('href="/contributors/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"')
   })
 
   it('年度列表以 UTC 分組，每個 briefing 版本各列一筆，連到目前議題頁', async () => {
