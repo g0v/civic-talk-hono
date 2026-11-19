@@ -27,15 +27,17 @@
 
 新 extraction／最終 job 工件的 `candidate_snapshots` 保留每素材的 content hash、原始錨點及 provider 單位資訊、claim/context ID 和範圍。`anchor_index_kind=value` 表示按 value 索引；不等長陣列通過既有嚴格重配對時為 `span`，不能把兩個原始陣列硬 zip。正式 `evidence.id` 使用 content-hashed claim ID，`quote` 是主張，`context` 是獨立原文語境；引用仍只接受選入的 claim ID，context ID 不能冒作證據。
 
-Clef、三分區及必要補完接收主張與獨立語境，並明示不得把語境中的其他立場當成該主張。context 必須可切回相同素材且包含主張。對應版本為 `symmetric-four-way-v3-claim-context`、`specialized-evidence-v14-two-stage-positions`、`specialized-cited-v5-position-opinions`、`section-values-v7-claim-context`、`missing-fields-only-v5-position-labels`、`cited-field-patches-v2-position-labels`、`citation-map-v2-context`；模型、採樣、token／費用／證據上限及引用守門不變。
+Clef、三分區及必要補完接收主張與獨立語境，並明示不得把語境中的其他立場當成該主張。context 必須可切回相同素材且包含主張。對應版本為 `symmetric-four-way-v3-claim-context`、`specialized-evidence-v16-consensus-citation-membership`、`specialized-cited-v7-consensus-citations`、`section-values-v7-claim-context`、`missing-fields-only-v5-position-labels`、`cited-field-patches-v2-position-labels`、`citation-map-v2-context`；模型、採樣、token／費用／證據上限及引用守門不變。
+
+共識第一階段先生成實質項目及 `rejected_candidates`，`Overview` 必須為 null，即使已有項目也不能提前生成概述。每項僅有 `candidate_id`／`kind`／`Title`／`description`；句子仍各有 `evidence_ids`，項目不另宣告成員。程式以實質句子引用聯集固定採用證據，拒絕舊格式額外成員清單，不修剪或改寫 raw。候選只是搜尋範圍，未引用的候選成員不自動成為參與來源；所有實際引用仍須位於該候選，至少兩素材且每個參與素材必有 description 引用，不能靠僅標題引用湊跨來源。驗定採用／拒絕完整交代後，再由已採用項目的引用聯集建立 `/consensus/Overview` target。後續概述只准使用這個集合，不得加入僅在輸入背景或未採用候選中出現的證據，也不自動刪除越界引用來修補原 raw。
 
 立場實際分兩次模型呼叫。第一階段每群只接收 `group_id`／`opinions`，不接受 `name`／`Core_concern`；程式先從實質意見引用決定成員及 Sources，驗完整採用／排除與 direct-disagree 互斥。內部草稿的群名及核心關注由程式設為 null，不能直接交付為完整報告。
 
 第二階段重用既有一次 `complete:draft` 白名單補完：每個非空群必有 `/positions/items/<n>/name` 與 `Core_concern` targets，允許 ID 僅由已確定 opinions 引用重建，與必要的 Overview 缺欄位合併在同一次呼叫。這次生成不能增加成員、改意見、來源、順序、既有引用或排除；所有指定欄位完整通過後才交付非空群名／核心關注。沒有立場群組時不為群名呼叫模型，其他分項若有必填缺值仍沿既有規則補完。
 
-因此有成功立場群組的正常工作會多走先前可能省略的補完，但仍最多三個分項加一次補完，沒有第五輪或重試。補完有獨立預留／結算與 immutable raw，失敗／unknown 不交付缺欄位草稿、不重打、不釋放未知費用。這是程式契約修訂，並不代表真模型品質已重新驗收，也不處理先前共識的供應端 `3045`。
+因此有成功共識項目或立場群組的正常工作必走先前可能省略的補完；共識概述、群名／核心關注及其他必要缺值合併在同一次呼叫。原本已需補完的工作不再增加一輪，仍最多三個分項加一次補完，沒有第五輪或重試。共識無採用項目時用既有狀態文字，不為空段生成概述；其他分區也無缺值時不付費補完。補完有獨立預留／結算與 immutable raw，失敗／unknown 不交付缺欄位草稿、不重打、不釋放未知費用。此共識修訂仍待真模型品質驗收，也不將先前供應端 `3045` 當作已修復。
 
-新設定／fixture request 指紋隔離舊快取。已完成的舊工作仍可按既有權限讀取；舊 active 工作若設定不同，沿用 `configuration_changed` 政策在模型呼叫前停止，不把舊 raw 混入新流程，也不釋放 unknown 或重設配額。這輪程式接線不需新 migration，亦未代表已部署或完整真人／付費驗收通過。
+新設定／fixture request 指紋隔離舊快取。同版本同輸入的 partial draft 也會命中既有結果，重按建立不自動補跑失敗分項；只有真實協定／輸入變更才形成不同工作，不為重跑亂改 key。已完成的舊工作仍可按既有權限讀取；舊 active 工作若設定不同，沿用 `configuration_changed` 政策在模型呼叫前停止，不把舊 raw 混入新流程，也不釋放 unknown 或重設配額。新版本的完整工作仍可能包含付費擷取／比較／生成，不能視為只重跑共識；真人驗收須另核範圍，不自動執行。這輪程式接線不需新 migration，亦未代表已部署或完整真人／付費驗收通過。
 
 ### 歷史 P0／E0 受控回退紀錄
 

@@ -64,9 +64,9 @@
 - 固定 Clairic／Clef／Gemma 4 26B A4B；共識／爭點／立場各用同一已驗證證據及必要比較，不以摘要串接，各自驗證／記帳／保存，不自動重試、格式修復或模型／Responses fallback。Workflow checkpoint 只含識別／狀態，不放正文／模型回應；手建 instance 不繞開關／binding／payload，bounded handoff 不等於付費重試。
 - Gemma Chat Completions 只接受字串 model、唯一 index 0、finish_reason stop 的 assistant 字串內容與完整 JSON（保留完整單一 plain/json fence 例外）；拒絕缺完成原因／截斷／refusal／tool／非字串，忽略 reasoning，不切思考文字或猜測修補；schema 支援非語義品質。
 - 共識不設筆數；shared_fact／shared_position 要各來源明示支持同命題；僅 shared_challenge 可依正面相關證據綜整較窄具體共同挑戰，不能從沉默／同話題推論，風險建議須回應同挑戰；保留條件／轉述歸屬，不升格共同贊同解法。
-- 共識限跨素材 direct-agree 候選及有效子集、至少兩素材，各候選交代採用／拒絕、各參與來源正文引用；canonical ID／candidate_map／動態 enum，空候選兩清單空；拒絕未知／舊 ID、漏交代、重複拒絕、同時採拒、完全重複項目；不同命題可共用證據。
+- 共識限跨素材 direct-agree 候選及有效子集、至少兩素材，各候選交代採用／拒絕、各參與來源正文引用；canonical ID／candidate_map／動態 enum，空候選兩清單空；拒絕未知／舊 ID、漏交代、重複拒絕、同時採拒、完全重複項目；不同命題可共用證據。項目只收 candidate_id／kind／Title／description，程式由句子引用聯集固定採用成員，不另收項目 evidence_ids 或自動修剪舊 raw；每個實際參與素材仍必有 description 引用，標題不能補足第二來源。第一階段 Overview 必須 null，先驗定採用項目，再由既有補完依採用引用聯集生成概述，不以背景或未採用證據擴充。
 - 爭點按問題整合，question 引用留診斷，正規化同問題拒收，不模糊刪／自動合併；立場第一階段只產 group_id／opinions／Overview／exclusions，不收群名或核心關注，成員／Sources 只從 opinions Title／description 引用推導。第二階段依已定成員白名單生成群名／Core_concern，引用屬該群，維持 direct-disagree 互斥與完整覆蓋／排除，不猜動機；背景越界／語義近似重複仍人工驗，不放寬。
-- 三項後最多一輪 Gemma 白名單補完：有成功立場群組必補程式設為 null 的 name／Core_concern，連同其他內容必填 null 欄位一併生成，不改已有值／來源／順序／引用，不加第五輪；獨立預留／結算，無缺值不付費，必要補完失敗不交缺值草稿。空／失敗／未啟動分區用三語狀態、不偽造結論／引用，空段非無爭點。
+- 三項後最多一輪 Gemma 白名單補完：有成功共識項目必補 Overview，有成功立場群組必補程式設為 null 的 name／Core_concern，連同其他內容必填 null 欄位一併生成，不改已有值／來源／順序／引用，不加第五輪；獨立預留／結算，無缺值不付費，必要補完失敗不交缺值草稿。空／失敗／未啟動分區用三語狀態、不偽造結論／引用，空段非無爭點。
 - 來源 fence、停權、去重、最後快照／狀態再查不可移除；不覆寫歷史 raw／分項／unknown／tombstone。Clef 校準只對核可資料，不證 labels／hash 來源，真實實驗非獨立 gold labels。
 - Workers AI 每帳號／UTC 日 20 新付費工作、議題五分鐘冷卻、環境模型 USD5／日僅估算準入，非全帳單硬上限／整 job 報價、不含 Workers／Workflows／D1；usage 缺失異常保持 unknown，unknown 預留不退款且跨日不自動釋放、不保證次日恢復，不重建 quota 繞過。
 - 無自動 TTL；hidden／changed 只撤下留 payload，失聯 fail-closed；deleted 被查核／對帳發現或管理按來源 erase 才清跨依賴私有 payload／diff，非單 job 自助刪除、不刪業務來源；留帳號 ID／hash／告知版本時間／usage／unknown／永久 tombstone，來源 ID 不再入場。

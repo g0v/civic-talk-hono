@@ -205,12 +205,11 @@ async function model(modelName: string, input: unknown): Promise<unknown> {
     const data =
       generatedInput.section === 'consensus'
         ? {
-            Overview: group ? cite('相容主張的摘要。', group.evidence_ids) : null,
+            Overview: null,
             items: group
               ? [
                   {
                     candidate_id: group.candidate_id,
-                    evidence_ids: group.evidence_ids,
                     kind: 'shared_position',
                     Title: cite('相容主張。', group.evidence_ids),
                     description: cite('材料呈現的主張。', group.evidence_ids),
@@ -253,24 +252,21 @@ function addThirdMaterial() {
 async function missingFieldsModel(modelName: string, input: unknown): Promise<unknown> {
   const response = await model(modelName, input)
   const request = generationPayload(modelName, input)
-  if (request?.section === 'consensus' || request?.section === 'disputes' || request?.section === 'positions') {
+  if (request?.section === 'disputes') {
     const message = responseMessage(response)
     const data = object(JSON.parse(String(message.content)))
-    if (request.section === 'consensus' && (data.items as unknown[]).length) data.Overview = null
-    if (request.section === 'disputes') {
-      const ids = (request.evidence as Array<{ id: string }>).map(item => item.id)
-      const cite = (text: string, evidence_ids: string[]) => [{ text, evidence_ids }]
-      data.items = [
-        {
-          kind: 'tension',
-          question: cite('如何衡量能源轉型的取捨？', ids),
-          sides: ids.map(id => ({ evidence_ids: [id], claim: cite('一方的主張。', [id]) })),
-          comparison_conditions: cite('比較條件。', ids),
-          Title: cite('待審爭點。', ids),
-          description: cite('兩方素材的敘述。', ids),
-        },
-      ]
-    }
+    const ids = (request.evidence as Array<{ id: string }>).map(item => item.id)
+    const cite = (text: string, evidence_ids: string[]) => [{ text, evidence_ids }]
+    data.items = [
+      {
+        kind: 'tension',
+        question: cite('如何衡量能源轉型的取捨？', ids),
+        sides: ids.map(id => ({ evidence_ids: [id], claim: cite('一方的主張。', [id]) })),
+        comparison_conditions: cite('比較條件。', ids),
+        Title: cite('待審爭點。', ids),
+        description: cite('兩方素材的敘述。', ids),
+      },
+    ]
     message.content = JSON.stringify(data)
   }
   return response
@@ -1119,8 +1115,24 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     aiRun = async (modelName, input) => {
       const response = await model(modelName, input)
       const request = generationPayload(modelName, input)
+      if (request?.section === 'consensus') {
+        const evidence = request.evidence
+        if (!Array.isArray(evidence)) throw new TypeError('consensus evidence missing')
+        const adopted = evidence.map(object).filter(item => item.material_id !== 6).map(item => item.id)
+        const message = responseMessage(response)
+        const data = object(JSON.parse(String(message.content)))
+        if (!Array.isArray(data.items)) throw new TypeError('consensus items missing')
+        const item = object(data.items[0])
+        for (const field of ['Title', 'description']) {
+          const sentences = item[field]
+          if (!Array.isArray(sentences)) throw new TypeError('consensus sentences missing')
+          for (const sentence of sentences) object(sentence).evidence_ids = adopted
+        }
+        message.content = JSON.stringify(data)
+      }
       if (request?.operation === 'fill_missing_fields') {
         const labels = new Map([
+          ['/consensus/Overview', '採用兩份素材的共識摘要。'],
           ['/positions/items/0/name', '共同群組。'],
           ['/positions/items/0/Core_concern', '群組關注。'],
           ['/positions/items/1/name', '另一群組。'],
@@ -1191,6 +1203,15 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     const firstSource = { Title: '甲', href: 'https://example.test/', material_id: 2 }
     const secondSource = { Title: '乙', href: '/issues/7/source/4', material_id: 4 }
     expect(detail).toMatchObject({ status: 'ai_draft', diagnostics: { partial: false, generation: { sections: { positions: { status: 'completed' } } } } })
+    expect(detail.data.consensus).toEqual({
+      Overview: '採用兩份素材的共識摘要。',
+      items: [{ Title: '相容主張。', description: '材料呈現的主張。' }],
+    })
+    expect(detail.citation_map.filter(entry => entry.pointer.startsWith('/consensus/')).map(entry => [entry.pointer, entry.evidence_ids])).toEqual([
+      ['/consensus/items/0/Title', [first, second].sort()],
+      ['/consensus/items/0/description', [first, second].sort()],
+      ['/consensus/Overview', [first, second].sort()],
+    ])
     expect(detail.data.positions).toEqual({
       Overview: '立場摘要。',
       items: [
@@ -1234,12 +1255,14 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     if (!planArtifact) throw new TypeError('completion plan missing')
     const plan = object(object(planArtifact.payload).plan)
     expect(object(plan.base).data).toMatchObject({
+      consensus: { Overview: null, items: [{ Title: '相容主張。', description: '材料呈現的主張。' }] },
       positions: { items: [
         { name: null, Core_concern: null, Sources: [firstSource, secondSource] },
         { name: null, Core_concern: null, Sources: [secondSource] },
       ] },
     })
     expect(plan.targets).toEqual([
+      { pointer: '/consensus/Overview', evidence_ids: [first, second].sort() },
       { pointer: '/positions/items/0/name', evidence_ids: [first, second].sort() },
       { pointer: '/positions/items/0/Core_concern', evidence_ids: [first, second].sort() },
       { pointer: '/positions/items/1/name', evidence_ids: [second] },
@@ -1251,6 +1274,13 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     if (!completionRequest || !Array.isArray(completionRequest.evidence)) throw new TypeError('completion request missing')
     expect(completionRequest.evidence.map(object).map(item => item.id)).toEqual([first, second].sort())
     expect(completionRequest.targets).toEqual(plan.targets)
+    const consensusRaw = object(local.sqlite.prepare("SELECT a.payload FROM ct_ai_artifacts a JOIN ct_ai_usage u ON u.id = a.attempt_id WHERE a.kind = 'raw' AND u.step_key = 'generate:consensus'").get())
+    if (typeof consensusRaw.payload !== 'string') throw new TypeError('consensus raw missing')
+    const primary = object(JSON.parse(consensusRaw.payload))
+    expect(JSON.parse(String(responseMessage(primary.response).content))).toMatchObject({
+      Overview: null,
+      items: [{ description: [{ evidence_ids: [first, second].sort() }] }],
+    })
     for (const evidence of completionRequest.evidence.map(object)) {
       expect(Object.keys(evidence).sort()).toEqual(['context', 'id', 'quote', 'raw_quote'])
     }
@@ -1358,9 +1388,9 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     expect(detail).toMatchObject({
       status: 'partial_draft',
       error_code: null,
-      usage: { attempts: 7, uncertain: 0, reservedMicroUsd: 0 },
+      usage: { attempts: 8, uncertain: 0, reservedMicroUsd: 0 },
       data: {
-        consensus: { Overview: '相容主張的摘要。', items: [{ Title: '相容主張。', description: '材料呈現的主張。' }] },
+        consensus: { Overview: '補完欄位。', items: [{ Title: '相容主張。', description: '材料呈現的主張。' }] },
         disputes: { Overview: '爭點摘要。', items: [{ Title: '待審爭點。', description: '兩方素材的敘述。' }] },
         positions: { Overview: statusOverview('positions', 'failed', 'zh-TW'), items: [] },
       },
@@ -1372,7 +1402,7 @@ describe('evidence API 與實際 SQLite 工作流', () => {
             disputes: { status: 'completed' },
             positions: { status: 'failed', reason: 'invalid_generation', validation_code: validationCode, artifact_id: null },
           },
-          completion: { status: 'not_needed', targets: [] },
+          completion: { status: 'completed', targets: ['/consensus/Overview'] },
         },
       },
     })
@@ -1388,10 +1418,10 @@ describe('evidence API 與實際 SQLite 工作流', () => {
       { step_key: 'generate:disputes', state: 'settled' },
       { step_key: 'generate:positions', state: 'settled' },
     ])
-    expect(local.sqlite.prepare("SELECT COUNT(*) AS n FROM ct_ai_usage WHERE step_key = 'complete:draft'").get()).toMatchObject({ n: 0 })
+    expect(local.sqlite.prepare("SELECT state, actual_micro_usd FROM ct_ai_usage WHERE step_key = 'complete:draft'").all()).toEqual([{ state: 'settled', actual_micro_usd: 44 }])
     expect(await runEvidenceWorkflow(env, created.job_id, testStep())).toEqual({ status: 'partial_draft' })
     expect(await (await send('POST', '/api/issues/7/evidence-jobs', { consent: true })).json()).toMatchObject({ job_id: created.job_id, cache: 'hit', status: 'partial_draft' })
-    expect(recordedRequests).toHaveLength(7)
+    expect(recordedRequests).toHaveLength(8)
   })
 
   it.each([
@@ -2094,7 +2124,7 @@ describe('evidence API 與實際 SQLite 工作流', () => {
       },
     })
     expect(detail.diagnostics.generation).toMatchObject({
-      completion: { status: 'completed', targets: ['/positions/items/0/name', '/positions/items/0/Core_concern'] },
+      completion: { status: 'completed', targets: ['/consensus/Overview', '/positions/items/0/name', '/positions/items/0/Core_concern'] },
       status_overviews: [{ section: 'disputes', pointer: '/disputes/Overview', kind: 'status', status: 'failed', origin: 'program' }],
     })
     expect(detail.citation_map.some((entry: { pointer: string }) => entry.pointer === '/disputes/Overview')).toBe(false)
@@ -2105,13 +2135,13 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     expect(await (await send('POST', '/api/issues/7/evidence-jobs', { consent: true })).json()).toMatchObject({ cache: 'hit', status: 'partial_draft' })
   })
 
-  it('共識宣告來源只在標題引用仍拒收，其他分項可交付且不自動修復或重打', async () => {
+  it('共識來源只在標題引用仍拒收，其他分項可交付且不自動修復或重打', async () => {
     aiRun = async (modelName, input) => {
       const response = await model(modelName, input)
       if (generationPayload(modelName, input)?.section !== 'consensus') return response
       const message = responseMessage(response)
       const data = JSON.parse(String(message.content))
-      data.items[0].description[0].evidence_ids = [data.items[0].evidence_ids[0]]
+      data.items[0].description[0].evidence_ids = [data.items[0].Title[0].evidence_ids[0]]
       message.content = JSON.stringify(data)
       return response
     }
@@ -2183,7 +2213,7 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     expect(recordedRequests).toHaveLength(6)
   })
 
-  it('第一段後預算耗盡，保留有效段且不啟動後兩段或重打第一段', async () => {
+  it('第一段後預算耗盡，保留有效分項但不交付缺少共識摘要的草稿', async () => {
     const budgetStep = {
       async do(name: string, _config: unknown, callback: () => Promise<unknown>) {
         const result = await callback()
@@ -2196,26 +2226,32 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     } as unknown as WorkflowStep
     auth.current = user('owner')
     const created = (await (await send('POST', '/api/issues/7/evidence-jobs', { consent: true })).json()) as { job_id: string }
-    expect(await runEvidenceWorkflow(env, created.job_id, budgetStep)).toEqual({ status: 'partial_draft' })
-    const detail = (await (await send('GET', `/api/evidence-jobs/${created.job_id}`)).json()) as DraftResponse
+    expect(await runEvidenceWorkflow(env, created.job_id, budgetStep)).toEqual({ status: 'failed' })
+    const detail = object(await (await send('GET', `/api/evidence-jobs/${created.job_id}`)).json())
     expect(detail).toMatchObject({
-      status: 'partial_draft',
+      status: 'failed',
+      error_code: 'budget_exhausted',
       usage: { attempts: 4, actualMicroUsd: 5_000_000 },
-      diagnostics: {
-        generation: {
-          sections: {
-            consensus: { status: 'completed' },
-            disputes: { status: 'not_started', reason: 'budget_exhausted' },
-            positions: { status: 'not_started', reason: 'budget_exhausted' },
-          },
+      generation_progress: {
+        completion: { status: 'failed', reason: 'budget_exhausted' },
+        sections: {
+          consensus: { status: 'completed' },
+          disputes: { status: 'not_started', reason: 'budget_exhausted' },
+          positions: { status: 'not_started', reason: 'budget_exhausted' },
         },
       },
     })
-    expect(detail.data.disputes.Overview).toBe(statusOverview('disputes', 'not_started', 'zh-TW'))
-    expect(detail.data.positions.Overview).toBe(statusOverview('positions', 'not_started', 'zh-TW'))
-    expect(detail.citation_map.some((entry: { pointer: string }) => entry.pointer === '/disputes/Overview' || entry.pointer === '/positions/Overview')).toBe(false)
-    expect(detail.diagnostics.generation.completion).toMatchObject({ status: 'not_needed', targets: [] })
+    expect(detail.data).toBeUndefined()
+    expect(detail.citation_map).toBeUndefined()
+    const store = new EvidenceStore(local.asD1())
+    const job = await store.getJob(created.job_id, 'owner')
+    if (!job) throw new TypeError('job missing')
+    const artifacts = await store.listArtifacts(job.executionId, 'generation')
+    expect(artifacts.filter(item => object(item.payload).stage === 'generation_section')).toHaveLength(1)
+    expect(local.sqlite.prepare("SELECT COUNT(*) AS n FROM ct_ai_usage WHERE step_key = 'complete:draft'").get()).toMatchObject({ n: 0 })
     expect(local.sqlite.prepare("SELECT step_key FROM ct_ai_usage WHERE step_key LIKE 'generate:%'").all()).toEqual([{ step_key: 'generate:consensus' }])
+    expect(await runEvidenceWorkflow(env, created.job_id, testStep())).toEqual({ status: 'failed' })
+    expect(recordedRequests).toHaveLength(4)
   })
 
   it('輪詢顯示目前專項，未完成段不冒充 no_findings', async () => {
@@ -2406,7 +2442,7 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     expect(local.sqlite.prepare('SELECT COUNT(*) AS n FROM ct_ai_usage').get()).toMatchObject({ n: 7 })
   })
 
-  it('非立場欄位完整且立場為空時免補完，進度和來源不冒充模型輸出', async () => {
+  it('立場為空仍補完有效共識摘要，空段進度和來源不冒充模型輸出', async () => {
     aiRun = async (modelName, input) => {
       const response = await model(modelName, input)
       const request = generationPayload(modelName, input)
@@ -2423,28 +2459,29 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     const created = (await (await send('POST', '/api/issues/7/evidence-jobs', { consent: true, language: 'en' })).json()) as { job_id: string }
     expect(await runEvidenceWorkflow(env, created.job_id, testStep())).toEqual({ status: 'ai_draft' })
     const detail = (await (await send('GET', `/api/evidence-jobs/${created.job_id}`)).json()) as {
-      data: { disputes: { Overview: string; items: unknown[] }; positions: { Overview: string; items: unknown[] } }
+      data: { consensus: { Overview: string; items: unknown[] }; disputes: { Overview: string; items: unknown[] }; positions: { Overview: string; items: unknown[] } }
       citation_map: Array<{ pointer: string }>
-      diagnostics: { generation: { completion: { status: string; targets: string[]; raw_artifact_id: null }; status_overviews: unknown[] } }
-      provenance: { completion_raw_artifact_id: null; raw_artifact_ids: string[] }
+      diagnostics: { generation: { completion: { status: string; targets: string[]; raw_artifact_id: string }; status_overviews: unknown[] } }
+      provenance: { completion_raw_artifact_id: string; raw_artifact_ids: string[] }
       generation_progress: { completion: { status: string } }
     }
     expect(detail.data.disputes).toEqual({ Overview: statusOverview('disputes', 'no_findings', 'en'), items: [] })
     expect(detail.data.positions).toEqual({ Overview: statusOverview('positions', 'no_findings', 'en'), items: [] })
+    expect(detail.data.consensus).toEqual({ Overview: '補完欄位。', items: [{ Title: '相容主張。', description: '材料呈現的主張。' }] })
     expect(detail.citation_map.some(entry => entry.pointer === '/disputes/Overview')).toBe(false)
     expect(detail.citation_map.some(entry => entry.pointer.startsWith('/positions/'))).toBe(false)
     expect(detail.diagnostics.generation).toMatchObject({
-      completion: { status: 'not_needed', targets: [], raw_artifact_id: null },
+      completion: { status: 'completed', targets: ['/consensus/Overview'], raw_artifact_id: expect.any(String) },
       status_overviews: [
         { section: 'disputes', pointer: '/disputes/Overview', kind: 'status', status: 'no_findings', origin: 'program' },
         { section: 'positions', pointer: '/positions/Overview', kind: 'status', status: 'no_findings', origin: 'program' },
       ],
     })
-    expect(detail.generation_progress.completion.status).toBe('not_needed')
-    expect(detail.provenance.completion_raw_artifact_id).toBeNull()
-    expect(detail.provenance.raw_artifact_ids).toHaveLength(6)
-    expect(local.sqlite.prepare("SELECT COUNT(*) AS n FROM ct_ai_usage WHERE step_key = 'complete:draft'").get()).toMatchObject({ n: 0 })
-    expect(recordedRequests).toHaveLength(6)
+    expect(detail.generation_progress.completion.status).toBe('completed')
+    expect(detail.provenance.completion_raw_artifact_id).toBe(detail.diagnostics.generation.completion.raw_artifact_id)
+    expect(detail.provenance.raw_artifact_ids).toHaveLength(7)
+    expect(local.sqlite.prepare("SELECT state, actual_micro_usd FROM ct_ai_usage WHERE step_key = 'complete:draft'").all()).toEqual([{ state: 'settled', actual_micro_usd: 44 }])
+    expect(recordedRequests).toHaveLength(7)
   })
 
   it('有效分項有缺值且其他分項失敗時，補完後仍是標明失敗段的 partial', async () => {
@@ -2476,12 +2513,33 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     expect(JSON.stringify(detail)).not.toContain('private-provider-detail')
   })
 
-  it.each(['wrong_base', 'missing', 'duplicate', 'unknown_pointer', 'overwrite', 'wrong_citation', 'extra_field', 'invalid_json'] as const)(
+  it.each(['wrong_base', 'missing', 'duplicate', 'unknown_pointer', 'overwrite', 'wrong_citation', 'unadopted_consensus', 'extra_field', 'invalid_json'] as const)(
     '拒絕補完回應 %s，保留成功分項與原始回應但不交付不完整資料',
     async corruption => {
+      if (corruption === 'unadopted_consensus') addThirdMaterial()
+      let unadoptedId = ''
       aiRun = async (modelName, input) => {
         const response = await missingFieldsModel(modelName, input)
-        if (generationPayload(modelName, input)?.operation !== 'fill_missing_fields') return response
+        const request = generationPayload(modelName, input)
+        if (corruption === 'unadopted_consensus' && request?.section === 'consensus') {
+          if (!Array.isArray(request.evidence)) throw new TypeError('consensus evidence missing')
+          const evidence = request.evidence.map(object)
+          const excluded = evidence.find(item => item.material_id === 6)?.id
+          if (typeof excluded !== 'string') throw new TypeError('unadopted evidence missing')
+          unadoptedId = excluded
+          const adopted = evidence.filter(item => item.material_id !== 6).map(item => item.id)
+          const message = responseMessage(response)
+          const data = object(JSON.parse(String(message.content)))
+          if (!Array.isArray(data.items)) throw new TypeError('consensus items missing')
+          const item = object(data.items[0])
+          for (const field of ['Title', 'description']) {
+            const sentences = item[field]
+            if (!Array.isArray(sentences)) throw new TypeError('consensus sentences missing')
+            for (const sentence of sentences) object(sentence).evidence_ids = adopted
+          }
+          message.content = JSON.stringify(data)
+        }
+        if (request?.operation !== 'fill_missing_fields') return response
         const message = responseMessage(response)
         const patch = object(JSON.parse(String(message.content)))
         const fills = patch.fills as Array<Record<string, unknown>>
@@ -2491,18 +2549,29 @@ describe('evidence API 與實際 SQLite 工作流', () => {
         if (corruption === 'unknown_pointer') fills[0].pointer = '/unknown/Overview'
         if (corruption === 'overwrite') fills[0].pointer = '/positions/Overview'
         if (corruption === 'wrong_citation') object((fills[0].sentences as unknown[])[0]).evidence_ids = ['not-an-evidence-id']
+        if (corruption === 'unadopted_consensus') {
+          if (!Array.isArray(request.targets)) throw new TypeError('completion targets missing')
+          const consensusTarget = request.targets.map(object).find(target => target.pointer === '/consensus/Overview')
+          if (!consensusTarget || !Array.isArray(consensusTarget.evidence_ids)) throw new TypeError('consensus target missing')
+          expect(consensusTarget.evidence_ids).toHaveLength(2)
+          expect(consensusTarget.evidence_ids).not.toContain(unadoptedId)
+          const target = fills.find(fill => fill.pointer === '/consensus/Overview')
+          if (!target || !Array.isArray(target.sentences)) throw new TypeError('consensus completion missing')
+          object(target.sentences[0]).evidence_ids = [unadoptedId]
+        }
         if (corruption === 'extra_field') patch.data = { positions: 'not allowed' }
         message.content = corruption === 'invalid_json' ? '{"private_bad_patch"' : JSON.stringify(patch)
         return response
       }
       auth.current = user('owner')
+      const summaryBefore = local.sqlite.prepare('SELECT ai_summaries FROM ct_issues WHERE id = 7').get()
       const created = (await (await send('POST', '/api/issues/7/evidence-jobs', { consent: true })).json()) as { job_id: string }
       expect(await runEvidenceWorkflow(env, created.job_id, testStep())).toEqual({ status: 'failed' })
       const detail = object(await (await send('GET', `/api/evidence-jobs/${created.job_id}`)).json())
       expect(detail).toMatchObject({
         status: 'failed',
         error_code: 'invalid_generation',
-        usage: { attempts: 7 },
+        usage: { attempts: corruption === 'unadopted_consensus' ? 8 : 7, uncertain: 0, reservedMicroUsd: 0 },
         generation_progress: { completion: { status: 'failed', reason: 'invalid_generation' } },
       })
       expect(detail.data).toBeUndefined()
@@ -2510,14 +2579,17 @@ describe('evidence API 與實際 SQLite 工作流', () => {
       const finished = events.find(event => event.stage === 'completion' && event.phase === 'finished')!
       const outcome = object(finished.outcome)
       expect(outcome.validation_code).toEqual(expect.stringMatching(/^generation_/))
+      if (corruption === 'unadopted_consensus') expect(outcome.validation_code).toBe('generation_cross_candidate_citation')
       expect(outcome.raw_artifact_id).toEqual(expect.any(String))
       expect(JSON.stringify(events)).not.toContain('private_bad_patch')
       const job = await new EvidenceStore(local.asD1()).getJob(created.job_id, 'owner')
       const store = new EvidenceStore(local.asD1())
       expect((await store.listArtifacts(job!.executionId, 'generation')).filter(item => object(item.payload).stage === 'generation_section')).toHaveLength(3)
       expect(await store.getArtifact(job!.executionId, String(outcome.raw_artifact_id))).not.toBeNull()
+      expect(local.sqlite.prepare('SELECT ai_summaries FROM ct_issues WHERE id = 7').get()).toEqual(summaryBefore)
+      expect(local.sqlite.prepare("SELECT state, actual_micro_usd FROM ct_ai_usage WHERE step_key = 'complete:draft'").all()).toEqual([{ state: 'settled', actual_micro_usd: 44 }])
       expect(await runEvidenceWorkflow(env, created.job_id, testStep())).toEqual({ status: 'failed' })
-      expect(recordedRequests).toHaveLength(7)
+      expect(recordedRequests).toHaveLength(corruption === 'unadopted_consensus' ? 8 : 7)
     }
   )
 
@@ -2657,8 +2729,8 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     if (!planned) throw new TypeError('completion plan missing')
     const plan = object(object(planned.payload).plan)
     if (!Array.isArray(plan.targets)) throw new TypeError('completion targets missing')
-    expect(plan.targets.map(object).map(target => target.pointer)).toEqual(['/positions/items/0/name', '/positions/items/0/Core_concern'])
-    expect(object(plan.base).data).toMatchObject({ positions: { items: [{ name: null, Core_concern: null }] } })
+    expect(plan.targets.map(object).map(target => target.pointer)).toEqual(['/consensus/Overview', '/positions/items/0/name', '/positions/items/0/Core_concern'])
+    expect(object(plan.base).data).toMatchObject({ consensus: { Overview: null }, positions: { items: [{ name: null, Core_concern: null }] } })
     const attempt = local.sqlite.prepare("SELECT state, estimate_micro_usd, actual_micro_usd FROM ct_ai_usage WHERE step_key = 'complete:draft'").get() as {
       state: string
       estimate_micro_usd: number

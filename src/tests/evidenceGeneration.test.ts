@@ -84,8 +84,8 @@ const cited = (text: string, ...evidence_ids: string[]) => ({ text, evidence_ids
 
 function consensusOutput() {
   return {
-    Overview: [cited('😀第一句。第二句！', 'e1', 'e2')],
-    items: [{ candidate_id: candidateId, evidence_ids: ['e1', 'e2'], kind: 'shared_position', Title: [cited('共同方向', 'e1')], description: [cited('兩份素材提出支持。', 'e1', 'e2')] }],
+    Overview: null,
+    items: [{ candidate_id: candidateId, kind: 'shared_position', Title: [cited('共同方向', 'e1')], description: [cited('兩份素材提出支持。', 'e1', 'e2')] }],
     rejected_candidates: [] as Array<{ candidate_id: string; reason: string }>,
   }
 }
@@ -484,6 +484,58 @@ describe('生成模型專項輸出與出處', () => {
     }
   })
 
+  it('共識依句子引用固定候選子集與補完範圍，不另收成員宣告', async () => {
+    const extraSource = material(28, '另一項背景觀察。')
+    const extraEvidence = anchored('e4', 28, extraSource.content, extraSource.content)
+    const selectedInput: GenerationInput = {
+      ...input,
+      evidence: [...evidence, extraEvidence],
+      sources: [...sources, extraSource],
+      comparison: analyzeComparisons([...evidence, extraEvidence], [judgment('e1', 'e2', 'agree'), judgment('e1', 'e4', 'agree'), judgment('e2', 'e4', 'agree')]),
+    }
+    const item = { candidate_id: 'C1', kind: 'shared_position', Title: [cited('共同方向', 'e1')], description: [cited('兩份素材提出支持。', 'e1', 'e2')] }
+    const wire = { Overview: null, items: [item], rejected_candidates: [] }
+    const original = structuredClone(wire)
+    const primary = await parseGenerationResponse('consensus', completion(wire), selectedInput)
+    expect(primary.diagnostics).toMatchObject({ adopted: [{ evidence_ids: ['e1', 'e2'] }] })
+    expect(new Set(primary.citation_map.flatMap(entry => entry.sources.map(source => source.material_id)))).toEqual(new Set([25, 26]))
+    const assembled = await assembleGeneratedDraft([primary], selectedInput)
+    const plan = await prepareDraftCompletion(assembled, [primary], { consensus: 'completed', disputes: 'failed', positions: 'failed' }, selectedInput)
+    expect(plan.targets).toEqual([{ pointer: '/consensus/Overview', evidence_ids: ['e1', 'e2'] }])
+    await expect(
+      parseGenerationResponse('consensus', completion({ ...wire, items: [{ ...item, evidence_ids: ['e1', 'e2', 'e4'] }] }), selectedInput)
+    ).rejects.toThrow('generation_invalid_schema')
+    expect(buildGenerationRequest('consensus', selectedInput).input.response_format.json_schema.schema).toMatchObject({
+      properties: { items: { items: { required: ['candidate_id', 'kind', 'Title', 'description'] } } },
+    })
+    expect(wire).toEqual(original)
+  })
+
+  it('共識先固定採用項目，再只以採用證據補概述', async () => {
+    const premature = { ...consensusOutput(), Overview: [cited('先產生的概述。', 'e1', 'e2')] }
+    await expect(parseGenerationResponse('consensus', completion(premature), input)).rejects.toThrow('generation_invalid_schema')
+    const request = buildGenerationRequest('consensus', input)
+    expect(request.input.response_format.json_schema.schema).toMatchObject({ properties: { Overview: { type: 'null' } } })
+    const wire = { ...consensusOutput(), Overview: null }
+    const original = JSON.stringify(wire)
+    const primary = await parseGenerationResponse('consensus', completion(wire), input)
+    expect(primary.data.Overview).toBeNull()
+    const assembled = await assembleGeneratedDraft([primary], input)
+    const plan = await prepareDraftCompletion(assembled, [primary], { consensus: 'completed', disputes: 'failed', positions: 'failed' }, input)
+    expect(plan.targets).toEqual([{ pointer: '/consensus/Overview', evidence_ids: ['e1', 'e2'] }])
+    await expect(finalizeDraftCompletion(plan, input)).rejects.toThrow('generation_incomplete_draft')
+    const fill = { pointer: '/consensus/Overview', sentences: [cited('兩份素材支持方案一。', 'e1', 'e2')] }
+    await expect(
+      parseCompletionResponse(completion({ base_hash: plan.base_hash, fills: [{ ...fill, sentences: [cited('越過採用集合。', 'e3')] }] }), plan, input)
+    ).rejects.toThrow('generation_cross_candidate_citation')
+    const completed = await parseCompletionResponse(completion({ base_hash: plan.base_hash, fills: [fill] }), plan, input)
+    expect(completed.data.consensus.Overview).toBe('兩份素材支持方案一。')
+    expect(completed.data.consensus.items).toEqual(primary.data.items)
+    expect(completed.citation_map.slice(0, primary.citation_map.length)).toEqual(primary.citation_map)
+    expect(JSON.stringify(wire)).toBe(original)
+    expect(primary.data.Overview).toBeNull()
+  })
+
   it('共識短 ID 以 canonical ID 排序，動態 schema 與診斷完整對應採用及拒絕', async () => {
     const analysis = analyzeComparisons(evidence, [judgment('e1', 'e2', 'agree'), judgment('e2', 'e3', 'agree'), judgment('e1', 'e3', 'unrelated')])
     const multiInput: GenerationInput = { ...input, comparison: analysis }
@@ -503,7 +555,7 @@ describe('生成模型專項輸出與出處', () => {
     const ids = mapping[0].evidence_ids
     const output = {
       Overview: null,
-      items: [{ candidate_id: 'C1', evidence_ids: ids, kind: 'shared_fact', Title: [cited('共同事實', ...ids)], description: [cited('相同條件下的共同事實。', ...ids)] }],
+      items: [{ candidate_id: 'C1', kind: 'shared_fact', Title: [cited('共同事實', ...ids)], description: [cited('相同條件下的共同事實。', ...ids)] }],
       rejected_candidates: [{ candidate_id: 'C2', reason: '無共同命題' }],
     }
     const result = await parseGenerationResponse('consensus', completion(output), multiInput)
@@ -579,10 +631,10 @@ describe('生成模型專項輸出與出處', () => {
     )
   })
 
-  it('證據宣告與句子引用均不得重複，即使提供者 schema 未限制唯一性', async () => {
+  it('共識不另收成員宣告，句子引用仍不得重複', async () => {
     const repeatedDeclaration = consensusOutput()
-    repeatedDeclaration.items[0].evidence_ids.push('e1')
-    await expect(parseGenerationResponse('consensus', completion(repeatedDeclaration), input)).rejects.toThrow('generation_unknown_evidence')
+    Object.assign(repeatedDeclaration.items[0], { evidence_ids: ['e1', 'e2', 'e1'] })
+    await expect(parseGenerationResponse('consensus', completion(repeatedDeclaration), input)).rejects.toThrow('generation_invalid_schema')
     const repeatedCitation = consensusOutput()
     repeatedCitation.items[0].description[0].evidence_ids.push('e1')
     await expect(parseGenerationResponse('consensus', completion(repeatedCitation), input)).rejects.toThrow('generation_unknown_evidence')
@@ -602,11 +654,10 @@ describe('生成模型專項輸出與出處', () => {
     missingSource.items[0].description[0].evidence_ids = ['e1']
     await expect(parseGenerationResponse('consensus', completion(missingSource), input)).rejects.toThrow('generation_insufficient_group_citations')
     const wrongCandidate = consensusOutput()
-    wrongCandidate.items[0].evidence_ids.push('e3')
+    wrongCandidate.items[0].description[0].evidence_ids.push('e3')
     await expect(parseGenerationResponse('consensus', completion(wrongCandidate), input)).rejects.toThrow('generation_cross_candidate_citation')
-    const wrongOverview = consensusOutput()
-    wrongOverview.Overview[0].evidence_ids = ['e3']
-    await expect(parseGenerationResponse('consensus', completion(wrongOverview), input)).rejects.toThrow('generation_cross_candidate_citation')
+    const wrongOverview = { ...consensusOutput(), Overview: [cited('未採用來源的概述。', 'e3')] }
+    await expect(parseGenerationResponse('consensus', completion(wrongOverview), input)).rejects.toThrow('generation_invalid_schema')
     const dishonest = consensusOutput()
     dishonest.rejected_candidates.push({ candidate_id: candidateId, reason: '同時拒絕' })
     await expect(parseGenerationResponse('consensus', completion(dishonest), input)).rejects.toThrow('generation_invalid_candidate')
@@ -624,7 +675,6 @@ describe('生成模型專項輸出與出處', () => {
     ].map(({ kind, text }) => ({
       kind,
       candidate_id: 'C1',
-      evidence_ids: ['c1', 'c2'],
       Title: [cited(text, 'c1', 'c2')],
       description: [cited(text, 'c1', 'c2')],
     }))
@@ -660,18 +710,16 @@ describe('生成模型專項輸出與出處', () => {
     for (const kind of ['shared_fact', 'shared_challenge', 'shared_position']) {
       const outside = consensusOutput()
       outside.items[0].kind = kind
-      outside.items[0].evidence_ids = ['e1', 'e3']
       outside.items[0].description[0].evidence_ids = ['e1', 'e3']
       await expect(parseGenerationResponse('consensus', completion(outside), input)).rejects.toThrow('generation_cross_candidate_citation')
       const single = consensusOutput()
       single.items[0].kind = kind
-      single.items[0].evidence_ids = ['e1']
       single.items[0].description[0].evidence_ids = ['e1']
       await expect(parseGenerationResponse('consensus', completion(single), input)).rejects.toThrow('generation_insufficient_group_citations')
     }
   })
 
-  it('共識引用宣告漏引即拒收，不自動修剪成可用子集', async () => {
+  it('共識拒收額外成員宣告，不自動修剪舊格式回應', async () => {
     const sameSource = anchored('e4', 25, sources[0].content, '不能送出的其他原文。')
     const extended = [...evidence, sameSource]
     const extendedComparison = analyzeComparisons(extended, [...comparison.direct_comparisons, judgment('e2', 'e4', 'agree'), judgment('e3', 'e4', 'unrelated')])
@@ -679,15 +727,13 @@ describe('生成模型專項輸出與出處', () => {
     const extendedInput = { ...input, evidence: extended, comparison: extendedComparison }
     const output = consensusOutput()
     output.items[0].candidate_id = candidateMap(extendedComparison).find(item => item.canonical_id === selected.id)!.candidate_id
-    output.items[0].evidence_ids.push('e4')
     output.rejected_candidates = candidateMap(extendedComparison)
       .filter(group => group.canonical_id !== selected.id)
       .map(group => ({ candidate_id: group.candidate_id, reason: '未採用' }))
-    const response = completion(output)
+    const response = completion({ ...output, items: output.items.map(item => ({ ...item, evidence_ids: ['e1', 'e2', 'e4'] })) })
     const original = structuredClone(response)
-    await expect(parseGenerationResponse('consensus', response, extendedInput)).rejects.toThrow('generation_insufficient_group_citations')
+    await expect(parseGenerationResponse('consensus', response, extendedInput)).rejects.toThrow('generation_invalid_schema')
     expect(response).toEqual(original)
-    output.items[0].evidence_ids = ['e1', 'e2']
     const validSubset = await parseGenerationResponse('consensus', completion(output), extendedInput)
     expect(validSubset.diagnostics).toMatchObject({ adopted: [{ evidence_ids: ['e1', 'e2'] }] })
   })
@@ -706,7 +752,6 @@ describe('生成模型專項輸出與出處', () => {
       .map(group => ({ candidate_id: group.candidate_id, reason: '不採用' }))
     expect((await parseGenerationResponse('consensus', completion(output), extendedInput)).data.items).toHaveLength(1)
     const threeMaterials = structuredClone(output)
-    threeMaterials.items[0].evidence_ids.push('e4')
     threeMaterials.items[0].description[0].evidence_ids.push('e4')
     const result = await parseGenerationResponse('consensus', completion(threeMaterials), extendedInput)
     expect(result.diagnostics).toMatchObject({ adopted: [{ candidate_id: selected.id, evidence_ids: ['e1', 'e2', 'e4'] }] })
@@ -938,14 +983,15 @@ describe('生成模型專項輸出與出處', () => {
 
   it('逐句展開 UTF-16 座標及安全來源，分項組裝保留既有 pointer', async () => {
     const output = consensusOutput()
-    output.Overview = [cited('😀日本語｡ 価格は1.5です．\r\nNext! 最後。', 'e1', 'e2')]
+    const title = '😀日本語｡ 価格は1.5です．\r\nNext! 最後。'
+    output.items[0].Title = [cited(title, 'e1', 'e2')]
     const consensus = await parseGenerationResponse('consensus', completion(output), input)
     const positions = await parseGenerationResponse('positions', completion(positionsOutput()), input)
     const draft = await assembleGeneratedDraft([positions, consensus], input)
     expect(draft.data.disputes).toEqual({ Overview: null, items: [] })
-    expect(draft.data.consensus.items).toEqual([{ Title: '共同方向', description: '兩份素材提出支持。' }])
-    const text = draft.data.consensus.Overview!
-    const ranges = draft.citation_map.filter(entry => entry.pointer === '/consensus/Overview')
+    expect(draft.data.consensus.items).toEqual([{ Title: title, description: '兩份素材提出支持。' }])
+    const text = draft.data.consensus.items[0].Title
+    const ranges = draft.citation_map.filter(entry => entry.pointer === '/consensus/items/0/Title')
     expect(ranges.map(entry => text.slice(entry.start, entry.end))).toEqual(['😀日本語｡', '価格は1.5です．', 'Next!', '最後。'])
     expect(ranges[0]).toMatchObject({ start: 0, end: '😀日本語｡'.length, unit: 'utf16', evidence_ids: ['e1', 'e2'] })
     expect(ranges[0].sources[0]).toMatchObject({
@@ -1013,7 +1059,6 @@ describe('生成模型專項輸出與出處', () => {
     const consensusItems = dimensions.map(dimension => ({
       candidate_id: 'C1',
       kind: 'shared_position',
-      evidence_ids: ['d1', 'd2'],
       Title: [cited(dimension, 'd1', 'd2')],
       description: [cited(`兩份素材支持${dimension}。`, 'd1', 'd2')],
     }))
@@ -1046,7 +1091,7 @@ describe('生成模型專項輸出與出處', () => {
       }
     }
     const duplicate = structuredClone(consensusItems[0])
-    duplicate.evidence_ids.reverse()
+    duplicate.Title[0].evidence_ids.reverse()
     duplicate.Title[0].text = `  ${duplicate.Title[0].text}  `
     await expect(
       parseGenerationResponse(
@@ -1275,6 +1320,7 @@ describe('必要欄位補完與不可變 primary 工件', () => {
     const { sections, draft, plan } = await missingFieldsFixture()
     const before = structuredClone({ sections, draft, plan })
     expect(plan.targets).toEqual([
+      { pointer: '/consensus/Overview', evidence_ids: ['e1', 'e2'] },
       { pointer: '/disputes/Overview', evidence_ids: ['e1', 'e3'] },
       { pointer: '/positions/items/0/name', evidence_ids: ['e1', 'e2'] },
       { pointer: '/positions/items/0/Core_concern', evidence_ids: ['e1', 'e2'] },
@@ -1303,7 +1349,7 @@ describe('必要欄位補完與不可變 primary 工件', () => {
     expect(JSON.stringify(payload)).not.toContain('其他秘密')
     expect(JSON.stringify(payload)).not.toContain('https://example.org/a')
     expect(payload.existing_data.positions.items[0]).not.toHaveProperty('Sources')
-    expect(payload).not.toHaveProperty('consensus_items')
+    expect(payload.consensus_items).toEqual([{ pointer: '/consensus/items/0', kind: 'shared_position', evidence_ids: ['e1', 'e2'] }])
     expect(request.request_bytes).toBeLessThanOrEqual(GENERATION_MAX_REQUEST_BYTES)
     await expect(finalizeDraftCompletion(plan, input)).rejects.toThrow('generation_incomplete_draft')
 
@@ -1312,17 +1358,18 @@ describe('必要欄位補完與不可變 primary 工件', () => {
     reordered.fills.reverse()
     expect(await parseCompletionResponse(completion(reordered), plan, input)).toEqual(result)
     const titleOnly = completionPatch(plan)
-    titleOnly.fills[2].sentences[0].evidence_ids = ['e2']
+    titleOnly.fills[3].sentences[0].evidence_ids = ['e2']
     const titleOnlyResult = await parseCompletionResponse(completion(titleOnly), plan, input)
     expect(titleOnlyResult.citation_map.slice(draft.citation_map.length).find(entry => entry.pointer === '/positions/items/0/Core_concern')?.evidence_ids).toEqual(['e2'])
     const expected = structuredClone(draft.data)
-    expected.disputes.Overview = '😀補完0。另一句！'
-    expected.positions.items[0].name = '😀補完1。另一句！'
-    expected.positions.items[0].Core_concern = '😀補完2。另一句！'
-    expected.positions.items[1].name = '😀補完3。另一句！'
-    expected.positions.items[1].Core_concern = '😀補完4。另一句！'
+    expected.consensus.Overview = '😀補完0。另一句！'
+    expected.disputes.Overview = '😀補完1。另一句！'
+    expected.positions.items[0].name = '😀補完2。另一句！'
+    expected.positions.items[0].Core_concern = '😀補完3。另一句！'
+    expected.positions.items[1].name = '😀補完4。另一句！'
+    expected.positions.items[1].Core_concern = '😀補完5。另一句！'
     expect(result.data).toEqual(expected)
-    expect(result.data.consensus.Overview).toBe(draft.data.consensus.Overview)
+    expect(result.data.positions.Overview).toBe(draft.data.positions.Overview)
     expect(result.data.positions.items.map(item => item.Sources)).toEqual(draft.data.positions.items.map(item => item.Sources))
     expect(result.evidence).toEqual(draft.evidence)
     expect(result.citation_map.slice(0, draft.citation_map.length)).toEqual(draft.citation_map)
@@ -1370,18 +1417,18 @@ describe('必要欄位補完與不可變 primary 工件', () => {
     const original = structuredClone({ draft, plan })
     const valid = completionPatch(plan)
     const badGroup = structuredClone(valid)
-    badGroup.fills[1].sentences[0].evidence_ids = ['e3']
+    badGroup.fills[2].sentences[0].evidence_ids = ['e3']
     const badGroupCore = structuredClone(valid)
-    badGroupCore.fills[2].sentences[0].evidence_ids = ['e3']
+    badGroupCore.fills[3].sentences[0].evidence_ids = ['e3']
     const badOverview = structuredClone(valid)
-    badOverview.fills[0].sentences[0].evidence_ids = ['e2']
+    badOverview.fills[1].sentences[0].evidence_ids = ['e2']
     const unknownEvidence = structuredClone(valid)
     unknownEvidence.fills[1].sentences[0].evidence_ids = ['missing']
     const noEvidence = structuredClone(valid)
     noEvidence.fills[1].sentences[0].evidence_ids = []
     const emptyText = structuredClone(valid)
     emptyText.fills[1].sentences[0].text = ' \n '
-    const withFirstLabel = (patch: Record<string, unknown>) => ({ ...valid, fills: valid.fills.map((fill, index) => index === 1 ? { ...fill, ...patch } : fill) })
+    const withFirstLabel = (patch: Record<string, unknown>) => ({ ...valid, fills: valid.fills.map((fill, index) => index === 2 ? { ...fill, ...patch } : fill) })
     const tests: Array<{ patch: unknown; code: string }> = [
       { patch: { ...valid, base_hash: 'stale' }, code: 'generation_completion_base_mismatch' },
       { patch: { ...valid, fills: valid.fills.slice(1) }, code: 'generation_invalid_completion_patch' },
@@ -1389,7 +1436,7 @@ describe('必要欄位補完與不可變 primary 工件', () => {
       { patch: { ...valid, fills: [...valid.fills, { pointer: '/unknown', sentences: [cited('內容', 'e1')] }] }, code: 'generation_invalid_completion_patch' },
       { patch: withFirstLabel({ pointer: '/positions/items/00/name' }), code: 'generation_invalid_completion_patch' },
       { patch: withFirstLabel({ pointer: '/positions/items/0/opinions/0/Title' }), code: 'generation_invalid_completion_patch' },
-      { patch: withFirstLabel({ pointer: '/consensus/Overview' }), code: 'generation_invalid_completion_patch' },
+      { patch: withFirstLabel({ pointer: '/positions/Overview' }), code: 'generation_invalid_completion_patch' },
       { patch: { ...valid, data: { consensus: '覆寫' } }, code: 'generation_invalid_completion_patch' },
       { patch: { ...valid, operation: 'replace' }, code: 'generation_invalid_completion_patch' },
       { patch: withFirstLabel({ value: '覆寫' }), code: 'generation_invalid_completion_patch' },
@@ -1566,21 +1613,32 @@ describe('必要欄位補完與不可變 primary 工件', () => {
     }
   })
 
-  it('沒有立場群組且其餘 primary 完整時保留引用，不發出補完請求', async () => {
+  it('沒有共識採用或立場群組且其餘 primary 完整時保留引用，不發出補完請求', async () => {
     const emptyPositions = { Overview: null, items: [], exclusions: evidence.map(item => ({ evidence_id: item.id, reason: '不分群' })) }
+    const emptyConsensus = { Overview: null, items: [], rejected_candidates: [{ candidate_id: candidateId, reason: '不採用' }] }
     const sections = await Promise.all([
-      parseGenerationResponse('consensus', completion(consensusOutput()), input),
+      parseGenerationResponse('consensus', completion(emptyConsensus), input),
       parseGenerationResponse('disputes', completion(disputeOutput()), input),
       parseGenerationResponse('positions', completion(emptyPositions), input),
     ])
     const draft = await assembleGeneratedDraft(sections, input)
-    const plan = await prepareDraftCompletion(draft, sections, { consensus: 'completed', disputes: 'completed', positions: 'no_findings' }, input)
+    const plan = await prepareDraftCompletion(draft, sections, { consensus: 'no_findings', disputes: 'completed', positions: 'no_findings' }, input)
     expect(plan.targets).toEqual([])
-    expect(plan.status_overviews).toEqual([{ section: 'positions', pointer: '/positions/Overview', kind: 'status', status: 'no_findings', origin: 'program' }])
+    expect(plan.status_overviews).toEqual([
+      { section: 'consensus', pointer: '/consensus/Overview', kind: 'status', status: 'no_findings', origin: 'program' },
+      { section: 'positions', pointer: '/positions/Overview', kind: 'status', status: 'no_findings', origin: 'program' },
+    ])
     expect(() => buildCompletionRequest(plan, input)).toThrow('generation_completion_not_needed')
     await expect(parseCompletionResponse(completion({ base_hash: plan.base_hash, fills: [] }), plan, input)).rejects.toThrow('generation_completion_not_needed')
     const final = await finalizeDraftCompletion(plan, input)
-    expect(final).toEqual({ ...draft, data: { ...draft.data, positions: { Overview: statusOverview('positions', 'no_findings', 'zh-TW'), items: [] } } })
+    expect(final).toEqual({
+      ...draft,
+      data: {
+        ...draft.data,
+        consensus: { Overview: statusOverview('consensus', 'no_findings', 'zh-TW'), items: [] },
+        positions: { Overview: statusOverview('positions', 'no_findings', 'zh-TW'), items: [] },
+      },
+    })
   })
 
   it('補完只採用 Chat 最終文字，沿用完整外框及回應邊界規則', async () => {
@@ -1591,7 +1649,7 @@ describe('必要欄位補完與不可變 primary 工件', () => {
     const fake = structuredClone(patch)
     fake.fills[0].sentences[0].text = '僅在 reasoning 中。'
     const expected = await parseCompletionResponse(native, plan, input)
-    expect(expected.data.disputes.Overview).toBe('😀補完0。另一句！')
+    expect(expected.data.consensus.Overview).toBe('😀補完0。另一句！')
     for (const field of ['reasoning', 'reasoning_content'] as const) {
       const message = { ...choice.message, [field]: JSON.stringify(fake) }
       const withReasoning = { ...native, choices: [{ ...choice, message }] }
