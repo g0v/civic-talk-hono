@@ -283,7 +283,7 @@ export interface AdminStats {
 
 const PUBLIC_AUTHOR_COLUMNS = 'author_name, CASE WHEN show_email = 1 THEN author_email ELSE NULL END AS author_email'
 function contributorColumn(table: string): string {
-  return import.meta.env.DEV ? `, CASE WHEN ${table}.abuse_flagged = 0 THEN (SELECT public_id FROM ct_contributors WHERE user_id = ${table}.author_id) ELSE NULL END AS author_public_id` : ''
+  return `, CASE WHEN ${table}.abuse_flagged = 0 THEN (SELECT public_id FROM ct_contributors WHERE user_id = ${table}.author_id) ELSE NULL END AS author_public_id`
 }
 const PRIVATE_AUTHOR_COLUMNS = 'author_id, author_name, author_email, show_email'
 const SUBMISSION_CONSENT_COLUMNS = 'terms_version, terms_accepted_at'
@@ -382,7 +382,7 @@ export async function createIssue(
       options.moderationHidden ? 3 : 0
     )
     .run()
-  if (import.meta.env.DEV) await registerContributor(db, input.author_id)
+  await registerContributor(db, input.author_id)
   return meta.last_row_id
 }
 
@@ -491,7 +491,7 @@ export async function createMaterial(
   if (!options.skipStatusTransition) {
     await db.prepare("UPDATE ct_issues SET status = 'summarizing' WHERE id = ? AND status = 'collecting'").bind(issueId).run()
   }
-  if (import.meta.env.DEV) await registerContributor(db, input.author_id)
+  await registerContributor(db, input.author_id)
   return meta.last_row_id
 }
 
@@ -590,7 +590,7 @@ export async function createBriefing(
   if (!options.skipStatusTransition) {
     await db.prepare("UPDATE ct_issues SET status = 'published' WHERE id = ? AND status IN ('collecting', 'summarizing')").bind(issueId).run()
   }
-  if (import.meta.env.DEV) await registerContributor(db, author.author_id)
+  await registerContributor(db, author.author_id)
   return inserted.version
 }
 
@@ -726,7 +726,7 @@ function normalizeOpinionVote(row: OpinionVoteRow): OpinionWithVote {
     created_at: row.created_at,
     author_name: row.author_name,
     author_email: row.author_email,
-    ...(import.meta.env.DEV ? { author_public_id: row.author_public_id ?? null } : {}),
+    author_public_id: row.author_public_id ?? null,
     abuse_flagged: row.abuse_flagged,
     ...normalizeOpinionVoteState(row),
   }
@@ -861,7 +861,7 @@ export async function createOpinion(
     )
     .bind(issueId, input.summary, input.author_id, input.author_name, input.author_email, input.show_email ? 1 : 0, input.terms_version, options.moderationHidden ? 3 : 0)
     .run()
-  if (import.meta.env.DEV) await registerContributor(db, input.author_id)
+  await registerContributor(db, input.author_id)
   // 隱藏投稿不算活動（#77）：只有非隱藏投稿才更新 last_activity_at，
   // 與 migration 0011 回填（abuse_flagged IN (0, 1)）的口徑一致。
   if (!options.moderationHidden) {
@@ -875,7 +875,7 @@ export async function deleteOpinion(db: D1Database, id: number): Promise<void> {
   await db.prepare('DELETE FROM ct_opinions WHERE id = ?').bind(id).run()
 }
 
-/** 只由 dev-only 路徑建立公開識別碼；同帳號的併發請求不會換掉既有網址。 */
+/** 同帳號的併發請求不會換掉既有公開網址。 */
 export async function registerContributor(db: D1Database, userId: string): Promise<void> {
   await db.prepare('INSERT INTO ct_contributors (user_id, public_id) VALUES (?, lower(hex(randomblob(16)))) ON CONFLICT(user_id) DO NOTHING').bind(userId).run()
 }

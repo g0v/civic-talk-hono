@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import { registerContributorRoutes } from '../api/contributors'
 import * as authorization from '../auth/authorization'
 import type { AppBindings } from '../api/types'
-import { createBriefing, createIssue, createMaterial, createOpinion, getContributorPublicId, getIssue, listContributions, registerContributor } from '../db/queries'
+import { getContributorPublicId, getIssue, listContributions, registerContributor } from '../db/queries'
 
 // 使用真實 migration 與 SQLite；adapter 只轉換 D1 的非同步介面。
 class SQLiteD1 {
@@ -100,25 +100,35 @@ describe('公開貢獻者軌跡', () => {
     expect(first).not.toBe(PUBLIC_ID)
   })
 
-  it.each(['issue', 'material', 'briefing', 'opinion'] as const)('新 %s 投稿會自動建立穩定公開識別碼', async kind => {
-    const author = { author_id: 'new-author', author_name: '新作者', author_email: 'never-public@example.test', show_email: false, terms_version: 'test' }
-    switch (kind) {
-      case 'issue':
-        await createIssue(business.asD1(), { ...author, title: '新議題' })
-        break
-      case 'material':
-        await createMaterial(business.asD1(), 1, { ...author, content: '全文' })
-        break
-      case 'briefing':
-        await createBriefing(business.asD1(), 1, author, { narrative: '新說明' })
-        break
-      case 'opinion':
-        await createOpinion(business.asD1(), 1, { ...author, summary: '新意見' })
-        break
+  it.each([true, false].flatMap(dev => (['issue', 'material', 'briefing', 'opinion'] as const).map(kind => ({ dev, kind }))))(
+    'DEV=$dev 的新 $kind 投稿會自動建立穩定公開識別碼',
+    async ({ dev, kind }) => {
+      vi.stubEnv('DEV', dev)
+      // SQL 欄位在模組載入時組合；必須重新載入，才能驗證兩種載入環境的投影。
+      vi.resetModules()
+      const queries = await import('../db/queries')
+      const author = { author_id: 'new-author', author_name: '新作者', author_email: 'never-public@example.test', show_email: false, terms_version: 'test' }
+      switch (kind) {
+        case 'issue':
+          await queries.createIssue(business.asD1(), { ...author, title: '新議題' })
+          break
+        case 'material':
+          await queries.createMaterial(business.asD1(), 1, { ...author, content: '全文' })
+          break
+        case 'briefing':
+          await queries.createBriefing(business.asD1(), 1, author, { narrative: '新說明' })
+          break
+        case 'opinion':
+          await queries.createOpinion(business.asD1(), 1, { ...author, summary: '新意見' })
+          break
+      }
+      const publicId = await queries.getContributorPublicId(business.asD1(), 'new-author')
+      expect(publicId).toMatch(/^[a-f0-9]{32}$/)
+      expect((await queries.listContributions(business.asD1(), 'new-author')).map(item => item.kind)).toEqual([kind])
+      await queries.registerContributor(business.asD1(), 'new-author')
+      expect(await queries.getContributorPublicId(business.asD1(), 'new-author')).toBe(publicId)
     }
-    expect(await getContributorPublicId(business.asD1(), 'new-author')).toMatch(/^[a-f0-9]{32}$/)
-    expect((await listContributions(business.asD1(), 'new-author')).map(item => item.kind)).toEqual([kind])
-  })
+  )
 
   it.each([false, true])('自己的識別碼端點拒絕未登入或停權者（停權=%s）', async banned => {
     vi.spyOn(authorization, 'tryGetAuthContext').mockResolvedValue(
@@ -194,11 +204,64 @@ describe('公開貢獻者軌跡', () => {
     expect(issue).not.toHaveProperty('show_email')
   })
 
-  it('production 新 API 在沒有 binding 時也先回 404', async () => {
-    vi.stubEnv('DEV', false)
-    for (const path of ['me', PUBLIC_ID]) {
-      const response = await app.request(`/api/contributors/${path}`)
-      expect(response.status).toBe(404)
+  it.each([true, false])('DEV=%s 的真實路由開放頁面與 API，並保留公開投影及登入守門', async dev => {
+    vi.stubEnv('DEV', dev)
+    // 路由與 SQL 都須在指定 DEV 值後載入；靜態 import 無法涵蓋模組初始化邊界。
+    vi.resetModules()
+    const currentAuthorization = await import('../auth/authorization')
+    const context = vi.spyOn(currentAuthorization, 'tryGetAuthContext').mockResolvedValue(null)
+    const { default: worker } = await import('../index')
+    const authBefore = auth.sqlite.prepare('SELECT * FROM "user"').all()
+
+    const response = await worker.request(`/api/contributors/${PUBLIC_ID}`, {}, bindings)
+    expect(response.status).toBe(200)
+    expect(response.headers.get('Cache-Control')).toBe('private, no-store')
+    expect(response.headers.get('Vary')).toContain('Cookie')
+    expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff')
+    const history = await response.json()
+    expect(history).toMatchObject({ public_id: PUBLIC_ID, name: '目前名稱' })
+    expect(JSON.stringify(history)).not.toMatch(/owner-secret|private@example|素材全文|意見全文|隱藏議題/)
+
+    const page = await worker.request(`/contributors/${PUBLIC_ID}`, {}, bindings)
+    expect(page.status).toBe(200)
+    expect(page.headers.get('Content-Type')).toContain('text/html')
+    expect(page.headers.get('Cache-Control')).toBe('private, no-store')
+    expect(page.headers.get('Vary')).toContain('Cookie')
+    expect(page.headers.get('X-Content-Type-Options')).toBe('nosniff')
+    const html = await page.text()
+    expect(html).toContain('window.__PAGE__="contributor"')
+    expect(html).toContain(PUBLIC_ID)
+    expect(html).not.toMatch(/owner-secret|private@example|素材全文|意見全文|隱藏議題/)
+
+    const detailResponse = await worker.request('/api/issues/1', {}, bindings)
+    expect(detailResponse.status).toBe(200)
+    type PublicSubmission = { id: number; author_public_id: string | null }
+    const detail = await detailResponse.json() as { issue: PublicSubmission; materials: PublicSubmission[]; briefing: PublicSubmission; opinions: PublicSubmission[] }
+    expect(detail.opinions.find(item => item.id === 2)).toMatchObject({ author_public_id: null })
+    for (const item of [detail.issue, ...detail.materials, detail.briefing, detail.opinions.find(item => item.id === 1)]) {
+      expect(item).toMatchObject({ author_public_id: PUBLIC_ID })
+      expect(item).not.toHaveProperty('author_id')
+      expect(item).not.toHaveProperty('show_email')
     }
+    const opinionsResponse = await worker.request('/api/issues/1/opinions', {}, bindings)
+    expect(opinionsResponse.status).toBe(200)
+    expect(await opinionsResponse.json()).toEqual(expect.arrayContaining([expect.objectContaining({ id: 1, author_public_id: PUBLIC_ID })]))
+
+    expect((await worker.request('/api/contributors/me', {}, bindings)).status).toBe(401)
+    context.mockResolvedValue({
+      user: { id: 'owner-secret', name: '目前名稱', email: 'private@example.test', image: null },
+      role: 'user',
+      banned: false,
+      nameChangeCooldownDays: null,
+    })
+    const ownResponse = await worker.request('/api/contributors/me', {}, bindings)
+    expect(ownResponse.status).toBe(200)
+    expect(await ownResponse.json()).toEqual({ public_id: PUBLIC_ID })
+    expect((await worker.request('/contributors/invalid', {}, bindings)).status).toBe(404)
+    auth.sqlite.exec('UPDATE "user" SET banned=1;')
+    expect((await worker.request(`/contributors/${PUBLIC_ID}`, {}, bindings)).status).toBe(404)
+    expect((await worker.request(`/api/contributors/${PUBLIC_ID}`, {}, bindings)).status).toBe(404)
+    auth.sqlite.exec('UPDATE "user" SET banned=0;')
+    expect(auth.sqlite.prepare('SELECT * FROM "user"').all()).toEqual(authBefore)
   })
 })

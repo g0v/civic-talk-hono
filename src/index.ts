@@ -226,7 +226,6 @@ app.get('/contributors/:publicId', async c => {
   c.header('Cache-Control', 'private, no-store')
   c.header('X-Content-Type-Options', 'nosniff')
   c.header('Vary', 'Cookie')
-  if (!import.meta.env.DEV) return c.html(await notFoundHtml(origin), 404)
   const history = await getContributorHistory(c.env, c.req.param('publicId'))
   if (!history) return c.html(await notFoundHtml(origin), 404)
   const navigation = parseContributorNavigation(new URL(c.req.url).search)

@@ -25,7 +25,6 @@ export function registerContributorRoutes(app: App): void {
     c.header('Cache-Control', 'private, no-store')
     c.header('X-Content-Type-Options', 'nosniff')
     c.header('Vary', 'Cookie', { append: true })
-    if (!import.meta.env.DEV) return c.json({ error: 'Not found' }, 404)
     await next()
   })
 

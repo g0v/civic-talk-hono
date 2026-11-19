@@ -19,18 +19,17 @@ const displayName = computed(() => session.value?.user.name || session.value?.us
 const avatarImage = computed(() => session.value?.user.image ?? null)
 const avatarInitial = computed(() => displayName.value.charAt(0).toUpperCase())
 const hasChanges = computed(() => !!session.value && draftName.value !== session.value.user.name)
-const isDev = import.meta.env.DEV
 const contributorPublicId = ref<string | null>(null)
 const contributorFailed = ref(false)
 const contributorLoading = ref(false)
 
 onMounted(async () => {
   await ensureAuthSession()
-  if (import.meta.env.DEV && authState.value === 'signed-in') await loadContributor()
+  if (authState.value === 'signed-in') await loadContributor()
 })
 
 async function loadContributor() {
-  if (!import.meta.env.DEV || authState.value !== 'signed-in' || contributorLoading.value) return
+  if (authState.value !== 'signed-in' || contributorLoading.value) return
   contributorFailed.value = false
   contributorLoading.value = true
   try {
@@ -156,7 +155,7 @@ async function saveName() {
                 {{ t('logout') }}
               </button>
             </div>
-            <div v-if="isDev" aria-live="polite">
+            <div aria-live="polite">
               <p v-if="contributorLoading" class="text-muted">{{ t('contributor_profile_loading') }}</p>
               <a v-else-if="contributorPublicId" :href="`/contributors/${encodeURIComponent(contributorPublicId)}`" class="btn btn-secondary min-h-12">{{ t('contributor_profile_link') }}</a>
               <div v-else-if="contributorFailed">
