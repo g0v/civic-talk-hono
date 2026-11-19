@@ -662,7 +662,7 @@ export const messages = {
   privacy_s1_p: 'Civic Talk（以下簡稱「平台」）致力於保護使用者的隱私。本隱私權政策說明平台如何收集、使用、儲存及保護您的個人資料。平台由 vTaiwan 公民科技社群維護，作為開放原始碼的公共審議工具。',
   privacy_s2_h: '我們收集的資料',
   privacy_s2_intro: '平台透過以下方式收集資料：',
-  privacy_s2_li1: '<strong>OAuth 帳號資訊</strong>：當您以 Google 或 GitHub 登入時，平台取得您的顯示名稱與 email，並由 Better Auth 建立平台內部使用的 user ID。',
+  privacy_s2_li1: '<strong>OAuth 帳號資訊</strong>：當您以 Google 或 GitHub 登入時，平台取得您的顯示名稱與 email，並由 Better Auth 建立平台內部使用的 user ID。平台亦保存 vTaiwan 帳號的註冊日期。',
   privacy_s2_li2: '<strong>使用者生成內容與作者快照</strong>：您建立的議題、提交的素材、發表的意見或志願者送出的彙整，以及提交時間、user ID、提交當下的顯示名稱與 email 快照、是否公開 email 的選擇。',
   privacy_s2_li3:
     '<strong>條款與處理同意記錄</strong>：建立議題、投稿素材或意見時所接受的條款版本與伺服器記錄的同意時間。證據處理 API 的每個建立工作請求均須明確傳入 consent:true；伺服器保存處理告知版本與同意時間，同帳號命中既有工作時不另增同意事件。申請者的同意不代表已取得正文中所有人的同意。',
@@ -679,6 +679,7 @@ export const messages = {
     '<strong>同名時必須公開</strong>：平台會在寫入前重新檢查；若提交當下已有其他未停權帳號使用相同的公開顯示名稱，會先提示並取得您的明確同意，才以公開 email 的方式送出該筆新內容；不會靜默公開，也不溯及變更既有內容。永久停權及尚未到期的暫時停權帳號不占用名稱；暫時停權到期後會重新占用。',
   privacy_s3_p4:
     'user ID 是 Better Auth 產生的平台內部識別碼，不是 Google 或 GitHub 的公開帳號名稱；一律不公開顯示。議題、素材、意見與說明頁都會公開顯示提交當下的顯示名稱；email 依上述自行選擇或同名強制公開規則顯示。',
+  privacy_s3_p5: '您註冊 vTaiwan 帳號的日期屬於公開資訊，會顯示在貢獻者軌跡頁，所有訪客均可查看。此日期是共用帳號的建立日期，不是首次造訪 Civic Talk 或首次投稿的日期。',
   privacy_s4_h: '資料使用目的',
   privacy_s4_li1: '提供並維護平台服務（議題建立、素材收集、意見匯聚）',
   privacy_s4_li2: '確保內容品質：具名提交可降低惡意投稿的風險',
@@ -706,7 +707,7 @@ export const messages = {
   privacy_s8_github_label: 'GitHub：',
   privacy_s9_h: '政策更新',
   privacy_s9_p: '我們可能不時更新本隱私權政策。重大變更將在平台上公告。',
-  privacy_s9_date: '最後更新：2026 年 11 月 7 日',
+  privacy_s9_date: '最後更新：2026 年 11 月 19 日',
   // 濫用回報（#21）
   report_btn: '⚑ 回報濫用',
   report_modal_title: '回報濫用內容',
