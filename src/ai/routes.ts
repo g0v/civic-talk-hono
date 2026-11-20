@@ -456,20 +456,30 @@ export function registerEvidenceRoutes(app: EvidenceApp): void {
     }
     const diagnostics = await store.listArtifacts(job.executionId, 'diagnostics')
     const artifactSummaries = await store.listArtifactSummaries(job.executionId)
-    const artifact = job.artifactId ? await store.getArtifact(job.executionId, job.artifactId) : null
+    let artifactId = job.artifactId
+    let artifact = artifactId ? await store.getArtifact(job.executionId, artifactId) : null
     const extractionArtifacts = import.meta.env.DEV && c.req.query('include_extraction') === '1'
       ? await Promise.all([store.listExtractionRawArtifacts(job.executionId), store.listArtifacts(job.executionId, 'extraction')])
       : null
     // 這是當下議題的隱藏狀態，不是工作原始輸入的一部分，故不影響快取鍵。
     const currentIssueExclusions = (await readMaterialStatuses(c.env.SOURCE_DB, job.issueId)).filter(item => item.abuse_flagged !== 0).map(item => ({ id: item.id, reason: 'hidden' }))
     // 最後再以同一持久 fence 讀取快照，避免已完成清除的競態把記憶體舊內容送出。
-    const snapshot = await store.getSnapshot(job.executionId)
-    const updated = await store.getJob(jobId, auth.context.user.id, admin)
+    let snapshot = await store.getSnapshot(job.executionId)
+    let updated = await store.getJob(jobId, auth.context.user.id, admin)
     if (!updated) return c.json({ error: 'source_unavailable' }, 503)
+    // 只追上正常完成的 null→final 指標；重讀後仍須通過來源與最終指標檢查。
+    if (snapshot && !artifactId && ['queued', 'extracting', 'comparing', 'generating'].includes(job.status) &&
+      ['ai_draft', 'partial_draft'].includes(updated.status) && updated.artifactId) {
+      artifactId = updated.artifactId
+      artifact = await store.getArtifact(job.executionId, artifactId)
+      snapshot = await store.getSnapshot(job.executionId)
+      updated = await store.getJob(jobId, auth.context.user.id, admin)
+      if (!updated) return c.json({ error: 'source_unavailable' }, 503)
+    }
     const refreshedBase = { ...base, status: updated.status, error_code: updated.errorCode, updated_at: updated.updatedAt, source_checked_at: updated.sourceCheckedAt, usage: updated.usage }
     // 清除／撤下可能恰在快照讀取與最後狀態查詢之間完成；已觀察失效時不可送出先前內容。
     if (updated.status === 'withdrawn' || updated.status === 'erased') return c.json(refreshedBase)
-    if (!snapshot || updated.artifactId !== job.artifactId || (job.artifactId && !artifact)) return c.json({ error: 'source_unavailable' }, 503)
+    if (!snapshot || updated.artifactId !== artifactId || (artifactId && !artifact)) return c.json({ error: 'source_unavailable' }, 503)
     const initialInputDiagnostics = diagnostics.map(item => item.payload).filter(item => object(item) && item.stage === 'input')
     const payload = artifact && object(artifact.payload) ? artifact.payload : {}
     const provenance = { ...(object(payload.provenance) ? payload.provenance : {}), artifacts: artifactSummaries }

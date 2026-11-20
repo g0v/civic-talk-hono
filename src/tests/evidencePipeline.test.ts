@@ -3322,6 +3322,66 @@ describe('私人議題摘要與持久化工作流（#210）', () => {
     expect((await summaryState()).summary).toEqual(before.summary)
   })
 
+  it.each([false, true])('工作 GET 追上正常完成工件，重讀後清除=%s 仍守住來源 fence', async eraseAfterRead => {
+    auth.current = user('owner')
+    const created = await createSummary(0)
+    const { promise: paused, resolve: reached } = Promise.withResolvers<void>()
+    const { promise: waiting, resolve: release } = Promise.withResolvers<void>()
+    const gated = retryingStep(async (name, _attempt, callback) => {
+      if (name === 'assemble-generation') {
+        reached()
+        await waiting
+      }
+      return callback()
+    })
+    const running = runEvidenceWorkflow(env, created.job_id, gated.step)
+    await paused
+    const callsBeforeRead = recordedRequests.length
+    const originalSummaries = EvidenceStore.prototype.listArtifactSummaries
+    const originalArtifact = EvidenceStore.prototype.getArtifact
+    let finishDuringRead = true
+    let eraseOnRead = false
+    const summariesSpy = vi.spyOn(EvidenceStore.prototype, 'listArtifactSummaries').mockImplementation(async function (this: EvidenceStore, ...args) {
+      const summaries = await originalSummaries.call(this, ...args)
+      if (finishDuringRead) {
+        finishDuringRead = false
+        release()
+        expect(await running).toEqual({ status: 'ai_draft' })
+        eraseOnRead = eraseAfterRead
+      }
+      return summaries
+    })
+    const artifactSpy = vi.spyOn(EvidenceStore.prototype, 'getArtifact').mockImplementation(async function (this: EvidenceStore, ...args) {
+      const artifact = await originalArtifact.call(this, ...args)
+      if (eraseOnRead && artifact) {
+        eraseOnRead = false
+        await this.eraseSource({ namespace: SOURCE_NAMESPACE, kind: 'material', id: 2, reason: 'request' })
+      }
+      return artifact
+    })
+    try {
+      const response = await send('GET', `/api/evidence-jobs/${created.job_id}`)
+      expect(response.status).toBe(200)
+      const body = object(await response.json())
+      if (eraseAfterRead) {
+        expect(body.status).toBe('erased')
+        expect(body.data).toBeUndefined()
+        expect(body.citation_map).toBeUndefined()
+      } else {
+        expect(body.status).toBe('ai_draft')
+        const saved = await new EvidenceStore(local.asD1()).getJob(created.job_id, 'owner')
+        expect(body.generation_artifact).toMatchObject({ id: saved?.artifactId })
+        expect(object(body.data).consensus).toMatchObject({ items: [{ Title: '相容主張。' }] })
+      }
+      expect(recordedRequests).toHaveLength(callsBeforeRead)
+    } finally {
+      release()
+      await running.catch(() => undefined)
+      summariesSpy.mockRestore()
+      artifactSpy.mockRestore()
+    }
+  })
+
   it('來源清除與 GET 競態時，已讀取的舊摘要不會送出', async () => {
     auth.current = user('owner')
     const created = await createSummary(0)
