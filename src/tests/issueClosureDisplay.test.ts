@@ -10,6 +10,7 @@ describe('closed issue presentation', () => {
       issueId: 1,
       initialStep: 'comments',
       initialCommentAction: 'browse',
+      initialCommentView: 'list',
       initialDetail: {
         issue: {
           id: 1,

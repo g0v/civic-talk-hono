@@ -2,8 +2,19 @@ export type IssueStep = 'comments' | 'materials' | 'volunteer'
 
 const ISSUE_STEPS: readonly IssueStep[] = ['comments', 'materials', 'volunteer']
 export type IssueCommentAction = 'start' | 'commit' | 'celebrate' | 'ai_help' | 'browse'
+export type IssueCommentView = 'card' | 'list'
 
 const ISSUE_COMMENT_ACTIONS: readonly IssueCommentAction[] = ['start', 'commit', 'celebrate', 'ai_help', 'browse']
+
+export function parseIssueCommentView(search: string): IssueCommentView {
+  return new URLSearchParams(search).get('view') === 'list' ? 'list' : 'card'
+}
+
+export function writeIssueCommentView(url: string, view: IssueCommentView): string {
+  const next = new URL(url, 'https://civic-talk.invalid')
+  next.searchParams.set('view', view)
+  return `${next.pathname}${next.search}${next.hash}`
+}
 
 const ISSUE_BRIEFING_TABS = ['overview', 'consensus', 'disputes', 'positions', 'actions'] as const
 

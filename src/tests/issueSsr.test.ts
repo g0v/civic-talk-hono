@@ -6,10 +6,12 @@ import { messages } from '../l10n/zh-TW'
 import IssueView from '../views/Issue.vue'
 
 describe('Issue SSR', () => {
-  const renderBrowseOpinion = async (summary: string) => {
+  const renderBrowseOpinion = async (summary: string, view: 'card' | 'list' = 'list') => {
     const app = createSSRApp(IssueView, {
       issueId: 1,
+      initialStep: 'comments',
       initialCommentAction: 'browse',
+      initialCommentView: view,
       initialDetail: {
         issue: {
           id: 1,
@@ -80,6 +82,14 @@ describe('Issue SSR', () => {
     expect(html).toContain('aria-label="議題說明輪播"')
     expect((html.match(/class="carousel__slide/g) ?? []).length).toBe(4)
     expect(html).not.toContain('class="tabs"')
+  })
+  it('keeps the card view deterministic until viewer-aware data is ready for hydration', async () => {
+    const summary = 'SSR must not pick a random opinion'
+    const html = await renderBrowseOpinion(summary, 'card')
+    expect(html).not.toContain(summary)
+    expect(html).toContain('role="status"')
+    expect(html).not.toContain('role="progressbar"')
+    expect(html).not.toContain('id="opinion-1"')
   })
   it.each([0, 2])('shows the total opinion count (%i) before browsing, independent of search', async count => {
     const app = createSSRApp(IssueView, {
@@ -160,6 +170,7 @@ describe('Issue SSR', () => {
     const app = createSSRApp(IssueView, {
       issueId: 1,
       initialCommentAction: 'browse',
+      initialCommentView: 'list',
       initialDetail: {
         issue: {
           id: 1,
