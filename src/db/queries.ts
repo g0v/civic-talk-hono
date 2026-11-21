@@ -1,5 +1,6 @@
 import { normalizeIssueTags } from '../lib/issueTags'
 import { getPublicIssueVoteCounts } from './issueVoteCountCache'
+import type { Contribution } from '../lib/contributors'
 
 /** D1 查詢與資料型別 — 所有 SQL 只碰 ct_* 表 */
 
@@ -37,6 +38,7 @@ export interface SubmissionConsentInput {
 }
 
 export interface Issue {
+  author_public_id?: string | null
   id: number
   title: string | null
   description: string | null
@@ -82,6 +84,7 @@ export interface IssueListItemWithAuthor extends IssueListItem {
  * 查詢一律列舉欄位、不用 SELECT *（防止 SSR state 洩漏 author_id）。
  */
 export interface Material {
+  author_public_id?: string | null
   id: number
   issue_id: number
   source_name: string | null
@@ -111,6 +114,7 @@ export interface MaterialWithAuthor extends Material {
  * author_id／show_email 不進公開回應或 SSR state。
  */
 export interface Briefing {
+  author_public_id?: string | null
   id: number
   issue_id: number
   consensus: string | null
@@ -137,6 +141,7 @@ export interface BriefingWithAuthor extends Briefing {
  * 查詢一律列舉欄位、不用 SELECT *。
  */
 export interface Opinion {
+  author_public_id?: string | null
   id: number
   issue_id: number
   summary: string | null
@@ -277,11 +282,14 @@ export interface AdminStats {
 }
 
 const PUBLIC_AUTHOR_COLUMNS = 'author_name, CASE WHEN show_email = 1 THEN author_email ELSE NULL END AS author_email'
+function contributorColumn(table: string): string {
+  return `, CASE WHEN ${table}.abuse_flagged = 0 THEN (SELECT public_id FROM ct_contributors WHERE user_id = ${table}.author_id) ELSE NULL END AS author_public_id`
+}
 const PRIVATE_AUTHOR_COLUMNS = 'author_id, author_name, author_email, show_email'
 const SUBMISSION_CONSENT_COLUMNS = 'terms_version, terms_accepted_at'
 const ISSUE_BASE_COLUMNS = 'id, title, description, status, polis_id, created_at, tags'
-const ISSUE_PUBLIC_COLUMNS = `${ISSUE_BASE_COLUMNS.replace('title', 'CASE WHEN abuse_flagged = 3 THEN NULL ELSE title END AS title').replace('description', 'CASE WHEN abuse_flagged = 3 THEN NULL ELSE description END AS description').replace('tags', "CASE WHEN abuse_flagged = 3 THEN '[]' ELSE COALESCE(tags, '[]') END AS tags")}, is_closed, CASE WHEN abuse_flagged = 3 THEN NULL ELSE closure_reason END AS closure_reason, closure_changed_at, abuse_flagged, ${PUBLIC_AUTHOR_COLUMNS}`
-const ISSUE_ADMIN_COLUMNS = `${ISSUE_BASE_COLUMNS}, is_closed, closure_reason, closure_changed_at, ${PRIVATE_AUTHOR_COLUMNS}, ${SUBMISSION_CONSENT_COLUMNS}, abuse_flagged`
+const ISSUE_PUBLIC_COLUMNS = `${ISSUE_BASE_COLUMNS.replace('title', 'CASE WHEN abuse_flagged = 3 THEN NULL ELSE title END AS title').replace('description', 'CASE WHEN abuse_flagged = 3 THEN NULL ELSE description END AS description').replace('tags', "CASE WHEN abuse_flagged = 3 THEN '[]' ELSE COALESCE(tags, '[]') END AS tags")}, is_closed, CASE WHEN abuse_flagged = 3 THEN NULL ELSE closure_reason END AS closure_reason, closure_changed_at, abuse_flagged, ${PUBLIC_AUTHOR_COLUMNS}${contributorColumn('ct_issues')}`
+const ISSUE_ADMIN_COLUMNS = `${ISSUE_BASE_COLUMNS}, is_closed, closure_reason, closure_changed_at, ${PRIVATE_AUTHOR_COLUMNS}, ${SUBMISSION_CONSENT_COLUMNS}, abuse_flagged${contributorColumn('ct_issues')}`
 const ISSUE_COUNT_SUBQUERIES = `
   (SELECT COUNT(*) FROM ct_materials WHERE issue_id = ct_issues.id AND abuse_flagged IN (0, 1)) AS material_count,
   (SELECT COUNT(*) FROM ct_opinions  WHERE issue_id = ct_issues.id AND abuse_flagged IN (0, 1)) AS opinion_count`
@@ -374,6 +382,7 @@ export async function createIssue(
       options.moderationHidden ? 3 : 0
     )
     .run()
+  await registerContributor(db, input.author_id)
   return meta.last_row_id
 }
 
@@ -424,8 +433,10 @@ export async function deleteIssueCascade(db: D1Database, id: number): Promise<vo
 
 const MATERIAL_BASE_COLUMNS = 'id, issue_id, source_name, source_url, stance, content, verified_count, created_at, abuse_flagged'
 const MATERIAL_PUBLIC_COLUMNS =
-  'id, issue_id, source_name, source_url, stance, CASE WHEN abuse_flagged = 3 THEN NULL ELSE content END AS content, verified_count, created_at, abuse_flagged, ' + PUBLIC_AUTHOR_COLUMNS
-const MATERIAL_ADMIN_COLUMNS = `${MATERIAL_BASE_COLUMNS}, ${PRIVATE_AUTHOR_COLUMNS}, ${SUBMISSION_CONSENT_COLUMNS}`
+  'id, issue_id, source_name, source_url, stance, CASE WHEN abuse_flagged = 3 THEN NULL ELSE content END AS content, verified_count, created_at, abuse_flagged, ' +
+  PUBLIC_AUTHOR_COLUMNS +
+  contributorColumn('ct_materials')
+const MATERIAL_ADMIN_COLUMNS = `${MATERIAL_BASE_COLUMNS}, ${PRIVATE_AUTHOR_COLUMNS}, ${SUBMISSION_CONSENT_COLUMNS}${contributorColumn('ct_materials')}`
 
 export async function listMaterials(db: D1Database, issueId: number): Promise<Material[]> {
   const { results } = await db
@@ -480,6 +491,7 @@ export async function createMaterial(
   if (!options.skipStatusTransition) {
     await db.prepare("UPDATE ct_issues SET status = 'summarizing' WHERE id = ? AND status = 'collecting'").bind(issueId).run()
   }
+  await registerContributor(db, input.author_id)
   return meta.last_row_id
 }
 
@@ -488,8 +500,8 @@ export async function deleteMaterial(db: D1Database, id: number): Promise<void> 
 }
 
 const BRIEFING_BASE_COLUMNS = 'id, issue_id, consensus, disputes, positions, narrative, opinion_prompt, version, created_at, abuse_flagged'
-const BRIEFING_PUBLIC_COLUMNS = `${BRIEFING_BASE_COLUMNS}, ${PUBLIC_AUTHOR_COLUMNS}`
-const BRIEFING_ADMIN_COLUMNS = `${BRIEFING_BASE_COLUMNS}, ${PRIVATE_AUTHOR_COLUMNS}`
+const BRIEFING_PUBLIC_COLUMNS = `${BRIEFING_BASE_COLUMNS}, ${PUBLIC_AUTHOR_COLUMNS}${contributorColumn('ct_briefings')}`
+const BRIEFING_ADMIN_COLUMNS = `${BRIEFING_BASE_COLUMNS}, ${PRIVATE_AUTHOR_COLUMNS}${contributorColumn('ct_briefings')}`
 
 export async function getLatestBriefing(db: D1Database, issueId: number): Promise<Briefing | null> {
   return db.prepare(`SELECT ${BRIEFING_PUBLIC_COLUMNS} FROM ct_briefings WHERE issue_id = ? AND abuse_flagged IN (0, 1) ORDER BY version DESC LIMIT 1`).bind(issueId).first<Briefing>()
@@ -578,6 +590,7 @@ export async function createBriefing(
   if (!options.skipStatusTransition) {
     await db.prepare("UPDATE ct_issues SET status = 'published' WHERE id = ? AND status IN ('collecting', 'summarizing')").bind(issueId).run()
   }
+  await registerContributor(db, author.author_id)
   return inserted.version
 }
 
@@ -618,8 +631,8 @@ export async function updateLatestBriefing(
 }
 
 const OPINION_BASE_COLUMNS = 'id, issue_id, summary, created_at, abuse_flagged'
-const OPINION_PUBLIC_COLUMNS = 'id, issue_id, CASE WHEN abuse_flagged = 3 THEN NULL ELSE summary END AS summary, created_at, abuse_flagged, ' + PUBLIC_AUTHOR_COLUMNS
-const OPINION_ADMIN_COLUMNS = `${OPINION_BASE_COLUMNS}, ${PRIVATE_AUTHOR_COLUMNS}, ${SUBMISSION_CONSENT_COLUMNS}`
+const OPINION_PUBLIC_COLUMNS = 'id, issue_id, CASE WHEN abuse_flagged = 3 THEN NULL ELSE summary END AS summary, created_at, abuse_flagged, ' + PUBLIC_AUTHOR_COLUMNS + contributorColumn('ct_opinions')
+const OPINION_ADMIN_COLUMNS = `${OPINION_BASE_COLUMNS}, ${PRIVATE_AUTHOR_COLUMNS}, ${SUBMISSION_CONSENT_COLUMNS}${contributorColumn('ct_opinions')}`
 
 export interface OpinionExportRow {
   id: number
@@ -631,6 +644,7 @@ export interface OpinionExportRow {
 }
 
 interface OpinionVoteRow {
+  author_public_id?: string | null
   id: number
   issue_id: number
   summary: string | null
@@ -712,6 +726,7 @@ function normalizeOpinionVote(row: OpinionVoteRow): OpinionWithVote {
     created_at: row.created_at,
     author_name: row.author_name,
     author_email: row.author_email,
+    author_public_id: row.author_public_id ?? null,
     abuse_flagged: row.abuse_flagged,
     ...normalizeOpinionVoteState(row),
   }
@@ -728,16 +743,14 @@ function normalizeOpinionAuthorVote(row: OpinionVoteRow): OpinionWithAuthorAndVo
 }
 
 function opinionVoteOrder(sort: 'recent' | 'responses'): string {
-  return sort === 'responses'
-    ? `${OPINION_RESPONSE_COUNT} DESC, o.created_at DESC, o.id DESC`
-    : 'o.created_at DESC, o.id DESC'
+  return sort === 'responses' ? `${OPINION_RESPONSE_COUNT} DESC, o.created_at DESC, o.id DESC` : 'o.created_at DESC, o.id DESC'
 }
 
 export async function listOpinionsForViewer(db: D1Database, issueId: number, viewerId: string | null, sort: 'recent' | 'responses' = 'recent'): Promise<OpinionWithVote[]> {
   const query = `${opinionVoteCte('issue')}
     SELECT o.id, o.issue_id, CASE WHEN o.abuse_flagged = 3 THEN NULL ELSE o.summary END AS summary,
       o.created_at, o.abuse_flagged, o.author_name,
-      CASE WHEN o.show_email = 1 THEN o.author_email ELSE NULL END AS author_email,
+      CASE WHEN o.show_email = 1 THEN o.author_email ELSE NULL END AS author_email${contributorColumn('o')},
       ${OPINION_VOTE_FIELDS}
     FROM ct_opinions o CROSS JOIN params
     LEFT JOIN viewer_vote vv ON vv.opinion_id = o.id
@@ -751,7 +764,7 @@ export async function listOpinionsForViewer(db: D1Database, issueId: number, vie
 export async function listOpinionsWithAuthorForViewer(db: D1Database, issueId: number, viewerId: string | null, sort: 'recent' | 'responses' = 'recent'): Promise<OpinionWithAuthorAndVote[]> {
   const query = `${opinionVoteCte('issue')}
     SELECT o.id, o.issue_id, o.summary, o.created_at, o.abuse_flagged,
-      o.author_id, o.author_name, o.author_email, o.show_email, o.terms_version, o.terms_accepted_at,
+      o.author_id, o.author_name, o.author_email, o.show_email, o.terms_version, o.terms_accepted_at${contributorColumn('o')},
       ${OPINION_VOTE_FIELDS}
     FROM ct_opinions o CROSS JOIN params
     LEFT JOIN viewer_vote vv ON vv.opinion_id = o.id
@@ -848,6 +861,7 @@ export async function createOpinion(
     )
     .bind(issueId, input.summary, input.author_id, input.author_name, input.author_email, input.show_email ? 1 : 0, input.terms_version, options.moderationHidden ? 3 : 0)
     .run()
+  await registerContributor(db, input.author_id)
   // 隱藏投稿不算活動（#77）：只有非隱藏投稿才更新 last_activity_at，
   // 與 migration 0011 回填（abuse_flagged IN (0, 1)）的口徑一致。
   if (!options.moderationHidden) {
@@ -859,6 +873,46 @@ export async function createOpinion(
 export async function deleteOpinion(db: D1Database, id: number): Promise<void> {
   await db.prepare('DELETE FROM ct_opinion_votes WHERE opinion_id = ?').bind(id).run()
   await db.prepare('DELETE FROM ct_opinions WHERE id = ?').bind(id).run()
+}
+
+/** 同帳號的併發請求不會換掉既有公開網址。 */
+export async function registerContributor(db: D1Database, userId: string): Promise<void> {
+  await db.prepare('INSERT INTO ct_contributors (user_id, public_id) VALUES (?, lower(hex(randomblob(16)))) ON CONFLICT(user_id) DO NOTHING').bind(userId).run()
+}
+
+export async function getContributorPublicId(db: D1Database, userId: string): Promise<string | null> {
+  const row = await db.prepare('SELECT public_id FROM ct_contributors WHERE user_id = ?').bind(userId).first<{ public_id: string }>()
+  return row?.public_id ?? null
+}
+
+export async function getContributorUserId(db: D1Database, publicId: string): Promise<string | null> {
+  const row = await db.prepare('SELECT user_id FROM ct_contributors WHERE public_id = ?').bind(publicId).first<{ user_id: string }>()
+  return row?.user_id ?? null
+}
+
+/** 來源現況即公開軌跡：不保留刪除或隱藏內容的名稱與計數，也不讀私有 AI 帳本。 */
+export async function listContributions(db: D1Database, userId: string): Promise<Contribution[]> {
+  const { results } = await db
+    .prepare(`
+    SELECT 'issue' AS kind, id, id AS issue_id, title, created_at, NULL AS version
+    FROM ct_issues WHERE author_id = ? AND abuse_flagged = 0
+    UNION ALL
+    SELECT 'material', m.id, m.issue_id, m.source_name, m.created_at, NULL
+    FROM ct_materials m JOIN ct_issues i ON i.id = m.issue_id
+    WHERE m.author_id = ? AND m.abuse_flagged = 0 AND i.abuse_flagged = 0
+    UNION ALL
+    SELECT 'briefing', b.id, b.issue_id, i.title, b.created_at, b.version
+    FROM ct_briefings b JOIN ct_issues i ON i.id = b.issue_id
+    WHERE b.author_id = ? AND b.abuse_flagged = 0 AND i.abuse_flagged = 0
+    UNION ALL
+    SELECT 'opinion', o.id, o.issue_id, i.title, o.created_at, NULL
+    FROM ct_opinions o JOIN ct_issues i ON i.id = o.issue_id
+    WHERE o.author_id = ? AND o.abuse_flagged = 0 AND i.abuse_flagged = 0
+    ORDER BY created_at DESC, kind ASC, id DESC
+  `)
+    .bind(userId, userId, userId, userId)
+    .all<Contribution>()
+  return results ?? []
 }
 
 export async function getIssueDetail(

@@ -1,6 +1,28 @@
 import type { MessageKey } from './zh-TW'
 
 export const messages = {
+  contributor_unnamed: '名前未設定の投稿者',
+  contributor_history: '公開された貢献履歴',
+  contributor_joined: 'vTaiwan 登録日：',
+  contributor_join_event: 'vTaiwan 共通アカウントを登録',
+  contributor_view_label: '貢献履歴の表示方法',
+  contributor_timeline: 'タイムライン',
+  contributor_list: '年別リスト',
+  contributor_kind_issue: '議題の投稿',
+  contributor_kind_material: '素材の投稿',
+  contributor_kind_briefing: '議題説明の整理・作成',
+  contributor_kind_opinion: '市民意見の発表',
+  contributor_year: '{year} 年',
+  contributor_count: '{count} 件',
+  contributor_untitled: '無題の投稿',
+  contributor_version_title: '{title}（第 {version} 版）',
+  contributor_public_hint: '現在公開できる投稿のみを表示します。日付と年は UTC に基づきます。整理・説明は各バージョンを 1 件として数えます。',
+  contributor_briefing_link_hint: '議題の現在の説明ページに移動します。この旧バージョンの本文は表示されません。',
+  contributor_empty: '現在、公開できる投稿履歴はありません。議題一覧から参加できます。',
+  contributor_browse: '議題を見る',
+  contributor_profile_link: '自分の公開貢献履歴を見る',
+  contributor_profile_loading: '公開貢献履歴へのリンクを読み込み中…',
+  contributor_profile_error: '公開貢献履歴へのリンクを読み込めませんでした。再試行してください。プロフィールの編集は引き続き利用できます。',
   site_tagline: '公共議題の審議プラットフォーム',
   back_to_issues: '← すべての議題に戻る',
   loading: '読み込み中…',
@@ -188,10 +210,14 @@ export const messages = {
   vol_gen_summarize: '要約 Prompt を生成',
   vol_ai_button: 'ワンクリック要約',
   vol_ai_dialog_title: 'ワンクリック要約の処理への同意',
-  vol_ai_processing: 'システムは議題のタイトル・説明と、利用可能なすべての資料の本文・出典名・URL を処理し、処理に必要な内容を Cloudflare Workers AI に送信します。非表示の資料は対象外です。投稿者のアカウント項目は送信しませんが、本文や出典に個人情報が含まれる場合があります。あなたの同意は関係者全員の同意を意味しません。',
-  vol_ai_private: '完全な結果は申請者と管理者のみが閲覧でき、「AI による未検証」（ai_unverified）と表示されます。自動公開や既存の説明ページの変更は行いません。部分的な結果や失敗した結果で既存の結果を置き換えることはありません。',
-  vol_ai_cost_notice: 'モデルの費用はプラットフォームが負担し、利用者には請求しません。失敗時にも費用が発生する場合があり、自動再試行は行いません。新規の有料ジョブは各アカウント UTC 日ごとに 20 件まで、議題ごとに 5 分の待機時間があります。プラットフォームのモデル予算 1 日 5 米ドルは開始可否の推定値で、すべての費用の上限ではありません。',
-  vol_ai_retention: '処理データは自動的に期限切れになりません。出典を非表示・変更すると配信は停止しますが、データは保持されます。削除された出典に依存する非公開データは、出典確認で削除を検出するか、管理者が出典単位で消去した後に消去されます。料金記録・消去マーカー・バックアップには別の保存制限があります。',
+  vol_ai_processing:
+    'システムは議題のタイトル・説明と、利用可能なすべての資料の本文・出典名・URL を処理し、処理に必要な内容を Cloudflare Workers AI に送信します。非表示の資料は対象外です。投稿者のアカウント項目は送信しませんが、本文や出典に個人情報が含まれる場合があります。あなたの同意は関係者全員の同意を意味しません。',
+  vol_ai_private:
+    '完全な結果は申請者と管理者のみが閲覧でき、「AI による未検証」（ai_unverified）と表示されます。自動公開や既存の説明ページの変更は行いません。部分的な結果や失敗した結果で既存の結果を置き換えることはありません。',
+  vol_ai_cost_notice:
+    'モデルの費用はプラットフォームが負担し、利用者には請求しません。失敗時にも費用が発生する場合があり、自動再試行は行いません。新規の有料ジョブは各アカウント UTC 日ごとに 20 件まで、議題ごとに 5 分の待機時間があります。プラットフォームのモデル予算 1 日 5 米ドルは開始可否の推定値で、すべての費用の上限ではありません。',
+  vol_ai_retention:
+    '処理データは自動的に期限切れになりません。出典を非表示・変更すると配信は停止しますが、データは保持されます。削除された出典に依存する非公開データは、出典確認で削除を検出するか、管理者が出典単位で消去した後に消去されます。料金記録・消去マーカー・バックアップには別の保存制限があります。',
   vol_ai_privacy_link: 'プライバシーポリシーと消去の制限を読む',
   vol_ai_language: '結果の言語：{language}（確認時の画面言語を使用）',
   vol_ai_replace: 'この言語の非公開要約は既に存在します。完全な新しい結果は、他の人が作成したものも含めて既存の結果を置き換えます。',
@@ -529,6 +555,7 @@ export const messages = {
   factcheck_verdict_mixed: '支持する証拠と反証の両方がある',
   factcheck_verdict_mostly_refuted: 'この内容はおおむね虚偽であると確信できる',
   factcheck_verdict_refuted: 'この内容は虚偽であると確信できる',
+  factcheck_verdict_common_sense_refuted: 'AIが常識に基づいて、この内容は虚偽であると判断しました',
   factcheck_verdict_insufficient_evidence: '証拠不足のため判定できない',
   factcheck_verdict_unknown: '判定できない',
   contrib_tips_title: '🙋 どのような資料が役立ちますか？',
@@ -657,7 +684,7 @@ export const messages = {
   privacy_s2_h: '収集する情報',
   privacy_s2_intro: 'プラットフォームは、以下の方法で情報を収集します：',
   privacy_s2_li1:
-    '<strong>OAuth アカウント情報</strong>：Google または GitHub でログインすると、プラットフォームは表示名と email を取得し、Better Auth がプラットフォーム内部で使用する user ID を作成します。',
+    '<strong>OAuth アカウント情報</strong>：Google または GitHub でログインすると、プラットフォームは表示名と email を取得し、Better Auth がプラットフォーム内部で使用する user ID を作成します。また、vTaiwan アカウントの登録日も保存します。',
   privacy_s2_li2:
     '<strong>利用者が生成したコンテンツと作成者のスナップショット</strong>：利用者が作成した議題、提出した資料、投稿した意見、またはボランティアが提出した要約、および提出日時、user ID、提出時点の表示名と email のスナップショット、email を公開するかどうかの選択。',
   privacy_s2_li3:
@@ -676,6 +703,8 @@ export const messages = {
     '<strong>同名の場合は公開が必要</strong>：プラットフォームは書き込み前に再確認します。提出時点で利用停止されていない別のアカウントが同じ公開表示名を使用している場合は、事前に通知して明示的な同意を得たうえで、その新しい内容を email を公開する形で送信します。無断で公開することはなく、既存の内容も遡って変更しません。永久利用停止中のアカウントおよび一時利用停止の期限がまだ切れていないアカウントは名前を占有しません。一時利用停止の期限が切れると、再び名前を占有します。',
   privacy_s3_p4:
     'user ID は Better Auth が生成するプラットフォーム内部の識別子であり、Google や GitHub の公開アカウント名ではありません。user ID は一切公開表示されません。議題、資料、意見、解説ページでは、提出時点の表示名が公開表示されます。email は、上記の任意の公開または同名の場合の必須公開の規則に従って表示されます。',
+  privacy_s3_p5:
+    'vTaiwan アカウントの登録日は公開情報として貢献履歴ページに表示され、すべての訪問者が閲覧できます。この日付は vTaiwan の各サービスで共通して使うアカウントの作成日であり、Civic Talk への初回訪問日や初投稿日ではありません。',
   privacy_s4_h: '情報の利用目的',
   privacy_s4_li1: 'プラットフォームのサービスの提供と維持（議題の作成、資料の収集、意見の集約）',
   privacy_s4_li2: '内容の品質の確保：名前を付記して提出することで、悪意ある投稿のリスクを減らします',
@@ -705,7 +734,7 @@ export const messages = {
   privacy_s8_github_label: 'GitHub：',
   privacy_s9_h: 'ポリシーの更新',
   privacy_s9_p: '当方は、本プライバシーポリシーを随時更新することがあります。重要な変更はプラットフォーム上で告知します。',
-  privacy_s9_date: '最終更新：2026 年 11 月 7 日',
+  privacy_s9_date: '最終更新：2026 年 11 月 19 日',
   report_btn: '⚑ 濫用を報告',
   report_modal_title: '濫用に当たる内容を報告',
   report_reason_label: '報告の理由',

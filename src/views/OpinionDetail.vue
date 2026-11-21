@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppFooter from '../components/AppFooter.vue'
 import AuthorEmailLink from '../components/AuthorEmailLink.vue'
+import AuthorName from '../components/AuthorName.vue'
 import OpinionVote from '../components/OpinionVote.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import { formatDate, useI18n } from '../l10n'
@@ -126,7 +127,7 @@ async function copyLink() {
           <div class="card mb-6">
             <h1 class="mt-0 mb-3 font-serif text-2xl font-bold">{{ t('op_detail_page_title') }}</h1>
             <p class="mb-4 text-sm text-muted">
-              {{ t('issue_created') }} {{ formatDate(opinion.created_at, locale) }} · {{ t('op_author_label') }}：{{ opinion.author_name || t('author_system') }}
+              {{ t('issue_created') }} {{ formatDate(opinion.created_at, locale) }} · {{ t('op_author_label') }}：<AuthorName :name="opinion.author_name" :public-id="opinion.author_public_id" />
               <template v-if="opinion.author_email"> <AuthorEmailLink :email="opinion.author_email" :name="opinion.author_name" /></template>
             </p>
 

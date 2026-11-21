@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import AppHeader from '../components/AppHeader.vue'
 import AppFooter from '../components/AppFooter.vue'
 import AuthorEmailLink from '../components/AuthorEmailLink.vue'
+import AuthorName from '../components/AuthorName.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import { formatDate, useI18n } from '../l10n'
 import { useAuth } from '../composables/useAuth'
@@ -146,9 +147,10 @@ async function copyLink() {
 
             <!-- 後設資訊 -->
             <p class="mt-4 mb-0 text-sm text-muted">
-              {{ t('issue_created') }} {{ formatDate(material.created_at, locale) }} · {{ material.verified_count }} {{ t('mat_contributor') }} · {{ t('mat_author_label') }}：{{
-                material.author_name || t('author_system')
-              }}
+              {{ t('issue_created') }} {{ formatDate(material.created_at, locale) }} · {{ material.verified_count }} {{ t('mat_contributor') }} · {{ t('mat_author_label') }}：<AuthorName
+                :name="material.author_name"
+                :public-id="material.author_public_id"
+              />
               <template v-if="material.author_email"> <AuthorEmailLink :email="material.author_email" :name="material.author_name" /></template>
             </p>
           </div>

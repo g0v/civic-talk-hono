@@ -5,7 +5,7 @@ import { sourceMetadata } from '../source'
 import { renderHeadTags, type HeadConfig } from './heads'
 import { serializeState } from './serialize'
 
-export type PageName = 'home' | 'about' | 'issue' | 'contribute' | 'admin' | 'material' | 'opinion' | 'not-found' | 'terms' | 'privacy' | 'profile' | 'appeals'
+export type PageName = 'home' | 'about' | 'issue' | 'contribute' | 'admin' | 'material' | 'opinion' | 'not-found' | 'terms' | 'privacy' | 'profile' | 'appeals' | 'contributor'
 
 export interface RenderPageOptions {
   hydrate?: {

@@ -1,4 +1,26 @@
 export const messages = {
+  contributor_unnamed: 'Unnamed contributor',
+  contributor_history: 'Public contribution history',
+  contributor_joined: 'Registered with vTaiwan: ',
+  contributor_join_event: 'Registered a shared vTaiwan account',
+  contributor_view_label: 'Contribution history view',
+  contributor_timeline: 'Timeline',
+  contributor_list: 'Yearly list',
+  contributor_kind_issue: 'Issue submissions',
+  contributor_kind_material: 'Material submissions',
+  contributor_kind_briefing: 'Synthesize / create issue briefings',
+  contributor_kind_opinion: 'Publish citizen opinions',
+  contributor_year: '{year}',
+  contributor_count: '{count} entries',
+  contributor_untitled: 'Untitled submission',
+  contributor_version_title: '{title} (version {version})',
+  contributor_public_hint: 'Only currently public submissions are listed. Dates and years use UTC. Each synthesis / briefing version counts as one entry.',
+  contributor_briefing_link_hint: 'Opens the current issue briefing; the body of this historical version will not be shown.',
+  contributor_empty: 'There are no public submissions to show yet. Browse issues to start participating.',
+  contributor_browse: 'Browse issues',
+  contributor_profile_link: 'View my public contribution history',
+  contributor_profile_loading: 'Loading your public contribution history link…',
+  contributor_profile_error: 'Could not load your public contribution history link. Please retry. You can still edit your profile.',
   site_tagline: 'Public Deliberation Platform',
   back_to_issues: '← All Issues',
   loading: 'Loading…',
@@ -188,10 +210,14 @@ export const messages = {
   vol_gen_summarize: 'Generate Summarize Prompt',
   vol_ai_button: 'One-click summary',
   vol_ai_dialog_title: 'Consent to one-click summary',
-  vol_ai_processing: 'The system processes the issue title and description and all eligible materials, including their content, source names, and URLs, and sends the content needed for processing to Cloudflare Workers AI. Hidden materials are excluded. Contributor account fields are not sent, but the text and sources may contain personal information; your consent does not mean that everyone concerned has consented.',
-  vol_ai_private: 'A complete result is visible only to the requester and administrators, and is marked AI-unverified (ai_unverified). It is not published and does not change the existing briefing. Partial or failed results do not replace an existing result.',
-  vol_ai_cost_notice: 'The platform pays model costs; users are not charged. Failures may still incur costs, and there is no automatic retry. Each account is limited to 20 new paid jobs per UTC day, with a five-minute issue cooldown. The platform’s USD 5 daily model budget is an admission estimate, not a cap on all platform charges.',
-  vol_ai_retention: 'Processing data does not expire automatically. Hiding or changing a source stops delivery but retains the data. Private content depending on a deleted source is cleared only after a source check detects deletion or an administrator performs source-level erasure. Billing records, erasure markers, and backups remain subject to retention limits.',
+  vol_ai_processing:
+    'The system processes the issue title and description and all eligible materials, including their content, source names, and URLs, and sends the content needed for processing to Cloudflare Workers AI. Hidden materials are excluded. Contributor account fields are not sent, but the text and sources may contain personal information; your consent does not mean that everyone concerned has consented.',
+  vol_ai_private:
+    'A complete result is visible only to the requester and administrators, and is marked AI-unverified (ai_unverified). It is not published and does not change the existing briefing. Partial or failed results do not replace an existing result.',
+  vol_ai_cost_notice:
+    'The platform pays model costs; users are not charged. Failures may still incur costs, and there is no automatic retry. Each account is limited to 20 new paid jobs per UTC day, with a five-minute issue cooldown. The platform’s USD 5 daily model budget is an admission estimate, not a cap on all platform charges.',
+  vol_ai_retention:
+    'Processing data does not expire automatically. Hiding or changing a source stops delivery but retains the data. Private content depending on a deleted source is cleared only after a source check detects deletion or an administrator performs source-level erasure. Billing records, erasure markers, and backups remain subject to retention limits.',
   vol_ai_privacy_link: 'Read the Privacy Policy and erasure limits',
   vol_ai_language: 'Result language: {language} (the interface language at confirmation)',
   vol_ai_replace: 'A private summary already exists for this language. A new complete result will replace it, even if another person created it.',
@@ -204,7 +230,8 @@ export const messages = {
   vol_ai_extracting: 'Extracting evidence from the materials…',
   vol_ai_comparing: 'Comparing evidence from the materials…',
   vol_ai_generating: 'Generating and validating each section…',
-  vol_ai_saved: 'The complete summary has been saved privately as an AI-unverified result; it has not been published. Result data has been printed to this browser’s developer console. Do not share it.',
+  vol_ai_saved:
+    'The complete summary has been saved privately as an AI-unverified result; it has not been published. Result data has been printed to this browser’s developer console. Do not share it.',
   vol_ai_superseded: 'This job completed, but there is a newer request for this language. We cannot confirm this result as the current summary.',
   vol_ai_unsaved: 'The job completed, but saving this job as the current summary could not yet be confirmed. Check the status again without submitting another job.',
   vol_ai_partial: 'Only a partial result was produced; it was not saved as the current summary and did not replace the previous result.',
@@ -530,6 +557,7 @@ export const messages = {
   factcheck_verdict_mixed: 'Mixed evidence',
   factcheck_verdict_mostly_refuted: 'Mostly refuted',
   factcheck_verdict_refuted: 'Refuted',
+  factcheck_verdict_common_sense_refuted: 'AI judges this content to be false based on common sense',
   factcheck_verdict_insufficient_evidence: 'Insufficient evidence',
   factcheck_verdict_unknown: 'Unable to determine',
   contrib_tips_title: '🙋 What materials help most?',
@@ -671,7 +699,7 @@ export const messages = {
   privacy_s2_h: 'Data We Collect',
   privacy_s2_intro: 'The Platform collects data through the following means:',
   privacy_s2_li1:
-    '<strong>OAuth account information</strong>: When you sign in with Google or GitHub, the Platform obtains your display name and email, and Better Auth creates a platform-internal user ID.',
+    '<strong>OAuth account information</strong>: When you sign in with Google or GitHub, the Platform obtains your display name and email, and Better Auth creates a platform-internal user ID. The Platform also stores your vTaiwan account registration date.',
   privacy_s2_li2:
     '<strong>User-generated content and author snapshots</strong>: Issues you create, materials you submit, opinions you post, or briefings submitted by volunteers, together with the submission time, user ID, a snapshot of your display name and email at the time of submission, and your email disclosure preference.',
   privacy_s2_li3:
@@ -692,6 +720,8 @@ export const messages = {
     '<strong>Required disclosure for duplicate names</strong>: The platform checks again immediately before writing. If another non-banned account uses the same public display name at submission time, it asks for your explicit consent before resubmitting the new content with a public email snapshot. It never silently publishes the email and does not change existing content retroactively. Permanently banned accounts and active temporary bans do not occupy names; an expired temporary ban occupies the name again.',
   privacy_s3_p4:
     'The user ID is a platform-internal identifier generated by Better Auth, not a public Google or GitHub account name; it is never displayed publicly. Issues, materials, opinions, and briefings all publicly display the display name snapshot taken at submission time; email is shown either by the submitter’s choice or by the duplicate-name disclosure rule above.',
+  privacy_s3_p5:
+    'Your vTaiwan account registration date is public information. It is displayed on your contributor history page and is visible to all visitors. This is the creation date of the account shared across vTaiwan services, not the date you first visited or contributed to Civic Talk.',
   privacy_s4_h: 'How We Use Data',
   privacy_s4_li1: 'Providing and maintaining the platform service (issue creation, material collection, opinion aggregation)',
   privacy_s4_li2: 'Ensuring content quality: named attribution reduces the risk of malicious submissions',
@@ -721,7 +751,7 @@ export const messages = {
   privacy_s8_github_label: 'GitHub:',
   privacy_s9_h: 'Policy Updates',
   privacy_s9_p: 'We may update this Privacy Policy from time to time. Significant changes will be announced on the Platform.',
-  privacy_s9_date: 'Last updated: November 7, 2026',
+  privacy_s9_date: 'Last updated: November 19, 2026',
   // Abuse reports (#21)
   report_btn: '⚑ Report Abuse',
   report_modal_title: 'Report Abusive Content',

@@ -21,6 +21,7 @@ function appWithDb() {
 
 async function withVoteDatabase(run: (db: D1Database) => Promise<void>) {
   const sqlite = new DatabaseSync(':memory:')
+  sqlite.exec('CREATE TABLE ct_contributors (user_id TEXT PRIMARY KEY, public_id TEXT UNIQUE)')
   authContext.current = null
   try {
     sqlite.exec(`
@@ -132,7 +133,15 @@ describe('opinion vote routes', () => {
       expect(nonVoter.find(opinion => opinion.id === 1)).toMatchObject({ response_count: 4, vote_agree: null, vote_disagree: null, vote_pass: null, can_view_vote_distribution: false })
       authContext.current = session('author')
       const author = (await (await appWithDb().request('/api/issues/7/opinions', undefined, { ...env, DB: db })).json()) as OpinionWithVote[]
-      expect(author.find(opinion => opinion.id === 1)).toMatchObject({ response_count: 4, vote_agree: 2, vote_disagree: 1, vote_pass: 1, can_view_vote_distribution: true, is_author: true, can_vote: false })
+      expect(author.find(opinion => opinion.id === 1)).toMatchObject({
+        response_count: 4,
+        vote_agree: 2,
+        vote_disagree: 1,
+        vote_pass: 1,
+        can_view_vote_distribution: true,
+        is_author: true,
+        can_vote: false,
+      })
       authContext.current = session('admin', 'admin')
       const admin = (await (await appWithDb().request('/api/issues/7/opinions', undefined, { ...env, DB: db })).json()) as OpinionWithVote[]
       expect(admin.find(opinion => opinion.id === 5)?.response_count).toBeNull()
@@ -143,7 +152,12 @@ describe('opinion vote routes', () => {
   it('投票、改票與撤回回傳即時總數，改票不重複計數，撤回後仍遮蔽分布', async () => {
     await withVoteDatabase(async db => {
       authContext.current = { user: { id: 'voter', name: '投票者', email: 'voter@example.test', image: null }, role: 'user', banned: false, nameChangeCooldownDays: null }
-      const send = (method: 'POST' | 'DELETE', value?: number, id = 1) => appWithDb().request(`/api/opinions/${id}/vote`, { method, headers: { 'Content-Type': 'application/json' }, ...(value !== undefined ? { body: JSON.stringify({ value }) } : {}) }, { ...env, DB: db })
+      const send = (method: 'POST' | 'DELETE', value?: number, id = 1) =>
+        appWithDb().request(
+          `/api/opinions/${id}/vote`,
+          { method, headers: { 'Content-Type': 'application/json' }, ...(value !== undefined ? { body: JSON.stringify({ value }) } : {}) },
+          { ...env, DB: db }
+        )
       const withdrawn = await send('DELETE')
       expect(withdrawn.status).toBe(200)
       expect(await withdrawn.json()).toMatchObject({ response_count: 3, vote_agree: null, vote_disagree: null, vote_pass: null, my_vote: null, can_view_vote_distribution: false })

@@ -41,6 +41,7 @@ describe('opinion vote queries', () => {
   it('runs the issue-scoped aggregate against SQLite and preserves vote visibility', async () => {
     const sqlite = new DatabaseSync(':memory:')
     sqlite.exec(`
+      CREATE TABLE ct_contributors (user_id TEXT PRIMARY KEY, public_id TEXT UNIQUE);
       CREATE TABLE ct_opinions (
         id INTEGER PRIMARY KEY, issue_id INTEGER NOT NULL, summary TEXT, created_at TEXT,
         abuse_flagged INTEGER NOT NULL, author_id TEXT, author_name TEXT, author_email TEXT,

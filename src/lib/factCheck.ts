@@ -54,6 +54,16 @@ export function parseFactCheckResult(value: unknown): FactCheckResult | null {
   }
 }
 
+export function factCheckUsesCommonSenseLabel(result: FactCheckResult): boolean {
+  return (
+    (result.verdict === 'refuted' || result.verdict === 'mostly_refuted') &&
+    result.factuality !== null &&
+    result.factuality < 0.5 &&
+    result.confidence !== null &&
+    result.confidence <= 0.5
+  )
+}
+
 /**
  * 同源查核 endpoint。由 civic-talk Worker 透過 Service Binding 呼叫 fact-check-core，
  * 需要登入，但不向瀏覽器透出任何金鑰。

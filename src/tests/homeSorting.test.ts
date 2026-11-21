@@ -14,8 +14,9 @@ type Row = Record<string, string | number | null>
 function sqliteDb(tables: Record<string, Row[]>) {
   const sqlite = new DatabaseSync(':memory:')
   const schema: Record<string, string> = {
+    ct_contributors: 'user_id TEXT PRIMARY KEY, public_id TEXT UNIQUE',
     ct_issues:
-      'id INTEGER PRIMARY KEY, title TEXT, description TEXT, status TEXT, polis_id TEXT, created_at TEXT, last_activity_at TEXT, is_closed INTEGER NOT NULL DEFAULT 0, closure_reason TEXT, closure_changed_at TEXT, tags TEXT, abuse_flagged INTEGER, author_name TEXT, author_email TEXT, show_email INTEGER',
+      'id INTEGER PRIMARY KEY, title TEXT, description TEXT, status TEXT, polis_id TEXT, created_at TEXT, last_activity_at TEXT, is_closed INTEGER NOT NULL DEFAULT 0, closure_reason TEXT, closure_changed_at TEXT, tags TEXT, abuse_flagged INTEGER, author_id TEXT, author_name TEXT, author_email TEXT, show_email INTEGER',
     ct_materials: 'id INTEGER PRIMARY KEY, issue_id INTEGER, created_at TEXT, abuse_flagged INTEGER',
     ct_opinions: 'id INTEGER PRIMARY KEY, issue_id INTEGER, created_at TEXT, abuse_flagged INTEGER, author_id TEXT',
     ct_opinion_votes: 'id INTEGER PRIMARY KEY, opinion_id INTEGER, voter_id TEXT, value INTEGER',
@@ -111,6 +112,7 @@ describe('寫入路徑更新 last_activity_at（#77）', () => {
   function writableDb() {
     const sqlite = new DatabaseSync(':memory:')
     sqlite.exec(`
+      CREATE TABLE ct_contributors (user_id TEXT PRIMARY KEY, public_id TEXT UNIQUE);
       CREATE TABLE ct_issues (id INTEGER PRIMARY KEY, created_at TEXT, last_activity_at TEXT, status TEXT);
       CREATE TABLE ct_materials (id INTEGER PRIMARY KEY, issue_id INTEGER, source_name TEXT, source_url TEXT, stance TEXT, content TEXT, author_id TEXT, author_name TEXT, author_email TEXT, show_email INTEGER, terms_version TEXT, terms_accepted_at TEXT, abuse_flagged INTEGER, created_at TEXT);
       CREATE TABLE ct_opinions (id INTEGER PRIMARY KEY, issue_id INTEGER, summary TEXT, author_id TEXT, author_name TEXT, author_email TEXT, show_email INTEGER, terms_version TEXT, terms_accepted_at TEXT, abuse_flagged INTEGER, created_at TEXT);

@@ -26,6 +26,7 @@ import PrivacyView from '../views/Privacy.vue'
 import ProfileView from '../views/Profile.vue'
 import TermsView from '../views/Terms.vue'
 import AppealsView from '../views/Appeals.vue'
+import ContributorView from '../views/Contributor.vue'
 
 const issue = {
   id: 1,
@@ -87,6 +88,11 @@ describe('routable view SSR smoke tests', () => {
     { name: 'opinion detail', component: OpinionDetailView, props: { issueId: 1, opinionId: 1, initialData: { issue, opinion } } },
     { name: 'privacy', component: PrivacyView },
     { name: 'profile', component: ProfileView },
+    {
+      name: 'contributor',
+      component: ContributorView,
+      props: { initialHistory: { public_id: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', name: '貢獻者', joined_at: '2026-01-01T00:00:00Z', contributions: [] } },
+    },
     { name: 'terms', component: TermsView },
   ]
 
@@ -181,7 +187,7 @@ describe('home issue preview', () => {
     expect(html).toContain('議題說明')
     expect(html).toContain('3 份素材')
     expect(html).toContain('5 份意見')
-    expect(html).toContain('建立者：建立者')
+    expect(html.replace(/<[^>]*>/g, '')).toContain('建立者：建立者')
     expect(html).toContain('href="/issues/1"')
     expect(html).toContain('進入議題')
   })

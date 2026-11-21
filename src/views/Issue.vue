@@ -4,6 +4,7 @@ import { Carousel, Navigation, Pagination, Slide } from 'vue3-carousel'
 import AppHeader from '../components/AppHeader.vue'
 import AppFooter from '../components/AppFooter.vue'
 import AuthorEmailLink from '../components/AuthorEmailLink.vue'
+import AuthorName from '../components/AuthorName.vue'
 import LongTextContent from '../components/LongTextContent.vue'
 import OpinionVote from '../components/OpinionVote.vue'
 import OpinionDeck from '../components/OpinionDeck.vue'
@@ -794,9 +795,11 @@ async function submitOpinion() {
             </h1>
             <!-- <p v-if="issue.abuse_flagged !== 3 && issue.description" class="mt-0 mb-3 whitespace-pre-line text-muted">{{ issue.description }}</p> -->
             <p class="m-0 text-sm text-muted" :class="{ 'hidden sm:block': activeStep === 'comments' }" v-show="!activeStep || activeStep === 'comments'">
-              {{ t('issue_created') }} {{ formatDate(issue.created_at, locale) }} · {{ materials.length }} {{ t('issue_materials_unit') }} · {{ t('issue_author_label') }}：{{
-                issue.author_name || t('author_system')
-              }}<template v-if="issue.author_email"> <AuthorEmailLink :email="issue.author_email" :name="issue.author_name" /></template>
+              {{ t('issue_created') }} {{ formatDate(issue.created_at, locale) }} · {{ materials.length }} {{ t('issue_materials_unit') }} · {{ t('issue_author_label') }}：<AuthorName
+                :name="issue.author_name"
+                :public-id="issue.author_public_id"
+              />
+              <template v-if="issue.author_email"> <AuthorEmailLink :email="issue.author_email" :name="issue.author_name" /></template>
             </p>
             <button type="button" class="btn btn-secondary btn-sm mt-3" :class="activeStep === 'comments' ? 'hidden sm:inline-flex' : 'inline-flex'" @click="copyRssUrl">
               {{ t('issue_rss_subscribe') }}
@@ -923,10 +926,10 @@ async function submitOpinion() {
                   <template v-if="briefing && briefing.abuse_flagged !== 2">
                     <p class="mt-6 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
                       <span
-                        >{{ t('brief_version_prefix') }}{{ briefing.version }}，{{ t('brief_updated') }} {{ formatDate(briefing.created_at, locale) }} · {{ t('brief_author_label') }}：{{
-                          briefing.author_name || t('author_system')
-                        }}</span
-                      >
+                        >{{ t('brief_version_prefix') }}{{ briefing.version }}，{{ t('brief_updated') }} {{ formatDate(briefing.created_at, locale) }} · {{ t('brief_author_label') }}：<AuthorName
+                          :name="briefing.author_name"
+                          :public-id="briefing.author_public_id"
+                      /></span>
                       <AuthorEmailLink v-if="briefing.author_email" :email="briefing.author_email" :name="briefing.author_name" />
                       <button
                         v-if="briefing.positions"
@@ -1039,7 +1042,7 @@ async function submitOpinion() {
               <p v-if="m.abuse_flagged !== 2 && m.abuse_flagged !== 3" class="mt-2 mb-0 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
                 <span>{{ formatDate(m.created_at, locale) }} · {{ m.verified_count }} {{ t('mat_contributor') }}</span>
                 <span>
-                  {{ t('mat_author_label') }}：{{ m.author_name || t('author_system') }}
+                  {{ t('mat_author_label') }}：<AuthorName :name="m.author_name" :public-id="m.author_public_id" />
                   <template v-if="m.author_email">
                     <AuthorEmailLink :email="m.author_email" :name="m.author_name" />
                   </template>
@@ -1407,7 +1410,7 @@ async function submitOpinion() {
                       <p class="mt-0 mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
                         <span>{{ formatDate(o.created_at, locale) }}</span>
                         <span>
-                          {{ t('op_author_label') }}：{{ o.author_name || t('author_system') }}
+                          {{ t('op_author_label') }}：<AuthorName :name="o.author_name" :public-id="o.author_public_id" />
                           <template v-if="o.author_email">
                             <AuthorEmailLink :email="o.author_email" :name="o.author_name" />
                           </template>

@@ -97,6 +97,16 @@ export function headForProfile(origin: string): HeadConfig {
   }
 }
 
+export function headForContributor(name: string | null, publicId: string, origin: string): HeadConfig {
+  const title = `${name || '貢獻者'}的貢獻軌跡 — ${SITE_NAME}`
+  const description = '公開議題、素材、彙整與公民意見的貢獻記錄。'
+  return {
+    title,
+    description,
+    meta: [...buildOg(title, description, DEFAULT_OG_IMAGE(origin), `${origin}/contributors/${publicId}`), { name: 'robots', content: 'noindex,nofollow' }],
+  }
+}
+
 export function headForAppeals(origin: string): HeadConfig {
   const title = `濫用與申訴 — ${SITE_NAME}`
   const description = '查看自己的自動審查項目與帳號處置，並提出申訴。'

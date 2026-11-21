@@ -7,6 +7,7 @@ import { formatDate, useI18n } from '../l10n'
 import { renderSafeMarkdown } from '../markdown/renderSafeMarkdown'
 import { writeIssueOpinionAnchor } from '../lib/issueNavigation'
 import AuthorEmailLink from './AuthorEmailLink.vue'
+import AuthorName from './AuthorName.vue'
 import OpinionVote from './OpinionVote.vue'
 
 const props = defineProps<{
@@ -74,7 +75,7 @@ async function finish(state?: OpinionVoteState) {
           <p class="mt-0 mb-6 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-vt-fg-2">
             <span>{{ formatDate(current.created_at, locale) }}</span>
             <span class="break-words">
-              {{ current.author_name || t('author_system') }}
+              <AuthorName :name="current.author_name" :public-id="current.author_public_id" />
               <AuthorEmailLink v-if="current.author_email" :email="current.author_email" :name="current.author_name" />
             </span>
             <a :href="`/issues/${current.issue_id}/comment/${current.id}`" class="text-vt-fg-2 underline">{{ t('card_permalink') }}</a>
