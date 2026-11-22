@@ -341,9 +341,13 @@ describe('生成模型專項輸出與出處', () => {
     for (const section of ['consensus', 'disputes', 'positions'] as const) {
       const payload = JSON.parse(buildGenerationRequest(section, groupedInput).input.messages[1].content)
       for (const unit of extracted.evidence) {
-        expect(payload.evidence.find((item: { id: string }) => item.id === unit.id)).toEqual({ id: unit.id, material_id: 25, quote: unit.quote })
+        expect(payload.evidence.find((item: { id: string }) => item.id === unit.id)).toEqual({
+          id: unit.id, material_id: 25, quote: unit.quote, ...(section === 'positions' ? { incompatible_with: [] } : {}),
+        })
       }
-      expect(payload.evidence.find((item: { id: string }) => item.id === 'other')).toEqual({ id: 'other', material_id: 26, quote: other.content })
+      expect(payload.evidence.find((item: { id: string }) => item.id === 'other')).toEqual({
+        id: 'other', material_id: 26, quote: other.content, ...(section === 'positions' ? { incompatible_with: [] } : {}),
+      })
     }
   })
 
@@ -365,11 +369,11 @@ describe('生成模型專項輸出與出處', () => {
       expect(payload.section).toBe(section)
       expect(payload.language).toBe('zh-TW')
       expect(payload.evidence).toEqual([
-        { id: 'e1', material_id: 25, quote: evidence[0].quote },
-        { id: 'e2', material_id: 26, quote: evidence[1].quote },
-        { id: 'e3', material_id: 27, quote: evidence[2].quote },
-        { id: 'e4', material_id: 28, quote: extraSources[0].content },
-        { id: 'e5', material_id: 29, quote: extraSources[1].content },
+        { id: 'e1', material_id: 25, quote: evidence[0].quote, ...(section === 'positions' ? { incompatible_with: ['e3'] } : {}) },
+        { id: 'e2', material_id: 26, quote: evidence[1].quote, ...(section === 'positions' ? { incompatible_with: [] } : {}) },
+        { id: 'e3', material_id: 27, quote: evidence[2].quote, ...(section === 'positions' ? { incompatible_with: ['e1'] } : {}) },
+        { id: 'e4', material_id: 28, quote: extraSources[0].content, ...(section === 'positions' ? { incompatible_with: [] } : {}) },
+        { id: 'e5', material_id: 29, quote: extraSources[1].content, ...(section === 'positions' ? { incompatible_with: [] } : {}) },
       ])
       expect(payload.comparison.direct_comparisons).toEqual(analysis.direct_comparisons.map(({ evidence_ids, relation }) => ({ evidence_ids, relation })))
       expect(payload.comparison.reverse_diagnostics).toEqual([{ evidence_ids: ['e2', 'e1'], relation: 'disagree' }])
@@ -953,6 +957,10 @@ describe('生成模型專項輸出與出處', () => {
     conflicting.items[0].opinions[0].description[0].evidence_ids.push('e3')
     conflicting.exclusions = []
     await expect(parseGenerationResponse('positions', completion(conflicting), input)).rejects.toThrow('generation_contradictory_group')
+    const separateOpinions = positionsOutput()
+    separateOpinions.items[0].opinions.push({ Title: [cited('反對意見', 'e3')], description: [cited('反對同一方案。', 'e3')] })
+    separateOpinions.exclusions = []
+    await expect(parseGenerationResponse('positions', completion(separateOpinions), input)).rejects.toThrow('generation_contradictory_group')
     const invented = positionsOutput()
     Object.assign(invented.items[0], { Sources: [{ href: 'https://invented.invalid/' }] })
     await expect(parseGenerationResponse('positions', completion(invented), input)).rejects.toThrow('generation_invalid_schema')

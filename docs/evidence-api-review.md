@@ -39,6 +39,24 @@ Clef、三分區及必要補完接收主張與獨立語境，並明示不得把�
 
 新設定／fixture request 指紋隔離舊快取。同版本同輸入的 partial draft 也會命中既有結果，重按建立不自動補跑失敗分項；只有真實協定／輸入變更才形成不同工作，不為重跑亂改 key。已完成的舊工作仍可按既有權限讀取；舊 active 工作若設定不同，沿用 `configuration_changed` 政策在模型呼叫前停止，不把舊 raw 混入新流程，也不釋放 unknown 或重設配額。新版本的完整工作仍可能包含付費擷取／比較／生成，不能視為只重跑共識；真人驗收須另核範圍，不自動執行。這輪程式接線不需新 migration，亦未代表已部署或完整真人／付費驗收通過。
 
+### 2026-11-21：立場群相容性與排除清單
+
+第一階段以相容立場／關切／方案分群，不把同一爭議的支持與反對方放在同群不同 opinions。立場請求的每筆 evidence 新增 `incompatible_with`，只由正式 direct `disagree` 配對對稱推導並排序；不把 reverse diagnostics、uncertain 或未完成比較當成互斥，也不把未列互斥解讀為明示支持。原完整比較資料保留，新增資訊計入原有 48 KiB 請求上限，不截斷或增加模型呼叫。
+
+模型須核對整群所有意見 Title／description 引用聯集，而非只核對單條意見。`exclusions` 只列全體輸入 ID 減去所有群採用聯集的剩餘 ID；重疊採用不等於排除。程式仍拒絕直接反對的群、採用兼排除、未交代證據及未知引用，不自動拆群、刪除 exclusion 或修補 raw。提示版本為 `specialized-evidence-v17-position-compatible-grouping`，輸入版本為 `section-values-v8-position-incompatibilities`；三分項 schema、兩階段群名補完、模型參數、費用及來源守門維持既有契約。此改動讓約束更直接，不能保證每次模型均遵守，實際穩定性仍須真人驗收。
+
+### 2026-11-20：尾端議題說明 introduction
+
+原本共識／爭點／立場三分項及單次必要補完維持原生成方式。結構化 JSON 完成驗證後，額外一次相同 Gemma 模型讀取工作快照中的議題標題／簡介，以及這份完成的三分項 JSON，產出 Markdown 議題說明。新工作的 `data` 同層包含 `introduction` 字串、`consensus`、`disputes`、`positions`。這是私有、AI 未驗證的編輯性說明，不能把空段或失敗狀態寫成「沒有歧見」，也不能宣稱逐句已通過原文引用驗證。原三分項與 citation map 保持不變；不因新說明改寫結論或補造引用。
+
+此輪依使用者明示需求增加尾端呼叫，因此最多為三分項、必要補完及 introduction 共五輪 Gemma；沒有自動重試。`prepare-introduction`／`generate-introduction`／`validate-introduction` 使用獨立工件及 `introduction:draft` usage，沿用來源／帳號守門、費用預留、結算、unknown 保留及 raw 保存。提示於 2026-11-21 更新為 `issue-introduction-v2-integrated-narrative`，schema 仍為 `markdown-introduction-v1`；完整提示、schema、參數及哨兵請求參與設定指紋，請求仍受 48 KiB byte 上限保護，不截斷 JSON。
+
+敘述任務先理解議題核心問題、已提供的背景及各方關切之間的關係，再按議題邏輯寫成可獨立閱讀的完整文章。不得依「簡介、共識、爭點、立場」逐段拼接 Overview 或列舉每一筆項目；以連貫段落整合相關觀點，保留歸屬、必要條件及少數意見，不為銜接而捏造因果、解法或共同立場。此為提示品質調整，不增加呼叫或以標題字串規則拒收；實際連貫性仍須真人驗收，不以 prompt 文句斷言假稱已驗模型品質。
+
+輪詢另有 `generation_progress.introduction`（僅該階段已出現事件時提供），最終 provenance 保留 introduction 的 plan／結果／raw 工件 ID，原始 request 含確切輸入與 SHA。新工作只有在 introduction 驗證成功後才發布最終工件；失敗／預算不足／來源失效不發布缺欄位結果，已完成分項仍依既有保留政策保存，不重打。
+
+舊保存工作與人改資料可沒有 introduction；若人改包含該欄，必須是非空文字，修訂與差異照原路徑保存完整 JSON。目前私有結果的 JSON／DEV console 會保留 Markdown 字串；需要顯示 Markdown 的消費者應沿用 `renderSafeMarkdown`，不得直接輸出 HTML。不自動改寫公開 briefing、議題狀態或發布。新增階段仍需真人品質驗收，本機合成驗收不代表已付費驗收或部署。
+
 ### 歷史 P0／E0 受控回退紀錄
 
 以下保留先前回退及離線診斷的原因；版本與請求一致性描述僅針對當時工作，不代表上方新預設。

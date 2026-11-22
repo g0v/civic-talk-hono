@@ -125,7 +125,8 @@ function generationProgress(events: unknown[], status: ExecutionStatus, errorCod
   const sections = Object.fromEntries(
     GENERATION_SECTIONS.map(section => [section, { status: 'pending', reason: null as string | null, artifact_id: null as string | null, raw_artifact_id: null as string | null }])
   ) as Record<GenerationSection, { status: string; reason: string | null; artifact_id: string | null; raw_artifact_id: string | null }>
-  let currentSection: GenerationSection | 'completion' | null = null
+  let currentSection: GenerationSection | 'completion' | 'introduction' | null = null
+  let introduction: { status: string; reason: string | null; artifact_id: string | null; raw_artifact_id: string | null } | null = null
   let completion: { status: string; reason: string | null; artifact_id: string | null; raw_artifact_id: string | null } = {
     status: 'pending',
     reason: null,
@@ -136,6 +137,24 @@ function generationProgress(events: unknown[], status: ExecutionStatus, errorCod
   let present = false
   for (const event of events) {
     if (!object(event)) continue
+    if (event.stage === 'introduction') {
+      present = true
+      introduction ??= { status: 'pending', reason: null, artifact_id: null, raw_artifact_id: null }
+      if (event.phase === 'started') {
+        introduction.status = 'running'
+        currentSection = 'introduction'
+      }
+      if (event.phase === 'finished' && object(event.outcome) && ['completed', 'failed'].includes(String(event.outcome.status))) {
+        introduction = {
+          status: String(event.outcome.status),
+          reason: typeof event.outcome.reason === 'string' ? event.outcome.reason : null,
+          artifact_id: typeof event.outcome.artifact_id === 'string' ? event.outcome.artifact_id : null,
+          raw_artifact_id: typeof event.outcome.raw_artifact_id === 'string' ? event.outcome.raw_artifact_id : null,
+        }
+        if (currentSection === 'introduction') currentSection = null
+      }
+      continue
+    }
     if (event.stage === 'completion') {
       present = true
       if (event.phase === 'started') {
@@ -185,10 +204,14 @@ function generationProgress(events: unknown[], status: ExecutionStatus, errorCod
       completion.status = completion.status === 'running' ? 'failed' : 'not_started'
       completion.reason = errorCode
     }
+    if (introduction && (introduction.status === 'pending' || introduction.status === 'running')) {
+      introduction.status = 'failed'
+      introduction.reason = errorCode
+    }
     currentSection = null
   }
   if ((status === 'ai_draft' || status === 'partial_draft') && completion.status === 'pending') completion.status = 'not_started'
-  return { current_section: currentSection, estimated_micro_usd: estimatedMicroUsd, sections, completion }
+  return { current_section: currentSection, estimated_micro_usd: estimatedMicroUsd, sections, completion, ...(introduction ? { introduction } : {}) }
 }
 
 export function registerEvidenceRoutes(app: EvidenceApp): void {

@@ -20,6 +20,7 @@ import {
 } from './models'
 import { statusOverview } from './overviewStatus'
 import { WORKFLOW_CONTROL_POLICY } from './workflowPolicy'
+import { buildIntroductionRequest, INTRODUCTION_OUTPUT_SCHEMA, INTRODUCTION_PARAMETERS, INTRODUCTION_PROMPT_VERSION, INTRODUCTION_SCHEMA_VERSION, INTRODUCTION_SYSTEM_PROMPT } from './introduction'
 
 export type GenerationLanguage = 'zh-TW' | 'en' | 'ja'
 export const GENERATION_SECTIONS = ['consensus', 'disputes', 'positions'] as const
@@ -62,6 +63,7 @@ export interface DraftGenerationData {
 }
 
 export interface GenerationData {
+  introduction?: string
   consensus: { Overview: string; items: Opinion[] }
   disputes: { Overview: string; items: Opinion[] }
   positions: { Overview: string; items: Position[] }
@@ -375,6 +377,9 @@ const SECTION_INSTRUCTIONS = {
   disputes:
     '先檢視所有已驗證證據與關係，而非只看分歧種子；依可獨立回答的爭議問題分組，每個問題只產生一項。對同一問題的多組統計數據與證據配對應彙整在該項，保留所有相關側、各自主張及可比較的人群、時間和條件，不得每個配對另列一項；不同問題則不可合併。同一證據可以支持不同問題。同一素材可報導不同說話者或對立主張，允許各側來自同一素材，但每側必須以不同 evidence ID 的明示論述支持，不得將同一證據重複放在兩側。單一素材中的兩側不是跨素材佐證，同源關係只能是生成提案，不可冒稱 Clef 正式判斷。逐一檢視所有獨立問題，零、一、二或更多項均可，不為湊數拆分、重複或虛構爭議。question 是逐句附引用的陣列，具體寫出單一可回答的問題及其範圍，引用必須屬於該項的 sides。不同條件下的主張可能並存：整體增長與特定群體的風險未必矛盾。contradiction 是可比條件下不相容的事實結論；opposition 是相反的明示立場或建議；tension 是可能並存的策略、優先順序或價值張力。不可憑語氣虛構矛盾，或把張力當作正式 disagree；agree 配對不可說成矛盾或對立。每側 claim 必須引用該側全部證據，description 必須引用每側；comparison_conditions 和 side claim 均為逐句附引用的陣列。不得提供 origin 或 formal relation，程式會依直接比較推導。',
   positions:
+    'A position group represents compatible stated stances, concerns, or approaches, not all sides of a debate topic. Do not put support and opposition in the same group to present a balanced debate, even as separate opinions. Keep opposing stances in separate groups; preserve their attribution and conditions rather than dropping a minority view.\n' +
+    'Each evidence item includes incompatible_with: the IDs formally judged to disagree with it. For every proposed group, form the union of ALL Title and description evidence_ids across ALL its opinions. No member of that union may have an incompatible_with ID in the union. Check this entire-group constraint before returning, not just each opinion separately; shared topics or intermediary claims cannot bridge an incompatible pair.\n' +
+    'Determine exclusions only after forming the adopted ID union across every group. An ID cited anywhere is adopted, including an ID reused by compatible groups, and MUST NOT be excluded. List only input IDs absent from that union, with a genuine reason for not using them; if every ID is used, exclusions is []. A reason saying that an ID is used in another group is never an exclusion reason.\n' +
     'This is the opinion-grouping stage only. Independently group explicit concerns, claims, or approaches from all evidence; preserve independent concerns, minority views, and conditions without requiring one group per material or a fixed number of groups. One material may occur in multiple groups and one group may include multiple materials. Each group contains only a unique group_id and opinions. Do not generate name or Core_concern; a separate later call will generate those fields from the validated group members.\n' +
     'Write real, substantive cited Title and description sentences for every opinion; use multiple opinions when needed, never dummy text or decorative lists of IDs. Their citation union alone determines group membership. Do not declare group evidence_ids or Sources. For every pair in comparison.direct_comparisons whose relation is "disagree", the two evidence IDs MUST NOT both occur in the same group union, even in different opinions. A shared topic or compatible intermediary does not override this constraint. Split conflicting evidence into separate, internally compatible groups or explicitly exclude it. Overlap between compatible groups is allowed.\n' +
     'Audit ALL input evidence IDs against the union of opinion citations across all groups. Every input ID must be either adopted by at least one opinion or listed exactly once in exclusions with an explicit reason: no missing IDs and no ID both adopted and excluded. Do not rely on later group labels to account for any evidence. Write Overview from the adopted groups and their opinion citations. Emit only the schema-compliant JSON, not the audit or intermediate membership sets.',
@@ -691,7 +696,16 @@ function generationPayload(section: GenerationSection, input: GenerationInput, c
   return {
     section,
     language: input.language,
-    evidence: [...input.evidence].sort((a, b) => compareStrings(a.id, b.id)).map(({ id, material_id, quote, context }) => ({ id, material_id, quote, ...(context ? { context: context.text } : {}) })),
+    evidence: [...input.evidence].sort((a, b) => compareStrings(a.id, b.id)).map(({ id, material_id, quote, context }) => ({
+      id, material_id, quote,
+      ...(context ? { context: context.text } : {}),
+      ...(section === 'positions' ? {
+        incompatible_with: comparison.direct_comparisons
+          .filter(pair => pair.relation === 'disagree' && pair.evidence_ids.includes(id))
+          .map(pair => pair.evidence_ids[0] === id ? pair.evidence_ids[1] : pair.evidence_ids[0])
+          .sort(compareStrings),
+      } : {}),
+    })),
     comparison: {
       direct_comparisons: comparison.direct_comparisons.map(relation),
       reverse_diagnostics: comparison.reverse_diagnostics.map(relation),
@@ -1077,7 +1091,7 @@ function syncHash(value: string): string {
 }
 
 // Gemma 原生 Chat 回應只取明確 stop 的唯一 assistant content；不讀取或拼接思考欄位。
-function parseNativeJson(value: unknown): unknown {
+export function parseNativeJson(value: unknown): unknown {
   if (!isObject(value) || typeof value.model !== 'string' || !Array.isArray(value.choices) || value.choices.length !== 1) throw new Error('generation_invalid_completion')
   const choice = value.choices[0]
   if (!isObject(choice) || choice.index !== 0) throw new Error('generation_invalid_completion')
@@ -1542,6 +1556,19 @@ export async function pipelineSettings() {
     fixture_requests: { clairic, clef, generation },
     generation_schemas: GENERATION_OUTPUT_SCHEMAS,
     completion: completionPolicy(),
+    introduction: {
+      prompt_version: INTRODUCTION_PROMPT_VERSION,
+      schema_version: INTRODUCTION_SCHEMA_VERSION,
+      prompt: INTRODUCTION_SYSTEM_PROMPT,
+      schema: INTRODUCTION_OUTPUT_SCHEMA,
+      parameters: INTRODUCTION_PARAMETERS,
+      request: buildIntroductionRequest(
+        { title: 'Fixture issue', description: 'Fixture background.' },
+        { consensus: { Overview: 'A', items: [] }, disputes: { Overview: 'B', items: [] }, positions: { Overview: 'C', items: [] } },
+        'zh-TW'
+      ),
+      source: 'issue-title-description-and-final-structured-data; ai-unverified-editorial-markdown; original-section-citations-unchanged',
+    },
     workflow_control: WORKFLOW_CONTROL_POLICY,
   }
   const hashes = {
