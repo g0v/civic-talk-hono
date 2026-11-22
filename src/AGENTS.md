@@ -73,6 +73,8 @@
 - 無自動 TTL；hidden／changed 只撤下留 payload，失聯 fail-closed；deleted 被查核／對帳發現或管理按來源 erase 才清跨依賴私有 payload／diff，非單 job 自助刪除、不刪業務來源；留帳號 ID／hash／告知版本時間／usage／unknown／永久 tombstone，來源 ID 不再入場。
 - 不保證即時發現刪除、撤回在途呼叫或即時清 D1 Time Travel；保留原始 0017 SQL／ledger、私有 .wrangler 狀態與核准公開結果，不以清理重設帳本。業務 DB 含來源快照、完整模型 request/response、引用、人改／diff；模型不收作者快照欄但正文／名稱／URL 可能含個資，未匿名化，推論政策非 D1 零留存；備份／營運／安全／法律例外與 info@vtaiwan.tw 權利請求見手冊及三語告知。
 
+- 三分項與既有補完的模型引用採 request-local `e1`／`e2` 短 ID，依全體 canonical ID 字典序編號，補完子集不重編號；所有關係、互斥、候選與引用同步映射，schema 列舉合法 ID。解析只精確解碼後走原來源／引用／互斥／覆蓋守門，未知或舊 namespace 拒收；不改文句、分類、群組或補缺引用。`GenerationRequest.evidence_id_map` 僅存 plan sidecar，不送模型；API／citation map／source evidence 仍 canonical，raw 不改，改版須真指紋隔離。
+
 ## ANTI-PATTERNS
 - 不新增 vue-router／vue-i18n、每頁 client entry／Rollup input；全站 router、CSS 載入等結構變動先確認。不恢復 ADMIN_PASSWORD／X-Admin-Token／checkAdmin()／POST /api/admin/login；不對 DB_AUTH 做原始 SQL INSERT/UPDATE/DELETE、auth DDL 或本站 migrations/auth。
 - 改 bug 補可重現回歸；安全／隱私／狀態／排序／限制／併發回歸放 tests，從 vite-plus/test 匯入；i18n 測 key／插值並人工核翻譯，純樣式／文案不鎖無關字串。API／DB 補 CRUD、狀態、400/401/403/404、隱私／CSRF smoke，路由驗新舊 URL；本機檢查不冒充正式驗收。

@@ -11,11 +11,11 @@ export const MODEL_VERSIONS = {
   clairic_prompt: 'claims-list-p1-v1',
   clef_prompt: 'symmetric-four-way-v3-claim-context',
   clef_batching: 'canonical-byte-budget-v1',
-  generation_prompt: 'specialized-evidence-v17-position-compatible-grouping',
-  generation_schema: 'specialized-cited-v7-consensus-citations',
-  generation_input: 'section-values-v8-position-incompatibilities',
-  generation_completion_prompt: 'missing-fields-only-v5-position-labels',
-  generation_completion_schema: 'cited-field-patches-v2-position-labels',
+  generation_prompt: 'specialized-evidence-v18-local-evidence-ids',
+  generation_schema: 'specialized-cited-v8-local-evidence-ids',
+  generation_input: 'section-values-v9-local-evidence-ids',
+  generation_completion_prompt: 'missing-fields-only-v6-local-evidence-ids',
+  generation_completion_schema: 'cited-field-patches-v3-local-evidence-ids',
   pricing: PRICING_VERSION,
 } as const
 

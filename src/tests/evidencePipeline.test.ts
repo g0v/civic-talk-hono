@@ -1264,25 +1264,33 @@ describe('evidence API 與實際 SQLite 工作流', () => {
         { name: null, Core_concern: null, Sources: [secondSource] },
       ] },
     })
-    expect(plan.targets).toEqual([
+    const canonicalTargets = [
       { pointer: '/consensus/Overview', evidence_ids: [first, second].sort() },
       { pointer: '/positions/items/0/name', evidence_ids: [first, second].sort() },
       { pointer: '/positions/items/0/Core_concern', evidence_ids: [first, second].sort() },
       { pointer: '/positions/items/1/name', evidence_ids: [second] },
       { pointer: '/positions/items/1/Core_concern', evidence_ids: [second] },
+    ]
+    expect(plan.targets).toEqual(canonicalTargets)
+    const modelIds = new Map([[first, 'e1'], [second, 'e2'], [excluded, 'e3']])
+    const primaryPlan = artifacts.find(item => object(item.payload).stage === 'generation_plan')
+    if (!primaryPlan) throw new TypeError('generation plan missing')
+    const primaryRequest = object(object(object(primaryPlan.payload).requests).positions)
+    expect(primaryRequest.evidence_id_map).toEqual([
+      { model_id: 'e1', evidence_id: first }, { model_id: 'e2', evidence_id: second }, { model_id: 'e3', evidence_id: excluded },
     ])
     const completionRaw = object(local.sqlite.prepare("SELECT a.payload FROM ct_ai_artifacts a JOIN ct_ai_usage u ON u.id = a.attempt_id WHERE a.kind = 'raw' AND u.step_key = 'complete:draft'").get())
     if (typeof completionRaw.payload !== 'string') throw new TypeError('completion raw missing')
     const completionRequest = generationPayload(GENERATION_MODEL, object(JSON.parse(completionRaw.payload)).request)
     if (!completionRequest || !Array.isArray(completionRequest.evidence)) throw new TypeError('completion request missing')
-    expect(completionRequest.evidence.map(object).map(item => item.id)).toEqual([first, second].sort())
-    expect(completionRequest.targets).toEqual(plan.targets)
+    expect(completionRequest.evidence.map(object).map(item => item.id)).toEqual(['e1', 'e2'])
+    expect(completionRequest.targets).toEqual(canonicalTargets.map(target => ({ ...target, evidence_ids: target.evidence_ids.map(id => modelIds.get(id)) })))
     const consensusRaw = object(local.sqlite.prepare("SELECT a.payload FROM ct_ai_artifacts a JOIN ct_ai_usage u ON u.id = a.attempt_id WHERE a.kind = 'raw' AND u.step_key = 'generate:consensus'").get())
     if (typeof consensusRaw.payload !== 'string') throw new TypeError('consensus raw missing')
     const primary = object(JSON.parse(consensusRaw.payload))
     expect(JSON.parse(String(responseMessage(primary.response).content))).toMatchObject({
       Overview: null,
-      items: [{ description: [{ evidence_ids: [first, second].sort() }] }],
+      items: [{ description: [{ evidence_ids: ['e1', 'e2'] }] }],
     })
     for (const evidence of completionRequest.evidence.map(object)) {
       expect(Object.keys(evidence).sort()).toEqual(['context', 'id', 'quote', 'raw_quote'])
@@ -1414,7 +1422,10 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     expect(detail.citation_map.some(entry => entry.pointer.startsWith('/positions/'))).toBe(false)
     if (violation === 'direct_disagree') {
       expect(contraryIds).toHaveLength(2)
-      expect(detail.diagnostics.comparisons.direct_comparisons).toContainEqual(expect.objectContaining({ evidence_ids: contraryIds, relation: 'disagree' }))
+      const canonicalIds = detail.evidence.map(item => item.id).sort()
+      expect(detail.diagnostics.comparisons.direct_comparisons).toContainEqual(expect.objectContaining({
+        evidence_ids: contraryIds.map(id => canonicalIds[Number(id.slice(1)) - 1]), relation: 'disagree',
+      }))
     }
     expect(local.sqlite.prepare("SELECT step_key, state FROM ct_ai_usage WHERE step_key LIKE 'generate:%' ORDER BY step_key").all()).toEqual([
       { step_key: 'generate:consensus', state: 'settled' },
@@ -2424,7 +2435,13 @@ describe('evidence API 與實際 SQLite 工作流', () => {
     expect(rawPayload.response).toEqual(nativeResponse)
     const request = object(rawPayload.request)
     const requestBody = generationPayload(GENERATION_MODEL, request)!
-    expect(requestBody).toMatchObject({ operation: 'fill_missing_fields', targets: plan.targets })
+    const baseEvidence = object(plan.base).evidence
+    if (!Array.isArray(baseEvidence)) throw new TypeError('completion evidence missing')
+    const canonicalIds = baseEvidence.map(item => String(object(item).id)).sort()
+    expect(requestBody).toMatchObject({
+      operation: 'fill_missing_fields',
+      targets: plan.targets.map(target => ({ ...target, evidence_ids: target.evidence_ids.map(id => `e${canonicalIds.indexOf(id) + 1}`) })),
+    })
     expect(JSON.parse(String(responseMessage(rawPayload.response).content))).toMatchObject({ base_hash: requestBody.base_hash })
     expect(JSON.stringify(request)).not.toContain('private-author')
     expect(JSON.stringify(stepOutputs)).not.toContain('補完欄位。')

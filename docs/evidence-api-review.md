@@ -39,6 +39,16 @@ Clef、三分區及必要補完接收主張與獨立語境，並明示不得把�
 
 新設定／fixture request 指紋隔離舊快取。同版本同輸入的 partial draft 也會命中既有結果，重按建立不自動補跑失敗分項；只有真實協定／輸入變更才形成不同工作，不為重跑亂改 key。已完成的舊工作仍可按既有權限讀取；舊 active 工作若設定不同，沿用 `configuration_changed` 政策在模型呼叫前停止，不把舊 raw 混入新流程，也不釋放 unknown 或重設配額。新版本的完整工作仍可能包含付費擷取／比較／生成，不能視為只重跑共識；真人驗收須另核範圍，不自動執行。這輪程式接線不需新 migration，亦未代表已部署或完整真人／付費驗收通過。
 
+### 2026-11-22：模型請求內的短證據 ID
+
+三分項及既有補完在模型邊界使用 `e1`、`e2` 等請求內 ID，依完整 canonical evidence ID 的字典序決定映射。同一工作的各專項與補完使用同一全體證據映射；補完即使只讀部分證據也不重新編號。所有比較、候選成員、互斥清單、引用及排除同步轉換，輸出 schema 列舉該請求合法的短 ID。引用回來後只作精確 ID 解碼，才交既有來源、跨素材、跨側、整群互斥與覆蓋驗證；未知 ID 或舊 canonical namespace 不當成 fallback 接受。
+
+`GenerationRequest.evidence_id_map` 是保存在不可變計畫工件的 sidecar，不送入模型。原始 request／response 不改寫，內部 evidence、最終 citation map、公開成功 JSON、來源錨點與人改仍使用 canonical ID。文字、群 ID、候選 ID、pointer 及 base hash 不作替換。這是明確版本化的引用編碼，不是修補缺引、改分類、刪引用或拆群。
+
+議題 15 的診斷分別是標題專有素材未被正文引用、矛盾／對立的跨側含正式 agree、相反證據同群；新任務指示要求共識先寫有據的正文再收斂標題、爭點先核全體跨側關係再選分類。原拒收規則保留。短 ID 減少重複的長識別字負擔，但不宣稱已驗證語義成功率，不新增呼叫、重試或 fallback；48 KiB 上限照完整新 request 計算。
+
+目前提示／schema／輸入版本為 `specialized-evidence-v18-local-evidence-ids`／`specialized-cited-v8-local-evidence-ids`／`section-values-v9-local-evidence-ids`，補完亦有獨立更新的版本與 config 指紋。舊工件不以新編碼重解或自動重跑；私人 raw 與已結算歷史保留，仍停真人品質驗收點。
+
 ### 2026-11-21：立場群相容性與排除清單
 
 第一階段以相容立場／關切／方案分群，不把同一爭議的支持與反對方放在同群不同 opinions。立場請求的每筆 evidence 新增 `incompatible_with`，只由正式 direct `disagree` 配對對稱推導並排序；不把 reverse diagnostics、uncertain 或未完成比較當成互斥，也不把未列互斥解讀為明示支持。原完整比較資料保留，新增資訊計入原有 48 KiB 請求上限，不截斷或增加模型呼叫。
