@@ -165,7 +165,6 @@ async function model(modelName: string, input: unknown): Promise<unknown> {
     const allowed = ['messages', 'max_completion_tokens', 'temperature', 'chat_template_kwargs', 'stream', 'response_format']
     const messages = request.messages
     const format = object(request.response_format)
-    const schema = object(format.json_schema)
     if (
       Object.keys(request).some(key => !allowed.includes(key)) ||
       !Array.isArray(messages) ||
@@ -177,11 +176,7 @@ async function model(modelName: string, input: unknown): Promise<unknown> {
       !Number.isSafeInteger(request.max_completion_tokens) ||
       Number(request.max_completion_tokens) <= 0 ||
       object(request.chat_template_kwargs).enable_thinking !== false ||
-      request.stream !== false ||
-      format.type !== 'json_schema' ||
-      schema.strict !== true ||
-      typeof schema.name !== 'string' ||
-      object(schema.schema).type !== 'object'
+      request.stream !== false
     ) {
       throw new Error('unsupported native generation request')
     }
@@ -190,10 +185,16 @@ async function model(modelName: string, input: unknown): Promise<unknown> {
       | { operation: 'create_introduction'; issue: { title: string; description: string }; data: unknown; section?: never }
       | { section: 'consensus'; evidence: Array<{ id: string }>; comparison: { consensus_groups: Array<{ candidate_id: string; evidence_ids: string[] }> }; operation?: never }
       | { section: 'disputes' | 'positions'; evidence: Array<{ id: string }>; operation?: never }
-    const expectedName = generatedInput.operation === 'fill_missing_fields' ? 'evidence_completion' :
-      generatedInput.operation === 'create_introduction' ? 'evidence_introduction' : `evidence_${generatedInput.section}`
+    if (generatedInput.operation === 'create_introduction') {
+      if (format.type !== 'text' || Object.keys(format).length !== 1) throw new Error('unsupported narrative format')
+      const response = generationResponse({})
+      responseMessage(response).content = '# 議題說明\n\n這是根據議題簡介與已完成分項整理的未驗證說明。'
+      return response
+    }
+    const schema = object(format.json_schema)
+    if (format.type !== 'json_schema' || schema.strict !== true || typeof schema.name !== 'string' || object(schema.schema).type !== 'object') throw new Error('unsupported structured generation format')
+    const expectedName = generatedInput.operation === 'fill_missing_fields' ? 'evidence_completion' : `evidence_${generatedInput.section}`
     if (schema.name !== expectedName) throw new Error('unsupported native generation schema')
-    if (generatedInput.operation === 'create_introduction') return generationResponse({ introduction: '# 議題說明\n\n這是根據議題簡介與已完成分項整理的未驗證說明。' })
     if (generatedInput.operation === 'fill_missing_fields') {
       const data = {
         base_hash: generatedInput.base_hash,
@@ -3255,7 +3256,7 @@ describe('私人議題摘要與持久化工作流（#210）', () => {
     expect((await summaryState()).summary).toEqual(saved.summary)
   })
 
-  it('新的部分結果及失敗不會覆蓋既有完整摘要', async () => {
+  it.each(['disputes', 'create_introduction'] as const)('%s 產生部分結果及後續失敗不會覆蓋既有完整摘要', async failedStage => {
     auth.current = user('first')
     const first = await createSummary(0)
     expect(await runEvidenceWorkflow(env, first.job_id, testStep())).toEqual({ status: 'ai_draft' })
@@ -3270,7 +3271,8 @@ describe('私人議題摘要與持久化工作流（#210）', () => {
     expect(await summaryState()).toMatchObject({ has_summary: true, job: { job_id: partial.job_id }, summary: null })
     let failedCalls = 0
     aiRun = async (modelName, input) => {
-      if (generationPayload(modelName, input)?.section === 'disputes') {
+      const payload = generationPayload(modelName, input)
+      if (payload?.section === failedStage || payload?.operation === failedStage) {
         failedCalls++
         throw new Error('synthetic provider failure')
       }
@@ -3379,14 +3381,14 @@ describe('私人議題摘要與持久化工作流（#210）', () => {
     expect(recordedRequests).toHaveLength(calls)
   })
 
-  it.each(['invalid_schema', 'truncated', 'provider_error', 'missing_usage'] as const)('introduction %s 保留既有分項及付費紀錄，不重打', async fault => {
+  it.each(['empty_body', 'truncated', 'provider_error', 'missing_usage', 'context_limit'] as const)('introduction %s 保留既有分項及付費紀錄，不重打', async fault => {
     let calls = 0
     aiRun = async (modelName, input) => {
       if (generationPayload(modelName, input)?.operation !== 'create_introduction') return model(modelName, input)
       calls++
       if (fault === 'provider_error') throw new Error('private-introduction-provider-error')
       const response = object(await model(modelName, input))
-      if (fault === 'invalid_schema') responseMessage(response).content = JSON.stringify({ introduction: null })
+      if (fault === 'empty_body') responseMessage(response).content = ' \n\t '
       if (fault === 'truncated') {
         if (!Array.isArray(response.choices)) throw new Error('choices missing')
         object(response.choices[0]).finish_reason = 'length'
@@ -3394,9 +3396,10 @@ describe('私人議題摘要與持久化工作流（#210）', () => {
       if (fault === 'missing_usage') Reflect.deleteProperty(response, 'usage')
       return response
     }
+    if (fault === 'context_limit') source.sqlite.prepare('UPDATE ct_issues SET description = ? WHERE id = 7').run('界'.repeat(17000))
     auth.current = user('owner')
     const created = await createSummary(0)
-    const expected = fault === 'missing_usage' ? 'ai_draft' : 'failed'
+    const expected = fault === 'missing_usage' ? 'ai_draft' : 'partial_draft'
     expect(await runEvidenceWorkflow(env, created.job_id, testStep())).toEqual({ status: expected })
     const detail = object(await (await send('GET', `/api/evidence-jobs/${created.job_id}`)).json())
     const store = new EvidenceStore(local.asD1())
@@ -3405,13 +3408,19 @@ describe('私人議題摘要與持久化工作流（#210）', () => {
     const artifacts = await store.listArtifacts(job.executionId, 'generation')
     expect(artifacts.filter(item => object(item.payload).stage === 'generation_section')).toHaveLength(3)
     expect(artifacts.filter(item => object(item.payload).stage === 'completion_result')).toHaveLength(1)
-    expect(local.sqlite.prepare("SELECT state FROM ct_ai_usage WHERE step_key='introduction:draft'").get()).toEqual({ state: ['provider_error', 'missing_usage'].includes(fault) ? 'unknown' : 'settled' })
+    expect(local.sqlite.prepare("SELECT state FROM ct_ai_usage WHERE step_key='introduction:draft'").get()).toEqual(fault === 'context_limit' ? undefined : { state: ['provider_error', 'missing_usage'].includes(fault) ? 'unknown' : 'settled' })
     if (fault !== 'missing_usage') {
-      expect(detail.data).toBeUndefined()
+      const completedBase = artifacts.find(item => object(item.payload).stage === 'completion_result')
+      if (!completedBase) throw new Error('completion base missing')
+      const base = object(object(completedBase.payload).result)
+      expect(detail.data).toEqual(base.data)
+      expect(detail.citation_map).toEqual(base.citation_map)
+      expect(Object.hasOwn(object(detail.data), 'introduction')).toBe(false)
+      expect(detail.generation_progress).toMatchObject({ introduction: { status: 'failed' }, current_section: null })
       expect((await summaryState()).has_summary).toBe(false)
     } else expect(object(detail.data).introduction).toEqual(expect.any(String))
     expect(await runEvidenceWorkflow(env, created.job_id, testStep())).toEqual({ status: expected })
-    expect(calls).toBe(1)
+    expect(calls).toBe(fault === 'context_limit' ? 0 : 1)
     expect(JSON.stringify(detail)).not.toContain('private-introduction-provider-error')
   })
 
@@ -3430,10 +3439,11 @@ describe('私人議題摘要與持久化工作流（#210）', () => {
     })
     auth.current = user('owner')
     const created = await createSummary(0)
-    expect(await runEvidenceWorkflow(env, created.job_id, gated.step)).toEqual({ status: 'failed' })
+    expect(await runEvidenceWorkflow(env, created.job_id, gated.step)).toEqual({ status: barrier === 'budget' ? 'partial_draft' : 'failed' })
     const detail = object(await (await send('GET', `/api/evidence-jobs/${created.job_id}`)).json())
-    expect(detail.status).toBe(barrier === 'budget' ? 'failed' : 'erased')
-    expect(detail.data).toBeUndefined()
+    expect(detail.status).toBe(barrier === 'budget' ? 'partial_draft' : 'erased')
+    if (barrier === 'budget') expect(Object.hasOwn(object(detail.data), 'introduction')).toBe(false)
+    else expect(detail.data).toBeUndefined()
     expect(local.sqlite.prepare("SELECT COUNT(*) AS n FROM ct_ai_usage WHERE step_key='introduction:draft'").get()).toEqual({ n: 0 })
     expect(calls).toBe(0)
     expect((await summaryState()).has_summary).toBe(false)

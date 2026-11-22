@@ -75,6 +75,7 @@
 
 - 三分項與既有補完的模型引用採 request-local `e1`／`e2` 短 ID，依全體 canonical ID 字典序編號，補完子集不重編號；所有關係、互斥、候選與引用同步映射，schema 列舉合法 ID。解析只精確解碼後走原來源／引用／互斥／覆蓋守門，未知或舊 namespace 拒收；不改文句、分類、群組或補缺引用。`GenerationRequest.evidence_id_map` 僅存 plan sidecar，不送模型；API／citation map／source evidence 仍 canonical，raw 不改，改版須真指紋隔離。
 
+- 2026-11-22 intro 專用 native Markdown/text request，共用 `nativeCompletion.ts` 的完整 stop/assistant/refusal/tool/截斷守門；JSON 三項及補完不改，最後由程式保存 introduction 字串。輸入帶真 section_status、只投影公開資料，8192/.2/48KiB不變，真policy/request/限制進指紋。必要補完有效後，僅 intro 尾端失敗交三項原資料/citation_map 的 partial_draft，不造 intro、不替換舊summary；來源/帳戶/erase/config失敗仍不得交data，unknown原樣、不自動paidretry。新文章語義未由協定測試證明。
 ## ANTI-PATTERNS
 - 不新增 vue-router／vue-i18n、每頁 client entry／Rollup input；全站 router、CSS 載入等結構變動先確認。不恢復 ADMIN_PASSWORD／X-Admin-Token／checkAdmin()／POST /api/admin/login；不對 DB_AUTH 做原始 SQL INSERT/UPDATE/DELETE、auth DDL 或本站 migrations/auth。
 - 改 bug 補可重現回歸；安全／隱私／狀態／排序／限制／併發回歸放 tests，從 vite-plus/test 匯入；i18n 測 key／插值並人工核翻譯，純樣式／文案不鎖無關字串。API／DB 補 CRUD、狀態、400/401/403/404、隱私／CSRF smoke，路由驗新舊 URL；本機檢查不冒充正式驗收。

@@ -13,7 +13,6 @@ import {
   GENERATION_VALIDATION_CODES,
   parseCompletionResponse,
   parseGenerationResponse,
-  parseNativeJson,
   pipelineSettings,
   prepareDraftCompletion,
   type CompletedDraft,
@@ -29,7 +28,7 @@ import { buildClairicRequest, buildClefBatches, modelUsageStatus, ModelContextLi
 import { actualCallCost, estimateCall, requestProvenance, type ModelSelector } from './pricing'
 import { EvidenceStore, EvidenceStoreError, type ErrorCode, type Snapshot } from './store'
 import { WORKFLOW_CONTROL_POLICY } from './workflowPolicy'
-import { buildIntroductionRequest, INTRODUCTION_PARAMETERS, parseIntroduction } from './introduction'
+import { buildIntroductionRequest, INTRODUCTION_PARAMETERS, parseIntroduction, type IntroductionRequest } from './introduction'
 import { sha256 } from './source'
 
 const NO_RETRIES = WORKFLOW_CONTROL_POLICY.non_model_step
@@ -81,7 +80,8 @@ type CompletionPlanRef = ArtifactRef & { targets: string[] }
 type SectionArtifact = { stage: 'generation_section'; raw_artifact_id: string; result: GeneratedSection }
 type CompletionPlanArtifact = { stage: 'completion_plan'; plan: DraftCompletionPlan }
 type CompletionArtifact = { stage: 'completion_result'; plan_artifact_id: string; raw_artifact_id: string | null; result: CompletedDraft }
-type IntroductionPlanArtifact = { stage: 'introduction_plan'; base_artifact_id: string; request: GenerationRequest; input_sha256: string }
+type IntroductionPlanArtifact = { stage: 'introduction_plan'; base_artifact_id: string; request: IntroductionRequest; input_sha256: string }
+type IntroductionRef = ArtifactRef & { readonly reason: ErrorCode | null; readonly validationCode: string | null }
 type IntroductionArtifact = {
   stage: 'introduction_result'
   plan_artifact_id: string
@@ -728,24 +728,25 @@ export async function runEvidenceWorkflow(env: EvidenceBindings, jobId: string, 
     })
     if (completed.status !== 'ok' || !completed.artifactId) return { status: 'failed' }
     const completedId = completed.artifactId
-    const introductionPlan = await step.do('prepare-introduction', NO_RETRIES, async (): Promise<ArtifactRef> => {
+    const introductionPlan = await step.do('prepare-introduction', NO_RETRIES, async (): Promise<IntroductionRef> => {
       const snapshot = await current(env, jobId, true)
       const existing = (await store.listArtifacts(snapshot.executionId, 'generation')).find(item =>
         (item.payload as Partial<IntroductionPlanArtifact> | null)?.stage === 'introduction_plan'
       )
-      if (existing) return { status: 'ok', artifactId: existing.id }
+      if (existing) return { status: 'ok', artifactId: existing.id, reason: null, validationCode: null }
       const base = await artifact<CompletionArtifact>(env, snapshot.executionId, completedId)
       const issue = snapshot.sources.find(source => source.kind === 'issue')
       if (!issue) throw new PipelineStop('source_unavailable')
-      let request: GenerationRequest
+      let request: IntroductionRequest
       try {
-        request = buildIntroductionRequest(issue.payload, base.result.data, generationInput(snapshot).language)
+        const section_status: SectionStates = { consensus: 'not_started', disputes: 'not_started', positions: 'not_started' }
+        for (const outcome of outcomes) section_status[outcome.section] = outcome.status
+        request = buildIntroductionRequest({ issue: issue.payload, data: base.result.data, language: generationInput(snapshot).language, section_status })
       } catch (error) {
         if (!(error instanceof ModelContextLimitError)) throw error
         await recordLimit(env, jobId, error)
         await save(env, snapshot, 'diagnostics', { stage: 'introduction', phase: 'finished', outcome: { status: 'failed', reason: 'workflow_limit', artifact_id: null, raw_artifact_id: null } })
-        await finishFailure(env, jobId, 'workflow_limit')
-        return { status: 'failed', artifactId: null }
+        return { status: 'failed', artifactId: null, reason: 'workflow_limit', validationCode: null }
       }
       const artifactId = await save(env, snapshot, 'generation', {
         stage: 'introduction_plan', base_artifact_id: completedId, request, input_sha256: await sha256(JSON.stringify(request.input)),
@@ -754,59 +755,64 @@ export async function runEvidenceWorkflow(env: EvidenceBindings, jobId: string, 
         stage: 'introduction', phase: 'planned',
         estimated_micro_usd: estimateCall(MODEL_SELECTORS.generation, request.input, INTRODUCTION_PARAMETERS.max_completion_tokens),
       })
-      return { status: 'ok', artifactId }
+      return { status: 'ok', artifactId, reason: null, validationCode: null }
     })
-    if (introductionPlan.status !== 'ok' || !introductionPlan.artifactId) return { status: 'failed' }
     const introductionPlanId = introductionPlan.artifactId
-    const introductionPaid = await step.do('generate-introduction', PAID_STEP_OPTIONS, async () => {
-      const snapshot = await current(env, jobId, true)
-      await save(env, snapshot, 'diagnostics', { stage: 'introduction', phase: 'started' })
-      const result = await paid(env, jobId, 'introduction:draft', async live =>
-        (await artifact<IntroductionPlanArtifact>(env, live.executionId, introductionPlanId)).request, INTRODUCTION_PARAMETERS.max_completion_tokens)
-      if (result.status === 'source_unavailable') throw new PipelineStop('source_unavailable')
-      if (result.status !== 'ok' || !result.artifactId) {
-        const reason = result.status === 'budget_exhausted' || result.status === 'workflow_limit' || result.status === 'provider_uncertain' ? result.status : 'provider_error'
-        await save(env, snapshot, 'diagnostics', { stage: 'introduction', phase: 'finished', outcome: { status: 'failed', reason, artifact_id: null, raw_artifact_id: null } })
-        await finishFailure(env, jobId, reason)
-      }
-      return result
-    })
-    if (introductionPaid.status !== 'ok' || !introductionPaid.artifactId) return { status: 'failed' }
-    const introductionRawId = introductionPaid.artifactId
-    const introduced = await step.do('validate-introduction', NO_RETRIES, async (): Promise<ArtifactRef> => {
-      const snapshot = await current(env, jobId, true)
-      const existing = (await store.listArtifacts(snapshot.executionId, 'generation')).find(item => {
-        const payload = item.payload as Partial<IntroductionArtifact> | null
-        return payload?.stage === 'introduction_result' && payload.plan_artifact_id === introductionPlanId && payload.raw_artifact_id === introductionRawId
+    let introductionRawId: string | null = null
+    let introduced: IntroductionRef = { status: 'failed', artifactId: null, reason: introductionPlan.reason, validationCode: introductionPlan.validationCode }
+    if (introductionPlan.status === 'ok' && introductionPlanId) {
+      const introductionPaid = await step.do('generate-introduction', PAID_STEP_OPTIONS, async () => {
+        const snapshot = await current(env, jobId, true)
+        await save(env, snapshot, 'diagnostics', { stage: 'introduction', phase: 'started' })
+        const result = await paid(env, jobId, 'introduction:draft', async live =>
+          (await artifact<IntroductionPlanArtifact>(env, live.executionId, introductionPlanId)).request, INTRODUCTION_PARAMETERS.max_completion_tokens)
+        if (result.status === 'source_unavailable') throw new PipelineStop('source_unavailable')
+        if (result.status !== 'ok' || !result.artifactId) {
+          const reason = result.status === 'budget_exhausted' || result.status === 'workflow_limit' || result.status === 'provider_uncertain' ? result.status : 'provider_error'
+          await save(env, snapshot, 'diagnostics', { stage: 'introduction', phase: 'finished', outcome: { status: 'failed', reason, artifact_id: null, raw_artifact_id: null } })
+        }
+        return result
       })
-      let artifactId = existing?.id ?? null
-      if (!artifactId) {
-        const plan = await artifact<IntroductionPlanArtifact>(env, snapshot.executionId, introductionPlanId)
-        const base = await artifact<CompletionArtifact>(env, snapshot.executionId, plan.base_artifact_id)
-        let introduction: string
-        try {
-          introduction = parseIntroduction(parseNativeJson((await artifact<RawPayload>(env, snapshot.executionId, introductionRawId)).response))
-        } catch (error) {
-          if (error instanceof PipelineStop || error instanceof SourceUnavailable) throw error
+      if (introductionPaid.status !== 'ok' || !introductionPaid.artifactId) {
+        const reason = introductionPaid.status === 'budget_exhausted' || introductionPaid.status === 'workflow_limit' || introductionPaid.status === 'provider_uncertain' ? introductionPaid.status : 'provider_error'
+        introduced = { status: 'failed', artifactId: null, reason, validationCode: null }
+      } else {
+        const rawId = introductionPaid.artifactId
+        introductionRawId = rawId
+        introduced = await step.do('validate-introduction', NO_RETRIES, async (): Promise<IntroductionRef> => {
+          const snapshot = await current(env, jobId, true)
+          const existing = (await store.listArtifacts(snapshot.executionId, 'generation')).find(item => {
+            const payload = item.payload as Partial<IntroductionArtifact> | null
+            return payload?.stage === 'introduction_result' && payload.plan_artifact_id === introductionPlanId && payload.raw_artifact_id === rawId
+          })
+          let artifactId = existing?.id ?? null
+          if (!artifactId) {
+            const plan = await artifact<IntroductionPlanArtifact>(env, snapshot.executionId, introductionPlanId)
+            const base = await artifact<CompletionArtifact>(env, snapshot.executionId, plan.base_artifact_id)
+            let introduction: string
+            try {
+              introduction = parseIntroduction((await artifact<RawPayload>(env, snapshot.executionId, rawId)).response)
+            } catch (error) {
+              if (error instanceof PipelineStop || error instanceof SourceUnavailable) throw error
+              await save(env, snapshot, 'diagnostics', {
+                stage: 'introduction', phase: 'finished',
+                outcome: { status: 'failed', reason: 'invalid_generation', validation_code: generationValidationCode(error), artifact_id: null, raw_artifact_id: rawId },
+              })
+              return { status: 'failed', artifactId: null, reason: 'invalid_generation', validationCode: generationValidationCode(error) }
+            }
+            artifactId = await save(env, snapshot, 'generation', {
+              stage: 'introduction_result', plan_artifact_id: introductionPlanId, raw_artifact_id: rawId,
+              result: { ...base.result, data: { ...base.result.data, introduction } },
+            } satisfies IntroductionArtifact)
+          }
           await save(env, snapshot, 'diagnostics', {
             stage: 'introduction', phase: 'finished',
-            outcome: { status: 'failed', reason: 'invalid_generation', validation_code: generationValidationCode(error), artifact_id: null, raw_artifact_id: introductionRawId },
+            outcome: { status: 'completed', reason: null, artifact_id: artifactId, raw_artifact_id: rawId },
           })
-          await finishFailure(env, jobId, 'invalid_generation')
-          return { status: 'failed', artifactId: null }
-        }
-        artifactId = await save(env, snapshot, 'generation', {
-          stage: 'introduction_result', plan_artifact_id: introductionPlanId, raw_artifact_id: introductionRawId,
-          result: { ...base.result, data: { ...base.result.data, introduction } },
-        } satisfies IntroductionArtifact)
+          return { status: 'ok', artifactId, reason: null, validationCode: null }
+        })
       }
-      await save(env, snapshot, 'diagnostics', {
-        stage: 'introduction', phase: 'finished',
-        outcome: { status: 'completed', reason: null, artifact_id: artifactId, raw_artifact_id: introductionRawId },
-      })
-      return { status: 'ok', artifactId }
-    })
-    if (introduced.status !== 'ok' || !introduced.artifactId) return { status: 'failed' }
+    }
     const introducedId = introduced.artifactId
     return await step.do('assemble-generation', NO_RETRIES, async () => {
       const snapshot = await current(env, jobId, true)
@@ -814,9 +820,11 @@ export async function runEvidenceWorkflow(env: EvidenceBindings, jobId: string, 
       for (const outcome of outcomes) {
         if (outcome.artifact_id) sections.push((await artifact<SectionArtifact>(env, snapshot.executionId, outcome.artifact_id)).result)
       }
-      const draft = (await artifact<IntroductionArtifact>(env, snapshot.executionId, introducedId)).result
+      const draft = introducedId
+        ? (await artifact<IntroductionArtifact>(env, snapshot.executionId, introducedId)).result
+        : (await artifact<CompletionArtifact>(env, snapshot.executionId, completedId)).result
       const plan = (await artifact<CompletionPlanArtifact>(env, snapshot.executionId, completionPlanId)).plan
-      const partial = comparison.partial || sections.length !== GENERATION_SECTIONS.length
+      const partial = comparison.partial || sections.length !== GENERATION_SECTIONS.length || introduced.status !== 'ok'
       const sectionDiagnostics = Object.fromEntries(
         outcomes.map(outcome => [outcome.section, { ...outcome, details: sections.find(section => section.section === outcome.section)?.diagnostics ?? null }])
       )
@@ -838,7 +846,7 @@ export async function runEvidenceWorkflow(env: EvidenceBindings, jobId: string, 
           comparisons: comparison.analysis,
           generation: {
             sections: sectionDiagnostics, completion, status_overviews: plan.status_overviews, estimated_micro_usd: resume.estimated_micro_usd,
-            introduction: { status: 'completed', artifact_id: introducedId, raw_artifact_id: introductionRawId },
+            introduction: { status: introduced.status === 'ok' ? 'completed' : 'failed', reason: introduced.reason, validation_code: introduced.validationCode, artifact_id: introducedId, raw_artifact_id: introductionRawId },
           },
         },
         provenance: {
@@ -858,7 +866,7 @@ export async function runEvidenceWorkflow(env: EvidenceBindings, jobId: string, 
             ...comparison.raw_artifact_ids,
             ...outcomes.flatMap(item => (item.raw_artifact_id ? [item.raw_artifact_id] : [])),
             ...(completionRawId ? [completionRawId] : []),
-            introductionRawId,
+            ...(introductionRawId ? [introductionRawId] : []),
           ],
         },
       }

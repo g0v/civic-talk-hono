@@ -59,11 +59,11 @@ Clef、三分區及必要補完接收主張與獨立語境，並明示不得把�
 
 原本共識／爭點／立場三分項及單次必要補完維持原生成方式。結構化 JSON 完成驗證後，額外一次相同 Gemma 模型讀取工作快照中的議題標題／簡介，以及這份完成的三分項 JSON，產出 Markdown 議題說明。新工作的 `data` 同層包含 `introduction` 字串、`consensus`、`disputes`、`positions`。這是私有、AI 未驗證的編輯性說明，不能把空段或失敗狀態寫成「沒有歧見」，也不能宣稱逐句已通過原文引用驗證。原三分項與 citation map 保持不變；不因新說明改寫結論或補造引用。
 
-此輪依使用者明示需求增加尾端呼叫，因此最多為三分項、必要補完及 introduction 共五輪 Gemma；沒有自動重試。`prepare-introduction`／`generate-introduction`／`validate-introduction` 使用獨立工件及 `introduction:draft` usage，沿用來源／帳號守門、費用預留、結算、unknown 保留及 raw 保存。提示於 2026-11-21 更新為 `issue-introduction-v2-integrated-narrative`，schema 仍為 `markdown-introduction-v1`；完整提示、schema、參數及哨兵請求參與設定指紋，請求仍受 48 KiB byte 上限保護，不截斷 JSON。
+此輪依使用者明示需求增加尾端呼叫，因此最多為三分項、必要補完及 introduction 共五輪 Gemma；沒有自動重試。`prepare-introduction`／`generate-introduction`／`validate-introduction` 使用獨立工件及 `introduction:draft` usage，沿用來源／帳號守門、費用預留、結算、unknown 保留及 raw 保存。2026-11-22 改為 `issue-introduction-v3-native-markdown`／`markdown-introduction-v2-native-text`：說明文使用明確 `response_format: {type:'text'}`，程式最後序列化 `data.introduction`，不再要求模型把整篇文章 escape 在 JSON string 中。三分項及必要補完仍為原嚴格 JSON schema；兩種輸出共用唯一原生 assistant-content 守門，截斷／拒絕／tool／非字串仍拒收。專用請求只投影公開議題與完成 JSON，另含真實 `section_status`，不從翻譯狀態文字推論素材結論。模型及 8192／0.2／非 thinking／非串流參數不變，48 KiB 上限不截斷輸入；完整提示、輸出與失敗 policy、限制、真請求及參數參與既有設定指紋。文章 coherence 與少數條件的實際品質仍需真人驗收，傳輸改良不是已證明的退化原因。
 
 敘述任務先理解議題核心問題、已提供的背景及各方關切之間的關係，再按議題邏輯寫成可獨立閱讀的完整文章。不得依「簡介、共識、爭點、立場」逐段拼接 Overview 或列舉每一筆項目；以連貫段落整合相關觀點，保留歸屬、必要條件及少數意見，不為銜接而捏造因果、解法或共同立場。此為提示品質調整，不增加呼叫或以標題字串規則拒收；實際連貫性仍須真人驗收，不以 prompt 文句斷言假稱已驗模型品質。
 
-輪詢另有 `generation_progress.introduction`（僅該階段已出現事件時提供），最終 provenance 保留 introduction 的 plan／結果／raw 工件 ID，原始 request 含確切輸入與 SHA。新工作只有在 introduction 驗證成功後才發布最終工件；失敗／預算不足／來源失效不發布缺欄位結果，已完成分項仍依既有保留政策保存，不重打。
+輪詢另有 `generation_progress.introduction`（僅該階段已出現事件時提供），最終 provenance 保留 introduction 的 plan／結果／raw 工件 ID（尚未發生者為 null），原始 request 含確切輸入與 SHA。2026-11-22 使用者明示尾端失敗提供部分草稿：必要補完已有效完成後，說明文的請求超限、預算不足、provider／原生內容失敗，由同一組裝步驟交付 `partial_draft`，`data` 保留三分項及 citation map、不含 introduction 占位；既有 DEV 部分結果通道可供查看。這不是完整保存，不替換舊摘要、不自動重打或退款 unknown。必要補完失敗無此救回；來源撤下、清除、帳戶及配置守門仍優先，不能交付失效來源資料。完整 `ai_draft` 及目前摘要替換仍必須有有效 introduction。
 
 舊保存工作與人改資料可沒有 introduction；若人改包含該欄，必須是非空文字，修訂與差異照原路徑保存完整 JSON。目前私有結果的 JSON／DEV console 會保留 Markdown 字串；需要顯示 Markdown 的消費者應沿用 `renderSafeMarkdown`，不得直接輸出 HTML。不自動改寫公開 briefing、議題狀態或發布。新增階段仍需真人品質驗收，本機合成驗收不代表已付費驗收或部署。
 

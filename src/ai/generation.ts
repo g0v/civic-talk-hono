@@ -21,7 +21,9 @@ import {
 import { statusOverview } from './overviewStatus'
 import { WORKFLOW_CONTROL_POLICY } from './workflowPolicy'
 import { createEvidenceIdAliases, decodeEvidenceReferences, encodeEvidenceReferences, evidenceIdSchema, type EvidenceIdAliases } from './generationEvidenceIds'
-import { buildIntroductionRequest, INTRODUCTION_OUTPUT_SCHEMA, INTRODUCTION_PARAMETERS, INTRODUCTION_PROMPT_VERSION, INTRODUCTION_SCHEMA_VERSION, INTRODUCTION_SYSTEM_PROMPT } from './introduction'
+import { buildIntroductionRequest, INTRODUCTION_MAX_REQUEST_BYTES, INTRODUCTION_OUTPUT_POLICY, INTRODUCTION_PARAMETERS, INTRODUCTION_PROMPT_VERSION, INTRODUCTION_SCHEMA_VERSION, INTRODUCTION_SYSTEM_PROMPT } from './introduction'
+import { parseNativeJson } from './nativeCompletion'
+export { parseNativeJson } from './nativeCompletion'
 
 export type GenerationLanguage = 'zh-TW' | 'en' | 'ja'
 export const GENERATION_SECTIONS = ['consensus', 'disputes', 'positions'] as const
@@ -1100,38 +1102,6 @@ function syncHash(value: string): string {
   return createHash('sha256').update(value, 'utf8').digest('hex')
 }
 
-// Gemma 原生 Chat 回應只取明確 stop 的唯一 assistant content；不讀取或拼接思考欄位。
-export function parseNativeJson(value: unknown): unknown {
-  if (!isObject(value) || typeof value.model !== 'string' || !Array.isArray(value.choices) || value.choices.length !== 1) throw new Error('generation_invalid_completion')
-  const choice = value.choices[0]
-  if (!isObject(choice) || choice.index !== 0) throw new Error('generation_invalid_completion')
-  if (
-    choice.finish_reason !== 'stop' ||
-    (value.error !== undefined && value.error !== null) ||
-    (value.truncated !== undefined && value.truncated !== false) ||
-    (choice.truncated !== undefined && choice.truncated !== false)
-  )
-    throw new Error('generation_incomplete_completion')
-  const message = choice.message
-  if (isObject(message) && message.truncated !== undefined && message.truncated !== false) throw new Error('generation_incomplete_completion')
-  if (
-    !isObject(message) ||
-    message.role !== 'assistant' ||
-    (Object.hasOwn(message, 'refusal') && message.refusal !== null) ||
-    typeof message.content !== 'string' ||
-    (message.tool_calls !== undefined && (!Array.isArray(message.tool_calls) || message.tool_calls.length > 0)) ||
-    (message.function_call !== undefined && message.function_call !== null)
-  )
-    throw new Error('generation_refusal_or_invalid_message')
-  const text = message.content
-  // 只拆除佔據整份回應、以獨立行開閉的單一外框；內部仍須是完整合法 JSON。
-  const fenced = /^[ \t\r\n]*```(?:json)?[ \t]*\r?\n([\s\S]*?)\r?\n```[ \t\r\n]*$/.exec(text)
-  try {
-    return JSON.parse(fenced ? fenced[1] : text)
-  } catch {
-    throw new Error('generation_invalid_json')
-  }
-}
 
 export async function parseGenerationResponse(section: GenerationSection, value: unknown, input: GenerationInput): Promise<GeneratedSection> {
   if (!validSection(section)) throw new Error('generation_invalid_section')
@@ -1571,13 +1541,16 @@ export async function pipelineSettings() {
       prompt_version: INTRODUCTION_PROMPT_VERSION,
       schema_version: INTRODUCTION_SCHEMA_VERSION,
       prompt: INTRODUCTION_SYSTEM_PROMPT,
-      schema: INTRODUCTION_OUTPUT_SCHEMA,
+      output_policy: INTRODUCTION_OUTPUT_POLICY,
+      request_limit_bytes: INTRODUCTION_MAX_REQUEST_BYTES,
+      failure_policy: 'validated-completion-base-partial-v1; source-account-config-fences-first; no-summary-replacement',
       parameters: INTRODUCTION_PARAMETERS,
-      request: buildIntroductionRequest(
-        { title: 'Fixture issue', description: 'Fixture background.' },
-        { consensus: { Overview: 'A', items: [] }, disputes: { Overview: 'B', items: [] }, positions: { Overview: 'C', items: [] } },
-        'zh-TW'
-      ),
+      request: buildIntroductionRequest({
+        issue: { title: 'Fixture issue', description: 'Fixture background.' },
+        data: { consensus: { Overview: 'A', items: [] }, disputes: { Overview: 'B', items: [] }, positions: { Overview: 'C', items: [] } },
+        language: 'zh-TW',
+        section_status: { consensus: 'no_findings', disputes: 'no_findings', positions: 'no_findings' },
+      }),
       source: 'issue-title-description-and-final-structured-data; ai-unverified-editorial-markdown; original-section-citations-unchanged',
     },
     workflow_control: WORKFLOW_CONTROL_POLICY,
@@ -1589,7 +1562,7 @@ export async function pipelineSettings() {
     generation_schema: await sha256(stableJson(GENERATION_OUTPUT_SCHEMAS)),
     generation_completion_prompt: await sha256(GENERATION_COMPLETION_SYSTEM_PROMPT + '\n' + CLAIM_CONTEXT_RULE),
     generation_completion_schema: await sha256(stableJson(GENERATION_COMPLETION_OUTPUT_SCHEMA)),
-    parameters: await sha256(stableJson(config.fixture_requests)),
+    parameters: await sha256(stableJson({ ...config.fixture_requests, introduction: config.introduction.request.input })),
     config: await sha256(stableJson(config)),
   }
   return { config, hashes }
