@@ -320,7 +320,7 @@ export const messages = {
   opinion_synthesis_vote: '前往投票',
   opinion_synthesis_load_error: '無法載入意見綜整，請重新載入。',
   opinion_synthesis_groups: '投票群組',
-  opinion_synthesis_map: '圓點代表群組，不代表個人。僅繪出有座標的群組；各群組人數見下方清單。',
+  opinion_synthesis_map: '色塊代表投票群組。每個小點是一則該群傾向同意的公開意見，不代表個人或票數。輪廓與點的位置是示意；小群只列人數。',
   opinion_synthesis_group_size: '群組 {id}：{count} 人',
   opinion_synthesis_my_group: '你的投票群組：{id}',
   opinion_synthesis_statistics: '投票統計',

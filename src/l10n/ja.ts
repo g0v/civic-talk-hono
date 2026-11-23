@@ -326,7 +326,7 @@ export const messages = {
   opinion_synthesis_vote: '投票カードへ',
   opinion_synthesis_load_error: '意見のまとめを読み込めませんでした。再読み込みしてください。',
   opinion_synthesis_groups: '投票グループ',
-  opinion_synthesis_map: '点は個人ではなくグループを表します。座標があるグループのみを図に示し、各グループの人数は下に示します。',
+  opinion_synthesis_map: '色のついた領域は投票グループを表します。小さな点は、そのグループが賛同する傾向のある公開意見で、個人や票数ではありません。輪郭や点の位置は模式的なものです。小規模なグループは人数だけを表示します。',
   opinion_synthesis_group_size: 'グループ {id}：{count} 人',
   opinion_synthesis_my_group: 'あなたの投票グループ：{id}',
   opinion_synthesis_statistics: '投票統計',

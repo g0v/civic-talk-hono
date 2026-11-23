@@ -109,21 +109,46 @@ const myGroup = computed(() => {
   return current.groups.find(group => group.id === current.myGroup)?.id ?? null
 })
 
-const points = computed(() => {
-  const groups = result.value?.groups.flatMap(group => (group.x === null || group.y === null ? [] : [{ id: group.id, x: group.x, y: group.y }])) ?? []
+const opinionSlots = [
+  [-37, -25],
+  [29, -28],
+  [-6, 19],
+  [54, 5],
+  [-53, 18],
+  [26, 38],
+  [-4, -14],
+  [-33, 42],
+  [12, -43],
+  [67, 23],
+  [-63, -9],
+  [9, 48],
+  [30, 5],
+  [-25, 7],
+  [49, -17],
+  [-53, -36],
+] as const
+
+const mapGroups = computed(() => {
+  const groups = result.value?.groups.flatMap(group => (group.x === null || group.y === null ? [] : [{ ...group, x: group.x, y: group.y }])) ?? []
   if (!groups.length) return []
+  const statistics = result.value?.statistics ?? []
   const xs = groups.map(group => group.x)
   const ys = groups.map(group => group.y)
   const minX = Math.min(...xs)
   const minY = Math.min(...ys)
   const spanX = Math.max(...xs) - minX
   const spanY = Math.max(...ys) - minY
-  // 同比例縮放兩軸，避免把群組間的相對距離拉長。
-  const scale = 1 / Math.max(spanX / 264, spanY / 124, Number.EPSILON)
+  const scale = 1 / Math.max(spanX / 218, spanY / 40, Number.EPSILON)
   return groups.map(group => ({
     id: group.id,
-    x: 160 + (group.x - minX - spanX / 2) * scale,
-    y: 90 - (group.y - minY - spanY / 2) * scale,
+    size: group.size,
+    x: 220 + (group.x - minX - spanX / 2) * scale,
+    y: 117 - (group.y - minY - spanY / 2) * scale,
+    // 點位只排版公開的群組同意證據，不從投票者的位置、票數或群內分布推導。
+    opinions: statistics
+      .filter(opinion => opinion.groups.some(signal => signal.id === group.id && signal.direction === 'agree'))
+      .slice(0, opinionSlots.length)
+      .map((opinion, index) => ({ id: opinion.opinionId, body: opinion.body, x: opinionSlots[index][0], y: opinionSlots[index][1] })),
   }))
 })
 
@@ -200,11 +225,25 @@ onMounted(() => {
         <section aria-labelledby="opinion-synthesis-groups" class="space-y-3">
           <h4 id="opinion-synthesis-groups" class="m-0 font-serif text-base">{{ t('opinion_synthesis_groups') }}</h4>
           <p v-if="myGroup !== null" class="m-0 font-medium">{{ t('opinion_synthesis_my_group', { id: myGroup }) }}</p>
-          <figure v-if="points.length" class="m-0 space-y-2">
-            <svg viewBox="0 0 320 180" role="img" aria-labelledby="opinion-synthesis-map-caption" class="mx-auto block w-full max-w-sm rounded bg-vt-bg-2">
-              <g v-for="point in points" :key="point.id" :transform="`translate(${point.x},${point.y})`">
-                <circle r="16" class="fill-vt-fg-1" />
-                <text text-anchor="middle" dominant-baseline="central" class="fill-vt-bg-1 text-base font-semibold">{{ point.id }}</text>
+          <figure v-if="mapGroups.length" class="m-0 space-y-2">
+            <svg viewBox="0 0 440 218" role="img" aria-labelledby="opinion-synthesis-map-caption" class="mx-auto block w-full max-w-lg rounded-xl border border-vt-border bg-vt-bg-2">
+              <g v-for="(group, index) in mapGroups" :key="group.id" :class="index % 2 === 0 ? 'text-vt-jade-green' : 'text-vt-wheat-yellow'" :transform="`translate(${group.x},${group.y})`">
+                <polygon
+                  points="-90,-12 -70,-53 -22,-68 34,-64 76,-43 89,6 71,47 18,65 -35,61 -78,36"
+                  :transform="index % 2 === 0 ? undefined : 'scale(-1 1)'"
+                  fill="currentColor"
+                  fill-opacity=".16"
+                  stroke="currentColor"
+                  stroke-opacity=".64"
+                  stroke-width="1.5"
+                  stroke-linejoin="round"
+                />
+                <circle v-for="opinion in group.opinions" :key="opinion.id" :cx="opinion.x" :cy="opinion.y" r="4.5" fill="currentColor">
+                  <title>{{ opinion.body }}</title>
+                </circle>
+                <text y="-77" text-anchor="middle" class="fill-vt-fg-1 text-base font-semibold">
+                  {{ t('opinion_synthesis_group_size', { id: group.id, count: group.size }) }}
+                </text>
               </g>
             </svg>
             <figcaption id="opinion-synthesis-map-caption" class="text-sm text-vt-fg-2">{{ t('opinion_synthesis_map') }}</figcaption>

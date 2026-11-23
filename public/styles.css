@@ -30,6 +30,7 @@
     --container-xs: 20rem;
     --container-sm: 24rem;
     --container-md: 28rem;
+    --container-lg: 32rem;
     --container-xl: 36rem;
     --container-3xl: 48rem;
     --container-6xl: 72rem;
@@ -652,6 +653,9 @@
   }
   .max-w-full {
     max-width: 100%;
+  }
+  .max-w-lg {
+    max-width: var(--container-lg);
   }
   .max-w-md {
     max-width: var(--container-md);
@@ -1393,6 +1397,12 @@
   }
   .text-vt-fg-3 {
     color: var(--color-vt-fg-3);
+  }
+  .text-vt-jade-green {
+    color: var(--color-vt-jade-green);
+  }
+  .text-vt-wheat-yellow {
+    color: var(--color-vt-wheat-yellow);
   }
   .text-white {
     color: var(--color-white);

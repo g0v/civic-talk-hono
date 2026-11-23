@@ -326,7 +326,7 @@ export const messages = {
   opinion_synthesis_vote: 'Go to voting cards',
   opinion_synthesis_load_error: 'Could not load the opinion synthesis. Please reload.',
   opinion_synthesis_groups: 'Voting groups',
-  opinion_synthesis_map: 'Dots represent groups, not individuals. Only groups with coordinates are plotted. Group sizes are listed below.',
+  opinion_synthesis_map: 'Colored areas represent voting groups. Each dot is a public opinion the group tended to agree with, not a person or a vote. Outlines and dot positions are illustrative. Small groups are listed by size only.',
   opinion_synthesis_group_size: 'Group {id}: {count} participants',
   opinion_synthesis_my_group: 'Your voting group: {id}',
   opinion_synthesis_statistics: 'Voting statistics',
