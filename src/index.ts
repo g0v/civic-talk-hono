@@ -8,6 +8,7 @@ import { hasEvidenceBindings, withEvidenceSource } from './ai/env'
 import type { EvidenceBindings } from './ai/env'
 import { evidenceEndpoints } from './ai/endpoints'
 import { registerEvidenceRoutes } from './ai/routes'
+import { opinionSynthesisEnabled, registerOpinionSynthesisRoute } from './opinions/synthesis'
 import { listIssues, getIssue, getIssueDetail, getMaterialWithIssue, getOpinionWithIssue } from './db/queries'
 import { handleIssueRss, handleRss } from './rss'
 import { renderPage } from './ssr/render'
@@ -85,6 +86,7 @@ app.route('/', evidenceApp)
 // 先掛 auth：/api/auth/* 與 /api/me 要在 registerApiRoutes 的 /api/* 泛用處理之前命中。
 registerAuthRoutes(app)
 registerContributorRoutes(app)
+registerOpinionSynthesisRoute(app)
 registerApiRoutes(app)
 
 // ── 舊網址導向（只能新增、不能刪除）──────────────────────────
@@ -149,7 +151,10 @@ app.get('/issues/:id', async c => {
   const initialCommentView = parseIssueCommentView(requestUrl.search)
   const initialCommentSearch = requestUrl.searchParams.get('search') ?? ''
   const initialBriefingSlide = parseIssueBriefingSlide(requestUrl.search)
-  const issueProps = { issueId: id, initialDetail: detail, initialStep, initialCommentAction, initialCommentView, initialCommentSearch, initialBriefingSlide }
+  const issueProps = {
+    issueId: id, initialDetail: detail, initialStep, initialCommentAction, initialCommentView, initialCommentSearch, initialBriefingSlide,
+    ...(opinionSynthesisEnabled(c.env) && detail.issue.abuse_flagged === 0 ? { opinionSynthesisEnabled: true } : {}),
+  }
   const html = await renderPage(IssueView, issueProps, headForIssue(detail.issue.title ?? '', detail.issue.description ?? '', id, origin), {
     hydrate: {
       page: 'issue',

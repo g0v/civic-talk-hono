@@ -1068,7 +1068,7 @@ function syncHash(value: string): string {
 }
 
 // Gemma 原生 Chat 回應只取明確 stop 的唯一 assistant content；不讀取或拼接思考欄位。
-function parseNativeJson(value: unknown): unknown {
+export function parseNativeJson(value: unknown): unknown {
   if (!isObject(value) || typeof value.model !== 'string' || !Array.isArray(value.choices) || value.choices.length !== 1) throw new Error('generation_invalid_completion')
   const choice = value.choices[0]
   if (!isObject(choice) || choice.index !== 0) throw new Error('generation_invalid_completion')

@@ -19,8 +19,21 @@ describe('issue step URL navigation', () => {
     ['?view=unknown', 'card'],
     ['?view=card', 'card'],
     ['?view=list', 'list'],
+    ['?step=comments&action=browse&view=synthesis', 'synthesis'],
   ])('restores the opinion view from %s', (search, expected) => {
     expect(parseIssueCommentView(search)).toBe(expected)
+  })
+
+  it('falls back to cards for a synthesis URL when the feature is disabled', () => {
+    expect(parseIssueCommentView('?step=comments&action=browse&view=synthesis', false)).toBe('card')
+    expect(parseIssueCommentView('?step=comments&action=browse&view=list', false)).toBe('list')
+  })
+
+  it('opens synthesis in the browse step and preserves the surrounding URL context', () => {
+    const previous = '/issues/19?step=materials&action=commit&view=list&search=energy&tab=positions#opinion-42'
+    const synthesis = writeIssueCommentView(previous, 'synthesis')
+    expect(synthesis).toBe('/issues/19?step=comments&action=browse&view=synthesis&search=energy&tab=positions#opinion-42')
+    expect(parseIssueCommentView(new URL(previous, 'https://civic-talk.invalid').search)).toBe('list')
   })
 
   it('round-trips opinion views while preserving the action, search and return anchor', () => {

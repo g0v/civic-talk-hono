@@ -698,6 +698,9 @@
   .scroll-mt-28 {
     scroll-margin-top: calc(var(--spacing) * 28);
   }
+  .list-inside {
+    list-style-position: inside;
+  }
   .list-disc {
     list-style-type: disc;
   }
@@ -804,6 +807,16 @@
   }
   .gap-y-2 {
     row-gap: calc(var(--spacing) * 2);
+  }
+  :where(.divide-y > :not(:last-child)) {
+    --tw-divide-y-reverse: 0;
+    border-bottom-style: var(--tw-border-style);
+    border-top-style: var(--tw-border-style);
+    border-top-width: calc(1px * var(--tw-divide-y-reverse));
+    border-bottom-width: calc(1px * calc(1 - var(--tw-divide-y-reverse)));
+  }
+  :where(.divide-vt-border > :not(:last-child)) {
+    border-color: var(--color-vt-border);
   }
   .justify-self-center {
     justify-self: center;
@@ -985,6 +998,9 @@
   }
   .fill-vt-bg-1 {
     fill: var(--color-vt-bg-1);
+  }
+  .fill-vt-fg-1 {
+    fill: var(--color-vt-fg-1);
   }
   .fill-vt-fg-2\/30 {
     fill: color-mix(in srgb, #505050 30%, transparent);
@@ -1183,6 +1199,9 @@
   }
   .pt-3 {
     padding-top: calc(var(--spacing) * 3);
+  }
+  .pt-4 {
+    padding-top: calc(var(--spacing) * 4);
   }
   .pr-10 {
     padding-right: calc(var(--spacing) * 10);
@@ -1550,6 +1569,9 @@
   }
   .focus-visible\:outline-offset-2:focus-visible {
     outline-offset: 2px;
+  }
+  .focus-visible\:outline-offset-4:focus-visible {
+    outline-offset: 4px;
   }
   .focus-visible\:outline-vt-democratic-red:focus-visible {
     outline-color: var(--color-vt-democratic-red);
@@ -3058,6 +3080,11 @@ html.dark .alert-warn {
   inherits: false;
   initial-value: 0;
 }
+@property --tw-divide-y-reverse {
+  syntax: "*";
+  inherits: false;
+  initial-value: 0;
+}
 @property --tw-border-style {
   syntax: "*";
   inherits: false;
@@ -3220,6 +3247,7 @@ html.dark .alert-warn {
       --tw-skew-x: initial;
       --tw-skew-y: initial;
       --tw-space-y-reverse: 0;
+      --tw-divide-y-reverse: 0;
       --tw-border-style: solid;
       --tw-leading: initial;
       --tw-font-weight: initial;

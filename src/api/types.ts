@@ -1,4 +1,5 @@
 import type { Hono } from 'hono'
+import type { OpinionSynthesisJob } from '../opinions/synthesis'
 
 export type AppBindings = {
   /** 業務資料庫 vtaiwan-civic-talks——所有資料表一律 ct_ 前綴 */
@@ -25,6 +26,9 @@ export type AppBindings = {
   FACT_CHECK_CORE: Fetcher
   /** 證據 API 預設關閉；只有明確設為 "1" 才可使用。 */
   EVIDENCE_API_ENABLED?: string
+  OPINION_SYNTHESIS_ENABLED?: string
+  OPINION_SYNTHESIS_AI_POLICY?: string
+  OPINION_SYNTHESIS_WORKFLOW?: Workflow<OpinionSynthesisJob>
   /** 可選的獨立來源；未指定時讀取 DB，來源 repository 僅提供讀取。 */
   SOURCE_DB?: D1Database
   AI?: Ai

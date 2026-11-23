@@ -832,6 +832,40 @@ export async function listOpinionsForExport(db: D1Database, issueId: number): Pr
   return results ?? []
 }
 
+export async function getOpinionSynthesisSnapshot(db: D1Database, issueId: number, opinionLimit: number, voteLimit: number) {
+  // D1 batch 讓議題、陳述與投票以同一資料庫快照讀取；超過上限時不可用截斷資料推論分群。
+  const [issue, opinions, votes] = await db.batch<Record<string, unknown>>([
+    db.prepare(`SELECT COALESCE(s.version, 0) AS version FROM ct_issues i
+      LEFT JOIN ct_opinion_synthesis_sources s ON s.issue_id = i.id WHERE i.id = ? AND i.abuse_flagged = 0`).bind(issueId),
+    db.prepare(`SELECT id, CASE WHEN length(summary) <= 12000 THEN summary ELSE '' END AS body, author_id AS authorId FROM ct_opinions
+      WHERE issue_id = ? AND abuse_flagged = 0 AND length(summary) > 0 ORDER BY id LIMIT ?`).bind(issueId, opinionLimit + 1),
+    db.prepare(`SELECT v.opinion_id AS opinionId, v.voter_id AS voterId, v.value
+      FROM ct_opinions o JOIN ct_opinion_votes v ON v.opinion_id = o.id
+      WHERE o.issue_id = ? AND o.abuse_flagged = 0 AND length(o.summary) > 0
+      ORDER BY v.opinion_id, v.voter_id LIMIT ?`).bind(issueId, voteLimit + 1),
+  ])
+  const sourceVersion = issue?.results[0]?.version
+  if (typeof sourceVersion !== 'number') return null
+  return {
+    sourceVersion,
+    opinions: (opinions?.results ?? []).flatMap(row =>
+      typeof row.id === 'number' && typeof row.body === 'string' && (typeof row.authorId === 'string' || row.authorId === null)
+        ? [{ id: row.id, body: row.body, authorId: row.authorId }]
+        : []
+    ),
+    votes: (votes?.results ?? []).flatMap<{ opinionId: number; voterId: string; value: OpinionVoteValue }>(row =>
+      typeof row.opinionId === 'number' && typeof row.voterId === 'string' && (row.value === -1 || row.value === 0 || row.value === 1)
+        ? [{ opinionId: row.opinionId, voterId: row.voterId, value: row.value }]
+        : []
+    ),
+  }
+}
+
+export async function getOpinionSynthesisIssueId(db: D1Database, opinionId: number): Promise<number | null> {
+  const row = await db.prepare('SELECT issue_id FROM ct_opinions WHERE id = ? AND abuse_flagged = 0').bind(opinionId).first<{ issue_id: number }>()
+  return row?.issue_id ?? null
+}
+
 export async function listOpinions(db: D1Database, issueId: number): Promise<Opinion[]> {
   const { results } = await db
     .prepare(`SELECT ${OPINION_PUBLIC_COLUMNS} FROM ct_opinions WHERE issue_id = ? AND abuse_flagged IN (0, 1, 3) ORDER BY created_at DESC, id DESC`)

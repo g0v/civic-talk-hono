@@ -51,7 +51,7 @@
 - closure 獨立於 status：管理 PATCH 精確 boolean closed，理由 trim 後 1–1000 code points，同狀態／併發衝突 409，成功 `{ok:true}`；不阻擋投稿、投票、匯出。
 - opinions 列表 viewer-aware，sort=recent|responses 預設 recent；SSR 僅注入無投票欄位的公開 Opinion；分布遮蔽與作者虛擬票規則見下文。
 - pol.is CSV 需登入且 private/no-store；保留 polis_id 舊值／API，不恢復 embed／後台開關，不擅串 Pocket Polis。
-- 本站公民投票分群／跨群共識非既有功能；證據的素材立場分組不可冒稱投票分群成果。
+- #113 公民投票分群與意見綜整獨立於素材證據管線。四位達標才計算，資格納入作者預設票但各須一張真實票；只計未標記公開意見，公開不下發參與者帳號或個人點，群體小／證據不足時抑制群立場。本人群別只來自當下 session，回應 private/no-store。正式預設關閉，AI 有獨立版本開關、Workflow 去重／預留、24h 刷新限制與來源撤下守門；普通本機 dev 不呼叫模型。
 - 內容路由保留 `/`、`/issues/:id`、`/issues/:id/source/:materialId`、`/issues/:id/comment/:opinionId`、`/contribute/:id`、`/about`、`/profile`、`/appeals`、`/privacy`、`/terms`、`/admin`、`/rss.xml`；新增路由核對 `index.ts`、head 與 hydration 註冊，獨立素材／意見所屬議題不符回 404。
 - `db/queries.ts` 集中 ct_* 型別與 SQL，不另建平行 repository；`db/issueVoteCountCache.ts` 管公開計數，schema 見 `../migrations/`，私有證據由 `ai/store.ts` 寫入。議題／素材／意見／briefing 保存投稿時 author_id/name/email/show_email，不隨改名／刪帳變動，舊 NULL 不回填、缺名不退回 email；email 始終留存管理追溯。公開 getIssueDetail／獨立詳情／SSR SQL 列舉欄位、禁 SELECT *，email 用 `CASE WHEN show_email = 1 THEN author_email ELSE NULL END`，不輸出 author_id/show_email；僅管理 *WithAuthor() 回完整快照，HTTP 保留 Vary: Cookie，不混公開投影。不以現在帳號資料替換快照或補造資料，不以 UI 隱藏代替 SQL／server 遮蔽。
 - 意見投票回 vote_agree/disagree/pass、my_vote、can_view_vote_distribution、can_vote、is_author；匿名／未投票分布 server 以 null 遮蔽，投票後或作者可見，撤回再隱藏。作者虛擬同意不寫 votes、不可自投；其他登入者投 1/-1/0，DELETE 撤回；abuse_flagged=1 展開後才提供控制，2/3 不可投，公開 SQL/API 均守可見性。`opinions/export.ts` 的 CSV 僅公開意見／匿名作者序號，不含 Better Auth id/email/voter identity／跨議題內容。closure/status 分存；沿既有原子條件與衝突回應，不先讀後寫假裝無競態，不由本機 migration／fixture 推定遠端 schema。回歸見 tests/authorPrivacy、issueVisibility、opinionVotes、submissionConcurrency。
