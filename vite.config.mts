@@ -5,7 +5,7 @@ import * as vueCompiler from '@vue/compiler-sfc'
 import { sourceDefines, projectRoot } from './scripts/source-metadata.mjs'
 import { bundleNotices } from './scripts/bundle-notices.mjs'
 
-export default defineConfig(({ mode }) => ({
+export default defineConfig(({ mode, command }) => ({
   define: sourceDefines(),
   server: {
     // 不讓 dev server 代替 Worker 回 CORS，確保本機與正式路由行為一致。
@@ -49,6 +49,12 @@ export default defineConfig(({ mode }) => ({
       : [
           cloudflare({
             remoteBindings: mode === 'remote',
+            ...(command === 'serve' && mode === 'development' && process.env.CIVIC_LOCAL_D1_PATH
+              ? { persistState: { path: process.env.CIVIC_LOCAL_D1_PATH } }
+              : {}),
+            ...(command === 'serve' && mode === 'development' && process.env.CIVIC_LOCAL_OPINION_SYNTHESIS === '1'
+              ? { config: config => ({ vars: { ...config.vars, OPINION_SYNTHESIS_ENABLED: '1', OPINION_SYNTHESIS_AI_POLICY: '' } }) }
+              : {}),
           }),
         ]),
     vue({

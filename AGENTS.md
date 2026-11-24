@@ -121,7 +121,7 @@ Civic Talk 使用 Hono、Vue 3 SSR/hydration、Tailwind 與 Cloudflare Workers�
 - **closure 與 status 獨立**：只影響首頁進行中／已結案分類，不阻擋投稿、投票、匯出；公開理由／日期保留，一般編輯不得清除。
 - 意見 API 提供 `vote_agree/disagree/pass`、`my_vote`、`can_view_vote_distribution`、`can_vote`、`is_author`。匿名／未投票時**伺服器以 null 遮蔽分布**，非前端藏起來；投票後或作者可見。作者是虛擬同意票，不寫 votes 表、不可自投；撤回後再隱藏。SSR 只注入不含投票欄位的公開 Opinion。
 - `abuse_flagged=1` 展開內容後才提供控制，2/3 不可投。CSV 只匯公開意見／匿名作者序號，不輸出 Better Auth id、email、voter identity。
-- 舊 polis.tw embed／後台開關已移除；保留 `polis_id` 舊值／API、本站投票與 CSV，不擅串 Pocket Polis。本站投票分群／跨群共識尚非既有功能；證據管線依素材抽取觀點產生立場分組，**不是公民意見投票的分群成果**。
+- 舊 polis.tw embed／後台開關已移除；保留 `polis_id` 舊值／API、本站投票與 CSV，不串 Pocket Polis。#113 新增本站投票的群組圖與綜整：僅 `OPINION_SYNTHESIS_ENABLED=1` 開放第三視角及 API；Gemma 自動排程另須 `OPINION_SYNTHESIS_AI_POLICY=opinion-synthesis-v1` 與綁定，正式皆預設關閉，啟用與遠端 migration 另需授權。證據管線依素材抽取觀點產生的立場分組，**不是公民意見投票的分群成果**。
 
 ## 6. 一鍵彙整：八 API 與品質／生命週期守門
 

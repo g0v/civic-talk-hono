@@ -29,3 +29,7 @@ OPEN_ROUTER_API_KEY=
 # 一般 dev 停用 Auth；dev:remote 保留遠端 Auth／DB／AI，可能寫庫及付費。
 # 本機設定不會自行部署；推送／部署、付費與遠端操作須各別授權。
 # 六 API 契約及後續驗收範圍見 docs/evidence-api-review.md。
+
+# #113 意見綜整：預設關閉；本機使用合成資料驗收時可設定為 1。
+# OPINION_SYNTHESIS_ENABLED=1
+# 本機不設定 OPINION_SYNTHESIS_AI_POLICY；避免使用付費模型。正式開啟須另行授權。

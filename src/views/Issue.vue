@@ -8,6 +8,7 @@ import AuthorName from '../components/AuthorName.vue'
 import LongTextContent from '../components/LongTextContent.vue'
 import OpinionVote from '../components/OpinionVote.vue'
 import OpinionDeck from '../components/OpinionDeck.vue'
+import OpinionSynthesis from '../components/OpinionSynthesis.vue'
 import SignInButtons from '../components/SignInButtons.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import Toast from '../components/Toast.vue'
@@ -52,6 +53,7 @@ const props = defineProps<{
   initialCommentAction?: IssueCommentAction
   initialCommentView?: IssueCommentView
   initialCommentSearch?: string
+  opinionSynthesisEnabled?: boolean
 }>()
 
 const showEvidenceSummary = import.meta.env.DEV
@@ -73,7 +75,9 @@ const opinionsError = ref(false)
 const loading = ref(!props.initialDetail)
 const activeStep = ref<IssueStep | null>(props.initialStep ?? null)
 const commentAction = ref<IssueCommentAction>(props.initialCommentAction ?? 'start')
-const commentView = ref<IssueCommentView>(props.initialCommentView ?? 'card')
+const selectedCommentView = ref<IssueCommentView>(props.initialCommentView ?? 'card')
+const commentView = computed(() => (selectedCommentView.value === 'synthesis' && !props.opinionSynthesisEnabled ? 'card' : selectedCommentView.value))
+const opinionCardToggle = ref<HTMLButtonElement | null>(null)
 const commentSearch = ref(props.initialCommentSearch ?? '')
 const lastBriefingSlideIndex = 3
 // SSR 固定公民角色；志願者的第五張在 hydration 後才還原。
@@ -318,9 +322,16 @@ function setIssueCommentAction(action: IssueCommentAction, replace = false) {
 }
 
 function setIssueCommentView(view: IssueCommentView) {
-  commentView.value = view
+  if (view === 'synthesis' && !props.opinionSynthesisEnabled) return
+  selectedCommentView.value = view
   if (typeof window === 'undefined') return
   updateNavigationUrl(writeIssueCommentView(window.location.href, view))
+}
+
+async function voteFromSynthesis() {
+  setIssueCommentView('card')
+  await nextTick()
+  opinionCardToggle.value?.focus()
 }
 
 function syncCommentSearch() {
@@ -361,7 +372,7 @@ const loginCallbackUrl = computed(() => {
   if (props.initialStep === 'comments') {
     callback = writeIssueCommentAction(callback, props.initialCommentAction ?? 'start')
     callback = writeIssueCommentSearch(callback, props.initialCommentSearch ?? '')
-    callback = writeIssueCommentView(callback, props.initialCommentView ?? 'card')
+    if (commentView.value !== 'synthesis' || props.initialCommentAction === 'browse') callback = writeIssueCommentView(callback, commentView.value)
   }
   return callback
 })
@@ -386,11 +397,11 @@ function handlePopState() {
   const nextStep = parseIssueStep(search)
   activeStep.value = nextStep
   commentAction.value = parseIssueCommentAction(search)
-  commentView.value = parseIssueCommentView(search)
+  selectedCommentView.value = parseIssueCommentView(search, props.opinionSynthesisEnabled === true)
   commentSearch.value = new URLSearchParams(search).get('search') ?? ''
   pendingOpinionId.value = nextStep === 'comments' && commentAction.value === 'browse' ? parseIssueOpinionAnchor(window.location.hash) : null
   // 舊登入 callback 的錨點沒有 view，繼續回到原列表中的同一則。
-  if (pendingOpinionId.value !== null && !new URLSearchParams(search).has('view')) commentView.value = 'list'
+  if (pendingOpinionId.value !== null && !new URLSearchParams(search).has('view')) selectedCommentView.value = 'list'
   if (!nextStep) dragThresholdReached.value = false
   carouselIndex.value = Math.min(parseIssueBriefingSlide(search), viewerRole.value === 'volunteer' ? 4 : lastBriefingSlideIndex)
 }
@@ -1330,12 +1341,27 @@ async function submitOpinion() {
             <template v-else-if="commentAction === 'browse'">
               <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
                 <h2 class="m-0 font-serif text-xl">{{ t('op_start_title') }}</h2>
-                <div class="flex gap-2" role="group" :aria-label="t('op_view_label')">
-                  <button type="button" class="opinion-view-toggle btn btn-secondary btn-sm min-h-11" :aria-pressed="commentView === 'card'" @click="setIssueCommentView('card')">
+                <div class="flex flex-wrap gap-2" role="group" :aria-label="t('op_view_label')">
+                  <button
+                    ref="opinionCardToggle"
+                    type="button"
+                    class="opinion-view-toggle btn btn-secondary btn-sm min-h-11"
+                    :aria-pressed="commentView === 'card'"
+                    @click="setIssueCommentView('card')"
+                  >
                     {{ t('op_card_view') }}
                   </button>
                   <button type="button" class="opinion-view-toggle btn btn-secondary btn-sm min-h-11" :aria-pressed="commentView === 'list'" @click="setIssueCommentView('list')">
                     {{ t('op_list_view') }}
+                  </button>
+                  <button
+                    v-if="opinionSynthesisEnabled"
+                    type="button"
+                    class="opinion-view-toggle btn btn-secondary btn-sm min-h-11"
+                    :aria-pressed="commentView === 'synthesis'"
+                    @click="setIssueCommentView('synthesis')"
+                  >
+                    {{ t('opinion_synthesis_view') }}
                   </button>
                 </div>
               </div>
@@ -1350,6 +1376,12 @@ async function submitOpinion() {
                 @compose="setIssueCommentAction('commit')"
                 @retry="loadOpinions()"
                 @sign-in-required="rememberOpinionPosition"
+              />
+              <OpinionSynthesis
+                v-else-if="opinionSynthesisEnabled && commentView === 'synthesis' && activeStep === 'comments'"
+                :issue-id="issueId"
+                @vote="voteFromSynthesis"
+                @compose="setIssueCommentAction('commit')"
               />
               <template v-else-if="commentView === 'list'">
                 <p class="mt-0 mb-2 text-sm text-muted">{{ issue.abuse_flagged === 3 ? t('moderation_hidden_placeholder') : issue.title }}</p>

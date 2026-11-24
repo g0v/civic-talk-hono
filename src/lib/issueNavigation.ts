@@ -2,16 +2,22 @@ export type IssueStep = 'comments' | 'materials' | 'volunteer'
 
 const ISSUE_STEPS: readonly IssueStep[] = ['comments', 'materials', 'volunteer']
 export type IssueCommentAction = 'start' | 'commit' | 'celebrate' | 'ai_help' | 'browse'
-export type IssueCommentView = 'card' | 'list'
+export type IssueCommentView = 'card' | 'list' | 'synthesis'
 
 const ISSUE_COMMENT_ACTIONS: readonly IssueCommentAction[] = ['start', 'commit', 'celebrate', 'ai_help', 'browse']
 
-export function parseIssueCommentView(search: string): IssueCommentView {
-  return new URLSearchParams(search).get('view') === 'list' ? 'list' : 'card'
+export function parseIssueCommentView(search: string, synthesisEnabled = true): IssueCommentView {
+  const view = new URLSearchParams(search).get('view')
+  if (view === 'list' || (view === 'synthesis' && synthesisEnabled)) return view
+  return 'card'
 }
 
 export function writeIssueCommentView(url: string, view: IssueCommentView): string {
   const next = new URL(url, 'https://civic-talk.invalid')
+  if (view === 'synthesis') {
+    next.searchParams.set('step', 'comments')
+    next.searchParams.set('action', 'browse')
+  }
   next.searchParams.set('view', view)
   return `${next.pathname}${next.search}${next.hash}`
 }

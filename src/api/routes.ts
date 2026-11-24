@@ -15,6 +15,7 @@ import type {
 } from '../db/queries'
 import * as db from '../db/queries'
 import { formatCommentsCsv, toCommentsCsvRows } from '../opinions/export'
+import { scheduleOpinionSynthesisAfterVote } from '../opinions/synthesis'
 import { hasDuplicateDisplayName, isAdminRole, tryGetAuthContext, type AuthContext } from '../auth/authorization'
 import { createAuth } from '../auth/createAuth'
 import { TERMS_VERSION } from '../legal/terms'
@@ -750,6 +751,7 @@ export function registerApiRoutes(app: App): void {
       if (result.error === 'author') return error(c, 'Authors cannot vote on their own opinions')
       return error(c, 'This opinion cannot be voted on')
     }
+    scheduleOpinionSynthesisAfterVote(c, opinionId)
     return c.json(result.state)
   })
 
