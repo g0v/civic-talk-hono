@@ -548,11 +548,6 @@
     letter-spacing: 0;
   }
 
-  .flow-wip {
-    background: var(--color-vt-yellow-tint);
-    color: var(--color-amber);
-  }
-
   .status-collecting {
     background: color-mix(in srgb, var(--color-amber) 14%, white);
     color: var(--color-amber);

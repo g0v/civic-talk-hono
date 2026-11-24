@@ -24,20 +24,16 @@ type FlowStep = {
   label: string
   title: string
   desc: string
-  /** 顯示「功能研發中」徽章 */
-  wip: boolean
-  /** 研發中的子功能說明；徽章掛在這一段，desc 本身描述的是已上線的部分 */
-  wipNote: string
+  note?: string
 }
 
 // 平台導覽流程（issue #83）：五個步驟取代原本三階段循環。
-// 明確逐項列出而不用索引迴圈，讓步驟 3、5 能各自帶「研發中」標示。
 const steps = computed<FlowStep[]>(() => [
-  { n: 1, label: t('abt_step1_label'), title: t('abt_step1_title'), desc: t('abt_step1_desc'), wip: false, wipNote: '' },
-  { n: 2, label: t('abt_step2_label'), title: t('abt_step2_title'), desc: t('abt_step2_desc'), wip: false, wipNote: '' },
-  { n: 3, label: t('abt_step3_label'), title: t('abt_step3_title'), desc: t('abt_step3_desc'), wip: false, wipNote: '' },
-  { n: 4, label: t('abt_step4_label'), title: t('abt_step4_title'), desc: t('abt_step4_desc'), wip: false, wipNote: '' },
-  { n: 5, label: t('abt_step5_label'), title: t('abt_step5_title'), desc: t('abt_step5_desc'), wip: true, wipNote: t('abt_step5_wip_note') },
+  { n: 1, label: t('abt_step1_label'), title: t('abt_step1_title'), desc: t('abt_step1_desc') },
+  { n: 2, label: t('abt_step2_label'), title: t('abt_step2_title'), desc: t('abt_step2_desc') },
+  { n: 3, label: t('abt_step3_label'), title: t('abt_step3_title'), desc: t('abt_step3_desc') },
+  { n: 4, label: t('abt_step4_label'), title: t('abt_step4_title'), desc: t('abt_step4_desc') },
+  { n: 5, label: t('abt_step5_label'), title: t('abt_step5_title'), desc: t('abt_step5_desc'), note: t('abt_step5_note') },
 ])
 
 const techRows = computed(() => [
@@ -78,10 +74,7 @@ const techRows = computed(() => [
                 </div>
                 <h3 class="mt-0 mb-2 font-serif text-lg">{{ step.title }}</h3>
                 <p class="m-0 text-sm text-muted">{{ step.desc }}</p>
-                <p v-if="step.wip" class="mt-3 mb-0 flex flex-wrap items-center gap-2 text-sm text-muted">
-                  <span v-if="step.wipNote">{{ step.wipNote }}</span>
-                  <span class="status-badge flow-wip">🚧 {{ t('abt_wip_badge') }}</span>
-                </p>
+                <p v-if="step.note" class="mt-3 mb-0 text-sm text-muted">{{ step.note }}</p>
               </div>
             </li>
           </ol>

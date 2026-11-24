@@ -499,8 +499,7 @@ export const messages = {
   abt_step5_label: 'SYNTHESIZE',
   abt_step5_title: '意見綜整',
   abt_step5_desc: '累積足夠的公民意見後，把不同觀點綜整回說明頁，看看有沒有原始素材沒覆蓋到的新視角，讓討論持續深化。',
-  abt_step5_wip_note: '搭配意見綜整器（Sensemaker），綜整公民討論和投票的分佈，得出可理解的報告。',
-  abt_wip_badge: '功能研發中',
+  abt_step5_note: '以類似Polis的方式，綜整公民討論和投票的分佈，得出可理解的報告。',
   abt_principle_title: '讓閒置算力變成公共資源',
   abt_principle_desc:
     '流程中，個人與 AI 的互動——素材彙整、說明頁生成、個人與 AI 討論形成公民意見——都由志願者用自己的帳號完成。很多人每週有用不完的 Claude / ChatGPT token，這個平台讓這些閒置算力變成公共資源。',
