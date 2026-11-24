@@ -9,8 +9,8 @@
   // 刻意不寫死 account_id：與 ../vTaiwan-hono 一致，交給 wrangler 登入的帳號決定
   "assets": { "directory": "./public/", "binding": "ASSETS" },
   // 正式 Worker 預先宣告 capability，但只有明確啟用後才開放證據 API。
-  // 意見綜整第一階段只開分群與統計；不設定 OPINION_SYNTHESIS_AI_POLICY，保持 Gemma 停用。
-  "vars": { "EVIDENCE_API_ENABLED": "1", "OPINION_SYNTHESIS_ENABLED": "1" },
+  // 第二階段開啟意見綜整 Gemma 自動報告；仍受分群門檻、版本去重與估算費用準入限制。
+  "vars": { "EVIDENCE_API_ENABLED": "1", "OPINION_SYNTHESIS_ENABLED": "1", "OPINION_SYNTHESIS_AI_POLICY": "opinion-synthesis-v1" },
   "ai": { "binding": "AI", "remote": true },
   "workflows": [
     {
