@@ -2504,10 +2504,6 @@
     font-size: var(--text-vt-sm);
     letter-spacing: 0;
   }
-  .flow-wip {
-    background: var(--color-vt-yellow-tint);
-    color: var(--color-amber);
-  }
   .status-collecting {
     background: color-mix(in srgb, #db7700 14%, white);
     @supports (color: color-mix(in lab, red, red)) {

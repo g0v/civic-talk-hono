@@ -509,8 +509,7 @@ export const messages = {
   abt_step5_title: 'Synthesize opinions',
   abt_step5_desc:
     'Once enough civic opinions have accumulated, the different viewpoints are synthesized back into the briefing, surfacing new perspectives the original materials missed and deepening the discussion.',
-  abt_step5_wip_note: 'Combined with the Sensemaker opinion synthesizer, the distribution of civic discussion and votes is synthesized into an understandable report.',
-  abt_wip_badge: 'In development',
+  abt_step5_note: 'Using an approach similar to Polis, civic discussion and the distribution of votes are synthesized into an understandable report.',
   abt_principle_title: 'Turning idle compute into a public resource',
   abt_principle_desc:
     'Throughout the process, every interaction between a person and AI — synthesizing materials, generating briefings, and forming a civic opinion through your own AI conversation — is done by volunteers using their own accounts. Many people have unused Claude / ChatGPT tokens every week. This platform turns that idle compute power into a public resource.',
