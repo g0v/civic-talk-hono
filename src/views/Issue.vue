@@ -828,13 +828,11 @@ async function submitOpinion() {
             >
               {{ t(key) }}
             </button>
-            <button
-              type="button"
-              class="issue-briefing-tab"
-              :aria-current="(viewerRole === 'volunteer' ? !activeStep && carouselIndex === 4 : activeStep === 'comments') ? 'page' : undefined"
-              @click="viewerRole === 'volunteer' ? selectBriefingSlide(4) : setIssueStep('comments')"
-            >
-              {{ t(viewerRole === 'citizen' ? 'issue_tab_opinions' : 'issue_tab_actions') }}
+            <button v-if="viewerRole === 'volunteer'" type="button" class="issue-briefing-tab" :aria-current="!activeStep && carouselIndex === 4 ? 'page' : undefined" @click="selectBriefingSlide(4)">
+              {{ t('issue_tab_actions') }}
+            </button>
+            <button type="button" class="issue-briefing-tab" :aria-current="activeStep === 'comments' ? 'page' : undefined" @click="setIssueStep('comments')">
+              {{ t('issue_tab_opinions') }}
             </button>
           </nav>
 

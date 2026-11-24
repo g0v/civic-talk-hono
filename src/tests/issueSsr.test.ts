@@ -1,6 +1,7 @@
 import { renderToString } from '@vue/server-renderer'
-import { createSSRApp } from 'vue'
-import { describe, expect, it } from 'vite-plus/test'
+import { createSSRApp, ref } from 'vue'
+import { describe, expect, it, vi } from 'vite-plus/test'
+import * as viewerRoleState from '../composables/useViewerRole'
 import { provideI18n } from '../l10n'
 import { messages } from '../l10n/zh-TW'
 import IssueView from '../views/Issue.vue'
@@ -46,6 +47,32 @@ describe('Issue SSR', () => {
     provideI18n(app, 'zh-TW')
     return renderToString(app)
   }
+  it.each(['citizen', 'volunteer'] as const)('keeps Opinions current in the %s briefing navigation', async role => {
+    const state = viewerRoleState.useViewerRole()
+    const roleStub = vi.spyOn(viewerRoleState, 'useViewerRole').mockReturnValue({ ...state, viewerRole: ref(role) })
+    let html: string
+    try {
+      html = await renderBrowseOpinion('測試意見')
+    } finally {
+      roleStub.mockRestore()
+    }
+
+    const nav = html.match(/<nav\b[^>]*class="issue-briefing-tabs"[^>]*>([\s\S]*?)<\/nav>/)?.[1] ?? ''
+    const tabs = Array.from(nav.matchAll(/<button\b([^>]*)>([^<]*)<\/button>/g), ([, attributes, label]) => ({
+      label: label.trim(),
+      current: attributes.includes('aria-current="page"'),
+    }))
+
+    expect(tabs).toEqual([
+      { label: messages.issue_tab_overview, current: false },
+      { label: messages.issue_tab_consensus, current: false },
+      { label: messages.issue_tab_disputes, current: false },
+      { label: messages.issue_tab_positions, current: false },
+      ...(role === 'volunteer' ? [{ label: messages.issue_tab_actions, current: false }] : []),
+      { label: messages.issue_tab_opinions, current: true },
+    ])
+  })
+
   it('renders an issue page with i18n helpers available', async () => {
     const app = createSSRApp(IssueView, {
       issueId: 1,
