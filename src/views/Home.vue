@@ -12,7 +12,9 @@ import HomeGrowthIllustration from '../components/HomeGrowthIllustration.vue'
 import HomeNatureBackdrop from '../components/HomeNatureBackdrop.vue'
 import { useI18n } from '../l10n'
 import { postSubmissionWithDuplicateNameCheck } from '../client/submission'
+import { emptyIssueDraft, hasIssueDraft, saveIssueDraft } from '../client/issueDraft'
 import { useAuth } from '../composables/useAuth'
+import { useIssueDraft } from '../composables/useIssueDraft'
 import { useViewerRole, type ViewerRole } from '../composables/useViewerRole'
 import type { IssueListItem } from '../db/queries'
 import { filterHomeIssuesByLifecycle, homeLifecycleUrl, readHomeLifecycleTab, type HomeLifecycleTab } from '../lib/homeLifecycle'
@@ -33,11 +35,7 @@ const props = defineProps<{
 const { t } = useI18n()
 const issues = ref<IssueListItem[]>(props.initialIssues ?? [])
 const loading = ref(!props.initialIssues)
-const showForm = ref(false)
-const title = ref('')
-const description = ref('')
-const descriptionTooLong = computed(() => isIssueDescriptionTooLong(description.value))
-const tagsText = ref('')
+const issueTitle = ref<HTMLInputElement | null>(null)
 const submitting = ref(false)
 const issueTosAgreed = ref(false)
 // Email 公開選項（#27）
@@ -47,10 +45,25 @@ const homeTitle = ref<HTMLHeadingElement | null>(null)
 
 // 全站共用的登入狀態（與 AppHeader 共用同一次 /api/me）；SSR 期間永遠是 'loading'
 const { authState, session, ensureAuthSession } = useAuth()
+const issueDraftAccount = () => session.value?.user.id
+const { showForm, draft, draftLoading, draftStorageAvailable, draftKey, openIssueForm } = useIssueDraft(issueDraftAccount)
+const descriptionTooLong = computed(() => isIssueDescriptionTooLong(draft.value.description))
 const duplicateNameRequiresEmail = computed(() => session.value?.hasDuplicateDisplayName === true)
 // 送出時才發現 session 過期：表單留著（別吃掉使用者打的字），只在上方補一列重新登入
 const sessionExpired = ref(false)
 const moderationNotice = ref<{ appealType: 'rejected_submission' | 'account_ban'; reportId?: number; policyCode?: string; rationale?: string } | null>(null)
+
+watch(issueDraftAccount, () => {
+  issueTosAgreed.value = false
+  issueShowEmail.value = false
+})
+
+function clearIssueDraft(): void {
+  draft.value = emptyIssueDraft()
+  issueTosAgreed.value = false
+  issueShowEmail.value = false
+  issueTitle.value?.focus()
+}
 
 const searchQuery = ref(props.initialSearchQuery ?? '')
 const sortOrder = ref<SortOrder>('published')
@@ -101,7 +114,7 @@ function skipWelcomePrompt(): void {
 
 // 建立議題表單：標題相近的既有議題提示（僅供參考，不擋送出、不做審核判斷，見 #36）
 const similarIssues = computed(() => {
-  const q = title.value.trim().toLowerCase()
+  const q = draft.value.title.trim().toLowerCase()
   if (q.length < 2) return []
   return issues.value.filter(i => (i.title ?? '').toLowerCase().includes(q)).slice(0, 5)
 })
@@ -189,7 +202,9 @@ onBeforeUnmount(() => {
 })
 
 async function createIssue() {
-  if (!title.value.trim()) {
+  if (submitting.value || draftLoading.value || descriptionTooLong.value) return
+  const { title, description, tags } = draft.value
+  if (!title.trim()) {
     toast.value?.show(t('idx_toast_title_required'))
     return
   }
@@ -197,20 +212,24 @@ async function createIssue() {
     toast.value?.show(t('tos_required_toast'))
     return
   }
+  if (!window.confirm(t('idx_publish_confirm'))) return
+  const accountId = session.value?.user.id
+  const submittedDraftKey = draftKey.value
   submitting.value = true
   try {
     const res = await postSubmissionWithDuplicateNameCheck(
       '/api/issues',
       {
-        title: title.value.trim(),
-        description: description.value,
+        title: title.trim(),
+        description,
         show_email: issueShowEmail.value,
         terms_accepted: issueTosAgreed.value,
-        tags: parseIssueTagsInput(tagsText.value),
+        tags: parseIssueTagsInput(tags),
       },
       () => window.confirm(t('duplicate_name_submission_confirm', { email: session.value?.user.email || '' }))
     )
     if (!res) return
+    if (!res.ok && accountId !== session.value?.user.id) return
     // session 可能在填表期間過期——守門在伺服器端，前端接住 401 但保留已填內容
     if (res.status === 401) {
       sessionExpired.value = true
@@ -228,6 +247,10 @@ async function createIssue() {
       return
     }
     const data = (await res.json()) as { id: number; moderation?: { hidden?: boolean; policy_code?: string; rationale?: string; report_id?: number | null } }
+    if (accountId !== session.value?.user.id) {
+      if (!data.moderation?.hidden && submittedDraftKey) saveIssueDraft(submittedDraftKey, emptyIssueDraft())
+      return
+    }
     if (data.moderation?.hidden) {
       moderationNotice.value = {
         appealType: 'rejected_submission',
@@ -240,9 +263,7 @@ async function createIssue() {
     }
     toast.value?.show(t('idx_toast_create_ok'))
     showForm.value = false
-    title.value = ''
-    description.value = ''
-    tagsText.value = ''
+    draft.value = emptyIssueDraft()
     issueTosAgreed.value = false
     issueShowEmail.value = false
     setTimeout(() => {
@@ -357,7 +378,7 @@ async function copyRssUrl() {
           <button
             type="button"
             class="btn btn-primary btn-sm min-h-11 shrink-0 whitespace-nowrap focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white sm:hidden"
-            @click="showForm = true"
+            @click="openIssueForm"
           >
             {{ t('idx_new_issue_btn') }}
           </button>
@@ -366,7 +387,7 @@ async function copyRssUrl() {
         <div class="hero-btns hidden sm:flex sm:flex-wrap sm:gap-2 p-2">
           <a href="/about" class="btn btn-outline-white">{{ t('nav_about') }}</a>
           <button type="button" class="btn btn-outline-white" @click="copyRssUrl">{{ t('rss_subscribe_btn') }}</button>
-          <button type="button" class="btn btn-primary whitespace-nowrap focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white" @click="showForm = true">
+          <button type="button" class="btn btn-primary whitespace-nowrap focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white" @click="openIssueForm">
             {{ t('idx_new_issue_btn') }}
           </button>
         </div>
@@ -390,7 +411,7 @@ async function copyRssUrl() {
             <h2 class="mb-4 mt-0 font-bold">{{ t('idx_form_title') }}</h2>
 
             <!-- 還在讀 session（onMounted 打 /api/me）：先不決定要出表單還是登入卡 -->
-            <p v-if="authState === 'loading'" class="m-0 text-muted">{{ t('loading') }}</p>
+            <p v-if="authState === 'loading' || draftLoading" class="m-0 text-muted">{{ t('loading') }}</p>
 
             <!-- 未登入：建立議題需登入，表單不出現（守門在伺服器端） -->
             <template v-else-if="authState === 'anonymous'">
@@ -415,12 +436,15 @@ async function copyRssUrl() {
                 :policy-code="moderationNotice.policyCode"
                 :rationale="moderationNotice.rationale"
               />
+              <p class="mb-4 text-sm text-muted" role="status">
+                {{ t(draftStorageAvailable ? 'idx_draft_local_hint' : 'idx_draft_storage_unavailable') }}
+              </p>
               <div class="form-group">
-                <label>
+                <label for="issue-title">
                   <span>{{ t('idx_label_title') }}</span>
                   <span class="label-hint">{{ t('idx_hint_title') }}</span>
                 </label>
-                <input v-model="title" type="text" :placeholder="t('idx_ph_title')" />
+                <input id="issue-title" ref="issueTitle" v-model="draft.title" type="text" :placeholder="t('idx_ph_title')" :readonly="submitting" />
                 <ul v-if="similarIssues.length" class="mt-2 space-y-1 text-sm">
                   <li class="text-muted">{{ t('idx_similar_hint') }}</li>
                   <li v-for="s in similarIssues" :key="s.id">
@@ -433,14 +457,23 @@ async function copyRssUrl() {
                   <span>{{ t('idx_label_desc') }}</span>
                   <span class="label-hint">{{ t('idx_hint_desc') }}</span>
                 </label>
-                <MarkdownEditor id="issue-description" v-model="description" :label="t('idx_label_desc')" :rows="3" :placeholder="t('idx_ph_desc')" :max-chars="ISSUE_DESCRIPTION_MAX_CHARS" />
+                <MarkdownEditor
+                  id="issue-description"
+                  v-model="draft.description"
+                  :label="t('idx_label_desc')"
+                  :rows="3"
+                  :placeholder="t('idx_ph_desc')"
+                  mode="plain"
+                  :max-chars="ISSUE_DESCRIPTION_MAX_CHARS"
+                  :readonly="submitting"
+                />
               </div>
               <div class="form-group">
                 <label for="issue-tags">
                   <span>{{ t('issue_tags_label') }}</span>
                   <span class="label-hint">{{ t('issue_tags_hint') }}</span>
                 </label>
-                <input id="issue-tags" v-model="tagsText" type="text" :placeholder="t('issue_tags_placeholder')" />
+                <input id="issue-tags" v-model="draft.tags" type="text" :placeholder="t('issue_tags_placeholder')" :readonly="submitting" />
               </div>
               <div class="form-group">
                 <label class="flex items-start gap-2 font-normal">
@@ -463,12 +496,15 @@ async function copyRssUrl() {
                   >
                 </label>
               </div>
-              <div class="flex gap-2">
+              <div class="flex flex-wrap gap-2">
                 <button type="button" class="btn btn-primary" :disabled="submitting || descriptionTooLong" @click="createIssue">
                   {{ t('idx_submit') }}
                 </button>
                 <button type="button" class="btn btn-secondary" @click="showForm = false">
                   {{ t('cancel') }}
+                </button>
+                <button type="button" class="btn btn-secondary" :disabled="submitting || !hasIssueDraft(draft)" @click="clearIssueDraft">
+                  {{ t('idx_draft_clear') }}
                 </button>
               </div>
             </template>
