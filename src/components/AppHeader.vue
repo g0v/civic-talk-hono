@@ -25,7 +25,7 @@ const props = withDefaults(
 )
 
 const { t, locale } = useI18n()
-const isJapanese = computed(() => locale.value === 'ja')
+const compactDesktopNav = computed(() => locale.value === 'ja' || locale.value === 'de')
 
 const { authState, session, ensureAuthSession, signOutAndReload } = useAuth()
 /** 桌面版：按「登入」展開的 provider 小面板 */
@@ -77,10 +77,10 @@ function openFeedback() {
         <img src="/vtaiwan-logo-dark.svg" alt="vTaiwan" class="hidden h-6 w-auto dark:block sm:h-7" />
       </a>
 
-      <!-- 三語在寬桌機才展開導覽，避免平板與登入後的工具列擠版。 -->
+      <!-- 在寬桌機才展開導覽，避免平板與登入後的工具列擠版。 -->
       <nav
         class="hidden items-center gap-0.5 whitespace-nowrap xl:flex [&>a]:px-2 [&_button]:px-2"
-        :class="isJapanese ? '[&_a]:text-xs [&_a>span]:text-xs [&_button]:text-xs [&_select]:text-xs [&>a]:whitespace-nowrap [&>a]:px-2 [&_button]:px-2 [&_select]:px-2' : ''"
+        :class="compactDesktopNav ? '[&_a]:text-xs [&_a>span]:text-xs [&_button]:text-xs [&_select]:text-xs [&>a]:whitespace-nowrap [&>a]:px-2 [&_button]:px-2 [&_select]:px-2' : ''"
       >
         <a v-if="backHref" :href="backHref" class="rounded-pill px-3 py-1.5 text-[15px] text-vt-fg-2 no-underline hover:bg-black/5 dark:hover:bg-white/10">
           {{ backText }}
@@ -193,7 +193,7 @@ function openFeedback() {
 
       <!-- 手機單列：頭像（已登入時）、角色切換、回報、漢堡選單。 -->
       <div class="flex shrink-0 items-center gap-0.5 max-sm:[&_[role=group]_button]:px-1 sm:gap-1.5 xl:hidden">
-        <a v-if="authState === 'signed-in'" href="/profile" class="shrink-0 rounded-full" :title="t('profile_title')">
+        <a v-if="authState === 'signed-in'" href="/profile" class="shrink-0 rounded-full" :class="{ 'max-[360px]:hidden': locale === 'de' }" :title="t('profile_title')">
           <div class="avatar h-7 w-7 sm:h-8 sm:w-8" aria-hidden="true">
             <img v-if="avatarImage" :src="avatarImage" :alt="displayName" referrerpolicy="no-referrer" />
             <span v-else>{{ avatarInitial }}</span>

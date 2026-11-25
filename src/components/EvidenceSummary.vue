@@ -81,7 +81,7 @@ const costMessage = computed(() => {
   if (!state.usage || state.usage.uncertain > 0) return t('vol_ai_cost_unknown')
   return t('vol_ai_cost_known', { actual: (state.usage.actualMicroUsd / 1_000_000).toFixed(6), reserved: (state.usage.reservedMicroUsd / 1_000_000).toFixed(6) })
 })
-const languageLabel = computed(() => t(locale.value === 'zh-TW' ? 'language_zh_tw' : locale.value === 'en' ? 'language_en' : 'language_ja'))
+const languageLabel = computed(() => t(state.language === 'zh-TW' ? 'language_zh_tw' : state.language === 'en' ? 'language_en' : 'language_ja'))
 
 function closeDialog() {
   if (dialog.value?.open) dialog.value.close()
@@ -89,7 +89,7 @@ function closeDialog() {
 
 function syncScope() {
   closeDialog()
-  void controller.setScope(props.active && !props.banned && !blocked.value && !props.sessionExpired ? locale.value : null)
+  void controller.setScope(props.active && !props.banned && !blocked.value && !props.sessionExpired && locale.value !== 'de' ? locale.value : null)
 }
 
 onMounted(() => {
@@ -133,7 +133,9 @@ function confirm() {
 </script>
 
 <template>
+  <p v-if="locale === 'de'" class="m-0 basis-full text-sm text-muted">{{ t('vol_ai_language_unavailable') }}</p>
   <button
+    v-else
     ref="trigger"
     type="button"
     class="btn btn-wheat-yellow btn-sm text-vt-black"

@@ -18,7 +18,7 @@
 | `src/views/`、`src/components/`、`src/client/`、`src/ssr/` | Vue 頁面、共用元件、hydration 與 SSR                                                                  |
 | `src/api/`、`src/auth/`、`src/moderation/`                 | 一般 API、Better Auth、投稿安全審查                                                                   |
 | `src/ai/`                                                  | 證據 API、來源快照、Workflow、模型生成、費用與生命週期                                                |
-| `src/l10n/`、`src/styles/app.css`                          | 繁中／英文／日文與 Tailwind；設計 token 來源為 `../vtaiwan-design-system/project/colors_and_type.css` |
+| `src/l10n/`、`src/styles/app.css`                          | 繁中／英文／日文／德文與 Tailwind；設計 token 來源為 `../vtaiwan-design-system/project/colors_and_type.css` |
 | `migrations/`、`wrangler.jsonc`                            | 業務 D1 schema 與 Workers bindings                                                                    |
 | `scripts/`、`src/tests/`                                   | 建置、來源／授權產物檢查與自動化測試                                                                  |
 
@@ -57,17 +57,19 @@ vp run dev
 3. **身分與隱私**：四種內容保存投稿當下作者快照，前台顯示姓名，email 僅於該筆明確同意公開時顯示；三類具名投稿保存條款版本與時間。完整快照不能直接投影到公開 API。
 4. **討論與管理**：意見提供同意／不同意／略過與登入後 CSV 匯出；不再載入 polis.tw。管理員可審查內容、編輯議題、附公開理由結案／重開；結案獨立於 status，不停止投稿、投票或匯出。
    公民意見列表的「最新／最多回應」卡片右下角皆顯示眼睛圖示＋公開總回應數（含 0），合計同意／不同意／略過及作者預設同意票，與「最多回應」排序一致，並非瀏覽次數。匿名或未投票者也可看總數，票數分布仍由伺服器遮蔽。`GET /api/issues/:id/opinions` 與投票／撤回成功回應相容新增 `response_count`；違規隱藏意見為 `null`，UI 不顯示。SSR 維持不注入投票欄位，hydration 後讀取總數；投票／改票／撤回即時更新卡片（#222）。
-5. **瀏覽**：三語介面不翻譯投稿原文，SSR 初始為繁中；首頁支援搜尋／標籤與排序。議題預覽卡簡介在 640px 以上比標題向右縮排 8px，手機維持原對齊。累計票數不是人數，含具名意見作者當然同意票，統計可能有五分鐘快取延遲。
+5. **瀏覽**：介面支援繁中、英文、日文及德文，不翻譯投稿原文，SSR 初始為繁中；首頁支援搜尋／標籤與排序。議題預覽卡簡介在 640px 以上比標題向右縮排 8px，手機維持原對齊。累計票數不是人數，含具名意見作者當然同意票，統計可能有五分鐘快取延遲。
 
 ### 公民意見綜整（#113）
 
 群組圖與跨群摘要的做法受 mashbean 的 [Pocket Polis](https://github.com/mashbean/pocket-polis/) 啟發。本站直接使用既有公民意見與投票，未串接 Pocket Polis 服務，也沒有把投票傳給模型來決定分群。
 
+意見綜整報告支援 `zh-TW`、`en`、`ja`、`de`；發布支援德文的 Worker 前，須先在業務庫套用 `0021_opinion_synthesis_german.sql`，保留既有報告、來源版本及費用預留紀錄。開發版「一鍵彙整」仍僅支援繁中、英文及日文。
+
 - 分群採確定性二群分析。每人須投滿 7 則（未達 7 則則全數），略過與作者預設同意納入，且至少有一張實際票。至少四人達標才分析；票型太接近時不硬分群。只納入未標記的公開意見；上限 120 則／4,000 張實際票，超過時不以截斷樣本分群。
 - 公開結果只含群組資訊，不含個人座標、身分或逐人投票。少於三人的群不提供座標或可歸屬的立場；登入者只取得自己的群別。至少兩個三人以上的群、三則意見與足夠的實際票證據才提供跨群報告。摘要中的引用可回到原公開意見；AI 文字不是人工驗證結論。
-- `OPINION_SYNTHESIS_ENABLED=1` 開放第三個視角與 `GET /api/issues/:id/opinions/synthesis?language=zh-TW|en|ja`。只有另設定 `OPINION_SYNTHESIS_AI_POLICY=opinion-synthesis-v1` 並具備 AI 與 Workflow binding，才會自動排程 Gemma。達標投票排繁中版本，開啟綜整視角則補排既有議題或其介面語言。模型只收必要的公開意見與粗略群組證據，不送帳號或逐人票；公開正文仍可能含個資。
+- `OPINION_SYNTHESIS_ENABLED=1` 開放第三個視角與 `GET /api/issues/:id/opinions/synthesis?language=zh-TW|en|ja|de`。只有另設定 `OPINION_SYNTHESIS_AI_POLICY=opinion-synthesis-v1` 並具備 AI 與 Workflow binding，才會自動排程 Gemma。達標投票排繁中版本，開啟綜整視角則補排既有議題或其介面語言。模型只收必要的公開意見與粗略群組證據，不送帳號或逐人票；公開正文仍可能含個資。
 - 同一證據版本重用報告，不重送失敗版本；有新證據時同議題／語言最多每 24 小時嘗試一次。模型全站每日另有 12 次、估算 USD 0.10 的準入上限，非整體帳單硬上限。舊證據已不適用時先撤下報告，不用舊文字掩蓋變更；議題／意見撤下時清除受影響的報告正文。
-- 目前 `wrangler.jsonc` 設定 `OPINION_SYNTHESIS_ENABLED="1"` 與 `OPINION_SYNTHESIS_AI_POLICY="opinion-synthesis-v1"`，沿用既有 AI／Workflow binding，不新增 API key 或 migration。About 的「意見綜整」步驟不再標示「功能研發中」，並保留報告說明；來源設定與頁面文案不代表正式部署或真實模型品質已驗證，正式部署與付費驗收另需授權。此功能不屬於志願者的素材彙整或私有證據 API。
+- 目前 `wrangler.jsonc` 設定 `OPINION_SYNTHESIS_ENABLED="1"` 與 `OPINION_SYNTHESIS_AI_POLICY="opinion-synthesis-v1"`，沿用既有 AI／Workflow binding，不新增 API key。About 的「意見綜整」步驟不再標示「功能研發中」，並保留報告說明；來源設定與頁面文案不代表正式部署或真實模型品質已驗證，正式部署與付費驗收另需授權。此功能不屬於志願者的素材彙整或私有證據 API。
 
 ## 重要頁面與一般 API
 

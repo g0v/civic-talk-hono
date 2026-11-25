@@ -18,7 +18,7 @@ const MAX_OPINIONS = 120
 const MAX_VOTES = 4000
 const MAX_OUTPUT_TOKENS = 1200
 const DIRECT_CONTACT = /https?:\/\/|www\.|[\w.+-]+@[\w.-]+\.[a-z]{2,}|(?:\+?\d[\d() -]{7,}\d)/i
-const LANGUAGES = { 'zh-TW': 'Traditional Chinese (Taiwan)', en: 'English', ja: 'Japanese' } as const
+const LANGUAGES = { 'zh-TW': 'Traditional Chinese (Taiwan)', en: 'English', ja: 'Japanese', de: 'German' } as const
 type Language = keyof typeof LANGUAGES
 type Analysis = ReturnType<typeof analyzeOpinionVotes>
 type Evidence = Analysis['evidence']
@@ -29,7 +29,7 @@ type Attempt = { readonly started_at: number; readonly dispatched_at: number | n
 export type OpinionSynthesisJob = { readonly issueId: number; readonly language: Language; readonly revision: string }
 
 function isLanguage(value: string | undefined): value is Language {
-  return value === 'zh-TW' || value === 'en' || value === 'ja'
+  return value !== undefined && Object.hasOwn(LANGUAGES, value)
 }
 
 export function opinionSynthesisEnabled(env: Pick<AppBindings, 'OPINION_SYNTHESIS_ENABLED'>): boolean {

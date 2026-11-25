@@ -2,13 +2,14 @@ import { afterEach, describe, it, expect, vi } from 'vite-plus/test'
 import { messages as zhTW } from '../l10n/zh-TW'
 import { messages as en } from '../l10n/en'
 import { messages as ja } from '../l10n/ja'
+import { messages as de } from '../l10n/de'
 import { createI18n, formatDate, normalizeLocale, readInitialLocale } from '../l10n'
 import type { MessageKey } from '../l10n/zh-TW'
 
 afterEach(() => vi.unstubAllGlobals())
 
 describe('i18n 翻譯完整性', () => {
-  for (const [locale, catalog] of Object.entries({ en, ja })) {
+  for (const [locale, catalog] of Object.entries({ en, ja, de })) {
     it(`${locale} 的 key 與 zh-TW 完全一致`, () => {
       expect(Object.keys(catalog).sort()).toEqual(Object.keys(zhTW).sort())
     })
@@ -23,9 +24,10 @@ describe('i18n 翻譯完整性', () => {
 })
 
 describe('語言偏好與插值', () => {
-  it('支援日語並保留舊版中文偏好，未知語言回繁中', () => {
+  it('支援已知語系並保留舊版中文偏好，未知語言回繁中', () => {
     expect(normalizeLocale('ja')).toBe('ja')
     expect(normalizeLocale('en')).toBe('en')
+    expect(normalizeLocale('de')).toBe('de')
     expect(normalizeLocale('zh')).toBe('zh-TW')
     expect(normalizeLocale('zh-TW')).toBe('zh-TW')
     for (const raw of [null, undefined, '', 'fr']) expect(normalizeLocale(raw)).toBe('zh-TW')
@@ -38,7 +40,11 @@ describe('語言偏好與插值', () => {
     { stored: null, languages: ['EN-gb', 'ja'], expected: 'en' },
     { stored: null, languages: ['zh-HK', 'en'], expected: 'zh-TW' },
     { stored: null, languages: ['zh-CN'], expected: 'zh-TW' },
-    { stored: null, languages: ['fr-FR', 'de-DE'], expected: 'zh-TW' },
+    { stored: null, languages: ['fr-FR', 'de-DE'], expected: 'de' },
+    { stored: null, languages: ['fr-FR', 'DE-at', 'en'], expected: 'de' },
+    { stored: null, languages: ['ja-JP', 'de-CH'], expected: 'ja' },
+    { stored: null, languages: ['fr-FR', 'it-IT'], expected: 'zh-TW' },
+    { stored: 'de', languages: ['en-US'], expected: 'de' },
     { stored: 'en', languages: ['ja-JP'], expected: 'en' },
     { stored: 'ja', languages: ['en-US'], expected: 'ja' },
     { stored: 'zh', languages: ['en-US'], expected: 'zh-TW' },
@@ -57,7 +63,7 @@ describe('語言偏好與插值', () => {
     expect(readInitialLocale()).toBe('ja')
   })
 
-  it('三語切換可持久化並恢復，html lang 同步且保留 zh 儲存格式', () => {
+  it('語系切換可持久化並恢復，html lang 同步且保留 zh 儲存格式', () => {
     const storage = new Map<string, string>()
     vi.stubGlobal('window', {
       localStorage: {
@@ -71,6 +77,7 @@ describe('語言偏好與插值', () => {
     for (const [locale, stored, lang] of [
       ['ja', 'ja', 'ja'],
       ['en', 'en', 'en'],
+      ['de', 'de', 'de'],
       ['zh-TW', 'zh', 'zh-Hant'],
     ] as const) {
       api.setLocale(locale)
@@ -111,8 +118,8 @@ describe('語言偏好與插值', () => {
     expect(readInitialLocale()).toBe('zh-TW')
   })
 
-  it('OPINION.md 只替換模板欄位，不改寫投稿內容中的大括號或替換符號', () => {
-    const api = createI18n('ja')
+  it.each(['ja', 'de'] as const)('%s 的 OPINION.md 只替換模板欄位，不改寫投稿內容中的大括號或替換符號', locale => {
+    const api = createI18n(locale)
     const title = 'title {briefing} {date} $&'
     const briefing = 'body {title} {date} $`'
     const output = api.t('op_md_document', { title, briefing, date: '2026/10/12' })
@@ -133,6 +140,7 @@ describe('語言偏好與插值', () => {
     const iso = new Date(2026, 9, 12).toISOString()
     expect(formatDate(iso, 'ja')).toBe('2026/10/12')
     expect(formatDate(iso, 'en')).toBe('10/12/2026')
+    expect(formatDate(iso, 'de')).toBe('12.10.2026')
     expect(formatDate(iso, 'zh-TW')).toBe('2026/10/12')
     expect(formatDate(null, 'ja')).toBe('')
     expect(formatDate('invalid', 'ja')).toBe('invalid')

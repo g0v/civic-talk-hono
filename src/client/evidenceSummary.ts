@@ -1,10 +1,10 @@
 import { reactive } from 'vue'
-import type { Locale } from '../l10n'
+import type { SummaryLanguage } from '../ai/store'
 
 export type SummaryPhase = 'idle' | 'loading' | 'ready' | 'submitting' | 'progress' | 'saved' | 'superseded' | 'unsaved' | 'partial' | 'failed' | 'withdrawn' | 'erased' | 'unknown' | 'error'
 export type SummaryUsage = { attempts: number; reservedMicroUsd: number; actualMicroUsd: number; uncertain: number }
 export type SummaryState = {
-  language: Locale | null
+  language: SummaryLanguage | null
   phase: SummaryPhase
   version: number | null
   hasSummary: boolean
@@ -203,7 +203,7 @@ export function createEvidenceSummary(issueId: number, dependencies: Dependencie
     await poll(token)
   }
 
-  async function setScope(language: Locale | null): Promise<void> {
+  async function setScope(language: SummaryLanguage | null): Promise<void> {
     const token = begin()
     state.language = language
     state.phase = language ? 'loading' : 'idle'

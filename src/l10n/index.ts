@@ -2,12 +2,14 @@ import { inject, ref, type App, type InjectionKey, type Ref } from 'vue'
 import { messages as zhTW } from './zh-TW'
 import { messages as en } from './en'
 import { messages as ja } from './ja'
+import { messages as de } from './de'
 import type { MessageKey } from './zh-TW'
 
 export const supportedLocales = [
   { code: 'zh-TW', labelKey: 'language_zh_tw' },
   { code: 'en', labelKey: 'language_en' },
   { code: 'ja', labelKey: 'language_ja' },
+  { code: 'de', labelKey: 'language_de' },
 ] as const
 
 export type Locale = (typeof supportedLocales)[number]['code']
@@ -16,6 +18,7 @@ const catalogs: Record<Locale, Record<MessageKey, string>> = {
   'zh-TW': zhTW,
   en,
   ja,
+  de,
 }
 
 export const LOCALE_KEY: InjectionKey<Ref<Locale>> = Symbol('civic-locale')
@@ -24,10 +27,7 @@ const STORAGE_KEY = 'civic_lang'
 
 /** 保留舊站 'zh' 偏好；其餘使用標準語言代碼。 */
 export function normalizeLocale(raw: string | null | undefined): Locale {
-  if (raw === 'en') return 'en'
-  if (raw === 'ja') return 'ja'
-  if (raw === 'zh' || raw === 'zh-TW') return 'zh-TW'
-  return 'zh-TW'
+  return supportedLocales.find(({ code }) => code === raw)?.code ?? 'zh-TW'
 }
 
 /** 手動偏好優先；未設定時依瀏覽器語言順序選擇。SSR 一律維持繁中。 */
@@ -45,8 +45,8 @@ export function readInitialLocale(): Locale {
     const languages = navigator.languages?.length ? navigator.languages : [navigator.language]
     for (const language of languages) {
       const base = language.toLowerCase().split('-')[0]
-      if (base === 'en' || base === 'ja') return base
-      if (base === 'zh') return 'zh-TW'
+      const supported = supportedLocales.find(({ code }) => code.toLowerCase().split('-')[0] === base)
+      if (supported) return supported.code
     }
   }
   return 'zh-TW'

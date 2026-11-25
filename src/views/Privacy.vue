@@ -12,8 +12,8 @@ const { t } = useI18n()
 
     <main class="py-10">
       <div class="page-container">
-        <div class="card">
-          <h1 class="mb-8 font-serif text-3xl font-bold">{{ t('privacy_page_title') }}</h1>
+        <div class="card wrap-anywhere">
+          <h1 class="mb-8 font-serif text-3xl font-bold hyphens-auto">{{ t('privacy_page_title') }}</h1>
 
           <section class="mb-8">
             <h2 class="mb-3 text-xl font-semibold">{{ t('privacy_s1_h') }}</h2>
