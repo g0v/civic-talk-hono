@@ -165,7 +165,20 @@ export function analyzeOpinionVotes(opinions: readonly Opinion[], votes: readonl
   if (participants.length < 4) return { ...baseline, status: 'insufficient' }
 
   const pair = twoClusters(centeredPoints(ordered, participants), ordered.length)
-  if (!pair) return { ...baseline, status: 'unclustered' }
+  if (!pair) {
+    // 這是全體達標者的聚合，不是推論出的陣營；仍只用實票判斷方向。
+    const group = { id: 1, size: participants.length, x: 0, y: 0 }
+    const evidence: Evidence[] = []
+    if (ordered.length >= 3) {
+      for (const { id, body } of ordered) {
+        if (!body) continue
+        const direction = opinionDirection(id, participants)
+        if (direction === null) continue
+        evidence.push({ opinionId: id, body, kind: direction === 'agree' ? 'common_agree' : 'common_disagree', groups: [{ id: group.id, direction }] })
+      }
+    }
+    return { ...baseline, status: 'unclustered', groups: [group], evidence }
+  }
   const [first, second] = pair
   const [a, b] = first.members[0].id < second.members[0].id ? pair : [second, first]
   const bothPublic = a.members.length >= MIN_PUBLIC_GROUP && b.members.length >= MIN_PUBLIC_GROUP

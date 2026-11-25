@@ -63,26 +63,26 @@ describe('opinion vote synthesis', () => {
 
   it.each([
     [
-      'coincident votes',
+      'coincident passes',
       [
-        [1, 0],
-        [1, 0],
-        [1, 0],
-        [1, 0],
+        [0, 0, 0],
+        [0, 0, 0],
+        [0, 0, 0],
+        [0, 0, 0],
       ],
     ],
     [
       'an evenly spread square',
       [
-        [1, 1],
-        [1, -1],
-        [-1, 1],
-        [-1, -1],
+        [1, 1, 0],
+        [1, -1, 0],
+        [-1, 1, 0],
+        [-1, -1, 0],
       ],
     ],
-  ] satisfies [string, Votes[number]['value'][][]][])('does not invent groups for %s', (_description, rows) => {
+  ] satisfies [string, Votes[number]['value'][][]][])('shows one aggregate rather than inventing separate groups for %s', (_description, rows) => {
     const result = analyzeOpinionVotes(
-      opinions(2),
+      opinions(3),
       rows.flatMap((row, i) => ballot(`v${i}`, row)),
       'v0'
     )
@@ -90,8 +90,8 @@ describe('opinion vote synthesis', () => {
     expect(result).toEqual({
       status: 'unclustered',
       qualifiedParticipants: 4,
-      votesRequired: 2,
-      groups: [],
+      votesRequired: 3,
+      groups: [{ id: 1, size: 4, x: 0, y: 0 }],
       myGroup: null,
       evidence: [],
     })
