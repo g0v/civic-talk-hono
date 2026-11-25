@@ -292,7 +292,7 @@ async function copyRssUrl() {
         <div class="mb-5 pr-10">
           <div class="section-label mb-2 flex items-center gap-2">
             <HomeGrowthIllustration variant="seedling" class="h-6 w-8 shrink-0" />
-            <span>WELCOME</span>
+            <span>{{ t('welcome_badge') }}</span>
           </div>
           <h2 id="welcome-title" class="mt-0 mb-2 font-serif text-2xl font-bold text-vt-fg-1">{{ t('welcome_title') }}</h2>
           <p class="m-0 text-vt-fg-2">
@@ -475,7 +475,7 @@ async function copyRssUrl() {
           </div>
 
           <div class="mb-4 flex flex-wrap flex-col sm:flex-row items-center gap-3">
-            <div class="section-label hidden shrink-0 md:block">ISSUES</div>
+            <div class="section-label hidden shrink-0 md:block">{{ t('issue_section_label') }}</div>
             <div role="tablist" :aria-label="t('idx_lifecycle_tabs_aria')" class="flex shrink-0 border-b border-vt-border">
               <button
                 id="home-tab-open"

@@ -54,6 +54,7 @@ class SQLiteD1 {
 
 const T0 = new Date('2026-11-23T04:00:00Z')
 const SYNTHESIS_PATH = '/api/issues/10/opinions/synthesis?language=zh-TW'
+const GERMAN_SYNTHESIS_PATH = '/api/issues/10/opinions/synthesis?language=de'
 const CASE_TITLE = '合成議題'
 const PAPER = [
   { kind: 'common_ground', text: '兩群均支持完善轉乘。', opinionIds: [11] },
@@ -119,7 +120,7 @@ function scenario(participants = 8) {
       props: {},
     })
   const read = (viewer?: string, path = SYNTHESIS_PATH) => request(path, viewer ? { headers: { Cookie: 'fixture=1', 'x-fixture-session': viewer } } : undefined)
-  const visit = () => request(SYNTHESIS_PATH, { headers: { 'Sec-Fetch-Site': 'same-origin' } })
+  const visit = (path = SYNTHESIS_PATH) => request(path, { headers: { 'Sec-Fetch-Site': 'same-origin' } })
   const execute = async () => Promise.all([...jobs.values()].map(job => runOpinionSynthesisJob(env as AppBindings, job)))
   return { db: db.sqlite, env, run, jobs, request, read, visit, execute, waiting }
 }
@@ -194,6 +195,23 @@ describe('公民意見綜整 API 與背景工作', () => {
     vi.setSystemTime(new Date(T0.getTime() + 172_800_000))
     expect(await (await s.visit()).json()).toMatchObject({ reportStatus: 'ready', report: { sections: PAPER } })
     expect(s.run).toHaveBeenCalledTimes(2)
+  })
+
+  it('德文綜整以德文呼叫模型，且報告只在該語言的快取回傳', async () => {
+    const s = scenario()
+    const sections = [{ kind: 'common_ground', text: 'Beide Gruppen befürworten bessere Umsteigemöglichkeiten.', opinionIds: [11] }]
+    s.run.mockResolvedValueOnce(modelReply(sections))
+
+    const response = await s.visit(GERMAN_SYNTHESIS_PATH)
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ reportStatus: 'pending', report: null })
+    await s.execute()
+
+    expect(s.run).toHaveBeenCalledTimes(1)
+    expect(JSON.stringify(s.run.mock.calls[0]?.[1])).toMatch(/\bGerman\b/)
+    expect(await (await s.read(undefined, GERMAN_SYNTHESIS_PATH)).json()).toMatchObject({ reportStatus: 'ready', report: { sections } })
+    expect(await (await s.read()).json()).toMatchObject({ reportStatus: 'unavailable', report: null })
+    expect((await s.read(undefined, GERMAN_SYNTHESIS_PATH.replace('language=de', 'language=toString'))).status).toBe(400)
   })
 
   it('被撤下的來源即時撤回既有報告，不能以舊工作重寫', async () => {

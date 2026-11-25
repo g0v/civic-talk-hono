@@ -1595,6 +1595,11 @@
   .active\:opacity-80:active {
     opacity: 80%;
   }
+  @media (width < 360px) {
+    .max-\[360px\]\:hidden {
+      display: none;
+    }
+  }
   @media (width < 40rem) {
     .max-sm\:mb-0 {
       margin-bottom: 0px;
