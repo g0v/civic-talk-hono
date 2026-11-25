@@ -182,9 +182,14 @@ describe('home issue preview', () => {
   const previewIssue = { ...issue, material_count: 3, opinion_count: 5, vote_count: 7, author_name: '建立者', author_email: null }
 
   it('renders title, description, metadata, and the enter link', async () => {
-    const html = await render(IssuePreviewCard, { issue: previewIssue })
+    const html = await render(IssuePreviewCard, {
+      issue: { ...previewIssue, description: '**議題說明**\n[參考資料](https://example.com)\n<span hidden>原始標籤</span>\n[不安全連結](javascript:noop)' },
+    })
     expect(html).toContain('測試議題')
-    expect(html).toContain('議題說明')
+    expect(html).toContain('<strong>議題說明</strong><br>')
+    expect(html).toContain('<a href="https://example.com">參考資料</a>')
+    expect(html).toContain('&lt;span hidden&gt;原始標籤&lt;/span&gt;')
+    expect(html).not.toContain('href="javascript:')
     expect(html).toContain('3 份素材')
     expect(html).toContain('5 份意見')
     expect(html.replace(/<[^>]*>/g, '')).toContain('建立者：建立者')

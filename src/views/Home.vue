@@ -433,7 +433,7 @@ async function copyRssUrl() {
                   <span>{{ t('idx_label_desc') }}</span>
                   <span class="label-hint">{{ t('idx_hint_desc') }}</span>
                 </label>
-                <MarkdownEditor id="issue-description" v-model="description" :label="t('idx_label_desc')" :rows="3" :placeholder="t('idx_ph_desc')" mode="plain" :max-chars="ISSUE_DESCRIPTION_MAX_CHARS" />
+                <MarkdownEditor id="issue-description" v-model="description" :label="t('idx_label_desc')" :rows="3" :placeholder="t('idx_ph_desc')" :max-chars="ISSUE_DESCRIPTION_MAX_CHARS" />
               </div>
               <div class="form-group">
                 <label for="issue-tags">

@@ -83,6 +83,41 @@ describe('Issue SSR', () => {
     expect((html.match(/class="carousel__slide/g) ?? []).length).toBe(4)
     expect(html).not.toContain('class="tabs"')
   })
+
+  it.each([0, 3])('only renders issue description Markdown when the issue is public (abuse flag %i)', async abuseFlag => {
+    const app = createSSRApp(IssueView, {
+      issueId: 1,
+      initialDetail: {
+        issue: {
+          id: 1,
+          title: '測試議題',
+          description: '[參考資料](https://example.com/issue-context)\n<iframe src="/not-markdown"></iframe>\n![圖片](/not-markdown.png)\n[不安全連結](data:text/html,unsafe)',
+          status: 'collecting',
+          tags: [],
+          created_at: '2026-08-17 00:00:00',
+          abuse_flagged: abuseFlag,
+        },
+        materials: [],
+        briefing: null,
+        opinions: [],
+      },
+    })
+    provideI18n(app, 'zh-TW')
+
+    const html = await renderToString(app)
+
+    if (abuseFlag === 0) {
+      expect(html).toContain('<a href="https://example.com/issue-context">參考資料</a>')
+      expect(html).toContain('&lt;iframe')
+      expect(html).not.toContain('/not-markdown.png')
+    } else {
+      expect(html).not.toContain('issue-context')
+      expect(html).not.toContain('/not-markdown')
+    }
+    expect(html).not.toContain('<iframe')
+    expect(html).not.toContain('href="data:')
+  })
+
   it('keeps the card view deterministic until viewer-aware data is ready for hydration', async () => {
     const summary = 'SSR must not pick a random opinion'
     const html = await renderBrowseOpinion(summary, 'card')
