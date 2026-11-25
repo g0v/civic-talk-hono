@@ -69,7 +69,7 @@ vp run dev
 - 公開結果只含群組資訊，不含個人座標、身分或逐人投票。少於三人的群不提供座標或可歸屬的立場；登入者只取得自己的群別。至少兩個三人以上的群、三則意見與足夠的實際票證據才提供跨群報告。摘要中的引用可回到原公開意見；AI 文字不是人工驗證結論。
 - `OPINION_SYNTHESIS_ENABLED=1` 開放第三個視角與 `GET /api/issues/:id/opinions/synthesis?language=zh-TW|en|ja|de`。只有另設定 `OPINION_SYNTHESIS_AI_POLICY=opinion-synthesis-v1` 並具備 AI 與 Workflow binding，才會自動排程 Gemma。達標投票排繁中版本，開啟綜整視角則補排既有議題或其介面語言。模型只收必要的公開意見與粗略群組證據，不送帳號或逐人票；公開正文仍可能含個資。
 - 同一證據版本重用報告，不重送失敗版本；有新證據時同議題／語言最多每 24 小時嘗試一次。模型全站每日另有 12 次、估算 USD 0.10 的準入上限，非整體帳單硬上限。舊證據已不適用時先撤下報告，不用舊文字掩蓋變更；議題／意見撤下時清除受影響的報告正文。
-- 目前 `wrangler.jsonc` 設定 `OPINION_SYNTHESIS_ENABLED="1"` 與 `OPINION_SYNTHESIS_AI_POLICY="opinion-synthesis-v1"`，沿用既有 AI／Workflow binding，不新增 API key 或 migration。About 的「意見綜整」步驟不再標示「功能研發中」，並保留報告說明；來源設定與頁面文案不代表正式部署或真實模型品質已驗證，正式部署與付費驗收另需授權。此功能不屬於志願者的素材彙整或私有證據 API。
+- 目前 `wrangler.jsonc` 設定 `OPINION_SYNTHESIS_ENABLED="1"` 與 `OPINION_SYNTHESIS_AI_POLICY="opinion-synthesis-v1"`，沿用既有 AI／Workflow binding，不新增 API key。About 的「意見綜整」步驟不再標示「功能研發中」，並保留報告說明；來源設定與頁面文案不代表正式部署或真實模型品質已驗證，正式部署與付費驗收另需授權。此功能不屬於志願者的素材彙整或私有證據 API。
 
 ## 重要頁面與一般 API
 
