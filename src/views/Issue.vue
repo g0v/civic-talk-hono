@@ -91,6 +91,7 @@ const carouselI18n = computed(() => ({
   ariaNavigateToSlide: t('issue_carousel_goto'),
   itemXofY: t('issue_carousel_position'),
 }))
+const renderedDescription = computed(() => (issue.value?.abuse_flagged === 3 ? '' : renderSafeMarkdown(issue.value?.description?.trim() ?? '')))
 const renderedBriefing = computed(() => {
   const current = briefing.value
   if (!current) return null
@@ -804,7 +805,6 @@ async function submitOpinion() {
             <h1 class="mt-3 mb-2 font-serif font-bold" :class="activeStep === 'comments' ? 'text-lg sm:text-xl' : 'text-xl'">
               {{ issue.abuse_flagged === 3 ? t('moderation_hidden_placeholder') : issue.title }}
             </h1>
-            <!-- <p v-if="issue.abuse_flagged !== 3 && issue.description" class="mt-0 mb-3 whitespace-pre-line text-muted">{{ issue.description }}</p> -->
             <p class="m-0 text-sm text-muted" :class="{ 'hidden sm:block': activeStep === 'comments' }" v-show="!activeStep || activeStep === 'comments'">
               {{ t('issue_created') }} {{ formatDate(issue.created_at, locale) }} · {{ materials.length }} {{ t('issue_materials_unit') }} · {{ t('issue_author_label') }}：<AuthorName
                 :name="issue.author_name"
@@ -853,6 +853,10 @@ async function submitOpinion() {
             >
               <Slide :index="0">
                 <article class="issue-briefing-card card w-full">
+                  <div v-if="renderedDescription" class="mb-4">
+                    <h2 class="mt-0 mb-3 font-serif text-xl">{{ t('idx_label_desc') }}</h2>
+                    <div class="markdown-content mobile-readable" v-html="renderedDescription" />
+                  </div>
                   <template v-if="!briefing">
                     <div class="alert alert-warn mb-4">{{ t('brief_no_briefing_alert') }}</div>
                     <div class="empty">

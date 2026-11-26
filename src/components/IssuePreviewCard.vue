@@ -5,6 +5,7 @@ import AuthorName from './AuthorName.vue'
 import StatusBadge from './StatusBadge.vue'
 import { formatDate, useI18n } from '../l10n'
 import type { IssueListItem } from '../db/queries'
+import { renderSafeMarkdown } from '../markdown/renderSafeMarkdown'
 
 const props = defineProps<{
   issue: IssueListItem
@@ -13,6 +14,7 @@ const props = defineProps<{
 const { t, locale } = useI18n()
 const publishedDate = computed(() => formatDate(props.issue.created_at, locale.value))
 const activityDate = computed(() => formatDate(props.issue.last_activity_at ?? props.issue.created_at, locale.value))
+const renderedDescription = computed(() => renderSafeMarkdown(props.issue.description?.trim() ?? ''))
 </script>
 
 <template>
@@ -24,9 +26,7 @@ const activityDate = computed(() => formatDate(props.issue.last_activity_at ?? p
     </div>
 
     <h2 class="mt-0 mb-3 font-serif text-2xl font-bold text-ink">{{ issue.title }}</h2>
-    <p v-if="issue.description" class="mt-0 sm:ml-2 mb-4 whitespace-pre-line leading-relaxed text-vt-fg-2 h-full max-h-64 overflow-auto text-ellipsis sm:max-w-prose">
-      {{ issue.description }}
-    </p>
+    <div v-if="renderedDescription" class="markdown-content mb-4 max-h-64 overflow-auto text-vt-fg-2 sm:ml-2 sm:max-w-prose" v-html="renderedDescription" />
 
     <p class="mt-0 mb-0 text-sm text-muted">
       {{ issue.material_count }} {{ t('idx_materials_unit') }} · {{ issue.opinion_count }} {{ t('idx_opinions_unit') }} · {{ t('issue_preview_vote_count', { count: issue.vote_count }) }}
