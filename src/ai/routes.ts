@@ -9,6 +9,7 @@ import { checkedSnapshot, reconcileSources, SourceUnavailable } from './lifecycl
 import { estimateCall } from './pricing'
 import { readMaterialStatuses, readSourceInput, sha256, SOURCE_NAMESPACE, SourceInputError } from './source'
 import { EvidenceStore, type ExecutionStatus, type InputManifest, type SummaryLanguage } from './store'
+import { buildExtractionDebug } from './extractionDebug'
 
 export type EvidenceApp = Hono<{ Bindings: EvidenceBindings }>
 const CONSENT_VERSION = 'evidence-processing-2026-11-07-v5'
@@ -124,7 +125,8 @@ function generationProgress(events: unknown[], status: ExecutionStatus, errorCod
   const sections = Object.fromEntries(
     GENERATION_SECTIONS.map(section => [section, { status: 'pending', reason: null as string | null, artifact_id: null as string | null, raw_artifact_id: null as string | null }])
   ) as Record<GenerationSection, { status: string; reason: string | null; artifact_id: string | null; raw_artifact_id: string | null }>
-  let currentSection: GenerationSection | 'completion' | null = null
+  let currentSection: GenerationSection | 'completion' | 'introduction' | null = null
+  let introduction: { status: string; reason: string | null; artifact_id: string | null; raw_artifact_id: string | null } | null = null
   let completion: { status: string; reason: string | null; artifact_id: string | null; raw_artifact_id: string | null } = {
     status: 'pending',
     reason: null,
@@ -135,6 +137,24 @@ function generationProgress(events: unknown[], status: ExecutionStatus, errorCod
   let present = false
   for (const event of events) {
     if (!object(event)) continue
+    if (event.stage === 'introduction') {
+      present = true
+      introduction ??= { status: 'pending', reason: null, artifact_id: null, raw_artifact_id: null }
+      if (event.phase === 'started') {
+        introduction.status = 'running'
+        currentSection = 'introduction'
+      }
+      if (event.phase === 'finished' && object(event.outcome) && ['completed', 'failed'].includes(String(event.outcome.status))) {
+        introduction = {
+          status: String(event.outcome.status),
+          reason: typeof event.outcome.reason === 'string' ? event.outcome.reason : null,
+          artifact_id: typeof event.outcome.artifact_id === 'string' ? event.outcome.artifact_id : null,
+          raw_artifact_id: typeof event.outcome.raw_artifact_id === 'string' ? event.outcome.raw_artifact_id : null,
+        }
+        if (currentSection === 'introduction') currentSection = null
+      }
+      continue
+    }
     if (event.stage === 'completion') {
       present = true
       if (event.phase === 'started') {
@@ -184,10 +204,14 @@ function generationProgress(events: unknown[], status: ExecutionStatus, errorCod
       completion.status = completion.status === 'running' ? 'failed' : 'not_started'
       completion.reason = errorCode
     }
+    if (introduction && (introduction.status === 'pending' || introduction.status === 'running')) {
+      introduction.status = 'failed'
+      introduction.reason = errorCode
+    }
     currentSection = null
   }
   if ((status === 'ai_draft' || status === 'partial_draft') && completion.status === 'pending') completion.status = 'not_started'
-  return { current_section: currentSection, estimated_micro_usd: estimatedMicroUsd, sections, completion }
+  return { current_section: currentSection, estimated_micro_usd: estimatedMicroUsd, sections, completion, ...(introduction ? { introduction } : {}) }
 }
 
 export function registerEvidenceRoutes(app: EvidenceApp): void {
@@ -395,7 +419,7 @@ export function registerEvidenceRoutes(app: EvidenceApp): void {
     if (state.saved && (!before.saved || state.saved.jobId !== before.saved.jobId || state.saved.artifactId !== before.saved.artifactId)) return c.json({ error: 'service_unavailable' }, 503)
     const job = state.latest && (admin || state.latest.ownerId === viewerId) ? { job_id: state.latest.jobId, status: state.latest.status } : null
     const saved = state.saved && (admin || state.saved.ownerId === viewerId)
-      ? { job_id: state.saved.jobId, data: state.saved.data, citation_map: state.saved.citationMap, verification: 'ai_unverified' as const, updated_at: state.saved.updatedAt }
+      ? { job_id: state.saved.jobId, status: state.saved.status, review_required: true as const, data: state.saved.data, citation_map: state.saved.citationMap, verification: 'ai_unverified' as const, updated_at: state.saved.updatedAt }
       : null
     return c.json({ version: state.version, has_summary: state.saved !== null, job, summary: saved })
   })
@@ -455,17 +479,30 @@ export function registerEvidenceRoutes(app: EvidenceApp): void {
     }
     const diagnostics = await store.listArtifacts(job.executionId, 'diagnostics')
     const artifactSummaries = await store.listArtifactSummaries(job.executionId)
-    const artifact = job.artifactId ? await store.getArtifact(job.executionId, job.artifactId) : null
+    let artifactId = job.artifactId
+    let artifact = artifactId ? await store.getArtifact(job.executionId, artifactId) : null
+    const extractionArtifacts = import.meta.env.DEV && c.req.query('include_extraction') === '1'
+      ? await Promise.all([store.listExtractionRawArtifacts(job.executionId), store.listArtifacts(job.executionId, 'extraction')])
+      : null
     // 這是當下議題的隱藏狀態，不是工作原始輸入的一部分，故不影響快取鍵。
     const currentIssueExclusions = (await readMaterialStatuses(c.env.SOURCE_DB, job.issueId)).filter(item => item.abuse_flagged !== 0).map(item => ({ id: item.id, reason: 'hidden' }))
     // 最後再以同一持久 fence 讀取快照，避免已完成清除的競態把記憶體舊內容送出。
-    const snapshot = await store.getSnapshot(job.executionId)
-    const updated = await store.getJob(jobId, auth.context.user.id, admin)
+    let snapshot = await store.getSnapshot(job.executionId)
+    let updated = await store.getJob(jobId, auth.context.user.id, admin)
     if (!updated) return c.json({ error: 'source_unavailable' }, 503)
+    // 只追上正常完成的 null→final 指標；重讀後仍須通過來源與最終指標檢查。
+    if (snapshot && !artifactId && ['queued', 'extracting', 'comparing', 'generating'].includes(job.status) &&
+      ['ai_draft', 'partial_draft'].includes(updated.status) && updated.artifactId) {
+      artifactId = updated.artifactId
+      artifact = await store.getArtifact(job.executionId, artifactId)
+      snapshot = await store.getSnapshot(job.executionId)
+      updated = await store.getJob(jobId, auth.context.user.id, admin)
+      if (!updated) return c.json({ error: 'source_unavailable' }, 503)
+    }
     const refreshedBase = { ...base, status: updated.status, error_code: updated.errorCode, updated_at: updated.updatedAt, source_checked_at: updated.sourceCheckedAt, usage: updated.usage }
     // 清除／撤下可能恰在快照讀取與最後狀態查詢之間完成；已觀察失效時不可送出先前內容。
     if (updated.status === 'withdrawn' || updated.status === 'erased') return c.json(refreshedBase)
-    if (!snapshot || updated.artifactId !== job.artifactId || (job.artifactId && !artifact)) return c.json({ error: 'source_unavailable' }, 503)
+    if (!snapshot || updated.artifactId !== artifactId || (artifactId && !artifact)) return c.json({ error: 'source_unavailable' }, 503)
     const initialInputDiagnostics = diagnostics.map(item => item.payload).filter(item => object(item) && item.stage === 'input')
     const payload = artifact && object(artifact.payload) ? artifact.payload : {}
     const provenance = { ...(object(payload.provenance) ? payload.provenance : {}), artifacts: artifactSummaries }
@@ -485,6 +522,7 @@ export function registerEvidenceRoutes(app: EvidenceApp): void {
       initial_input_diagnostics: initialInputDiagnostics,
       current_issue_exclusions: currentIssueExclusions,
       diagnostics: payload.diagnostics ?? diagnostics.map(item => item.payload),
+      ...(extractionArtifacts ? { extraction_debug: buildExtractionDebug(jobId, snapshot.manifest, extractionArtifacts[0], extractionArtifacts[1], diagnostics) } : {}),
     })
   })
 

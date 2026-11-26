@@ -1,12 +1,136 @@
 # #183 實作洞察與驗收紀錄
 
-更新日期：2026-11-08。此檔保留各時期的正反紀錄；下方現況優先，歷史章節依當時日期與模型／契約判讀，不把舊「尚未實測」當成現狀。**2026-11-08 起，下方歷史所載的 experiment／review profiles、專用 CLI／setup／fixture 及 Cookie helper 入口均已移除；命令僅為歷史執行證據，不可作現行操作指引或本機檔案入口。** 私有 `.wrangler` 資料與帳本保留。
+更新日期：2026-11-14。此檔保留各時期的正反紀錄；目前管線閱讀基準與品質界線見「2026-11-12：提取、比對、綜整三階段研究」，首個基準觀測 checkpoint 的實作與手動回報見下節。歷史章節依當時日期與模型／契約判讀，不將舊驗收或部署回報當成本輪現況。**2026-11-08 起，下方歷史所載的 experiment／review profiles、專用 CLI／setup／fixture 及 Cookie helper 入口均已移除；命令僅為歷史執行證據，不可作現行操作指引或本機檔案入口。** 私有 `.wrangler` 資料與帳本保留。
 
 ## 現況與使用者確認
+
+以下三點保留 2026-11-08 交接時的已知回報，不表示本輪重新確認部署或 API 驗收；現行操作契約以[證據 API 手冊](./docs/evidence-api-review.md)為準。
 
 - 使用者已確認真實三模型品質實驗成功，並同意公開 [結果](./results/ai-experiment_result.json) 與 [費用報告](./results/ai-experiment_cost.json)。報告為 `ai_draft`，共識 2、爭點 1、立場 3，三項 completed、補完 not_needed；該工作 ledger 記錄 23 attempts、13,362 microUSD、unknown／reserved 為零。這不是 Cloudflare 帳單核對，也不是獨立人工 gold labels。報告 source metadata `e668fa2ea9c70fd3bdbcfd06ebb554b5e3a4747d` 為 dirty，不能聲稱與目前 HEAD 相同或重跑逐字相同。不要另付費重跑以確認使用者的成功回報。
 - 正式已由使用者部署 source `73800643596b7114efd0c7623ea436023cd244b9`、`EVIDENCE_API_ENABLED=1`；既有確認為六匿名 401、CSRF 403、`/api/me` 200／super-admin／banned:false，不重跑，也不代表完整六 API 驗收。缺必要綁定 fail closed；現行六 API 與程式閱讀地圖見 [`docs/evidence-api-review.md`](./docs/evidence-api-review.md)。
 - 2026-11-08 使用者核准提前清理專用環境、本機驗證及 commit，不 push／deploy、不付費或遠端寫入。PR #191 與遠端原始 0017 已完成，SQL／ledger 不改，`DB_AUTH` 不做 DDL／migration。關閉 #183 是 API 交付與專用環境退場，不表示 UI 或 live 驗收完成；UI／一般 API 移交 [#166](https://github.com/g0v/civic-talk-hono/issues/166)，維護 reconcile／erase 驗收見 [#201](https://github.com/g0v/civic-talk-hono/issues/201)，進度見 [`TODO_AFTER_MERGE.md`](./TODO_AFTER_MERGE.md)。所有私人狀態、歷史結果與 unknown／tombstone 保留。
+
+## 2026-11-14：checkpoint A 使用者手動回報
+
+- 使用者回報「實測 log 有出來」，並授權提交／推送 A，再推進至下一個檢查點；下一個檢查點驗收前不提交。此回報視為 A 的觀測接線手驗，不重跑確認，也不宣稱新的模型內容、原子化或語義品質已通過。
+- 下一步依計畫為 B／P0＋E1：固定既有 P0 raw，只評估 claim／context 的展句與去重；Clairic 提示及 Clef／Gemma 不動。新付費呼叫、遠端資料／maintenance 與部署均不在本次授權內。
+
+## 2026-11-13：checkpoint A 基準提取觀測
+
+- 依 `plan.md` 第 6 節第 1 步先補可觀測性，沒有調整 `claims-list-v3`、`evidence-2`、Clairic／Clef／Gemma 的模型請求或設定指紋。P1／E1、原子 claim／context 與下游雙層輸入仍未實作；不是第一階段語義品質已驗收。
+- dev-only、owner／admin 且精確 opt-in 的 job GET 新增 `extraction_debug` 白名單；讀既有 raw／extraction／diagnostics，不重算、不回填或新增付費呼叫。以 usage 的 `extract:<materialId>` 對應 raw，避免同正文素材誤歸屬；完整 request／state_text、作者快照與其他模型 raw 不進新投影，來源撤下／清除／失聯及最後查核競態不交付內容。production 及未 opt-in 的回應不新增欄位、不讀提取 raw。
+- 前端沿用既有輪詢，獨立於最終草稿輸出 raw、已保存的 legacy 展句及安全提取診斷；全部生成失敗仍可看上游資料。`claim／context` 明示尚未建立，每個工作／工件去重，過期 scope 回應不印；原始 value／spans 不強行 zip，也不將 legacy quote 改名成原子命題。
+- 型別檢查通過 167 files，完整測試通過 58 files／714 tests；包含 opt-in／production、401／403／404、相同正文素材歸屬、零證據／拒收／provider 無回應、清除競態與前端 pending→可讀／去重／scope 隔離。測試使用既有隔離 SQLite 與合成 provider，不是真實模型品質或真人 Auth 驗收。
+- 真實 Chrome 以實際元件 SSR／hydration 與隔離合成 HTTP 回應，檢查三語、1280／390px、淺／深色共 12 組；原始抽取與 legacy 完整文字可在 console 目視，三個語言工作各兩份素材只各輸出一次，GET 為精確 opt-in，沒有 POST、hydration 警告或水平溢出。另確認 hover、dialog、關閉後 focus、disabled，目視四張代表畫面。這不是正式站、真人 session 或付費流程驗收。
+- 暫時 HTML／SSR 驗證器與獨立瀏覽器 profile 已移除，自有前端驗證服務已停止；沒有使用真人 Cookie、遠端 D1、模型呼叫、migration、commit／push 或部署。A 的真實來源手動驗收待操作者進行；操作、副作用與費用界線見[API 手冊](./docs/evidence-api-review.md#checkpoint-a-提取觀測dev-only)。
+
+## 2026-11-12：提取、比對、綜整三階段研究
+
+### 閱讀基準與證據界線
+
+- 本節依 `b62a385` 受控回退後的原始碼研究：Clairic `claims-list-v3`、提取 `evidence-2`、Clef `symmetric-four-way-v2`、生成 `specialized-evidence-v12-baseline-v9`、輸入 `section-values-v6-gemma-chat`、補完 `missing-fields-only-v3`。版本來源為 [`models.ts`](./src/ai/models.ts#L12-L28)，不代表此版本已部署或已完成新的品質實測。
+- **程式事實**來自實際 builder／parser／Workflow；**既有實測**沿用上一輪已讀取並保存的兩個議題 7 工作，不宣稱是遠端目前最新工作；**合成探針**只證明特定程式行為；**優化提案**尚未實作、未測得成功率提升。私人正文、完整原始回應與帳號資訊不寫入本檔。
+- 本輪只更新研究文件，沒有修改程式、重跑模型、查詢遠端 D1、操作工作／快取／帳本或重新執行完整測試與 build。離線探針直接載入目前純邏輯函式，輸入完全合成，沒有呼叫 provider 或修改 DB。
+- 分析模型的推理強度與 Worker 的請求設定是兩件事。目前原始碼的 [`GENERATION_PARAMETERS`](./src/ai/generation.ts#L402-L425) 仍為 `enable_thinking:false`、`max_completion_tokens:8192`，共識／爭點溫度為 0，立場／補完為 0.2。本節沒有據此推定使用者實際調整了哪一層設定，也未操作或實測 Worker 的 thinking 開關。
+
+### 流程與既有實測定位
+
+```mermaid
+flowchart TD
+  S[合格素材與受保護快照] --> E[Clairic 選取原文片段]
+  E --> A[逐字座標驗證、展句與去重]
+  A --> C[Clef 跨素材逐對分類]
+  A --> G[三個獨立輸入的生成請求]
+  C --> G
+  G --> V[各分區 schema、引用、關係與覆蓋驗證]
+  V --> Q{至少一個分區有效}
+  Q -->|否| F[failed，不交付新草稿]
+  Q -->|是| B[組裝有效分區]
+  B --> N{有白名單 null 必填欄位}
+  N -->|有| P[最多單輪補完並驗證]
+  N -->|無| R[最後來源與狀態守門]
+  P -->|有效| R
+  P -->|失敗| F
+  R --> D[ai_draft 或 partial_draft]
+```
+
+三個生成請求在程式中依序執行共識、爭點、立場，但都讀取同一份核可證據與必要比較資料，**不是把上一項摘要交給下一項**。每一個付費呼叫有獨立 attempt、來源／帳號查核、原始回應與費用結算；沒有付費重試或通用修復輪。[`runner.ts：paid／生成迴圈`](./src/ai/runner.ts#L195-L258)、[`generationPayload`](./src/ai/generation.ts#L687-L720)。
+
+| 沿用的議題 7 工作 | 原始碼 metadata | 反方素材的提取結果 | 共識／爭點／立場 | 三項實際 temperature |
+| --- | --- | --- | --- | --- |
+| 較早成功案 | `9ee4bf6`、`dirty=true` | 1 個單位，僅標題 | completed／no_findings／completed | 0／0／0.2 |
+| 後續失敗案 | `bf9e71c`、`dirty=false` | 4 個單位，已含反方正文 | failed／failed／failed | 0／0／0.2 |
+
+兩案來源 hash 相同。後者抽取共 12 個單位，比對 48 對，為 15 agree／6 disagree／27 unrelated；三項生成皆 `finish_reason=stop`。共識第 2、3 項宣告了未實際引用的證據；爭點標為 opposition，但跨側有 agree；立場第一群 name／Core_concern 引用超出 opinions 聯集。原版 9ee4bf6 與回退後驗證器離線重播，均得到相同三個拒收代碼。這證明失敗位置，**不證明是哪一句提示造成，也不是新版驗證器額外變嚴**；兩案溫度相同，不能將差異歸因於調低 temperature。成功案爭點為空且漏掉反方正文，也不能作為完整性基準。
+
+### 一、提取：原文定位可靠，不等於主張單位完整
+
+**目前流程。** 入口先驗同議題、可見、非空素材，至少兩份，每份最多 48 KiB、總正文最多 512 KiB；全部檢查在 claim／付費前完成。[`readSourceInput`](./src/ai/source.ts#L78-L125)。每份原文獨立作一次 Clairic `state`，只有 `claims:list<text>`；沒有分塊、speaker／條件／命題 ID，也沒有要求每篇只能回三段。[`buildClairicRequest／parseClairicResponse`](./src/ai/models.ts#L113-L146)。Clairic 官方契約是從 state 提取文字 span，不是保證產生結構化論證；見[官方說明](https://developers.cloudflare.com/workers-ai/models/clairic/)。
+
+**已保護的部分。** 每個 span 都須逐字對回素材；UTF-16／Unicode scalar／UTF-8 逐筆消歧，不接受半字元。value／spans 數量不同時，所有座標和片段均須通過嚴格重配對；壞 span 不降級搜尋。只有缺 span 時才容許唯一精確搜尋，重複文字歧義仍拒收。通過後依句界展開，按素材＋展開範圍去重；全工作證據為零或超過 64 就停止，不偷偷裁切。[`extractClairicEvidence`](./src/ai/evidence.ts#L167-L310)。
+
+**不足與可確認的邊界：**
+
+1. **句界不是論述邊界。** 句點／換行不辨識後置說話者、跨句條件、縮寫或軟折行。已執行的合成探針：`「應停建。」是反對者的主張。` 選取「應停建」只展為 `「應停建。」`；`The U.S. opposes it.` 選取 `opposes` 只得到 `opposes it.`。`甲。"乙。"` 的兩個錨點則產出 `甲。"`、`乙。"`，把後句開引號吞入前句。這些是確定性切片結果，不是對模型行為的猜測。[`isTerminal／expandSentence`](./src/ai/evidence.ts#L125-L159)。
+2. **擴大引文與保留獨立主張是兩個不同目標。** 合成原文 `甲方支持全面補助；乙方反對全面補助。` 即使模型回傳兩個正確錨點，仍因展開範圍相同而只剩一個含雙方主張的 evidence ID；同單位後續錨點 metadata 不另保留於 evidence，須回 provider raw 追查。反之，不同但重疊的展句範圍未必去重。不能把 evidence 筆數等同主張數，也不能直接以合併所有重疊範圍解決。[同檔去重處](./src/ai/evidence.ts#L284-L309)。
+3. **跨句語境不能由更多下游思考合法補回。** 合成原文 `協會支持補助。` 接下一行 `但前提是先完成經費評估。`，若只選到「支持補助」，quote 不含條件。後續模型只收到選中的 quote，不會讀取整份素材快照；猜到條件也不等於取得可引用證據。
+4. **complete 是技術有效性，不是召回率。** 合法 null／空 list 可為 complete、零證據，只要其他素材有證據就不因此觸發 partial；標題片段也不會因缺少完整主張而被辨識出來。現有 coverage 記錄合法性、筆數、拒收、去重及用量狀態，沒有人工核可的核心／少數觀點／條件召回率。[`runner.ts：validate-extraction`](./src/ai/runner.ts#L317-L368)。低 confidence 不是經校準的完整性判定，不能拿來刪除難處理的證據。
+
+**優化方向（尚未實作）。** 先建立直引號、縮寫、後置歸屬、軟換行與跨句條件的離線案例，再修確定性句界缺陷；不要一律追加下一句或忽略所有換行。語義層應先人工標出「可比較主張＋必要語境」，研究把 claim 的精確原文範圍與 context 分開識別，讓同段多方主張能保有各自 ID，又不丟掉歸屬與限定。這是新的中間契約研究，不能假定目前 Clairic 的單一 list 已支援，也不能把改寫後的主張冒充逐字原文。更多、更長片段是否提升召回或反而混合主張，須用人工標準與受控實驗比較。
+
+### 二、比對：全域 pair 關係與具體問題的粒度未對齊
+
+**目前流程。** 所有跨素材無向組合各比較一次，同素材不送 Clef；依 ID 固定方向與題序。素材各有 $n_i$ 段時，配對數為 $\sum_{i<j}n_i n_j$，所以多抽證據會增加比較量，而不是只增加一筆生成輸入。[`createEvidencePairs`](./src/ai/comparison.ts#L82-L106)。每批至多 64 題、完整 JSON 至多 12,288 UTF-8 bytes，單題超限就停止，不截句或漏 pair。這是本站 byte 守門，不是 tokenizer／provider 截斷保證；[Clef 官方](https://developers.cloudflare.com/workers-ai/models/clef/)明示長 state 可能截斷，缺截斷旗標不能當作確認未截斷。
+
+每題只回一個 agree／disagree／unrelated／uncertain。agree 明確容許互補，不要求共同支持同一命題。parser 核對完整題號集合、四類機率範圍／總和及 choice 與機率一致；沒有未校準的信心閾值，也不自行把 choice 改成另一類。[`parseClefResponse`](./src/ai/models.ts#L252-L293)。一題格式錯誤會令同批全部標為 failed；缺失／失敗維持 incomplete／partial，不補成 unrelated 或反推 agree。[`runner.ts：validate-comparisons`](./src/ai/runner.ts#L399-L436)。
+
+**不足與可確認的邊界：**
+
+1. **關係沒有共同的 scope。** Clef pair 沒有「它在比較哪個具體命題、問題、條件」的識別欄位；生成的 question 亦未對應到 Clef scope。因此兩段可能在教育平等上互補、在是否全面現金補助上對立，卻只有一個全域標籤供兩種用途共用。現在 opposition／contradiction 只要跨側有任一 agree 就拒收；立場同群只要有任一 direct-disagree 就拒收。這是資料模型的確定限制，不足以證明某筆 Clef 分類本身錯誤。[`sideRelations／disputesSection`](./src/ai/generation.ts#L876-L955)。
+2. **同素材與單一引文內的衝突不在正式比較覆蓋內。** 已執行合成探針：一份素材的兩句相反增班主張，取得不同 evidence ID 後仍沒有 Clef pair，positions 可將它們放同群而通過「沒有 direct-disagree」守門。探針來源集合含另一份素材，但其沒有抽取證據，用以隔離這個能力邊界；不是繞過建立工作的兩素材門檻。故此守門只代表未把「已知正式反對」合群，不代表已證明群內語義一致。[`assertNoDirectDisagreement／positionsSection`](./src/ai/generation.ts#L868-L873)。
+3. **候選沒有傳遞性漏洞，但仍只是搜尋線索。** 現行每條 direct-agree 作種子，complete-link 擴展要求所有跨素材邊皆為直接 agree；BFS 路徑與 reverse diagnostics 不會補造邊。同素材節點視為候選內相容，也不多算來源。即使各 pair 都 agree，不同邊仍可能因不同面向互補，未必存在全群共同命題。[`analyzeComparisons`](./src/ai/comparison.ts#L141-L263)、[`generationContext`](./src/ai/generation.ts#L593-L608)。
+4. **有界候選不保證每個多來源支持集合都可被選取。** 合成六節點 A–F、各屬不同素材，agree 邊為 AD、AE、BD、BF、CE、CF、DE、DF、EF，其餘 unrelated；實際候選只有 ADE、BDF、CEF。DEF 雖三邊皆 agree，卻不在任一候選中，生成不能選出 DEF 三來源集合。每條支持邊仍有保留，兩來源子集仍可能表達同一命題；這不是「整個命題必然漏掉」，也不是要求改成無界 clique 枚舉。是否影響真實多來源覆蓋須另驗。
+5. **固定方向不是雙向品質驗收。** runner 沒有逐 pair 執行反向抽查；symmetrical 是提示判準，不能由程式固定排序推論模型已具順序不變性。batch 額外證據是否干擾單題也未知，需固定 pair 做受控比較，不應直接常態雙倍呼叫。
+
+**優化方向（尚未實作）。** 優先研究可回查的 claim／問題 scope，保留說話者與條件，讓 Clef 獨立判斷該 scope 的關係，再由綜整沿用同一 scope。生成提出的 scope 或主張切分在獨立核對前只是提案；不把原本 agree 改標 disagree，也不能把未通過關係守門的 opposition 強改成 tension 來兜過。若補同素材比對，應比較不同明示主張，而非按來源 ID 猜立場。這會改中間契約、題數與成本，須先影子評估、版本化及授權；暫不更動正式守門。批次失敗粒度、方向敏感性和候選涵蓋為次階段評估，不先用更長 prompt、低信心閾值或無界圖搜尋代替。
+
+### 三、綜整：敘述與集合約束同輪耦合，來源驗證不是語義判官
+
+**目前流程與三項差異。**
+
+- **共識**只能從當輪短 ID 候選選子集，至少兩素材；三型分別是 shared_fact、shared_challenge、shared_position。宣告 evidence_ids 必須與實際 Title／description 引用聯集一致，且各參與素材都要出現在 description；每個候選需採用或明示拒絕。這不是要求產出固定筆數。[`consensusSection`](./src/ai/generation.ts#L817-L865)。
+- **爭點**按 question 整理兩側以上，每側不得內含 direct-disagree、同一 evidence ID 不得同時放兩側，claim 須覆蓋該側，description 須引用每側。純同源爭點可接受，但不冒稱正式跨來源關係；只有非 tension 且跨側全部 direct-disagree 才標 `origin=direct_clef`。問題去重僅處理空白與大小寫，不檢驗改寫後的語義重複。[`disputesSection`](./src/ai/generation.ts#L894-L955)。
+- **立場**從 opinions 的實際引用推導成員與 Sources，名稱／核心的引用不能增加成員，且全證據必須採用或明示排除。它是素材論述的立場地圖，不是投票者分群；同一素材可含多群，一群亦可含多素材。[`positionsSection`](./src/ai/generation.ts#L959-L1015)。
+
+三項都採具名原生 JSON Schema，只有共識 candidate_id 使用當輪動態 enum；敘述的 evidence ID 仍由 parser 核對是否存在及屬於正確集合。原生回應要求唯一 stop assistant 字串，拒答／工具／截斷／不完整 JSON 均拒收，不讀取思考文字當答案。[`generationSchema／builder`](./src/ai/generation.ts#L668-L720)、[`parseNativeJson`](./src/ai/generation.ts#L1080-L1121)。
+
+**不足與可確認的邊界：**
+
+1. **三步提示不是三個執行階段。** 目前「先 opinions，再 name／Core_concern，再自查覆蓋」仍在一次立場模型回應裡，程式沒有在中途凍結 opinions 聯集。模型同時負責敘述、成員、引用與排除；已保存實測的群外名稱引用及共識多宣告 ID，正是這類跨欄位契約失敗。不能因提示列出順序，就宣稱 LLM 一定按順序思考或完成集合運算。
+2. **語義蘊含沒有被驗證。** `citedText()` 核對的是 ID、引用範圍與合法字串，來源回查的是 quote 原文；它沒有判定生成句是否由引文支持。已執行完全合成探針：來源是「甲方支持增加班次」，輸出改為「甲方反對增加班次」，保留合法引用與群組範圍，仍可解析通過。這只證明能力邊界，不表示真實模型在上述工作做了同樣反轉。[`citedText`](./src/ai/generation.ts#L774-L789)。
+3. **逐句 citation map 不代表逐句語義核對。** 一個句子物件的 text 可含多句，`addSentenceRanges()` 切成多個範圍後會把同一組 IDs 複製到每句。合成爭點的兩句敘述共用兩個 ID，實際兩個範圍各有兩個引用；來源文字合法不等於每份來源都支持每句。[`addSentenceRanges`](./src/ai/generation.ts#L749-L771)。name 並沒有「必須逐字出現在證據」的驗證，目前失敗是引用聯集越界，不能以放寬字面匹配來修這個不同問題。
+4. **空白、排除與有效狀態仍可掩蓋語義漏失。** 共識可拒絕全部候選，爭點沒有逐問題／逐 disagree 種子的採用或排除契約，立場可列出非空排除理由而不採用。程式不能驗證理由是否充分。`no_findings` 是合法空結果，不是「證明不存在」；`ai_draft` 也可能含空分區。
+5. **失敗隔離到分區，沒有隔離到 item。** 一個 item 違規會令整個分區失敗；其他有效分區可保留 partial，三項都無有效工件則 failed。這是現有嚴格契約，不應偷偷丟掉壞項目並冒稱完整。null 白名單補完只處理有效草稿的 Overview／Core_concern，不能修未知引用、分群錯誤或跨側關係；必要補完失敗也不交付新結果。[`runner.ts：驗證與組裝`](./src/ai/runner.ts#L556-L765)、[`prepareDraftCompletion／補完`](./src/ai/generation.ts#L1339-L1472)。
+6. **議題範圍與證據角色未單獨表達。** 現在 Clairic 只收到素材 content，生成只收到 quote／關係／語言，不另送 issue title／description；完整 sources 主要供伺服器回查。[`generationInput`](./src/ai/runner.ts#L441-L446)、[`generationPayload`](./src/ai/generation.ts#L687-L701)。若將議題題名作選材範圍提示，必須標為不可信、不可引用的 context，不能用它填補素材主張；也不能直接插進目前 Clairic state 而不處理座標映射。是否需要這種聚焦是產品／品質取捨，不能只憑缺欄位判定為 bug。
+
+**優化方向（尚未實作）。** 優先降低模型重複承擔的機械約束，而非再堆一段自查提示。可比較兩條路：
+
+- **新契約內確定性推導重複欄位。** 例如從真正採用的句子引用推導支持集合，再維持兩來源及正文來源覆蓋；這需重新決定共識是否保留模型宣告 evidence_ids，因為歷史裁示曾要求保留。不等於收到壞回應後自動刪掉未使用 ID，也不會解決語義支持或 opposition 的 scope 問題。
+- **將結構確定與命名／概述實際拆開。** 先驗證 opinions、成員／排除及關係，再用已凍結的群內白名單寫 name／Core_concern。可以研究是否由既有至多一輪補完承接，而非新增第五輪；但目前 name 必填、補完不接受 name，不能視為現成能力。這會改 schema／目標白名單，並使補完更常付費、延遲與輸出量增加；若另加選材模型階段，呼叫上限與預算也要另議。
+
+全域 evidence ID 動態 enum 可研究用於限制未知 ID，但不能阻止「ID 存在、卻不在該群 opinions 聯集」；單輪固定 schema 亦無法預先取得同輪輸出才形成的群聯集。system 內的 schema 說明與 response_format 有重複結構，是否精簡其中一份可做單變因測試，不能因官方支援 JSON Schema 就假定可刪提示或獲得語義保證。[Gemma 官方契約](https://developers.cloudflare.com/workers-ai/models/gemma-4-26b-a4b-it/)。
+
+### 建議研究順序與驗收方式
+
+| 優先 | 下一步研究，不代表已批准實作 | 必須觀察的結果／代價 |
+| --- | --- | --- |
+| P0 | 凍結同一來源、版本、證據及關係，建立人工核可的 claim／必要語境／問題 scope 基準 | 分開量測原文定位、核心／反方／條件召回、比較正確性、引用蘊含及遺漏；不能以筆數或 ai_draft 代替。人工標註與歧義裁決有成本。 |
+| P1 | 驗證並修正已重現的句界缺陷；比較 claim 與 context 分離的方案 | 離線可證明切片與座標；是否保住歸屬／條件仍須人工核對。不可一律加長引文或合併不同說話者。 |
+| P1 | 影子評估帶問題 scope 的比較，納入同源不同主張 | 同一 scope 的四類 precision／recall、未決歧義與下游適用性；保留舊判斷，不直接改標。題數、工件與費用可能增加。 |
+| P1 | 比較現行單輪敘述契約與「先凍結集合，再寫受限敘述」 | 分別記錄引用集合錯誤、人工語義品質、反方遺漏、補完頻率、總費用與耗時；契約通過率提高仍不能替代品質。 |
+| P2 | 視基準缺口再測方向、批次大小、候選覆蓋、schema 精簡或 thinking | 一次只改一個變因，不先增大上限或常態雙向呼叫。thinking 需驗最終 content／stop、8192 上限與用量，不能補回未送入的原文或消除 scope 不一致。 |
+
+**可先離線完成的是邊界與契約證據，不是新的模型品質成績。** 本輪已驗證同句雙方錨點合併、跨句條件缺漏、引號／縮寫錯分、DEF 候選集合缺口、同源相反主張同群可接受，以及合法引用仍能承載反轉文字／複製到多句的能力界線；沒有永久新增測試、probe 檔或實作。新付費實驗與上述結構性修改須另行授權，保留 owner／admin 隱私、來源 fence、引用守門、unknown 費用及歷史 raw，不以清快取或重跑成功案例作證。
 
 ## 本次 API 完整化驗收（2026-11-05）
 

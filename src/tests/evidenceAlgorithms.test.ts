@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test'
-import { expandSentence, extractClairicEvidence, sliceEvidenceSpan, type Evidence, type OffsetUnit } from '../ai/evidence'
+import { expandSentence, expandSentenceCandidate, extractClairicEvidence, sliceEvidenceSpan, type Evidence, type OffsetUnit } from '../ai/evidence'
 import { analyzeComparisons, createEvidencePairs, pairKey, type DirectComparison, type Relation } from '../ai/comparison'
 import { buildClefBatches, MODEL_VERSIONS, parseClefResponse } from '../ai/models'
 
@@ -174,6 +174,88 @@ describe('Clairic 證據來源定位', () => {
     expect(extract(content, ['甲'], [[999, 1000]]).rejected[0].reason).toBe('span_value_conflict')
   })
 
+  it.each(['utf16', 'unicode', 'utf8'] as const)('數量不一致時以精確 %s 座標保留同片語的不同位置', unit => {
+    const content = '前😀。重複。中😀。不同。再重複。'
+    const spans = [
+      offsets(content, '重複', unit),
+      offsets(content, '不同', unit),
+      offsets(content, '重複', unit, content.lastIndexOf('重複')),
+    ]
+    const result = extract(content, ['重複', '不同'], spans)
+    expect(result.status).toBe('complete')
+    expect(result.rejected).toEqual([])
+    expect(result.evidence.map(item => item.quote)).toEqual(['重複。', '不同。', '再重複。'])
+    expect(result.evidence.map(item => item.raw_span)).toEqual([
+      { start: spans[0][0], end: spans[0][1], unit },
+      { start: spans[1][0], end: spans[1][1], unit },
+      { start: spans[2][0], end: spans[2][1], unit },
+    ])
+    expect(result.evidence.map(item => sliceEvidenceSpan(content, item.raw_span))).toEqual(['重複', '不同', '重複'])
+    expect(result.evidence.map(item => item.provider_span?.unit)).toEqual([unit, unit, unit])
+  })
+
+  it('重複的 value 可由較少但完整的精確座標覆蓋，不要求重複引文', () => {
+    const result = extract('甲。', ['甲', '甲'], [[0, 1]])
+    expect(result.status).toBe('complete')
+    expect(result.evidence.map(item => item.raw_quote)).toEqual(['甲'])
+    expect(result.evidence[0].raw_span).toEqual({ start: 0, end: 1, unit: 'utf16' })
+    expect(result.evidence[0].provider_span?.possible_units).toEqual(['utf16', 'unicode'])
+  })
+
+  it.each([
+    { name: '缺少某個 value', spans: [[0, 1], [4, 5], [0, 1]], reason: 'invalid_spans' },
+    { name: '座標未匹配任何 value', spans: [[0, 1], [2, 3], [1, 2]], reason: 'span_value_conflict' },
+    { name: '座標超出原文', spans: [[0, 1], [2, 3], [999, 1000]], reason: 'span_value_conflict' },
+    { name: 'null 座標', spans: [[0, 1], [2, 3], null], reason: 'invalid_spans' },
+    { name: '格式錯誤座標', spans: [[0, 1], [2, 3], [4]], reason: 'invalid_spans' },
+    { name: '完全沒有座標', spans: [], reason: 'invalid_spans' },
+  ])('數量不一致且$name時整份拒收，不交付先前已配對的證據', ({ spans, reason }) => {
+    const result = extract('甲。乙。甲。', ['甲', '乙'], spans)
+    expect(result.status).toBe('failed')
+    expect(result.evidence).toEqual([])
+    expect(result.rejected).toEqual(expect.arrayContaining([expect.objectContaining({ reason })]))
+  })
+
+  it.each([
+    { content: '😀AA。', values: ['A'], spans: [[3, 4], [2, 3]] },
+    { content: '😀AB。', values: ['A', 'B'], spans: [[2, 3]] },
+  ])('數量不一致且不同座標單位指向不同位置時拒收，無論是否為相同文字', ({ content, values, spans }) => {
+    const result = extract(content, values, spans)
+    expect(result.status).toBe('failed')
+    expect(result.evidence).toEqual([])
+    expect(result.rejected).toContainEqual(expect.objectContaining({ reason: 'ambiguous_span' }))
+  })
+
+  it('數量不一致時不接受素材外的相同文字，也不丟掉壞座標繼續交付', () => {
+    const content = '甲。'
+    const state = `甲\n${content}`
+    const result = extractClairicEvidence({
+      material_id: 1,
+      content,
+      state,
+      source_start: 2,
+      response: clairic(['甲'], [[2, 3], [0, 1]], state),
+    })
+    expect(result.status).toBe('failed')
+    expect(result.evidence).toEqual([])
+    expect(result.rejected).toEqual([{ index: 1, reason: 'outside_source' }])
+    expect(result.state_mapping?.provider_state_text).toBe(state)
+  })
+
+  it('數量不一致仍拒絕空字串 value，不能只保留有效片段', () => {
+    const result = extract('甲。', ['甲', ''], [[0, 1]])
+    expect(result.status).toBe('failed')
+    expect(result.evidence).toEqual([])
+    expect(result.rejected).toEqual([{ index: null, reason: 'invalid_value' }])
+  })
+
+  it('數量一致的錯位座標仍依原索引拒收，不進入重新配對', () => {
+    const result = extract('甲。乙。', ['甲', '乙'], [[2, 3], [0, 1]])
+    expect(result.status).toBe('failed')
+    expect(result.evidence).toEqual([])
+    expect(result.rejected).toEqual([{ index: 0, reason: 'span_value_conflict' }, { index: 1, reason: 'span_value_conflict' }])
+  })
+
   it('拒絕缺漏或格式錯誤的 spans，不將壞 span 降級為字串搜尋', () => {
     expect(extract('第一第二。', ['第一', '第二'], [[0, 2]]).rejected[0].reason).toBe('invalid_spans')
     expect(extract('第一。', ['第一'], [[0]]).rejected[0].reason).toBe('invalid_spans')
@@ -182,14 +264,133 @@ describe('Clairic 證據來源定位', () => {
     expect(extract('😀A。', ['\ud83d']).rejected[0].reason).toBe('invalid_value')
   })
 
-  it('依素材與擴展後相同範圍去重，無效片段不影響其他有效片段的 partial 診斷', () => {
-    const result = extract('此主張需要支持。另一句。', ['主張', '支持', '不存在'])
+  it('完整選取的歸屬、反對理由與跨句條件不被展句換成前後其他人的主張', () => {
+    const selected = '乙方反對增班，擔心人力不足。若無合格司機，排班將難以維持。'
+    const content = `甲方要求增加班次。${selected}丙方建議先調降票價。`
+    const result = extract(content, [selected])
+    expect(result.status).toBe('complete')
+    expect(result.evidence[0].raw_quote).toBe(selected)
+    expect(result.evidence[0].quote).toBe(selected)
+    expect(sliceEvidenceSpan(content, result.evidence[0].raw_span)).toBe(selected)
+    expect(sliceEvidenceSpan(content, result.evidence[0].expanded_span)).toBe(selected)
+  })
+
+  it('同一完整原文單位的詞級錨點去重，不放大成多個主張，無效定位仍保留 partial 診斷', () => {
+    const result = extract('此主張需要支持。另一句。', ['主張', '支持', '主張', '不存在'])
     expect(result.status).toBe('partial')
-    expect(result.evidence).toHaveLength(1)
-    expect(result.duplicates).toBe(1)
-    expect(result.rejected).toEqual([{ index: 2, reason: 'not_found' }])
+    expect(result.evidence.map(item => item.raw_quote)).toEqual(['主張'])
+    expect(result.evidence.map(item => item.quote)).toEqual(['此主張需要支持。'])
+    expect(result.duplicates).toBe(2)
+    expect(result.rejected).toEqual([{ index: 3, reason: 'not_found' }])
     const other = extractClairicEvidence({ material_id: 2, content: '此主張需要支持。', state: '此主張需要支持。', response: clairic(['主張']) })
     expect(other.evidence[0].id).not.toBe(result.evidence[0].id)
+  })
+})
+
+describe('離線句界候選', () => {
+  it.each([
+    { content: 'The U.S. opposes it.', raw: 'opposes', expected: 'The U.S. opposes it.' },
+    { content: 'Before. The U.K. supports it. After.', raw: 'supports', expected: 'The U.K. supports it.' },
+    { content: 'The U.N. and U.S.A. agree.', raw: 'U.N.', expected: 'The U.N. and U.S.A. agree.' },
+    { content: '甲。"乙。"', raw: '甲', expected: '甲。' },
+    { content: '甲。"乙。"', raw: '乙', expected: '"乙。"' },
+    { content: "甲。'乙。'", raw: '甲', expected: '甲。' },
+    { content: "甲。'乙。'", raw: '乙', expected: "'乙。'" },
+    { content: '"甲。""乙。"', raw: '甲', expected: '"甲。"' },
+    { content: '"甲。""乙。"', raw: '乙', expected: '"乙。"' },
+    { content: '甲！?"乙？!"丙。', raw: '甲', expected: '甲！?' },
+    { content: '甲！?"乙？!"丙。', raw: '乙', expected: '"乙？!"' },
+    { content: '甲。("乙！")丙。', raw: '乙', expected: '("乙！")' },
+    { content: '「甲。」"乙。"', raw: '甲', expected: '「甲。」' },
+    { content: '「甲。」"乙。"', raw: '乙', expected: '"乙。"' },
+    { content: '"甲『乙！』"丙。', raw: '乙', expected: '"甲『乙！』"' },
+    { content: '"She said \'Go!\'" Next.', raw: 'Go', expected: '"She said \'Go!\'"' },
+    { content: '"We support it." Next.', raw: 'We support', expected: '"We support it."' },
+    { content: '"We support it." Next.', raw: '"We support it."', expected: '"We support it."' },
+    { content: "'We support it,' she said. Next.", raw: 'support', expected: "'We support it,' she said." },
+    { content: '甲。\r\n"We support it."', raw: 'support', expected: '"We support it."' },
+    { content: "Don't cut the claim. Next.", raw: 'claim', expected: "Don't cut the claim." },
+    { content: '"Don\'t cut it." Next.', raw: 'cut', expected: '"Don\'t cut it."' },
+    { content: "The residents' plan works. 'Next.'", raw: 'works', expected: "The residents' plan works." },
+    { content: 'The rate is 3.14%. Next.', raw: '3.14', expected: 'The rate is 3.14%.' },
+    { content: '前😀。\r\n \t第二句😀！\r\n後句。', raw: '第二句😀', expected: '第二句😀！' },
+    { content: '前😀。重複。再次重複😀。', raw: '重複', from: 7, expected: '再次重複😀。' },
+    { content: '第一句😀。\r\nSecond sentence! 日本語です。', raw: '第一句😀。\r\nSecond sentence', expected: '第一句😀。\r\nSecond sentence!' },
+    { content: '甲方要求增班。乙方反對增班。若無司機，排班難以維持。丙方提議降價。', raw: '乙方反對增班。若無司機，排班難以維持。', expected: '乙方反對增班。若無司機，排班難以維持。' },
+    { content: '只有不排擠預算時，協會才支持補助。下一句。', raw: '支持', expected: '只有不排擠預算時，協會才支持補助。' },
+    { content: '協會支持補助。\r\n但前提是先評估經費。後文。', raw: '支持補助。\r\n但前提是先評估經費', expected: '協會支持補助。\r\n但前提是先評估經費。' },
+    { content: '「應停建。」是反對者的主張。下一句。', raw: '應停建', expected: '「應停建。」是反對者的主張。' },
+    { content: '「應停建。」是反對者的主張。下一句。', raw: '反對者', expected: '「應停建。」是反對者的主張。' },
+    { content: '"應停建。"為反對者的立場。後文。', raw: '應停建', expected: '"應停建。"為反對者的立場。' },
+    { content: '「不應停建。應先評估。」是協會的看法。後文。', raw: '不應停建', expected: '「不應停建。應先評估。」是協會的看法。' },
+    { content: '「不應停建。應先評估。」是協會的看法。後文。', raw: '應先評估', expected: '「不應停建。應先評估。」是協會的看法。' },
+    { content: '「他說『應停建。』」是協會的說法。後文。', raw: '應停建', expected: '「他說『應停建。』」是協會的說法。' },
+    { content: '「應停建。」\r\n是反對者的主張。後文。', raw: '反對者', expected: '「應停建。」\r\n是反對者的主張。' },
+    { content: '「應停建。」下一句談交通。', raw: '應停建', expected: '「應停建。」' },
+    { content: '前文。這是協會的主張。', raw: '協會', expected: '這是協會的主張。' },
+    { content: '協會支持補助。\n但前提是先完成經費評估。後文。', raw: '支持補助', expected: '協會支持補助。\n但前提是先完成經費評估。' },
+    { content: '協會支持補助。\n但前提是先完成經費評估。後文。', raw: '經費評估', expected: '協會支持補助。\n但前提是先完成經費評估。' },
+    { content: '前文😀。\r\n協會支持補助。\r\n \t但前提是不得排擠教育經費。後文。', raw: '支持', expected: '協會支持補助。\r\n \t但前提是不得排擠教育經費。' },
+    { content: '協會支持補助。但前提是先評估經費。條件是不得排擠教育。後文。', raw: '教育', expected: '協會支持補助。但前提是先評估經費。條件是不得排擠教育。' },
+    { content: '「應補助。」是協會的主張。\n但前提是先評估經費。後文。', raw: '經費', expected: '「應補助。」是協會的主張。\n但前提是先評估經費。' },
+    { content: '協會支持補助。\n\n但前提是另一案通過。', raw: '支持', expected: '協會支持補助。' },
+    { content: '協會支持補助。\n\n但前提是另一案通過。', raw: '另一案', expected: '但前提是另一案通過。' },
+    { content: '協會支持補助。\n但市府反對增稅。', raw: '支持', expected: '協會支持補助。' },
+    { content: '前文。只有不排擠預算時，協會才支持補助。', raw: '支持', expected: '只有不排擠預算時，協會才支持補助。' },
+    { content: '協會支持補助。\n\n但前提是另一案通過。', raw: '支持補助。\n', expected: '協會支持補助。\n' },
+    { content: '協會支持補助。\n但前提是先完成經費評估。後文。', raw: '\n但前提是先完成經費評估', expected: '協會支持補助。\n但前提是先完成經費評估。' },
+    { content: '「應停建。」是另一回事. 交通改善是市府的主張。後文。', raw: '應停建', expected: '「應停建。」' },
+    { content: '「應停建。」是另一回事. 交通改善是市府的主張。後文。', raw: '交通改善', expected: '交通改善是市府的主張。' },
+    { content: '「應停建。\n\n交通費應調降。」是協會的主張。後文。', raw: '應停建', expected: '「應停建。' },
+    { content: '「應停建。\r\n \t\r\n交通費應調降。」是協會的主張。後文。', raw: '應停建', expected: '「應停建。' },
+    { content: '「應停建。\r\n交通費應調降。」是協會的主張。後文。', raw: '應停建', expected: '「應停建。\r\n交通費應調降。」是協會的主張。' },
+    { content: '「應停建。\n\n交通費應調降。」是協會的主張。後文。', raw: '「應停建。\n\n交通費應調降。」', expected: '「應停建。\n\n交通費應調降。」是協會的主張。' },
+    { content: '「應停建。」是U.S.協會的主張。後文。', raw: '應停建', expected: '「應停建。」是U.S.協會的主張。' },
+    { content: '「協會支持補助。\n但前提是先評估經費。」是反對者的說法。後文。', raw: '支持', expected: '「協會支持補助。\n但前提是先評估經費。」是反對者的說法。' },
+    { content: '甲方支持弱勢補助；乙方反對普遍補助，除非政府證明不排擠教育預算。', raw: '支持弱勢補助', expected: '甲方支持弱勢補助' },
+    { content: '甲方支持弱勢補助；乙方反對普遍補助，除非政府證明不排擠教育預算。', raw: '反對普遍補助', expected: '乙方反對普遍補助，除非政府證明不排擠教育預算。' },
+    { content: '甲方支持弱勢補助；乙方反對普遍補助，除非政府證明不排擠教育預算。', raw: '不排擠教育預算', expected: '乙方反對普遍補助，除非政府證明不排擠教育預算。' },
+    { content: '家長協會支持弱勢補助 ;  市府反對普遍補助。', raw: '支持', expected: '家長協會支持弱勢補助' },
+    { content: '家長協會支持弱勢補助 ;  市府反對普遍補助。', raw: '反對', expected: '市府反對普遍補助。' },
+    { content: '協會支持弱勢補助；市府不反對普遍補助。', raw: '反對', expected: '市府不反對普遍補助。' },
+    { content: '協會支持弱勢補助；反對普遍補助，除非先評估。', raw: '反對', expected: '協會支持弱勢補助；反對普遍補助，除非先評估。' },
+    { content: '甲方支持弱勢補助；但反對普遍補助。', raw: '反對', expected: '甲方支持弱勢補助；但反對普遍補助。' },
+    { content: '甲方支持弱勢補助；除非乙方反對普遍補助。', raw: '支持', expected: '甲方支持弱勢補助；除非乙方反對普遍補助。' },
+    { content: '「甲方支持弱勢補助；乙方反對普遍補助。」是協會的說法。', raw: '反對', expected: '「甲方支持弱勢補助；乙方反對普遍補助。」是協會的說法。' },
+    { content: '討論（甲方支持弱勢補助；乙方反對普遍補助）。', raw: '反對', expected: '討論（甲方支持弱勢補助；乙方反對普遍補助）。' },
+    { content: '甲方支持弱勢補助；乙方反對普遍補助，除非政府證明不排擠教育預算。', raw: '支持弱勢補助；乙方反對普遍補助', expected: '甲方支持弱勢補助；乙方反對普遍補助，除非政府證明不排擠教育預算。' },
+    { content: '甲方支持弱勢😀補助；乙方反對普遍補助；丙方支持偏遠地區補助。', raw: '反對', expected: '乙方反對普遍補助' },
+    { content: '只有經費足夠時，協會才支持補助；市府反對增稅。', raw: '反對', expected: '只有經費足夠時，協會才支持補助；市府反對增稅。' },
+    { content: '甲方支持補助；乙方反對增稅。\n但前提是先評估經費。', raw: '反對', expected: '甲方支持補助；乙方反對增稅。\n但前提是先評估經費。' },
+    { content: '甲方支持補助; 乙方反對增稅。', raw: ' 乙方反對增稅', expected: ' 乙方反對增稅。' },
+    { content: 'A supports the plan; B opposes the plan.', raw: 'opposes', expected: 'A supports the plan; B opposes the plan.' },
+    { content: '甲方支持弱勢補助；乙方反對。', raw: '反對', expected: '甲方支持弱勢補助；乙方反對。' },
+    { content: '甲方支持弱勢補助；乙方反對該補助。', raw: '反對', expected: '甲方支持弱勢補助；乙方反對該補助。' },
+    { content: '甲方支持弱勢補助；乙方反對，因為經費不足。', raw: '反對', expected: '甲方支持弱勢補助；乙方反對，因為經費不足。' },
+    { content: '甲方支持弱勢補助；假設乙方反對普遍補助。', raw: '支持', expected: '甲方支持弱勢補助；假設乙方反對普遍補助。' },
+    { content: '甲方支持弱勢補助；乙方反對增稅是必要前提。', raw: '支持', expected: '甲方支持弱勢補助；乙方反對增稅是必要前提。' },
+    { content: '甲方支持弱勢補助的條件是；乙方反對增稅。', raw: '反對', expected: '甲方支持弱勢補助的條件是；乙方反對增稅。' },
+    { content: '甲方支持弱勢補助；乙方若支持普遍補助。', raw: '支持弱勢補助', expected: '甲方支持弱勢補助；乙方若支持普遍補助。' },
+    { content: '甲方支持弱勢補助；乙方只有反對增稅才同意。', raw: '反對', expected: '甲方支持弱勢補助；乙方只有反對增稅才同意。' },
+    { content: '甲方支持弱勢補助；同時反對普遍補助。', raw: '反對', expected: '甲方支持弱勢補助；同時反對普遍補助。' },
+    { content: '甲方支持弱勢補助；另外反對普遍補助。', raw: '反對', expected: '甲方支持弱勢補助；另外反對普遍補助。' },
+    { content: '甲方支持弱勢補助；比方反對普遍補助。', raw: '反對', expected: '甲方支持弱勢補助；比方反對普遍補助。' },
+    { content: '甲方支持弱勢補助；乙方反對前者。', raw: '反對', expected: '甲方支持弱勢補助；乙方反對前者。' },
+    { content: '甲方支持弱勢補助；乙方反對上述補助。', raw: '反對', expected: '甲方支持弱勢補助；乙方反對上述補助。' },
+    { content: '甲方支持弱勢補助；乙方反對前者；丙方支持交通補助。', raw: '反對', expected: '甲方支持弱勢補助；乙方反對前者；丙方支持交通補助。' },
+    { content: '甲方支持弱勢補助；上述協會反對普遍補助。', raw: '反對', expected: '甲方支持弱勢補助；上述協會反對普遍補助。' },
+    { content: '張三支持弱勢補助；李四反對普遍補助。', raw: '反對', expected: '張三支持弱勢補助；李四反對普遍補助。' },
+    { content: '地方政府支持弱勢補助；居民協會反對普遍補助。', raw: '反對', expected: '居民協會反對普遍補助。' },
+  ])('保留原文句界與錨點：$content / $raw / $from', ({ content, raw, expected, from = 0 }) => {
+    const [rawStart, rawEnd] = offsets(content, raw, 'utf16', from)
+    const expectedStart = content.indexOf(expected, from)
+
+    const span = expandSentenceCandidate(content, rawStart, rawEnd)
+
+    expect(span).toEqual({ start: expectedStart, end: expectedStart + expected.length, unit: 'utf16' })
+    expect(content.slice(span.start, span.end)).toBe(expected)
+    expect(span.start).toBeLessThanOrEqual(rawStart)
+    expect(span.end).toBeGreaterThanOrEqual(rawEnd)
   })
 })
 
@@ -213,8 +414,8 @@ describe('Clef 無向配對與支持群', () => {
   })
 
   it('保留完整引文、出處、平手機率與 provider 低信心，不因任意門檻改寫選項', () => {
-    const left = { ...a, quote: '甲說：「逐字😀。\r\n不可忽略條件。」' }
-    const right = { ...b, quote: '乙提出另一個主張。' }
+    const left = { ...a, quote: '甲說：「逐字😀。\r\n不可忽略條件。」', raw_quote: '逐字😀。\r\n不可忽略條件。' }
+    const right = { ...b, quote: '乙提出另一個主張。', raw_quote: '乙提出另一個主張。' }
     const batch = buildClefBatches([right, left], createEvidencePairs([left, right]))[0]
     expect(batch.input.state.evidence).toEqual([
       { id: 'A', material_id: 1, quote: left.quote },
