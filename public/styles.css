@@ -1338,6 +1338,10 @@
   .break-all {
     word-break: break-all;
   }
+  .hyphens-auto {
+    -webkit-hyphens: auto;
+    hyphens: auto;
+  }
   .whitespace-normal {
     white-space: normal;
   }
