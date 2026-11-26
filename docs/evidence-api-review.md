@@ -23,11 +23,11 @@
 
 ### 2026-11-18：P1／E1 正式程式接線
 
-目前程式預設使用 `claims-list-p1-v1` 與 `evidence-3-claim-context`。Clairic 的 raw 是不可改寫的定位資料；先沿用相同逐字／座標驗證器，再由 E1 建立主張及必要原文語境，不先經 E0 展句去重。多個 raw 可以指向同一主張，未選到的內容不自行增造主張，已跨多主張的 raw 仍保守保留複合範圍。
+目前程式預設使用 `claims-list-p1-v2-coverage` 與 `evidence-3-claim-context`。Clairic 的選取目標涵蓋全文各段與後段編號小節的不同實質命題，不只少數核心或開頭；仍不強迫每句／每個標題成為主張。raw 是不可改寫的定位資料；先沿用相同逐字／座標驗證器，再由 E1 建立主張及必要原文語境，不先經 E0 展句去重。多個 raw 可以指向同一主張，未選到的內容不自行增造主張，已跨多主張的 raw 仍保守保留複合範圍。回應與座標有效不代表語義覆蓋完整；新的實際選取品質須另作人工實測。
 
 新 extraction／最終 job 工件的 `candidate_snapshots` 保留每素材的 content hash、原始錨點及 provider 單位資訊、claim/context ID 和範圍。`anchor_index_kind=value` 表示按 value 索引；不等長陣列通過既有嚴格重配對時為 `span`，不能把兩個原始陣列硬 zip。正式 `evidence.id` 使用 content-hashed claim ID，`quote` 是主張，`context` 是獨立原文語境；引用仍只接受選入的 claim ID，context ID 不能冒作證據。
 
-Clef、三分區及必要補完接收主張與獨立語境，並明示不得把語境中的其他立場當成該主張。context 必須可切回相同素材且包含主張。對應版本為 `symmetric-four-way-v3-claim-context`、`specialized-evidence-v16-consensus-citation-membership`、`specialized-cited-v7-consensus-citations`、`section-values-v7-claim-context`、`missing-fields-only-v5-position-labels`、`cited-field-patches-v2-position-labels`、`citation-map-v2-context`；模型、採樣、token／費用／證據上限及引用守門不變。
+Clef、三分區及必要補完接收主張與獨立語境，並明示不得把語境中的其他立場當成該主張。context 必須可切回相同素材且包含主張。對應版本為 `symmetric-four-way-v3-claim-context`、`specialized-evidence-v19-supported-tensions`、`specialized-cited-v8-local-evidence-ids`、`section-values-v9-local-evidence-ids`、`missing-fields-only-v6-local-evidence-ids`、`cited-field-patches-v3-local-evidence-ids`、`citation-map-v2-context`；模型、採樣、token／費用／證據上限及引用守門不變。
 
 共識第一階段先生成實質項目及 `rejected_candidates`，`Overview` 必須為 null，即使已有項目也不能提前生成概述。每項僅有 `candidate_id`／`kind`／`Title`／`description`；句子仍各有 `evidence_ids`，項目不另宣告成員。程式以實質句子引用聯集固定採用證據，拒絕舊格式額外成員清單，不修剪或改寫 raw。候選只是搜尋範圍，未引用的候選成員不自動成為參與來源；所有實際引用仍須位於該候選，至少兩素材且每個參與素材必有 description 引用，不能靠僅標題引用湊跨來源。驗定採用／拒絕完整交代後，再由已採用項目的引用聯集建立 `/consensus/Overview` target。後續概述只准使用這個集合，不得加入僅在輸入背景或未採用候選中出現的證據，也不自動刪除越界引用來修補原 raw。
 
@@ -66,6 +66,10 @@ Clef、三分區及必要補完接收主張與獨立語境，並明示不得把�
 輪詢另有 `generation_progress.introduction`（僅該階段已出現事件時提供），最終 provenance 保留 introduction 的 plan／結果／raw 工件 ID（尚未發生者為 null），原始 request 含確切輸入與 SHA。2026-11-22 使用者明示尾端失敗提供部分草稿：必要補完已有效完成後，說明文的請求超限、預算不足、provider／原生內容失敗，由同一組裝步驟交付 `partial_draft`，`data` 保留三分項及 citation map、不含 introduction 占位；既有 DEV 部分結果通道可供查看。這不是完整保存，不替換舊摘要、不自動重打或退款 unknown。必要補完失敗無此救回；來源撤下、清除、帳戶及配置守門仍優先，不能交付失效來源資料。完整 `ai_draft` 及目前摘要替換仍必須有有效 introduction。
 
 舊保存工作與人改資料可沒有 introduction；若人改包含該欄，必須是非空文字，修訂與差異照原路徑保存完整 JSON。目前私有結果的 JSON／DEV console 會保留 Markdown 字串；需要顯示 Markdown 的消費者應沿用 `renderSafeMarkdown`，不得直接輸出 HTML。不自動改寫公開 briefing、議題狀態或發布。新增階段仍需真人品質驗收，本機合成驗收不代表已付費驗收或部署。
+
+### 部分草稿的人工校對指南
+
+`partial_draft` 的 `data.manual_review_guide` 是程式依當次診斷產生的三語 Markdown 字串，隨原三分項一起交付；完整 `ai_draft` 不加此欄。指南列出缺少有效內容的分項路徑、`failed`／`not_started`、原因與已知驗證碼，以及未完整提取的素材 ID／拒收索引和未完成比較的證據對，並說明人工補充順序。2026-11-25 依使用者裁示，任一核心分項沒有可交付項目，整份亦為 `partial_draft`；`no_findings` 保留有效空結果的真實狀態，不改成失敗，也不強迫生成項目。`partial-manual-review-v2-empty-sections` 將空分項另列為人工核對／補充或保留空白的項目，不附造假的失敗原因或驗證碼。失敗分項的 Overview 是處理狀態，不代表有效內容；有效空結果也不代表現實中沒有歧見。指南不猜測錯誤碼未指出的句子／群組，不含 raw／provider 私人錯誤正文，不觸發額外模型或自動修補、不改引用與舊摘要；設定指紋包含指南版本與三語文字，不回填歷史 raw 或舊工作。既有人改 API 相容此非空文字欄位，完整複製 data 仍可修訂，仍為 `human_unverified`；本輪未新增人工校對管理頁面。
 
 ### 歷史 P0／E0 受控回退紀錄
 
@@ -128,9 +132,10 @@ Clairic 逐素材、Clef 配對、Gemma 共識／爭點／立場三項，必要�
 
 - `GET /api/issues/:id/evidence-summary?language=zh-TW|en|ja`：語言必填；回 `{version,has_summary,job,summary}`。未停權登入者可見指定語言的版本與有無結果，只有該 job 的 owner／管理員可取得其 job ID／狀態或摘要正文；其他登入者相應欄位為 null。新欄位不進公開列表、詳情或 SSR。
 - `POST /api/issues/:id/evidence-summary`：精確 JSON `{consent:true,language,expected_version}`；全選至少兩份合格素材，沿用來源、停權、同意紀錄、admission、cache、quota、冷卻與費用守門。成功沿用建立 job 的 JSON，另有 `version`。版本不符回 `409 summary_conflict`，不能跳過重新讀取與替換確認。
-- 繁中／英文／日文各自保存。只有完整 `ai_draft` 才由伺服器保存結構化 `data`／引用及工作關聯到 `ct_issues.ai_summaries`；不依賴瀏覽器留在頁面。`partial_draft`／failed 不覆蓋成功結果；較舊請求晚完成不能覆蓋新結果。原始 job、工件、usage、revision／diff 不因替換被刪除。
+- 繁中／英文／日文各自保存。`0019_partial_evidence_summaries.sql` 延續既有原子觸發器：目前語言沒有已存結果時，最新註冊工作的有效 `partial_draft` 也可保存結構化 `data`／引用與工作關聯；不依賴瀏覽器輪詢。新部分結果不覆蓋任何既有摘要（包含完整及部分）；新的完整 `ai_draft` 仍可依確認流程更新結果，舊請求晚完成不能覆蓋最新請求。新保存 JSON 與 summary API 皆含 `status`、`review_required:true`，仍為私人 `ai_unverified`，需人工校對後才可發布；沒有自動發布或人改管理頁面。舊完整 JSON 缺這兩欄仍由實際 execution 狀態相容讀取。原始 job、工件、usage、revision／diff 不因替換被刪除。0019 只變更本站業務庫的兩個保存觸發器，本輪僅在隔離 SQLite 驗證；遠端套用須另行授權。
 - 議題保存副本仍受來源檢查與 fence：hidden／changed 停止交付，來源 deleted 被對帳發現或按來源 erase 時清除副本，不得繞過原私有工作生命週期。新端點與原六 API 使用相同開關、必要 bindings、CSRF、private/no-store／Vary Cookie／無 CORS 政策。
-- UI 只顯示進度與成功／部分完成／失敗提示。完整成功並確認已保存後，或 `partial_draft` 回傳可交付 `data` 時，依 #210 暫在操作者瀏覽器 `console.log` 輸出 `data`；部分草稿只供排查，不表示已保存或成功。同一語言／工作／版本在元件生命週期內不重複輸出，重新整理會重新輸出；沒有資料、失敗、撤下／清除或已離開範圍的遲到回應不輸出。不送伺服器 log，不將私人 Console 記錄當成可公開的驗收證據。
+- UI 只顯示進度與成功／部分完成／失敗提示。完整成功並確認已保存後，或 `partial_draft` 有可交付 `data` 時，依 #210 暫在操作者瀏覽器 `console.log` 輸出 `data`。部分結果也重新查核 summary：只有目前工作確實為已存 `partial_draft` 且 `review_required:true` 才顯示「部分結果已儲存、需人工校對」；未保存者保留原結果不覆蓋提示，舊工作／版本不冒稱目前結果，查證不確定時只允許恢復 GET。同一語言／工作／保存版本在元件生命週期內不重複輸出；沒有資料、失敗、撤下／清除或已離開範圍的遲到回應不輸出。不送伺服器 log，不將私人 Console 記錄當成可公開的驗收證據。
+- 歷史工作已實際保存為 `ai_draft`，但分項進度明示 `no_findings` 時，UI 使用 `saved_no_findings` 如實提示「已保存但有空分項、內容不完整、需人工校對」，不說未保存／未覆蓋，也不回寫歷史紀錄。新部分結果未採入目前摘要時，明示可交付資料僅輸出操作者瀏覽器 console、沒有替換先前結果。PR merge 前不套 `0019`；既有 `0018` 足以生成、檢視新部分工件並保護已存完整摘要。
 - 重新整理恢復目前獲授權的工作，不自動發起新生成。切換介面語言不把另一語言工作結果寫錯欄位；讀取工作／摘要仍可能核對來源，並非正式站的無副作用 smoke。
 
 ### Checkpoint B 主張／語境觀測（dev-only）

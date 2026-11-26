@@ -20,6 +20,8 @@ const phaseKeys: Partial<Record<SummaryPhase, MessageKey>> = {
   loading: 'vol_ai_loading',
   submitting: 'vol_ai_submitting',
   saved: 'vol_ai_saved',
+  saved_no_findings: 'vol_ai_saved_no_findings',
+  partial_saved: 'vol_ai_partial_saved',
   superseded: 'vol_ai_superseded',
   unsaved: 'vol_ai_unsaved',
   partial: 'vol_ai_partial',
@@ -71,7 +73,7 @@ const controller = createEvidenceSummary(props.issueId, {
     blocked.value = true
     emit('banned')
   },
-  // 使用者要求暫時輸出；部分草稿可供排查，但不代表已保存為目前結果。
+  // 保存狀態由 controller 另行確認；部分草稿仍需人工校對才可發布。
   onResult: data => console.log('一鍵彙整結果（私人、未經人工驗證）', data),
   onExtraction: import.meta.env.DEV ? logExtractionDebug : undefined,
 })
@@ -148,9 +150,9 @@ function confirm() {
     {{ t('vol_ai_button') }}
   </button>
   <div v-if="message || banned || blocked || costMessage" class="basis-full" role="status" aria-live="polite" data-testid="evidence-summary-status">
-    <div class="alert mb-0 text-sm" :class="['error', 'failed', 'partial', 'withdrawn', 'erased', 'unknown', 'unsaved', 'superseded'].includes(state.phase) || banned || blocked ? 'alert-warn' : 'alert-info'">
+    <div class="alert mb-0 text-sm" :class="['error', 'failed', 'partial', 'partial_saved', 'saved_no_findings', 'withdrawn', 'erased', 'unknown', 'unsaved', 'superseded'].includes(state.phase) || banned || blocked ? 'alert-warn' : 'alert-info'">
       <p v-if="banned || blocked" class="m-0">{{ t('banned_toast') }}</p>
-      <p v-else-if="message" class="m-0">{{ message }}</p>
+      <p v-else-if="message" class="m-0 max-w-lg">{{ message }}</p>
       <p v-if="costMessage" class="mt-2 mb-0">{{ costMessage }}</p>
       <button v-if="state.canResume && !banned && !blocked && !sessionExpired" type="button" class="btn btn-secondary btn-sm mt-3" data-testid="evidence-summary-resume" @click="controller.resume()">
         {{ t('vol_ai_resume') }}

@@ -30,6 +30,7 @@ import { EvidenceStore, EvidenceStoreError, type ErrorCode, type Snapshot } from
 import { WORKFLOW_CONTROL_POLICY } from './workflowPolicy'
 import { buildIntroductionRequest, INTRODUCTION_PARAMETERS, parseIntroduction, type IntroductionRequest } from './introduction'
 import { sha256 } from './source'
+import { buildManualReviewGuide } from './manualReviewGuide'
 
 const NO_RETRIES = WORKFLOW_CONTROL_POLICY.non_model_step
 const PAID_STEP_OPTIONS = WORKFLOW_CONTROL_POLICY.paid_step
@@ -824,7 +825,8 @@ export async function runEvidenceWorkflow(env: EvidenceBindings, jobId: string, 
         ? (await artifact<IntroductionArtifact>(env, snapshot.executionId, introducedId)).result
         : (await artifact<CompletionArtifact>(env, snapshot.executionId, completedId)).result
       const plan = (await artifact<CompletionPlanArtifact>(env, snapshot.executionId, completionPlanId)).plan
-      const partial = comparison.partial || sections.length !== GENERATION_SECTIONS.length || introduced.status !== 'ok'
+      const partial = comparison.partial || sections.length !== GENERATION_SECTIONS.length ||
+        sections.some(section => section.data.items.length === 0) || introduced.status !== 'ok'
       const sectionDiagnostics = Object.fromEntries(
         outcomes.map(outcome => [outcome.section, { ...outcome, details: sections.find(section => section.section === outcome.section)?.diagnostics ?? null }])
       )
@@ -838,8 +840,21 @@ export async function runEvidenceWorkflow(env: EvidenceBindings, jobId: string, 
       }
       const payload = {
         ...draft,
+        data: partial ? {
+          ...draft.data,
+          manual_review_guide: buildManualReviewGuide({
+            language: generationInput(snapshot).language,
+            coverage: extraction.coverage,
+            incomplete_pairs: comparison.analysis.incomplete_pairs,
+            generation: [
+              ...outcomes,
+              { section: 'introduction', status: introduced.status === 'ok' ? 'completed' : 'failed', reason: introduced.reason, validation_code: introduced.validationCode },
+            ],
+          }),
+        } : draft.data,
         candidate_snapshots: extraction.candidate_snapshots,
         verification: 'ai_unverified',
+        review_required: true,
         diagnostics: {
           coverage: extraction.coverage,
           partial,

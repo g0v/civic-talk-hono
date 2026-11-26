@@ -65,8 +65,9 @@ describe('一鍵彙整前端狀態', () => {
 
   it('明確開始時傳送捕捉的語言與版本；HTTP 200 的部分結果不是成功', async () => {
     const data = { consensus: { Overview: '部分草稿', items: [] }, disputes: { Overview: '尚未完成', items: [] }, positions: { Overview: '尚未完成', items: [] } }
+    let contextCount = 0
     const f = fixture((url, init) => {
-      if (url === `${issuePath}?language=en`) return response(context(8, true))
+      if (url === `${issuePath}?language=en`) return response(++contextCount <= 2 ? context(8, true) : context(9, true, job('partial_draft'), savedSummary('older')))
       if (url === issuePath && init?.method === 'POST') return response({ job_id: 'job-1', status: 'partial_draft', cache: 'hit', input_coverage: {}, version: 9 })
       if (url === jobPath) return response({ ...job('partial_draft'), data })
       throw new Error(`unexpected ${url}`)
@@ -108,14 +109,31 @@ describe('一鍵彙整前端狀態', () => {
     f.controller.dispose()
   })
 
-  it('非快取工作由 queued v1 完成並保存為 v2 時仍通知成功，且停止輪詢', async () => {
+  it.each([
+    { sectionStatus: 'no_findings', phase: 'saved_no_findings' },
+    { sectionStatus: 'completed', phase: 'saved' },
+  ])('已保存歷史稿的分項為 $sectionStatus 時如實通知，不虛稱未保存', async ({ sectionStatus, phase }) => {
+    const f = fixture(url => url === `${issuePath}?language=zh-TW`
+      ? response(context(8, true, job('ai_draft'), savedSummary()))
+      : response({
+          ...job('ai_draft'),
+          generation_progress: { sections: { consensus: { status: sectionStatus }, disputes: { status: sectionStatus }, positions: { status: 'completed' } } },
+        }))
+    await f.controller.setScope('zh-TW')
+    expect(f.controller.state).toMatchObject({ phase, status: 'ai_draft', hasSummary: true, canResume: false })
+    expect(f.onResult).toHaveBeenCalledExactlyOnceWith({ consensus: ['result'] })
+    expect(f.calls.every(call => call.method === 'GET')).toBe(true)
+    f.controller.dispose()
+  })
+
+  it.each(['ai_draft', 'partial_draft'] as const)('非快取 $status 工作由 queued v1 完成並保存為 v2 時正確通知，且停止輪詢', async status => {
     vi.useFakeTimers()
     let contextCount = 0
     let jobChecks = 0
     const f = fixture((url, init) => {
-      if (url === `${issuePath}?language=zh-TW`) return response(++contextCount <= 2 ? context(0, false) : context(2, true, job('ai_draft'), savedSummary()))
+      if (url === `${issuePath}?language=zh-TW`) return response(++contextCount <= 2 ? context(0, false) : context(2, true, job(status), { ...savedSummary(), status, review_required: true }))
       if (url === issuePath && init?.method === 'POST') return response({ job_id: 'job-1', status: 'queued', cache: 'miss', input_coverage: {}, version: 1 })
-      if (url === jobPath) return response(job(++jobChecks === 1 ? 'generating' : 'ai_draft'))
+      if (url === jobPath) return response(job(++jobChecks === 1 ? 'generating' : status))
       throw new Error(`unexpected ${url}`)
     })
     await f.controller.setScope('zh-TW')
@@ -125,7 +143,7 @@ describe('一鍵彙整前端狀態', () => {
     expect(f.onResult).not.toHaveBeenCalled()
 
     await vi.advanceTimersByTimeAsync(60_000)
-    expect(f.controller.state).toMatchObject({ phase: 'saved', version: 2, status: 'ai_draft', jobId: 'job-1', hasSummary: true, canResume: false })
+    expect(f.controller.state).toMatchObject({ phase: status === 'partial_draft' ? 'partial_saved' : 'saved', version: 2, status, jobId: 'job-1', hasSummary: true, canResume: false })
     expect(f.onResult).toHaveBeenCalledExactlyOnceWith({ consensus: ['result'] })
 
     await vi.advanceTimersByTimeAsync(180_000)
@@ -263,21 +281,41 @@ describe('一鍵彙整前端狀態', () => {
     expect(f.onResult).not.toHaveBeenCalled()
   })
 
-  it('恢復部分草稿只輸出一次，不誤用舊保存結果，也不繼續輪詢或重送', async () => {
+  it.each([false, true])('恢復部分草稿只輸出一次，確認已保存=%s 並保留舊結果', async saved => {
     vi.useFakeTimers()
     const data = { consensus: { Overview: '本次部分草稿', items: [] } }
     const f = fixture(url => url === `${issuePath}?language=en`
-      ? response(context(9, true, job('partial_draft'), savedSummary('older')))
+      ? response(context(9, true, job('partial_draft'), saved
+        ? { ...savedSummary(), status: 'partial_draft', review_required: true, data }
+        : savedSummary('older')))
       : response({ ...job('partial_draft'), data }))
     await f.controller.setScope('en')
     await f.controller.setScope('en')
     await vi.advanceTimersByTimeAsync(180_000)
-    expect(f.controller.state).toMatchObject({ phase: 'partial', hasSummary: true, version: 9, canResume: false })
+    expect(f.controller.state).toMatchObject({ phase: saved ? 'partial_saved' : 'partial', hasSummary: true, version: 9, canResume: false })
     expect(f.onResult).toHaveBeenCalledExactlyOnceWith(data)
     expect(f.calls.map(call => [call.method, call.url])).toEqual([
       ['GET', `${issuePath}?language=en`], ['GET', jobPath],
+      ['GET', `${issuePath}?language=en`],
       ['GET', `${issuePath}?language=en`], ['GET', jobPath],
+      ['GET', `${issuePath}?language=en`],
     ])
+    f.controller.dispose()
+  })
+
+  it.each(['withdrawn', 'erased'] as const)('部分資料讀回後，最新來源狀態改為 %s 時不交付舊資料', async status => {
+    vi.useFakeTimers()
+    const stale = { consensus: { Overview: 'private stale', items: [] }, disputes: { Overview: 'private stale', items: [] }, positions: { Overview: 'private stale', items: [] } }
+    let contexts = 0
+    const f = fixture(url => url === `${issuePath}?language=en`
+      ? response(context(9, true, job(++contexts === 1 ? 'partial_draft' : status), savedSummary('older')))
+      : response({ ...job('partial_draft'), data: stale }))
+    await f.controller.setScope('en')
+    await vi.advanceTimersByTimeAsync(180_000)
+    expect(f.onResult).not.toHaveBeenCalled()
+    expect(f.controller.state).toMatchObject({ phase: status, status, version: 9, hasSummary: true, canResume: false })
+    expect(f.calls.filter(call => call.url === jobPath)).toHaveLength(1)
+    expect(f.calls.every(call => call.method === 'GET')).toBe(true)
     f.controller.dispose()
   })
 
@@ -310,7 +348,7 @@ describe('一鍵彙整前端狀態', () => {
     const f = fixture(url => url === `${issuePath}?language=en` ? response(context(1, true, job(status))) : response(job(status)))
     await f.controller.setScope('en')
     expect(f.controller.state).toMatchObject({ phase, status, canResume: false })
-    expect(f.calls).toHaveLength(2)
+    expect(f.calls).toHaveLength(status === 'partial_draft' ? 3 : 2)
     expect(f.onResult).not.toHaveBeenCalled()
     f.controller.dispose()
   })

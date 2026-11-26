@@ -15,9 +15,11 @@ function opinion(value: unknown): boolean {
 
 /** 人改只接受 #181 data，且不得冒充來源；所有人改文字仍是 human_unverified。 */
 export function validateHumanData(value: unknown, materials: MaterialSource[]): value is GenerationData {
-  const hasIntroduction = value !== null && typeof value === 'object' && Object.hasOwn(value, 'introduction')
-  if (!exactObject(value, hasIntroduction ? ['introduction', 'consensus', 'disputes', 'positions'] : ['consensus', 'disputes', 'positions'])) return false
-  if (hasIntroduction && !nonempty(value.introduction)) return false
+  const annotations = (['introduction', 'manual_review_guide'] as const).filter(key =>
+    value !== null && typeof value === 'object' && Object.hasOwn(value, key)
+  )
+  if (!exactObject(value, [...annotations, 'consensus', 'disputes', 'positions'])) return false
+  if (annotations.some(key => !nonempty(value[key]))) return false
   for (const field of ['consensus', 'disputes'] as const) {
     const section = value[field]
     if (!exactObject(section, ['Overview', 'items']) || !nonempty(section.Overview) || !Array.isArray(section.items) || !section.items.every(opinion)) return false

@@ -2,7 +2,7 @@ import { reactive } from 'vue'
 import type { Locale } from '../l10n'
 import type { ExtractionDebug } from '../ai/extractionDebug'
 
-export type SummaryPhase = 'idle' | 'loading' | 'ready' | 'submitting' | 'progress' | 'saved' | 'superseded' | 'unsaved' | 'partial' | 'failed' | 'withdrawn' | 'erased' | 'unknown' | 'error'
+export type SummaryPhase = 'idle' | 'loading' | 'ready' | 'submitting' | 'progress' | 'saved' | 'saved_no_findings' | 'partial_saved' | 'superseded' | 'unsaved' | 'partial' | 'failed' | 'withdrawn' | 'erased' | 'unknown' | 'error'
 export type SummaryUsage = { attempts: number; reservedMicroUsd: number; actualMicroUsd: number; uncertain: number }
 export type SummaryState = {
   language: Locale | null
@@ -20,7 +20,7 @@ type SummaryContext = {
   version: number
   has_summary: boolean
   job: { job_id: string; status: string } | null
-  summary: { job_id: string; data: unknown; verification: 'ai_unverified' } | null
+  summary: { job_id: string; data: unknown; verification: 'ai_unverified'; status?: 'ai_draft' | 'partial_draft'; review_required?: true } | null
 }
 
 type Dependencies = {
@@ -43,6 +43,7 @@ function contextFrom(value: unknown): SummaryContext | null {
   if (job !== null && (!isObject(job) || typeof job.job_id !== 'string' || !job.job_id || typeof job.status !== 'string')) return null
   const summary = value.summary
   if (summary !== null && (!isObject(summary) || typeof summary.job_id !== 'string' || !summary.job_id || summary.verification !== 'ai_unverified' || !Object.hasOwn(summary, 'data'))) return null
+  if (isObject(summary) && ((summary.status !== undefined && summary.status !== 'ai_draft' && summary.status !== 'partial_draft') || (summary.review_required !== undefined && summary.review_required !== true))) return null
   return value as SummaryContext
 }
 
@@ -187,7 +188,10 @@ export function createEvidenceSummary(issueId: number, dependencies: Dependencie
       if (context.job?.job_id !== jobId) {
         outcome('superseded')
       } else if (context.summary?.job_id === jobId) {
-        outcome('saved')
+        const progress = body.generation_progress
+        const noFindings = isObject(progress) && isObject(progress.sections) &&
+          Object.values(progress.sections).some(section => isObject(section) && section.status === 'no_findings')
+        outcome(noFindings ? 'saved_no_findings' : 'saved')
         const key = `${language}:${jobId}:${context.version}`
         if (!announced.has(key)) {
           announced.add(key)
@@ -201,11 +205,36 @@ export function createEvidenceSummary(issueId: number, dependencies: Dependencie
       return
     }
     if (body.status === 'partial_draft') {
-      outcome('partial')
-      const key = `${language}:${jobId}:${jobVersion}`
-      if (isObject(body.data) && !announced.has(key)) {
+      const context = await fetchContext(token)
+      if (!context || !current(token)) return
+      if (context.job?.job_id !== jobId) {
+        outcome('superseded')
+        return
+      }
+      state.status = context.job.status
+      if (state.status === 'withdrawn' || state.status === 'erased') {
+        outcome(state.status)
+        return
+      }
+      if (state.status !== 'partial_draft') {
+        outcome('unknown', null, true)
+        return
+      }
+      if (context.version !== jobVersion && context.summary?.job_id !== jobId) {
+        outcome('superseded')
+        return
+      }
+      const saved = context.summary?.job_id === jobId && context.summary.status === 'partial_draft' && context.summary.review_required === true
+      if (context.summary?.job_id === jobId && !saved) {
+        outcome('unsaved', null, true)
+        return
+      }
+      outcome(saved ? 'partial_saved' : 'partial')
+      const data = saved ? context.summary?.data : body.data
+      const key = `${language}:${jobId}:${context.version}`
+      if (isObject(data) && !announced.has(key)) {
         announced.add(key)
-        dependencies.onResult?.(body.data)
+        dependencies.onResult?.(data)
       }
     } else if (body.status === 'failed') outcome('failed')
     else if (body.status === 'withdrawn') outcome('withdrawn')

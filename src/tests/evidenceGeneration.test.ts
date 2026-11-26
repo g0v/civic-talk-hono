@@ -795,6 +795,14 @@ describe('生成模型專項輸出與出處', () => {
     })
     const knownAgree = { ...input, comparison: analyzeComparisons(evidence, [judgment('e1', 'e3', 'agree')]) }
     await expect(parseGenerationResponse('disputes', completion(disputeOutput()), knownAgree)).rejects.toThrow('generation_invalid_dispute_relation')
+    for (const relation of ['agree', 'unrelated'] as const) {
+      const relatedInput = { ...input, comparison: analyzeComparisons(evidence, [judgment('e1', 'e3', relation)]) }
+      const tension = await parseGenerationResponse('disputes', completion(disputeOutput('tension')), relatedInput)
+      expect(tension.data.items).toHaveLength(1)
+      expect(tension.diagnostics).toMatchObject({
+        items: [{ kind: 'tension', origin: 'generation_proposal', formal_relation: null, relations: [{ relation, status: 'direct' }] }],
+      })
+    }
     const counterfeit = disputeOutput()
     Object.assign(counterfeit.items[0], { origin: 'direct_clef' })
     await expect(parseGenerationResponse('disputes', completion(counterfeit), noDirect)).rejects.toThrow('generation_invalid_schema')

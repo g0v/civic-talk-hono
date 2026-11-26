@@ -8,10 +8,10 @@ export const MODEL_SELECTORS = {
 } as const
 
 export const MODEL_VERSIONS = {
-  clairic_prompt: 'claims-list-p1-v1',
+  clairic_prompt: 'claims-list-p1-v2-coverage',
   clef_prompt: 'symmetric-four-way-v3-claim-context',
   clef_batching: 'canonical-byte-budget-v1',
-  generation_prompt: 'specialized-evidence-v18-local-evidence-ids',
+  generation_prompt: 'specialized-evidence-v19-supported-tensions',
   generation_schema: 'specialized-cited-v8-local-evidence-ids',
   generation_input: 'section-values-v9-local-evidence-ids',
   generation_completion_prompt: 'missing-fields-only-v6-local-evidence-ids',

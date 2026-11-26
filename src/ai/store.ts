@@ -73,7 +73,7 @@ export type SummaryLanguage = 'zh-TW' | 'en' | 'ja'
 export interface SummaryState {
   version: number
   latest: { jobId: string; ownerId: string; executionId: string; status: ExecutionStatus } | null
-  saved: { jobId: string; ownerId: string; executionId: string; artifactId: string; data: unknown; citationMap: unknown; updatedAt: string } | null
+  saved: { jobId: string; ownerId: string; executionId: string; artifactId: string; status: 'ai_draft' | 'partial_draft'; data: unknown; citationMap: unknown; updatedAt: string } | null
 }
 export interface Artifact {
   id: string
@@ -337,7 +337,8 @@ export class EvidenceStore {
       const row = await this.db
         .prepare(`SELECT i.ai_summaries, COALESCE(r.version, 0) AS version,
           j.id AS latest_job_id, j.owner_id AS latest_owner_id, e.id AS latest_execution_id, e.status AS latest_status,
-          CASE WHEN se.status = 'ai_draft' AND se.issue_id = i.id AND se.language = ?
+          se.status AS saved_status,
+          CASE WHEN se.status IN (${FINAL}) AND se.issue_id = i.id AND se.language = ?
             AND sj.owner_id = json_extract(i.ai_summaries, '${path}.owner_id')
             AND sa.kind = 'generation' AND sa.payload IS NOT NULL AND ${fence('se')}
             THEN 1 ELSE 0 END AS saved_valid
@@ -358,18 +359,19 @@ export class EvidenceStore {
           latest_execution_id: string | null
           latest_status: ExecutionStatus | null
           saved_valid: number
+          saved_status: ExecutionStatus | null
         }>()
       if (!row) return null
       const savedValue: unknown = (JSON.parse(row.ai_summaries) as Record<string, unknown>)[language]
       let saved: SummaryState['saved'] = null
-      if (row.saved_valid && savedValue && typeof savedValue === 'object' && !Array.isArray(savedValue)) {
+      if (row.saved_valid && (row.saved_status === 'ai_draft' || row.saved_status === 'partial_draft') && savedValue && typeof savedValue === 'object' && !Array.isArray(savedValue)) {
         const value = savedValue as Record<string, unknown>
         if (
           typeof value.job_id === 'string' && typeof value.owner_id === 'string' && typeof value.execution_id === 'string' && typeof value.artifact_id === 'string' &&
           value.data !== null && typeof value.data === 'object' && !Array.isArray(value.data) && Array.isArray(value.citation_map) &&
           value.verification === 'ai_unverified' && typeof value.updated_at === 'string'
         ) {
-          saved = { jobId: value.job_id, ownerId: value.owner_id, executionId: value.execution_id, artifactId: value.artifact_id, data: value.data, citationMap: value.citation_map, updatedAt: value.updated_at }
+          saved = { jobId: value.job_id, ownerId: value.owner_id, executionId: value.execution_id, artifactId: value.artifact_id, status: row.saved_status, data: value.data, citationMap: value.citation_map, updatedAt: value.updated_at }
         }
       }
       const latest = row.latest_job_id && row.latest_owner_id && row.latest_execution_id && row.latest_status

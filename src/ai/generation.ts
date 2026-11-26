@@ -23,6 +23,7 @@ import { WORKFLOW_CONTROL_POLICY } from './workflowPolicy'
 import { createEvidenceIdAliases, decodeEvidenceReferences, encodeEvidenceReferences, evidenceIdSchema, type EvidenceIdAliases } from './generationEvidenceIds'
 import { buildIntroductionRequest, INTRODUCTION_MAX_REQUEST_BYTES, INTRODUCTION_OUTPUT_POLICY, INTRODUCTION_PARAMETERS, INTRODUCTION_PROMPT_VERSION, INTRODUCTION_SCHEMA_VERSION, INTRODUCTION_SYSTEM_PROMPT } from './introduction'
 import { parseNativeJson } from './nativeCompletion'
+import { MANUAL_REVIEW_GUIDE_POLICY } from './manualReviewGuide'
 export { parseNativeJson } from './nativeCompletion'
 
 export type GenerationLanguage = 'zh-TW' | 'en' | 'ja'
@@ -67,6 +68,7 @@ export interface DraftGenerationData {
 
 export interface GenerationData {
   introduction?: string
+  manual_review_guide?: string
   consensus: { Overview: string; items: Opinion[] }
   disputes: { Overview: string; items: Opinion[] }
   positions: { Overview: string; items: Position[] }
@@ -380,7 +382,8 @@ const SECTION_INSTRUCTIONS = {
     'Each item contains only candidate_id, kind, Title and description. Cite evidence in the substantive Title and description sentences; their citation union alone determines the adopted evidence and materials. Do not declare item evidence_ids or copy the entire candidate membership. Every cited material must appear in description citations; Title-only citations cannot supply a second material. Every citation must belong to the selected candidate. Use a genuinely supported narrower selection or reject the candidate; do not add decorative citations merely to meet coverage. The program validates these citations and fixes the adopted scope before the later overview call.\n' +
     '逐一檢視所有候選及不同面向，輸出所有有獨立支持的共同命題；零、一、二或更多項都可能正確，不為湊數拆分、重複、合併或虛構命題。同一候選和證據可支持不同命題。本階段 Overview 固定為 null；待程式驗定採用項目後，另次呼叫才依採用範圍、條件與類型生成概述。沒有任何採用命題的候選必須在 rejected_candidates 說明理由；同一候選不得同時採用和拒絕。',
   disputes:
-    'Check the formal direct relations for EVERY pair across your proposed sides before choosing kind. contradiction or opposition is invalid if any cross-side pair is agree. Do not add agreeing or merely related background evidence to the opposite side to broaden coverage. Narrow sides to the claims actually in conflict. Use tension only for a supported trade-off, not to relabel an invalid contradiction or invent a dispute.\n' +
+    'Check the formal direct relations for EVERY pair across your proposed sides before choosing kind. contradiction or opposition is invalid if any cross-side pair is agree. For those two kinds, do not add agreeing or merely related background evidence to the opposite side to broaden coverage; narrow sides to the claims actually in conflict. Use tension only for a supported trade-off, not to relabel an invalid contradiction or invent a dispute.\n' +
+    'comparison.disputes contains direct-disagreement search seeds, not an exhaustive list of possible items. An empty seed list does not rule out tension. Independently inspect the verified claims for explicitly supported benefits, costs, risks or priorities of the same change. Such a trade-off may involve compatible observations and need not have a formal disagree relation. State what each side actually reports, the scope and conditions under which they can coexist, and the concrete question the trade-off raises. Never turn differences of population, time or measurement alone into a trade-off, infer an unstated cost, attribute opposition to a source, or promote a generation proposal to formal disagreement.\n' +
     '先檢視所有已驗證證據與關係，而非只看分歧種子；依可獨立回答的爭議問題分組，每個問題只產生一項。對同一問題的多組統計數據與證據配對應彙整在該項，保留所有相關側、各自主張及可比較的人群、時間和條件，不得每個配對另列一項；不同問題則不可合併。同一證據可以支持不同問題。同一素材可報導不同說話者或對立主張，允許各側來自同一素材，但每側必須以不同 evidence ID 的明示論述支持，不得將同一證據重複放在兩側。單一素材中的兩側不是跨素材佐證，同源關係只能是生成提案，不可冒稱 Clef 正式判斷。逐一檢視所有獨立問題，零、一、二或更多項均可，不為湊數拆分、重複或虛構爭議。question 是逐句附引用的陣列，具體寫出單一可回答的問題及其範圍，引用必須屬於該項的 sides。不同條件下的主張可能並存：整體增長與特定群體的風險未必矛盾。contradiction 是可比條件下不相容的事實結論；opposition 是相反的明示立場或建議；tension 是可能並存的策略、優先順序或價值張力。不可憑語氣虛構矛盾，或把張力當作正式 disagree；agree 配對不可說成矛盾或對立。每側 claim 必須引用該側全部證據，description 必須引用每側；comparison_conditions 和 side claim 均為逐句附引用的陣列。不得提供 origin 或 formal relation，程式會依直接比較推導。',
   positions:
     'A position group represents compatible stated stances, concerns, or approaches, not all sides of a debate topic. Do not put support and opposition in the same group to present a balanced debate, even as separate opinions. Keep opposing stances in separate groups; preserve their attribution and conditions rather than dropping a minority view.\n' +
@@ -1041,7 +1044,7 @@ function positionsSection(
 
 export const GENERATION_VERSIONS = { prompt: MODEL_VERSIONS.generation_prompt, schema: MODEL_VERSIONS.generation_schema } as const
 export const CITATION_ALGORITHM_VERSION = 'citation-map-v2-context'
-export const GENERATION_ASSEMBLY_POLICY_VERSION = 'section-citation-membership-v6-consensus'
+export const GENERATION_ASSEMBLY_POLICY_VERSION = 'section-citation-membership-v7-deliverable-items'
 const GENERATION_RESPONSE_POLICY_VERSION = 'gemma-chat-stop-json-v3'
 export const GENERATION_COMPLETION_POLICY_VERSION = 'required-fields-exact-cited-patches-v4-local-evidence-ids'
 
@@ -1554,6 +1557,7 @@ export async function pipelineSettings() {
       source: 'issue-title-description-and-final-structured-data; ai-unverified-editorial-markdown; original-section-citations-unchanged',
     },
     workflow_control: WORKFLOW_CONTROL_POLICY,
+    manual_review_guide: MANUAL_REVIEW_GUIDE_POLICY,
   }
   const hashes = {
     clairic_prompt: await sha256(clairic.input.fields.claims.instructions),

@@ -419,7 +419,7 @@ export function registerEvidenceRoutes(app: EvidenceApp): void {
     if (state.saved && (!before.saved || state.saved.jobId !== before.saved.jobId || state.saved.artifactId !== before.saved.artifactId)) return c.json({ error: 'service_unavailable' }, 503)
     const job = state.latest && (admin || state.latest.ownerId === viewerId) ? { job_id: state.latest.jobId, status: state.latest.status } : null
     const saved = state.saved && (admin || state.saved.ownerId === viewerId)
-      ? { job_id: state.saved.jobId, data: state.saved.data, citation_map: state.saved.citationMap, verification: 'ai_unverified' as const, updated_at: state.saved.updatedAt }
+      ? { job_id: state.saved.jobId, status: state.saved.status, review_required: true as const, data: state.saved.data, citation_map: state.saved.citationMap, verification: 'ai_unverified' as const, updated_at: state.saved.updatedAt }
       : null
     return c.json({ version: state.version, has_summary: state.saved !== null, job, summary: saved })
   })

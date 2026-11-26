@@ -23,12 +23,14 @@ function humanDraft() {
 
 describe('人改草稿的必填概述與核心關注', () => {
   it.each([
-    { introduction: '# 議題說明\n\n保留歧見與適用條件。', valid: true },
-    { introduction: '', valid: false },
-    { introduction: null, valid: false },
-    { introduction: {}, valid: false },
-  ])('相容舊草稿且有 introduction 時必須是非空文字 $valid', ({ introduction, valid }) => {
-    expect(validateHumanData({ ...humanDraft(), introduction }, materials)).toBe(valid)
+    { field: 'introduction', value: '# 議題說明\n\n保留歧見與適用條件。', valid: true },
+    { field: 'introduction', value: '', valid: false },
+    { field: 'introduction', value: null, valid: false },
+    { field: 'introduction', value: {}, valid: false },
+    { field: 'manual_review_guide', value: '# 校對指南\n\n請補充缺少的說明文。', valid: true },
+    { field: 'manual_review_guide', value: null, valid: false },
+  ])('相容舊草稿且 $field 必須是非空文字 $valid', ({ field, value, valid }) => {
+    expect(validateHumanData({ ...humanDraft(), [field]: value }, materials)).toBe(valid)
   })
   it('接受非空概述與核心關注，不讓來源網址或識別被冒充', () => {
     expect(validateHumanData(humanDraft(), materials)).toBe(true)
