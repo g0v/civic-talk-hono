@@ -339,7 +339,16 @@ export const messages = {
   op_list_view: 'Liste',
   opinion_synthesis_view: 'Auswertung der Stellungnahmen',
   opinion_synthesis_insufficient: 'Die Gruppenbildung beginnt, sobald mindestens 4 Teilnehmende die Voraussetzungen erfüllen. Hilf mit, indem du eine Stellungnahme teilst oder abstimmst.',
-  opinion_synthesis_unclustered: 'Aus den aktuellen Abstimmungsdaten haben sich keine Gruppen ergeben, die öffentlich angezeigt werden können.',
+  opinion_synthesis_unclustered: 'In den Abstimmungsdaten sind keine klar getrennten Gruppen erkennbar. Teilnehmende, die die Voraussetzungen erfüllen, werden unten gemeinsam dargestellt.',
+  opinion_synthesis_aggregate_size: '{count} Teilnehmende erfüllen die Voraussetzungen',
+  opinion_synthesis_aggregate_map:
+    'Die farbige Fläche zeigt alle Teilnehmenden, die die Voraussetzungen erfüllen. Das bedeutet nicht, dass sie gleich abgestimmt haben. Jeder Punkt steht für eine öffentliche Stellungnahme mit ausreichend tatsächlich abgegebenen Zustimmungen, nicht für eine Person oder Stimme. Umriss und Positionen dienen der Veranschaulichung.',
+  opinion_synthesis_aggregate_no_statistics: 'Derzeit erfüllt keine öffentliche Stellungnahme die Voraussetzungen für die Anzeige von Statistiken.',
+  opinion_synthesis_aggregate_agree: 'Insgesamt eher Zustimmung',
+  opinion_synthesis_aggregate_disagree: 'Insgesamt eher Ablehnung',
+  opinion_synthesis_aggregate_report_heading: 'Allgemeine Abstimmungstendenzen',
+  opinion_synthesis_aggregate_report_notice:
+    'Diese KI-Auswertung stützt sich auf öffentliche Stellungnahmen und die Abstimmungstendenzen der Teilnehmenden, die die Voraussetzungen erfüllen. Sie bedeutet keine Einstimmigkeit, wurde nicht von Menschen überprüft und ist nicht mit den Abstimmungsdaten gleichzusetzen. Lies die zitierten Stellungnahmen nach.',
   opinion_synthesis_clustered: 'Aus den Abstimmungsmustern haben sich Gruppen ergeben, die öffentlich angezeigt werden können.',
   opinion_synthesis_capacity: 'Die Abstimmungsdaten überschreiten das derzeitige Verarbeitungslimit. Die Auswertung der Stellungnahmen ist nicht verfügbar.',
   opinion_synthesis_progress:

@@ -181,6 +181,37 @@ describe('公民意見綜整 API 與背景工作', () => {
     expect(await (await s.read()).json()).toMatchObject({ reportStatus: 'ready', report: { sections: PAPER } })
   })
 
+  it('議題 19 型態：四位達標無法拆群時，只用有足夠實票支持的公開意見綜整', async () => {
+    const s = scenario(4)
+    s.db.exec(`
+      UPDATE ct_opinions SET author_id = 'synthetic-voter-' || (id - 11) WHERE id BETWEEN 11 AND 13;
+      DELETE FROM ct_opinion_votes WHERE opinion_id BETWEEN 11 AND 13 AND voter_id = (
+        SELECT author_id FROM ct_opinions WHERE id = opinion_id
+      );
+      UPDATE ct_opinion_votes SET value = CASE
+        WHEN opinion_id = 11 AND voter_id = 'synthetic-voter-1' THEN 0
+        WHEN opinion_id = 12 AND voter_id = 'synthetic-voter-0' THEN -1
+        ELSE 1 END WHERE opinion_id BETWEEN 11 AND 13;
+    `)
+    const sections = [{ kind: 'common_ground', text: '達標參與者傾向支持提高夜車密度。', opinionIds: [13] }]
+    s.run.mockResolvedValueOnce(modelReply(sections))
+
+    expect(await (await s.read()).json()).toMatchObject({ reportStatus: 'unavailable' })
+    expect(s.jobs.size).toBe(0)
+    expect(await (await s.visit()).json()).toEqual({
+      qualifiedParticipants: 4,
+      votesRequired: 3,
+      status: 'unclustered',
+      groups: [{ id: 1, size: 4, x: 0, y: 0 }],
+      myGroup: null,
+      statistics: [{ opinionId: 13, body: '提高夜車密度', kind: 'common_agree', groups: [{ id: 1, direction: 'agree' }] }],
+      reportStatus: 'pending',
+      report: null,
+    })
+    await s.execute()
+    expect(await (await s.read()).json()).toMatchObject({ reportStatus: 'ready', report: { sections } })
+  })
+
   it('同一份聚合證據跨日重用；證據變了，24 小時後才允許刷新', async () => {
     const s = scenario()
     await s.visit()

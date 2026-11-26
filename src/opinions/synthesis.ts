@@ -71,6 +71,7 @@ function parseSections(value: unknown, evidence: Evidence): readonly Section[] |
 function modelInput(language: Language, statistics: Evidence) {
   // 不截斷原文；太長的證據仍可在統計 UI 引用，但不傳給模型。
   const evidence = statistics.filter(item => !DIRECT_CONTACT.test(item.body) && new TextEncoder().encode(item.body).byteLength <= 1200).slice(0, 8)
+  const aggregate = evidence[0]?.groups.length === 1
   const input = {
     messages: [
       {
@@ -79,7 +80,7 @@ function modelInput(language: Language, statistics: Evidence) {
 Preserve each cited statement's logical conditions, negation, temporal order, scope, and attribution. Necessary prerequisites remain necessary. Keep interim actions and recommendations distinct from conditions that permit a blocked action; do not weaken only-if, unless, until, before, or without restrictions.
 Preserve logical AND versus OR: never turn jointly required conditions into alternatives, turn alternatives into joint requirements, or combine separate claims into a new either/or rule. Completing an interim improvement does not satisfy or replace a separate mandatory prerequisite. Keep different groups' requirements attributed separately rather than merging them into one shared rule.
 For example, a statement that a bridge must stay closed until it passes inspection, with detour signs to be improved first, still requires a passed inspection before reopening. It does not permit reopening after either improved signs or a passed inspection. Preserve the inspection requirement and describe the sign improvement separately as an interim action.
-Before returning JSON, check every paraphrased condition against its cited source: would the paraphrase allow an action while that source's prerequisite is still unmet? If so, correct it. If a logical relationship is unclear, state the claims separately or omit the unsupported inference rather than inventing a connection.
+Before returning JSON, check every paraphrased condition against its cited source: would the paraphrase allow an action while that source's prerequisite is still unmet? If so, correct it. If a logical relationship is unclear, state the claims separately or omit the unsupported inference rather than inventing a connection.${aggregate ? '\nThe evidence describes overall voting tendencies among qualified participants, not distinct groups. Use only common_ground and describe tendencies, not unanimity or agreement between groups.' : ''}
 Return only JSON {"sections":[{"kind":"common_ground"|"tensions"|"group_perspectives","text":"one short plain-text paragraph","opinionIds":[123]}]}. Use each kind at most once. Cite only shown opinion IDs; common_ground cites common_agree/common_disagree; tensions and group_perspectives cite tension. Omit unsupported sections. Do not output URLs, quotes, or Markdown.`,
       },
       { role: 'user' as const, content: JSON.stringify(evidence) },

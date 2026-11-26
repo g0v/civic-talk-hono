@@ -103,6 +103,7 @@ const mounted = ref(false)
 const retry = ref(0)
 const result = ref<Synthesis | null>(null)
 const failed = ref(false)
+const aggregate = computed(() => result.value?.status === 'unclustered')
 const myGroup = computed(() => {
   const current = result.value
   if (!viewerId.value || current?.status !== 'clustered') return null
@@ -221,7 +222,7 @@ onMounted(() => {
         </button>
       </div>
 
-      <template v-if="result.status === 'clustered'">
+      <template v-if="result.groups.length">
         <section aria-labelledby="opinion-synthesis-groups" class="space-y-3">
           <h4 id="opinion-synthesis-groups" class="m-0 font-serif text-base">{{ t('opinion_synthesis_groups') }}</h4>
           <p v-if="myGroup !== null" class="m-0 font-medium">{{ t('opinion_synthesis_my_group', { id: myGroup }) }}</p>
@@ -230,7 +231,7 @@ onMounted(() => {
               <g v-for="(group, index) in mapGroups" :key="group.id" :class="index % 2 === 0 ? 'text-vt-jade-green' : 'text-vt-wheat-yellow'" :transform="`translate(${group.x},${group.y})`">
                 <polygon
                   points="-90,-12 -70,-53 -22,-68 34,-64 76,-43 89,6 71,47 18,65 -35,61 -78,36"
-                  :transform="index % 2 === 0 ? undefined : 'scale(-1 1)'"
+                  :transform="aggregate ? 'scale(1.6 1)' : index % 2 === 0 ? undefined : 'scale(-1 1)'"
                   fill="currentColor"
                   fill-opacity=".16"
                   stroke="currentColor"
@@ -242,25 +243,29 @@ onMounted(() => {
                   <title>{{ opinion.body }}</title>
                 </circle>
                 <text y="-77" text-anchor="middle" class="fill-vt-fg-1 text-base font-semibold">
-                  {{ t('opinion_synthesis_group_size', { id: group.id, count: group.size }) }}
+                  {{ aggregate ? t('opinion_synthesis_aggregate_size', { count: group.size }) : t('opinion_synthesis_group_size', { id: group.id, count: group.size }) }}
                 </text>
               </g>
             </svg>
-            <figcaption id="opinion-synthesis-map-caption" class="text-sm text-vt-fg-2">{{ t('opinion_synthesis_map') }}</figcaption>
+            <figcaption id="opinion-synthesis-map-caption" class="text-sm text-vt-fg-2">{{ t(aggregate ? 'opinion_synthesis_aggregate_map' : 'opinion_synthesis_map') }}</figcaption>
           </figure>
           <ul class="m-0 list-inside list-disc space-y-1 tabular-nums">
-            <li v-for="group in result.groups" :key="group.id">{{ t('opinion_synthesis_group_size', { id: group.id, count: group.size }) }}</li>
+            <li v-for="group in result.groups" :key="group.id">
+              {{ aggregate ? t('opinion_synthesis_aggregate_size', { count: group.size }) : t('opinion_synthesis_group_size', { id: group.id, count: group.size }) }}
+            </li>
           </ul>
         </section>
 
         <section aria-labelledby="opinion-synthesis-statistics" class="space-y-3">
           <h4 id="opinion-synthesis-statistics" class="m-0 font-serif text-base">{{ t('opinion_synthesis_statistics') }}</h4>
-          <p v-if="!result.statistics.length" class="m-0 text-vt-fg-2">{{ t('opinion_synthesis_no_statistics') }}</p>
+          <p v-if="!result.statistics.length" class="m-0 text-vt-fg-2">{{ t(aggregate ? 'opinion_synthesis_aggregate_no_statistics' : 'opinion_synthesis_no_statistics') }}</p>
           <ul v-else class="m-0 list-none divide-y divide-vt-border p-0">
             <li v-for="item in result.statistics" :key="`${item.opinionId}-${item.kind}`" class="space-y-2 py-3">
-              <p class="m-0 text-sm font-medium">{{ t(statisticKeys[item.kind]) }}</p>
+              <p class="m-0 text-sm font-medium">
+                {{ t(aggregate && item.kind !== 'tension' ? (item.kind === 'common_agree' ? 'opinion_synthesis_aggregate_agree' : 'opinion_synthesis_aggregate_disagree') : statisticKeys[item.kind]) }}
+              </p>
               <p class="m-0 whitespace-pre-wrap">{{ item.body }}</p>
-              <ul v-if="item.groups.length" class="m-0 list-inside list-disc text-sm text-vt-fg-2">
+              <ul v-if="!aggregate && item.groups.length" class="m-0 list-inside list-disc text-sm text-vt-fg-2">
                 <li v-for="group in item.groups" :key="group.id">
                   {{ t(group.direction === 'agree' ? 'opinion_synthesis_group_agree' : 'opinion_synthesis_group_disagree', { id: group.id }) }}
                 </li>
@@ -277,10 +282,10 @@ onMounted(() => {
 
         <section aria-labelledby="opinion-synthesis-report" class="space-y-3">
           <h4 id="opinion-synthesis-report" class="m-0 font-serif text-base">{{ t('opinion_synthesis_report') }}</h4>
-          <p class="m-0 text-sm text-vt-fg-2">{{ t('opinion_synthesis_report_notice') }}</p>
+          <p class="m-0 text-sm text-vt-fg-2">{{ t(aggregate ? 'opinion_synthesis_aggregate_report_notice' : 'opinion_synthesis_report_notice') }}</p>
           <template v-if="result.reportStatus === 'ready' && result.report?.sections.length">
             <div v-for="section in result.report.sections" :key="section.kind" class="space-y-2 border-t border-vt-border pt-3">
-              <h5 class="m-0 font-medium">{{ t(sectionKeys[section.kind]) }}</h5>
+              <h5 class="m-0 font-medium">{{ t(aggregate && section.kind === 'common_ground' ? 'opinion_synthesis_aggregate_report_heading' : sectionKeys[section.kind]) }}</h5>
               <p class="m-0 whitespace-pre-wrap">{{ section.text }}</p>
               <ul class="m-0 flex list-none flex-wrap gap-x-4 p-0">
                 <li v-for="id in section.opinionIds" :key="id">
