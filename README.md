@@ -51,6 +51,7 @@ vp run dev
 ## 主要流程
 
 1. **投稿**：建立議題、素材、意見、說明頁與志願者 prompt 需未停權的登入者。素材先呼叫同源 `/api/fact-check`，由 Service Binding 轉送非公開 `fact-check-core`；投稿仍須通過條款與 OpenRouter 安全審查。
+   議題簡介最多 300 字（Unicode code points）；超過時停用送出按鈕，縮短至 300 字內即恢復。編輯器保留全文、不截斷；`POST /api/issues` 同樣在模型審查與寫入前攔截超長簡介，回 `400 {error:"description must be at most 300 code points"}`，省略或空白簡介仍可建立。
 2. **志願者彙整**：取 prompt → 自己的 AI 工具生成 → 送回彙整／說明頁。彙整與再彙整至少須有兩份同議題、`abuse_flagged=0` 的可用素材；不足時 UI 停用生成／複製／送出並提示數量，仍保留可編輯草稿。`GET /api/issues/:id/prompt?type=summarize|synthesis` 與含非空共識／爭點／立場欄位的 `POST /api/issues/:id/briefing` 都會在審查與寫入前回 `422 {error:"insufficient_materials",minimum:2,count}`。待審、隱藏及其他議題素材不計入；單獨更新說明頁與管理員編輯既有內容不新增此限制。公民意見引導不得把未獲認可的 AI 建議當成參與者立場，也不強造共識。
 3. **身分與隱私**：四種內容保存投稿當下作者快照，前台顯示姓名，email 僅於該筆明確同意公開時顯示；三類具名投稿保存條款版本與時間。完整快照不能直接投影到公開 API。
 4. **討論與管理**：意見提供同意／不同意／略過與登入後 CSV 匯出；不再載入 polis.tw。管理員可審查內容、編輯議題、附公開理由結案／重開；結案獨立於 status，不停止投稿、投票或匯出。
@@ -97,6 +98,8 @@ Clairic 逐素材抽取 → Clef 比較 → Gemma 生成草稿；歷史[品質�
 建構中的新 UI 以 `import.meta.env.DEV` 控制整個元件的掛載：`dev`／`dev:remote` 可見，production build 不輸出新按鈕、同意視窗或狀態提示，也不會由此元件發出摘要查詢／輪詢或 debug log；即使 build 的 mode 名稱為 `development` 也不例外。這不是 CSS 隱藏，也不是 API 開關：後端證據 API、migration 與既有 Prompt 流程維持原契約。`dev:remote` 仍連真實 bindings，登入／付費實測須另行授權。
 
 在「生成彙整 Prompt」旁按「一鍵彙整」，閱讀處理、平台費用與留存告知後明確同意；已有該語言結果時，另須確認替換。語言跟隨操作時介面，繁中／英文／日文分開保存。舊 Prompt／手動貼回流程保留。
+
+查詢狀態、送出請求及排隊／擷取／比對／生成期間，進度提示顯示三語「請耐心等候…」及持續旋轉的 loader；完成、部分完成、失敗或停止查詢時移除，避免誤示仍在處理。尊重系統「減少動態效果」設定，改以靜態圖示保留等候提示（#213）。
 
 新端點以 `version`／`expected_version` 防止未確認的併發替換，衝突回 `409 summary_conflict`，須重新讀取並確認，不自動重送。只有完整 `ai_draft` 才寫入議題新欄位；部分完成、失敗或較舊工作晚完成都不覆蓋較新的結果。工作即使在離開頁面後完成，也由伺服器保存；舊工作仍保留原紀錄。來源失效時停止交付，來源清除時也清除議題欄位中的相依資料。
 

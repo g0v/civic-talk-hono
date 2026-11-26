@@ -21,6 +21,7 @@ import { readHomeSortPreference, saveHomeSortPreference } from '../lib/homeSortP
 import { homeIssuePreviewUrl, readHomeIssuePreviewId } from '../lib/homeIssuePreview'
 import { collectHomeTagSuggestions, homeIssueListUrl, homeSearchUrl, readHomeSearchQuery } from '../lib/homeSearch'
 import { parseIssueTagsInput } from '../lib/issueTags'
+import { ISSUE_DESCRIPTION_MAX_CHARS, isIssueDescriptionTooLong } from '../lib/issueDescription'
 
 const props = defineProps<{
   initialIssues?: IssueListItem[]
@@ -35,6 +36,7 @@ const loading = ref(!props.initialIssues)
 const showForm = ref(false)
 const title = ref('')
 const description = ref('')
+const descriptionTooLong = computed(() => isIssueDescriptionTooLong(description.value))
 const tagsText = ref('')
 const submitting = ref(false)
 const issueTosAgreed = ref(false)
@@ -431,7 +433,7 @@ async function copyRssUrl() {
                   <span>{{ t('idx_label_desc') }}</span>
                   <span class="label-hint">{{ t('idx_hint_desc') }}</span>
                 </label>
-                <MarkdownEditor id="issue-description" v-model="description" :label="t('idx_label_desc')" :rows="3" :placeholder="t('idx_ph_desc')" mode="plain" :max-chars="100" />
+                <MarkdownEditor id="issue-description" v-model="description" :label="t('idx_label_desc')" :rows="3" :placeholder="t('idx_ph_desc')" mode="plain" :max-chars="ISSUE_DESCRIPTION_MAX_CHARS" />
               </div>
               <div class="form-group">
                 <label for="issue-tags">
@@ -462,7 +464,7 @@ async function copyRssUrl() {
                 </label>
               </div>
               <div class="flex gap-2">
-                <button type="button" class="btn btn-primary" :disabled="submitting" @click="createIssue">
+                <button type="button" class="btn btn-primary" :disabled="submitting || descriptionTooLong" @click="createIssue">
                   {{ t('idx_submit') }}
                 </button>
                 <button type="button" class="btn btn-secondary" @click="showForm = false">

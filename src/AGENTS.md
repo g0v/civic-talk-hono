@@ -27,7 +27,7 @@
 - Issue 無 step 顯示 briefing carousel；comments／materials／volunteer 切換與 popstate 保留其他 query／登入 callback；citizen 四張，volunteer hydration 後第五張。輪播在視窗內、長文卡內捲動、compact 授權 footer；其他分頁自然捲動與完整 footer，保留原始碼／notices 入口。
 - 樣式用 `styles/app.css` token、vt-*／既有 utilities；設計參考相鄰 vtaiwan-design-system 的 project/colors_and_type.css（本機缺檔，未核對），新 token 先定義，不順手重畫。正式 HTML 未載入 SFC CSS，維持無 style 區塊；接入抽出 CSS 另需確認。
 - `LongTextContent` 超門檻完全不輸出原文，只顯示字數／展開鈕，不截短或摘要 CC BY-NC-ND；素材詳情與管理審閱維持全文。卡片不巢狀 a。
-- `MarkdownEditor` 沿用 `renderSafeMarkdown`，禁 raw HTML、圖片或另開 parser；議題簡介純文字／換行，字數僅軟提示，不加 maxlength／API 限長；事實查核中及完成後 readonly。
+- `MarkdownEditor` 沿用 `renderSafeMarkdown`，禁 raw HTML、圖片或另開 parser；議題簡介純文字／換行，最多 300 個 Unicode code points，超過時 UI 停用送出、縮短後恢復，保留全文且不加 maxlength；`POST /api/issues` 共用相同規則，在模型審查與寫入前以 400 拒絕超長簡介，選填語意不變（#218）。事實查核中及完成後 readonly。
 - textarea 用 writable computed 的原生 v-model；組字只留 textarea 暫存，不更新 model／計數／預覽，compositionend 才提交。Markdown 預覽先 trim 再 render 與送出一致，不改草稿／計數／縮排；純文字預覽不 trim；保留分頁、focus、延後 aria-live。
 - `requireUser` 未登入 401、停權 403、不限角色；`requireAdmin` 僅 admin／super-admin，無權限 403；停權者仍可申訴。前端 `useAuth` 共用查詢，不把個資存 localStorage；SSR loading 骨架，Admin client 分 anonymous／forbidden／admin；若 SSR 個人化不可邊緣快取。
 - 共用 DB_AUTH、Google／GitHub OAuth 與 BETTER_AUTH_SECRET；版本核對 sibling package／lock，BETTER_AUTH_URL 用各環境 origin，換網域／建環境核對兩 provider callback。trusted 同 email linking 已由使用者確認，但不代表跨域 SSO；不擅改 cookie domain。

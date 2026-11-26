@@ -45,6 +45,28 @@ const factCheckRequestId = ref(0)
 let factCheckController: AbortController | null = null
 const toast = ref<{ show: (msg: string) => void } | null>(null)
 const contentInput = ref<{ focus: () => void } | null>(null)
+const referenceDialog = ref<HTMLDialogElement | null>(null)
+const referenceLinks = [
+  { label: 'contrib_reference_laws', href: 'https://law.moj.gov.tw/' },
+  { label: 'contrib_reference_legislature', href: 'https://www.ly.gov.tw/Pages/List.aspx?nodeid=102' },
+  { label: 'contrib_reference_councils', href: 'https://all.cc.govapi.tw/info' },
+  { label: 'contrib_reference_openfun', href: 'https://data.openfun.tw/' },
+] as const
+
+function openReferenceDialog() {
+  referenceDialog.value?.showModal()
+}
+
+function closeReferenceDialog() {
+  referenceDialog.value?.close()
+}
+
+function closeReferenceOnBackdropClick(event: MouseEvent) {
+  const element = referenceDialog.value
+  if (!element || event.target !== element) return
+  const bounds = element.getBoundingClientRect()
+  if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) closeReferenceDialog()
+}
 
 /**
  * 登入狀態走全站共用的 useAuth（與 AppHeader 共用同一次 /api/me）。'loading' 是 SSR 與
@@ -293,6 +315,15 @@ async function submitMaterial() {
         <div class="alert alert-info mb-7">
           <strong>{{ t('contrib_alert_strong') }}</strong>
           {{ t('contrib_alert') }}
+          <button
+            type="button"
+            class="cursor-pointer text-vt-fg-1 underline underline-offset-4 hover:decoration-2"
+            aria-haspopup="dialog"
+            aria-controls="material-reference-links"
+            @click="openReferenceDialog"
+          >
+            {{ t('contrib_reference_links') }}
+          </button>
         </div>
 
         <!-- 讀取 session 中：SSR 與 hydration 首幀共用這個骨架 -->
@@ -435,6 +466,24 @@ async function submitMaterial() {
         </div>
       </div>
     </main>
+
+    <dialog
+      id="material-reference-links"
+      ref="referenceDialog"
+      class="modal m-auto max-h-[90dvh] max-w-[calc(100%-2rem)] border border-vt-border text-left text-vt-fg-1 backdrop:bg-black/50"
+      aria-labelledby="material-reference-links-title"
+      @click="closeReferenceOnBackdropClick"
+    >
+      <div class="mb-4 flex items-start justify-between gap-4">
+        <h2 id="material-reference-links-title" class="m-0 font-vt-serif text-xl">{{ t('contrib_reference_links') }}</h2>
+        <button type="button" class="btn btn-ghost btn-sm shrink-0" :aria-label="t('contrib_reference_close')" @click="closeReferenceDialog">✕</button>
+      </div>
+      <ul class="m-0 list-disc space-y-3 pl-5">
+        <li v-for="link in referenceLinks" :key="link.href">
+          <a :href="link.href" target="_blank" rel="noopener noreferrer" class="text-vt-fg-1 underline underline-offset-4 hover:decoration-2">{{ t(link.label) }}</a>
+        </li>
+      </ul>
+    </dialog>
 
     <AppFooter />
     <Toast ref="toast" />

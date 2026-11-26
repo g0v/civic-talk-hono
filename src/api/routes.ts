@@ -20,6 +20,7 @@ import { createAuth } from '../auth/createAuth'
 import { TERMS_VERSION } from '../legal/terms'
 import { DUPLICATE_NAME_EMAIL_REQUIRED_CODE } from '../lib/profile-name'
 import { normalizeIssueTags } from '../lib/issueTags'
+import { ISSUE_DESCRIPTION_MAX_CHARS, isIssueDescriptionTooLong } from '../lib/issueDescription'
 import { moderationReasonForPolicy, moderateSubmission, moderateSubmissionWithDiagnostics, type ModerationDecision, type ModerationSubmission } from '../moderation/service'
 import type { Context } from 'hono'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
@@ -357,6 +358,8 @@ export function registerApiRoutes(app: App): void {
     if (body.tags !== undefined && !isStringArray(body.tags)) return error(c, 'tags must be an array of strings')
     const tags = body.tags === undefined ? [] : normalizeIssueTags(body.tags)
     if (!body.title?.trim()) return error(c, 'title is required')
+    if (body.description != null && typeof body.description !== 'string') return error(c, 'description must be a string')
+    if (isIssueDescriptionTooLong(body.description ?? '')) return error(c, `description must be at most ${ISSUE_DESCRIPTION_MAX_CHARS} code points`)
     const invalidOptions = validateSubmissionOptions(body)
     if (invalidOptions) return invalidOptions
     const duplicateNameEmailPreflight = await requireDuplicateNameEmail(c, auth.context, body.show_email)
