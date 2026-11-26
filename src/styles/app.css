@@ -1105,14 +1105,14 @@ html.dark .alert-warn {
 
     .issue-briefing-tabs {
       display: flex;
-      gap: var(--spacing-vt-2);
+      gap: var(--spacing-vt-1);
       margin-bottom: var(--spacing-vt-4);
       border-bottom: 1px solid var(--color-vt-border);
     }
 
     .issue-briefing-tab {
       border-bottom: var(--spacing-vt-0_5) solid transparent;
-      padding: var(--spacing-vt-3) var(--spacing-vt-4);
+      padding: var(--spacing-vt-3) var(--spacing-vt-2);
       color: var(--color-vt-fg-2);
       font-size: var(--text-vt-base);
       cursor: pointer;
@@ -1127,6 +1127,16 @@ html.dark .alert-warn {
     .issue-briefing-tab:focus-visible {
       outline: var(--spacing-vt-0_5) solid var(--color-vt-democratic-red);
       outline-offset: var(--spacing-vt-0_5);
+    }
+  }
+
+  @media (min-width: 768px) {
+    .issue-briefing-tabs {
+      gap: var(--spacing-vt-2);
+    }
+
+    .issue-briefing-tab {
+      padding-inline: var(--spacing-vt-4);
     }
   }
 }
