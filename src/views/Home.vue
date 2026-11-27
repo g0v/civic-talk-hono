@@ -463,7 +463,6 @@ async function copyRssUrl() {
                   :label="t('idx_label_desc')"
                   :rows="3"
                   :placeholder="t('idx_ph_desc')"
-                  mode="plain"
                   :max-chars="ISSUE_DESCRIPTION_MAX_CHARS"
                   :readonly="submitting"
                 />
